@@ -1,0 +1,25 @@
+{
+  "name": "athleta-manager",
+  "private": true,
+  "packageManager": "pnpm@11.4.0",
+  "engines": { "node": "24.13.0", "pnpm": "11.4.0" },
+  "scripts": {
+    "dev": "turbo dev",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "db:migrate": "pnpm --filter @athleta/api prisma:migrate:deploy",
+    "db:migrate:create": "pnpm --filter @athleta/api prisma:migrate:dev",
+    "db:reset": "pnpm --filter @athleta/api prisma:reset",
+    "db:seed": "pnpm --filter @athleta/api prisma:seed",
+    "db:seed:demo": "pnpm --filter @athleta/api prisma:seed:demo",
+    "generate:api": "pnpm --filter @athleta/api openapi:generate && pnpm --filter @athleta/api-client generate",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "test:integration": "turbo test:integration",
+    "test:e2e": "pnpm --filter @athleta/web test:e2e",
+    "build": "turbo build",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": { "turbo": "2.8.10", "typescript": "5.9.3" }
+}

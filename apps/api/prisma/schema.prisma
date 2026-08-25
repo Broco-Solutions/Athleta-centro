@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PROFESSOR
+  KINESIOLOGIST
+  OSTEOPATH
+  ADMINISTRATIVE
+  GENERAL_ADMIN
+  BROCO_SUPPORT
+}
+
+enum InternalUserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model InternalUser {
+  id              String             @id @default(uuid()) @db.Uuid
+  firstName       String             @map("first_name")
+  lastName        String             @map("last_name")
+  email           String
+  normalizedEmail String             @unique @map("normalized_email")
+  status          InternalUserStatus @default(ACTIVE)
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  roles           InternalUserRole[]
+  credential      InternalCredential?
+  sessions        Session[]
+
+  @@map("internal_users")
+}
+
+model InternalUserRole {
+  internalUserId String       @map("internal_user_id") @db.Uuid
+  role           Role
+  internalUser   InternalUser @relation(fields: [internalUserId], references: [id], onDelete: Restrict)
+
+  @@id([internalUserId, role])
+  @@map("internal_user_roles")
+}
+
+enum SessionKind {
+  INTERNAL
+  PORTAL
+}
+
+model InternalCredential {
+  internalUserId       String       @id @map("internal_user_id") @db.Uuid
+  passwordHash         String       @map("password_hash")
+  mustChangePassword   Boolean      @default(true) @map("must_change_password")
+  credentialsUpdatedAt DateTime     @default(now()) @map("credentials_updated_at") @db.Timestamptz(6)
+  internalUser         InternalUser @relation(fields: [internalUserId], references: [id], onDelete: Cascade)
+  @@map("internal_credentials")
+}
+
+model Session {
+  id             String        @id @default(uuid()) @db.Uuid
+  kind           SessionKind
+  internalUserId String?       @map("internal_user_id") @db.Uuid
+  secretHash     String        @unique @map("secret_hash")
+  csrfToken      String        @map("csrf_token")
+  expiresAt      DateTime      @map("expires_at") @db.Timestamptz(6)
+  lastActivityAt DateTime      @default(now()) @map("last_activity_at") @db.Timestamptz(6)
+  revokedAt      DateTime?     @map("revoked_at") @db.Timestamptz(6)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  internalUser   InternalUser? @relation(fields: [internalUserId], references: [id], onDelete: Cascade)
+  @@index([internalUserId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("sessions")
+}
+
+model AuthAttemptBucket {
+  key             String    @id
+  failureCount    Int       @default(0) @map("failure_count")
+  windowStartedAt DateTime  @map("window_started_at") @db.Timestamptz(6)
+  lockedUntil     DateTime? @map("locked_until") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("auth_attempt_buckets")
+}

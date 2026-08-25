@@ -1,0 +1,24 @@
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
+import cookieParser from 'cookie-parser';
+import { ConfigModule } from '@nestjs/config';
+import { LoggerModule } from 'nestjs-pino';
+import { validateEnvironment } from './config/env';
+import { HealthController } from './health/health.controller';
+import { PrismaService } from './prisma/prisma.service';
+import { InternalUserService } from './team/internal-user.service';
+import { AuthService } from './auth/auth.service';
+import { AuthController } from './auth/auth.controller';
+import { AuthSecurityMiddleware } from './auth/auth-security.middleware';
+import { AuthRateLimitService } from './auth/auth-rate-limit.service';
+import { HttpExceptionFilter } from './common/http-exception.filter';
+
+@Module({
+  imports: [ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }), LoggerModule.forRoot({ pinoHttp: { redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers.x-csrf-token', 'req.body', 'res.headers.set-cookie'] } as never })],
+  controllers: [HealthController, AuthController], providers: [PrismaService, InternalUserService, AuthService, AuthRateLimitService, AuthSecurityMiddleware, { provide: APP_FILTER, useClass: HttpExceptionFilter }], exports: [PrismaService, InternalUserService, AuthService],
+})
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(cookieParser(), AuthSecurityMiddleware).forRoutes('*');
+  }
+}

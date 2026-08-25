@@ -1,0 +1,1 @@
+{ "extends": "@athleta/typescript-config/nest.json", "compilerOptions": { "rootDir": ".", "isolatedModules": true }, "include": ["src", "scripts", "test"], "exclude": ["dist", "node_modules"] }

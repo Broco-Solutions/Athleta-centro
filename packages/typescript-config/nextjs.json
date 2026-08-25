@@ -1,0 +1,1 @@
+{ "extends": "./base.json", "compilerOptions": { "module": "ESNext", "moduleResolution": "Bundler", "jsx": "preserve", "plugins": [{ "name": "next" }] } }
