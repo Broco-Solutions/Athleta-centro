@@ -874,6 +874,18 @@ Use Cases must enforce documented preconditions.
 
 ### M1.5 — Portal credentials foundation
 
+**Status:** BLOCKED_BY_ROADMAP_DEPENDENCY
+
+Portal login must enforce the documented `Person ACTIVE` precondition. That
+status is derived from active Sala participation, an active clinical treatment,
+or a future scheduled clinical appointment, whose persistence does not exist
+until later phases and whose transversal calculation is scheduled for M6.1.
+Gate 1 currently requires M1.5 before Phase 2, so implementing a successful
+Portal login here would require either bypassing the security precondition,
+persisting an unauthorized `Person.status`, or inventing an interim eligibility
+rule. The roadmap must be reordered or the milestone split before this slice can
+be completed safely.
+
 **Model:** `MODEL_DEEP`
 
 Scope:
