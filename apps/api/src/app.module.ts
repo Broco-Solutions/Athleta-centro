@@ -12,10 +12,13 @@ import { AuthController } from './auth/auth.controller';
 import { AuthSecurityMiddleware } from './auth/auth-security.middleware';
 import { AuthRateLimitService } from './auth/auth-rate-limit.service';
 import { HttpExceptionFilter } from './common/http-exception.filter';
+import { PermissionsGuard } from './auth/permissions.guard';
+import { PeopleController } from './people/people.controller';
+import { PeopleService } from './people/people.service';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }), LoggerModule.forRoot({ pinoHttp: { redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers.x-csrf-token', 'req.body', 'res.headers.set-cookie'] } as never })],
-  controllers: [HealthController, AuthController], providers: [PrismaService, InternalUserService, AuthService, AuthRateLimitService, AuthSecurityMiddleware, { provide: APP_FILTER, useClass: HttpExceptionFilter }], exports: [PrismaService, InternalUserService, AuthService],
+  controllers: [HealthController, AuthController, PeopleController], providers: [PrismaService, InternalUserService, AuthService, AuthRateLimitService, AuthSecurityMiddleware, PermissionsGuard, PeopleService, { provide: APP_FILTER, useClass: HttpExceptionFilter }], exports: [PrismaService, InternalUserService, AuthService, PeopleService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

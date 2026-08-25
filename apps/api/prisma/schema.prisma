@@ -86,3 +86,25 @@ model AuthAttemptBucket {
 
   @@map("auth_attempt_buckets")
 }
+
+model Person {
+  id                    String   @id @default(uuid()) @db.Uuid
+  firstName             String   @map("first_name")
+  lastName              String   @map("last_name")
+  dni                   String
+  normalizedDni         String   @unique @map("normalized_dni")
+  phone                 String
+  birthDate             DateTime @map("birth_date") @db.Date
+  email                 String?
+  normalizedEmail       String?  @map("normalized_email")
+  emergencyContactName  String?  @map("emergency_contact_name")
+  emergencyContactPhone String?  @map("emergency_contact_phone")
+  socialWorkId          String?  @map("social_work_id") @db.Uuid
+  affiliateNumber       String?  @map("affiliate_number")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([lastName, firstName])
+  @@index([normalizedEmail])
+  @@map("people")
+}

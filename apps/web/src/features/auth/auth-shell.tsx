@@ -1,4 +1,5 @@
 'use client';
+import React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { LogOut } from 'lucide-react';
 import { Button } from '@athleta/ui';

@@ -7,7 +7,8 @@ const email = `e2e.${kind}@athleta.test`;
 const password = 'ValidPass1!';
 
 async function main(): Promise<void> {
-  if (!['normal', 'temporary', 'inactive'].includes(kind ?? '')) throw new Error('Unknown e2e fixture');
+  if (!['normal', 'temporary', 'inactive', 'people'].includes(kind ?? '')) throw new Error('Unknown e2e fixture');
+  if (kind === 'people') await prisma.person.deleteMany({ where: { normalizedDni: '40999888' } });
   await prisma.session.deleteMany({ where: { internalUser: { normalizedEmail: email } } });
   await prisma.internalCredential.deleteMany({ where: { internalUser: { normalizedEmail: email } } });
   await prisma.internalUserRole.deleteMany({ where: { internalUser: { normalizedEmail: email } } });

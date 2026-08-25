@@ -552,15 +552,9 @@ dni
 normalized_dni
 ```
 
-`normalized_dni` será indexado.
-
-No tendrá inicialmente `UNIQUE`.
-
-La unicidad permanece:
-
-```text
-BLOCKED_BY_FUNCTIONAL_DEFINITION
-```
+`normalized_dni` tendrá una restricción `UNIQUE` real. La aplicación realiza una
+búsqueda previa para ofrecer un error útil y la base resuelve correctamente las
+altas concurrentes mediante la misma restricción.
 
 ---
 
@@ -2044,7 +2038,8 @@ Las siguientes decisiones no deben cerrarse todavía.
 
 ### 117.1 DNI uniqueness
 
-Pendiente confirmar si DNI debe ser estrictamente único, cómo se resuelven duplicados y cómo afecta Portal login por DNI.
+Confirmado: DNI es obligatorio y único entre Personas. La unicidad se aplica sobre
+su representación normalizada y también será reutilizada por el Portal.
 
 Hasta entonces:
 

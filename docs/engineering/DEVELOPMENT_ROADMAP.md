@@ -818,6 +818,8 @@ forced password change
 
 ### M1.3 — People base
 
+**Status:** `DONE`
+
 **Model:** `MODEL_STANDARD`
 
 Scope:
@@ -835,7 +837,7 @@ derived contextual status support
 Important:
 
 ```text
-Do not add DNI UNIQUE until functional definition confirms it.
+DNI uniqueness is confirmed. Enforce uniqueness on the centralized normalized representation.
 ```
 
 Tests:

@@ -4,6 +4,93 @@
  * Athleta Manager API
  * OpenAPI spec version: 0.1.0
  */
+/**
+ * Derived from currently available relationships.
+ */
+export type PersonResponseDtoStatus = typeof PersonResponseDtoStatus[keyof typeof PersonResponseDtoStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PersonResponseDtoStatus = {
+  INACTIVE: 'INACTIVE',
+} as const;
+
+export interface PersonResponseDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dni: string;
+  phone: string;
+  birthDate: string;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  emergencyContactName?: string | null;
+  /** @nullable */
+  emergencyContactPhone?: string | null;
+  /** @nullable */
+  socialWorkId?: string | null;
+  /** @nullable */
+  affiliateNumber?: string | null;
+  /** Derived from currently available relationships. */
+  status: PersonResponseDtoStatus;
+  contexts: string[];
+}
+
+export interface PeopleMetaDto {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface PeopleListEnvelopeDto {
+  data: PersonResponseDto[];
+  meta: PeopleMetaDto;
+}
+
+export interface PersonEnvelopeDto {
+  data: PersonResponseDto;
+}
+
+export type CreatePersonDtoContext = typeof CreatePersonDtoContext[keyof typeof CreatePersonDtoContext];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const CreatePersonDtoContext = {
+  SALA: 'SALA',
+  CLINIC: 'CLINIC',
+} as const;
+
+export interface CreatePersonDto {
+  context: CreatePersonDtoContext;
+  firstName: string;
+  lastName: string;
+  dni: string;
+  phone: string;
+  birthDate: string;
+  /** @nullable */
+  email?: string | null;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  socialWorkId?: string;
+  affiliateNumber?: string;
+}
+
+export interface UpdatePersonDto {
+  firstName?: string;
+  lastName?: string;
+  dni?: string;
+  phone?: string;
+  birthDate?: string;
+  /** @nullable */
+  email?: string | null;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  socialWorkId?: string;
+  affiliateNumber?: string;
+}
+
 export type InternalLoginBody = {
   email: string;
   password: string;
@@ -12,6 +99,12 @@ export type InternalLoginBody = {
 export type ChangeInternalPasswordBody = {
   currentPassword: string;
   nextPassword: string;
+};
+
+export type ListPeopleParams = {
+pageSize?: number;
+page?: number;
+search?: string;
 };
 
 /**
@@ -210,4 +303,170 @@ export const changeInternalPassword = async (changeInternalPasswordBody: ChangeI
   
   const data: changeInternalPasswordResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as changeInternalPasswordResponse
+}
+
+
+
+export type listPeopleResponse200 = {
+  data: PeopleListEnvelopeDto
+  status: 200
+}
+    
+export type listPeopleResponseSuccess = (listPeopleResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPeopleResponse = (listPeopleResponseSuccess)
+
+export const getListPeopleUrl = (params?: ListPeopleParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/people?${stringifiedParams}` : `/api/people`
+}
+
+export const listPeople = async (params?: ListPeopleParams, options?: RequestInit): Promise<listPeopleResponse> => {
+  
+  const res = await fetch(getListPeopleUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  
+  const data: listPeopleResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPeopleResponse
+}
+
+
+
+export type createPersonResponse201 = {
+  data: PersonEnvelopeDto
+  status: 201
+}
+    
+export type createPersonResponseSuccess = (createPersonResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createPersonResponse = (createPersonResponseSuccess)
+
+export const getCreatePersonUrl = () => {
+
+
+  
+
+  return `/api/people`
+}
+
+export const createPerson = async (createPersonDto: CreatePersonDto, options?: RequestInit): Promise<createPersonResponse> => {
+  
+  const res = await fetch(getCreatePersonUrl(),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createPersonDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  
+  const data: createPersonResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createPersonResponse
+}
+
+
+
+export type getPersonResponse200 = {
+  data: PersonEnvelopeDto
+  status: 200
+}
+    
+export type getPersonResponseSuccess = (getPersonResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getPersonResponse = (getPersonResponseSuccess)
+
+export const getGetPersonUrl = (id: string,) => {
+
+
+  
+
+  return `/api/people/${id}`
+}
+
+export const getPerson = async (id: string, options?: RequestInit): Promise<getPersonResponse> => {
+  
+  const res = await fetch(getGetPersonUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  
+  const data: getPersonResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getPersonResponse
+}
+
+
+
+export type updatePersonResponse200 = {
+  data: PersonEnvelopeDto
+  status: 200
+}
+    
+export type updatePersonResponseSuccess = (updatePersonResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updatePersonResponse = (updatePersonResponseSuccess)
+
+export const getUpdatePersonUrl = (id: string,) => {
+
+
+  
+
+  return `/api/people/${id}`
+}
+
+export const updatePerson = async (id: string,
+    updatePersonDto: UpdatePersonDto, options?: RequestInit): Promise<updatePersonResponse> => {
+  
+  const res = await fetch(getUpdatePersonUrl(id),
+  {      
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updatePersonDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  
+  const data: updatePersonResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updatePersonResponse
 }

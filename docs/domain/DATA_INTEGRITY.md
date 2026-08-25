@@ -254,23 +254,9 @@ InternalUser
 
 ## 10. Person DNI
 
-`Person.dni` no tendrá inicialmente una restricción:
-
-```text
-UNIQUE
-```
-
-Esta decisión es deliberada.
-
-La documentación funcional contempla detección y tratamiento de posibles duplicados, y todavía existen definiciones funcionales pendientes sobre la relación entre DNI, Personas duplicadas y autenticación del Portal.
-
-Por lo tanto:
-
-```text
-DNI uniqueness
-=
-PENDING_FUNCTIONAL_DEFINITION
-```
+`Person.normalizedDni` posee una restricción `UNIQUE`. DNI es obligatorio y único
+entre Personas; la aplicación debe buscar coincidencias antes del alta y además
+depender de la constraint para resolver correctamente la concurrencia.
 
 ---
 
@@ -337,9 +323,8 @@ search possible matches
 apply functional duplicate policy
 ```
 
-No se debe asumir que una segunda coincidencia de DNI puede insertarse silenciosamente.
-
-Tampoco se debe bloquear mediante `UNIQUE(dni)` hasta tener cerrada la regla funcional.
+Una segunda coincidencia de DNI no puede insertarse. La comparación y la constraint
+se aplican sobre `normalizedDni`, no sobre el formato de presentación de `dni`.
 
 ---
 
