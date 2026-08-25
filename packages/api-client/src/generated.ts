@@ -91,6 +91,94 @@ export interface UpdatePersonDto {
   affiliateNumber?: string;
 }
 
+export type TeamUserDtoStatus = typeof TeamUserDtoStatus[keyof typeof TeamUserDtoStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const TeamUserDtoStatus = {
+  ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
+} as const;
+
+export type TeamUserDtoRolesItem = typeof TeamUserDtoRolesItem[keyof typeof TeamUserDtoRolesItem];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const TeamUserDtoRolesItem = {
+  PROFESSOR: 'PROFESSOR',
+  KINESIOLOGIST: 'KINESIOLOGIST',
+  OSTEOPATH: 'OSTEOPATH',
+  ADMINISTRATIVE: 'ADMINISTRATIVE',
+  GENERAL_ADMIN: 'GENERAL_ADMIN',
+  BROCO_SUPPORT: 'BROCO_SUPPORT',
+} as const;
+
+export interface TeamUserDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  status: TeamUserDtoStatus;
+  roles: TeamUserDtoRolesItem[];
+}
+
+export interface TeamUserListEnvelopeDto {
+  data: TeamUserDto[];
+}
+
+export interface TeamUserEnvelopeDto {
+  data: TeamUserDto;
+}
+
+export type CreateTeamUserDtoRolesItem = typeof CreateTeamUserDtoRolesItem[keyof typeof CreateTeamUserDtoRolesItem];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const CreateTeamUserDtoRolesItem = {
+  PROFESSOR: 'PROFESSOR',
+  KINESIOLOGIST: 'KINESIOLOGIST',
+  OSTEOPATH: 'OSTEOPATH',
+  ADMINISTRATIVE: 'ADMINISTRATIVE',
+  GENERAL_ADMIN: 'GENERAL_ADMIN',
+  BROCO_SUPPORT: 'BROCO_SUPPORT',
+} as const;
+
+export interface CreateTeamUserDto {
+  firstName: string;
+  lastName: string;
+  email: string;
+  roles: CreateTeamUserDtoRolesItem[];
+}
+
+export interface TeamUserCreatedDto {
+  data: TeamUserDto;
+  /** Returned once; never persisted in plaintext. */
+  temporaryPassword: string;
+}
+
+export interface UpdateTeamUserDto {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+}
+
+export type TeamRoleDtoRole = typeof TeamRoleDtoRole[keyof typeof TeamRoleDtoRole];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const TeamRoleDtoRole = {
+  PROFESSOR: 'PROFESSOR',
+  KINESIOLOGIST: 'KINESIOLOGIST',
+  OSTEOPATH: 'OSTEOPATH',
+  ADMINISTRATIVE: 'ADMINISTRATIVE',
+  GENERAL_ADMIN: 'GENERAL_ADMIN',
+  BROCO_SUPPORT: 'BROCO_SUPPORT',
+} as const;
+
+export interface TeamRoleDto {
+  role: TeamRoleDtoRole;
+}
+
 export type InternalLoginBody = {
   email: string;
   password: string;
@@ -114,7 +202,7 @@ export type healthCheckResponse200 = {
   data: void
   status: 200
 }
-    
+
 export type healthCheckResponseSuccess = (healthCheckResponse200) & {
   headers: Headers;
 };
@@ -125,24 +213,24 @@ export type healthCheckResponse = (healthCheckResponseSuccess)
 export const getHealthCheckUrl = () => {
 
 
-  
+
 
   return `/health`
 }
 
 export const healthCheck = async ( options?: RequestInit): Promise<healthCheckResponse> => {
-  
+
   const res = await fetch(getHealthCheckUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  
+
   const data: healthCheckResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as healthCheckResponse
 }
@@ -153,7 +241,7 @@ export type internalLoginResponse200 = {
   data: void
   status: 200
 }
-    
+
 export type internalLoginResponseSuccess = (internalLoginResponse200) & {
   headers: Headers;
 };
@@ -164,15 +252,15 @@ export type internalLoginResponse = (internalLoginResponseSuccess)
 export const getInternalLoginUrl = () => {
 
 
-  
+
 
   return `/api/auth/login`
 }
 
 export const internalLogin = async (internalLoginBody: InternalLoginBody, options?: RequestInit): Promise<internalLoginResponse> => {
-  
+
   const res = await fetch(getInternalLoginUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -182,7 +270,7 @@ export const internalLogin = async (internalLoginBody: InternalLoginBody, option
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  
+
   const data: internalLoginResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as internalLoginResponse
 }
@@ -193,7 +281,7 @@ export type getInternalSessionResponse200 = {
   data: void
   status: 200
 }
-    
+
 export type getInternalSessionResponseSuccess = (getInternalSessionResponse200) & {
   headers: Headers;
 };
@@ -204,24 +292,24 @@ export type getInternalSessionResponse = (getInternalSessionResponseSuccess)
 export const getGetInternalSessionUrl = () => {
 
 
-  
+
 
   return `/api/auth/session`
 }
 
 export const getInternalSession = async ( options?: RequestInit): Promise<getInternalSessionResponse> => {
-  
+
   const res = await fetch(getGetInternalSessionUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  
+
   const data: getInternalSessionResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getInternalSessionResponse
 }
@@ -232,7 +320,7 @@ export type internalLogoutResponse200 = {
   data: void
   status: 200
 }
-    
+
 export type internalLogoutResponseSuccess = (internalLogoutResponse200) & {
   headers: Headers;
 };
@@ -243,24 +331,24 @@ export type internalLogoutResponse = (internalLogoutResponseSuccess)
 export const getInternalLogoutUrl = () => {
 
 
-  
+
 
   return `/api/auth/logout`
 }
 
 export const internalLogout = async ( options?: RequestInit): Promise<internalLogoutResponse> => {
-  
+
   const res = await fetch(getInternalLogoutUrl(),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  
+
   const data: internalLogoutResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as internalLogoutResponse
 }
@@ -271,7 +359,7 @@ export type changeInternalPasswordResponse200 = {
   data: void
   status: 200
 }
-    
+
 export type changeInternalPasswordResponseSuccess = (changeInternalPasswordResponse200) & {
   headers: Headers;
 };
@@ -282,15 +370,15 @@ export type changeInternalPasswordResponse = (changeInternalPasswordResponseSucc
 export const getChangeInternalPasswordUrl = () => {
 
 
-  
+
 
   return `/api/auth/change-password`
 }
 
 export const changeInternalPassword = async (changeInternalPasswordBody: ChangeInternalPasswordBody, options?: RequestInit): Promise<changeInternalPasswordResponse> => {
-  
+
   const res = await fetch(getChangeInternalPasswordUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -300,7 +388,7 @@ export const changeInternalPassword = async (changeInternalPasswordBody: ChangeI
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  
+
   const data: changeInternalPasswordResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as changeInternalPasswordResponse
 }
@@ -311,7 +399,7 @@ export type listPeopleResponse200 = {
   data: PeopleListEnvelopeDto
   status: 200
 }
-    
+
 export type listPeopleResponseSuccess = (listPeopleResponse200) & {
   headers: Headers;
 };
@@ -323,7 +411,7 @@ export const getListPeopleUrl = (params?: ListPeopleParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -335,18 +423,18 @@ export const getListPeopleUrl = (params?: ListPeopleParams,) => {
 }
 
 export const listPeople = async (params?: ListPeopleParams, options?: RequestInit): Promise<listPeopleResponse> => {
-  
+
   const res = await fetch(getListPeopleUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  
+
   const data: listPeopleResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listPeopleResponse
 }
@@ -357,7 +445,7 @@ export type createPersonResponse201 = {
   data: PersonEnvelopeDto
   status: 201
 }
-    
+
 export type createPersonResponseSuccess = (createPersonResponse201) & {
   headers: Headers;
 };
@@ -368,15 +456,15 @@ export type createPersonResponse = (createPersonResponseSuccess)
 export const getCreatePersonUrl = () => {
 
 
-  
+
 
   return `/api/people`
 }
 
 export const createPerson = async (createPersonDto: CreatePersonDto, options?: RequestInit): Promise<createPersonResponse> => {
-  
+
   const res = await fetch(getCreatePersonUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -386,7 +474,7 @@ export const createPerson = async (createPersonDto: CreatePersonDto, options?: R
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  
+
   const data: createPersonResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createPersonResponse
 }
@@ -397,7 +485,7 @@ export type getPersonResponse200 = {
   data: PersonEnvelopeDto
   status: 200
 }
-    
+
 export type getPersonResponseSuccess = (getPersonResponse200) & {
   headers: Headers;
 };
@@ -408,24 +496,24 @@ export type getPersonResponse = (getPersonResponseSuccess)
 export const getGetPersonUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/people/${id}`
 }
 
 export const getPerson = async (id: string, options?: RequestInit): Promise<getPersonResponse> => {
-  
+
   const res = await fetch(getGetPersonUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  
+
   const data: getPersonResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getPersonResponse
 }
@@ -436,7 +524,7 @@ export type updatePersonResponse200 = {
   data: PersonEnvelopeDto
   status: 200
 }
-    
+
 export type updatePersonResponseSuccess = (updatePersonResponse200) & {
   headers: Headers;
 };
@@ -447,16 +535,16 @@ export type updatePersonResponse = (updatePersonResponseSuccess)
 export const getUpdatePersonUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/people/${id}`
 }
 
 export const updatePerson = async (id: string,
     updatePersonDto: UpdatePersonDto, options?: RequestInit): Promise<updatePersonResponse> => {
-  
+
   const res = await fetch(getUpdatePersonUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -466,7 +554,326 @@ export const updatePerson = async (id: string,
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  
+
   const data: updatePersonResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updatePersonResponse
+}
+
+
+
+export type listTeamUsersResponse200 = {
+  data: TeamUserListEnvelopeDto
+  status: 200
+}
+
+export type listTeamUsersResponseSuccess = (listTeamUsersResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listTeamUsersResponse = (listTeamUsersResponseSuccess)
+
+export const getListTeamUsersUrl = () => {
+
+
+
+
+  return `/api/team/users`
+}
+
+export const listTeamUsers = async ( options?: RequestInit): Promise<listTeamUsersResponse> => {
+
+  const res = await fetch(getListTeamUsersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listTeamUsersResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listTeamUsersResponse
+}
+
+
+
+export type createTeamUserResponse201 = {
+  data: TeamUserCreatedDto
+  status: 201
+}
+
+export type createTeamUserResponseSuccess = (createTeamUserResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createTeamUserResponse = (createTeamUserResponseSuccess)
+
+export const getCreateTeamUserUrl = () => {
+
+
+
+
+  return `/api/team/users`
+}
+
+export const createTeamUser = async (createTeamUserDto: CreateTeamUserDto, options?: RequestInit): Promise<createTeamUserResponse> => {
+
+  const res = await fetch(getCreateTeamUserUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createTeamUserDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createTeamUserResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createTeamUserResponse
+}
+
+
+
+export type getTeamUserResponse200 = {
+  data: TeamUserEnvelopeDto
+  status: 200
+}
+
+export type getTeamUserResponseSuccess = (getTeamUserResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getTeamUserResponse = (getTeamUserResponseSuccess)
+
+export const getGetTeamUserUrl = (id: string,) => {
+
+
+
+
+  return `/api/team/users/${id}`
+}
+
+export const getTeamUser = async (id: string, options?: RequestInit): Promise<getTeamUserResponse> => {
+
+  const res = await fetch(getGetTeamUserUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getTeamUserResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getTeamUserResponse
+}
+
+
+
+export type updateTeamUserResponse200 = {
+  data: TeamUserEnvelopeDto
+  status: 200
+}
+
+export type updateTeamUserResponseSuccess = (updateTeamUserResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateTeamUserResponse = (updateTeamUserResponseSuccess)
+
+export const getUpdateTeamUserUrl = (id: string,) => {
+
+
+
+
+  return `/api/team/users/${id}`
+}
+
+export const updateTeamUser = async (id: string,
+    updateTeamUserDto: UpdateTeamUserDto, options?: RequestInit): Promise<updateTeamUserResponse> => {
+
+  const res = await fetch(getUpdateTeamUserUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateTeamUserDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateTeamUserResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateTeamUserResponse
+}
+
+
+
+export type addTeamUserRoleResponse200 = {
+  data: TeamUserEnvelopeDto
+  status: 200
+}
+
+export type addTeamUserRoleResponseSuccess = (addTeamUserRoleResponse200) & {
+  headers: Headers;
+};
+;
+
+export type addTeamUserRoleResponse = (addTeamUserRoleResponseSuccess)
+
+export const getAddTeamUserRoleUrl = (id: string,) => {
+
+
+
+
+  return `/api/team/users/${id}/roles`
+}
+
+export const addTeamUserRole = async (id: string,
+    teamRoleDto: TeamRoleDto, options?: RequestInit): Promise<addTeamUserRoleResponse> => {
+
+  const res = await fetch(getAddTeamUserRoleUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      teamRoleDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: addTeamUserRoleResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as addTeamUserRoleResponse
+}
+
+
+
+export type removeTeamUserRoleResponse200 = {
+  data: TeamUserEnvelopeDto
+  status: 200
+}
+
+export type removeTeamUserRoleResponseSuccess = (removeTeamUserRoleResponse200) & {
+  headers: Headers;
+};
+;
+
+export type removeTeamUserRoleResponse = (removeTeamUserRoleResponseSuccess)
+
+export const getRemoveTeamUserRoleUrl = (id: string,) => {
+
+
+
+
+  return `/api/team/users/${id}/roles/remove`
+}
+
+export const removeTeamUserRole = async (id: string,
+    teamRoleDto: TeamRoleDto, options?: RequestInit): Promise<removeTeamUserRoleResponse> => {
+
+  const res = await fetch(getRemoveTeamUserRoleUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      teamRoleDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: removeTeamUserRoleResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as removeTeamUserRoleResponse
+}
+
+
+
+export type inactivateTeamUserResponse200 = {
+  data: TeamUserEnvelopeDto
+  status: 200
+}
+
+export type inactivateTeamUserResponseSuccess = (inactivateTeamUserResponse200) & {
+  headers: Headers;
+};
+;
+
+export type inactivateTeamUserResponse = (inactivateTeamUserResponseSuccess)
+
+export const getInactivateTeamUserUrl = (id: string,) => {
+
+
+
+
+  return `/api/team/users/${id}/inactivate`
+}
+
+export const inactivateTeamUser = async (id: string, options?: RequestInit): Promise<inactivateTeamUserResponse> => {
+
+  const res = await fetch(getInactivateTeamUserUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: inactivateTeamUserResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as inactivateTeamUserResponse
+}
+
+
+
+export type reactivateTeamUserResponse200 = {
+  data: TeamUserEnvelopeDto
+  status: 200
+}
+
+export type reactivateTeamUserResponseSuccess = (reactivateTeamUserResponse200) & {
+  headers: Headers;
+};
+;
+
+export type reactivateTeamUserResponse = (reactivateTeamUserResponseSuccess)
+
+export const getReactivateTeamUserUrl = (id: string,) => {
+
+
+
+
+  return `/api/team/users/${id}/reactivate`
+}
+
+export const reactivateTeamUser = async (id: string, options?: RequestInit): Promise<reactivateTeamUserResponse> => {
+
+  const res = await fetch(getReactivateTeamUserUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: reactivateTeamUserResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as reactivateTeamUserResponse
 }

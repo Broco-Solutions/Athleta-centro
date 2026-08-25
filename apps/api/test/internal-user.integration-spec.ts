@@ -23,4 +23,5 @@ describe('InternalUser persistence and lifecycle', () => {
     const user = await service.create({ firstName: 'Ada', lastName: 'Lovelace', email: 'ada@athleta.test', roles: [Role.PROFESSOR] });
     await expect(service.removeRole(user.id, Role.PROFESSOR)).rejects.toBeInstanceOf(ConflictException);
   });
+  it('does not allow concurrent removals to leave an active user without roles', async () => { const user = await service.create({ firstName: 'Race', lastName: 'Roles', email: 'race@athleta.test', roles: [Role.PROFESSOR, Role.KINESIOLOGIST] }); const results = await Promise.allSettled([service.removeRole(user.id, Role.PROFESSOR), service.removeRole(user.id, Role.KINESIOLOGIST)]); expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1); expect(await prisma.internalUserRole.count({ where: { internalUserId: user.id } })).toBe(1); });
 });

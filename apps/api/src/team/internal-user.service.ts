@@ -6,11 +6,15 @@ const normalizeEmail = (email: string): string => email.trim().toLowerCase();
 @Injectable()
 export class InternalUserService {
   constructor(private readonly prisma: PrismaService) {}
-  async create(input: { firstName: string; lastName: string; email: string; roles: Role[] }) {
+  async create(input: { firstName: string; lastName: string; email: string; roles: Role[]; credentialPasswordHash?: string }) {
     if (input.roles.length === 0) throw new ConflictException({ code: 'ACTIVE_USER_REQUIRES_ROLE', message: 'An active user requires at least one role' });
     const uniqueRoles = [...new Set(input.roles)];
-    return this.prisma.internalUser.create({ data: { firstName: input.firstName.trim(), lastName: input.lastName.trim(), email: input.email.trim(), normalizedEmail: normalizeEmail(input.email), roles: { createMany: { data: uniqueRoles.map((role) => ({ role })) } } }, include: { roles: true } });
+    return this.prisma.internalUser.create({ data: { firstName: input.firstName.trim(), lastName: input.lastName.trim(), email: input.email.trim(), normalizedEmail: normalizeEmail(input.email), roles: { createMany: { data: uniqueRoles.map((role) => ({ role })) } }, ...(input.credentialPasswordHash ? { credential: { create: { passwordHash: input.credentialPasswordHash, mustChangePassword: true } } } : {}) }, include: { roles: true } });
   }
+  async find(id: string) { const user = await this.prisma.internalUser.findUnique({ where: { id }, include: { roles: true } }); if (!user) throw new NotFoundException({ code: 'INTERNAL_USER_NOT_FOUND', message: 'Internal user not found' }); return user; }
+  async list() { return this.prisma.internalUser.findMany({ include: { roles: true }, orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }] }); }
+  async updateProfile(id: string, input: { firstName?: string; lastName?: string; email?: string }) { await this.find(id); try { return await this.prisma.internalUser.update({ where: { id }, data: { ...(input.firstName !== undefined && { firstName: input.firstName.trim() }), ...(input.lastName !== undefined && { lastName: input.lastName.trim() }), ...(input.email !== undefined && { email: input.email.trim(), normalizedEmail: normalizeEmail(input.email) }) }, include: { roles: true } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'INTERNAL_USER_EMAIL_EXISTS', message: 'An internal user with this email already exists' }); throw error; } }
+  async addRole(id: string, role: Role) { await this.find(id); try { await this.prisma.internalUserRole.create({ data: { internalUserId: id, role } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'ROLE_ALREADY_ASSIGNED', message: 'Role is already assigned' }); throw error; } return this.find(id); }
   async removeRole(id: string, role: Role) {
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.internalUser.findUnique({ where: { id }, include: { roles: true } });

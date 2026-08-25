@@ -853,6 +853,8 @@ read model privacy
 
 ### M1.4 — Team management
 
+**Status:** DONE
+
 **Model:** `MODEL_DEEP`
 
 Scope:
