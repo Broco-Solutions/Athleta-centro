@@ -189,6 +189,11 @@ export interface TeamRoleDto {
   role: TeamRoleDtoRole;
 }
 
+export interface UpdateSalaConfigurationDto {
+  /** @minimum 1 */
+  capacity: number;
+}
+
 export type InternalLoginBody = {
   email: string;
   password: string;
@@ -925,4 +930,317 @@ export const reactivateTeamUser = async (id: string, options?: RequestInit): Pro
 
   const data: reactivateTeamUserResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as reactivateTeamUserResponse
+}
+
+
+
+export type getSalaConfigurationResponse200 = {
+  data: void
+  status: 200
+}
+
+export type getSalaConfigurationResponseSuccess = (getSalaConfigurationResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getSalaConfigurationResponse = (getSalaConfigurationResponseSuccess)
+
+export const getGetSalaConfigurationUrl = () => {
+
+
+
+
+  return `/api/sala/configuration`
+}
+
+export const getSalaConfiguration = async ( options?: RequestInit): Promise<getSalaConfigurationResponse> => {
+
+  const res = await fetch(getGetSalaConfigurationUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSalaConfigurationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSalaConfigurationResponse
+}
+
+
+
+export type updateSalaConfigurationResponse200 = {
+  data: void
+  status: 200
+}
+
+export type updateSalaConfigurationResponseSuccess = (updateSalaConfigurationResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateSalaConfigurationResponse = (updateSalaConfigurationResponseSuccess)
+
+export const getUpdateSalaConfigurationUrl = () => {
+
+
+
+
+  return `/api/sala/configuration`
+}
+
+export const updateSalaConfiguration = async (updateSalaConfigurationDto: UpdateSalaConfigurationDto, options?: RequestInit): Promise<updateSalaConfigurationResponse> => {
+
+  const res = await fetch(getUpdateSalaConfigurationUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateSalaConfigurationDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateSalaConfigurationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateSalaConfigurationResponse
+}
+
+
+
+export type listSalaPlansResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listSalaPlansResponseSuccess = (listSalaPlansResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listSalaPlansResponse = (listSalaPlansResponseSuccess)
+
+export const getListSalaPlansUrl = () => {
+
+
+
+
+  return `/api/sala/plans`
+}
+
+export const listSalaPlans = async ( options?: RequestInit): Promise<listSalaPlansResponse> => {
+
+  const res = await fetch(getListSalaPlansUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSalaPlansResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSalaPlansResponse
+}
+
+
+
+export type createSalaPlanResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createSalaPlanResponseSuccess = (createSalaPlanResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSalaPlanResponse = (createSalaPlanResponseSuccess)
+
+export const getCreateSalaPlanUrl = () => {
+
+
+
+
+  return `/api/sala/plans`
+}
+
+export const createSalaPlan = async ( options?: RequestInit): Promise<createSalaPlanResponse> => {
+
+  const res = await fetch(getCreateSalaPlanUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSalaPlanResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSalaPlanResponse
+}
+
+
+
+export type updateSalaPlanResponse200 = {
+  data: void
+  status: 200
+}
+
+export type updateSalaPlanResponseSuccess = (updateSalaPlanResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateSalaPlanResponse = (updateSalaPlanResponseSuccess)
+
+export const getUpdateSalaPlanUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/plans/${id}`
+}
+
+export const updateSalaPlan = async (id: string, options?: RequestInit): Promise<updateSalaPlanResponse> => {
+
+  const res = await fetch(getUpdateSalaPlanUrl(id),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateSalaPlanResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateSalaPlanResponse
+}
+
+
+
+export type listSalaScheduleResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listSalaScheduleResponseSuccess = (listSalaScheduleResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listSalaScheduleResponse = (listSalaScheduleResponseSuccess)
+
+export const getListSalaScheduleUrl = () => {
+
+
+
+
+  return `/api/sala/schedule`
+}
+
+export const listSalaSchedule = async ( options?: RequestInit): Promise<listSalaScheduleResponse> => {
+
+  const res = await fetch(getListSalaScheduleUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSalaScheduleResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSalaScheduleResponse
+}
+
+
+
+export type createSalaScheduleSlotResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createSalaScheduleSlotResponseSuccess = (createSalaScheduleSlotResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSalaScheduleSlotResponse = (createSalaScheduleSlotResponseSuccess)
+
+export const getCreateSalaScheduleSlotUrl = () => {
+
+
+
+
+  return `/api/sala/schedule`
+}
+
+export const createSalaScheduleSlot = async ( options?: RequestInit): Promise<createSalaScheduleSlotResponse> => {
+
+  const res = await fetch(getCreateSalaScheduleSlotUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSalaScheduleSlotResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSalaScheduleSlotResponse
+}
+
+
+
+export type createSalaScheduleExceptionResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createSalaScheduleExceptionResponseSuccess = (createSalaScheduleExceptionResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSalaScheduleExceptionResponse = (createSalaScheduleExceptionResponseSuccess)
+
+export const getCreateSalaScheduleExceptionUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/schedule/${id}/exceptions`
+}
+
+export const createSalaScheduleException = async (id: string, options?: RequestInit): Promise<createSalaScheduleExceptionResponse> => {
+
+  const res = await fetch(getCreateSalaScheduleExceptionUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSalaScheduleExceptionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSalaScheduleExceptionResponse
 }

@@ -788,6 +788,10 @@ endTime > startTime
 
 mediante validación de aplicación y `CHECK` cuando corresponda.
 
+Las capacidades general y específica son enteros estrictamente positivos.
+`specificCapacity` puede ser `NULL` para heredar la capacidad general; `0` no
+es válido.
+
 ---
 
 ## 44. SalaScheduleException
@@ -805,6 +809,9 @@ capacityOverride?
 ```
 
 La estructura final depende de las respuestas funcionales sobre cambios y excepciones.
+
+Un override de capacidad debe ser estrictamente positivo. El cierre se expresa
+con un tipo de excepción explícito y no mediante override `0`.
 
 ---
 

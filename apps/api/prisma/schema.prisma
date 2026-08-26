@@ -51,6 +51,20 @@ enum SessionKind {
   PORTAL
 }
 
+enum SalaWeekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+enum SalaScheduleExceptionType {
+  CLOSURE
+  CAPACITY_OVERRIDE
+}
+
 model InternalCredential {
   internalUserId       String       @id @map("internal_user_id") @db.Uuid
   passwordHash         String       @map("password_hash")
@@ -112,6 +126,47 @@ model Person {
   @@index([lastName, firstName])
   @@index([normalizedEmail])
   @@map("people")
+}
+
+model SalaConfiguration {
+  id              String   @id @default("default")
+  generalCapacity Int      @map("general_capacity")
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@map("sala_configuration")
+}
+
+model SalaPlan {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String
+  monthlyAmount Decimal  @map("monthly_amount") @db.Decimal(14, 0)
+  isSelectable  Boolean  @default(true) @map("is_selectable")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@map("sala_plans")
+}
+
+model SalaScheduleSlot {
+  id              String            @id @default(uuid()) @db.Uuid
+  weekday         SalaWeekday
+  startTime       DateTime          @map("start_time") @db.Time(0)
+  durationMinutes Int               @default(60) @map("duration_minutes")
+  specificCapacity Int?             @map("specific_capacity")
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  exceptions      SalaScheduleException[]
+  @@unique([weekday, startTime])
+  @@map("sala_schedule_slots")
+}
+
+model SalaScheduleException {
+  id              String                    @id @default(uuid()) @db.Uuid
+  scheduleSlotId  String                    @map("schedule_slot_id") @db.Uuid
+  date            DateTime                  @db.Date
+  type            SalaScheduleExceptionType
+  capacityOverride Int?                     @map("capacity_override")
+  scheduleSlot    SalaScheduleSlot          @relation(fields: [scheduleSlotId], references: [id], onDelete: Cascade)
+  @@unique([scheduleSlotId, date])
+  @@map("sala_schedule_exceptions")
 }
 
 model PortalCredential {

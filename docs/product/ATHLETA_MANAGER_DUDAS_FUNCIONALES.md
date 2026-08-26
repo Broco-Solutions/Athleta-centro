@@ -86,7 +86,7 @@ Todo el resto de las dudas originales queda resuelto o deja de aplicar.
 | SAL-HOR-05 | RESUELTO | Sí. Reducir capacidad no cancela reservas ni Turnos fijos existentes; puede quedar sobrecupo. | §6.7–§6.8 |
 | SAL-HOR-06 | RESUELTO | La excepción por fecha definida en V1 permite **cerrar un horario** o **cambiar su capacidad** para esa ocurrencia. No se define creación excepcional de un horario inexistente. | §6.9 |
 | SAL-HOR-07 | RESUELTO | La excepción por fecha no modifica día/hora/duración: se limita a cierre o cambio de capacidad de esa ocurrencia. | §6.9 |
-| SAL-HOR-08 | PENDIENTE | No se especifica si la capacidad debe ser estrictamente positiva ni si 0 es un valor válido equivalente a cierre. | §6.7, §6.9 |
+| SAL-HOR-08 | RESUELTO | Toda capacidad general, específica o excepcional es un entero estrictamente positivo (`>= 1`). El valor 0 no es válido ni representa cierre; los cierres se modelan explícitamente. | §6.7, §6.9 |
 
 ---
 

@@ -572,6 +572,10 @@ No reactiva la participación anterior.
 
 # 20. Sala Schedule
 
+La capacidad general y las capacidades específicas o excepcionales son
+enteros estrictamente positivos (`>= 1`). El valor `0` no es válido ni
+representa cierre; los cierres se modelan explícitamente.
+
 La disponibilidad habitual de Sala se representa mediante:
 
 ```text

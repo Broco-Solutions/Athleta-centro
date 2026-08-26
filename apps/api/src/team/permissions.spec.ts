@@ -1,6 +1,6 @@
 import { InternalUserStatus, Role } from '@prisma/client';
 import { effectivePermissions } from './permissions';
 describe('effectivePermissions', () => {
-  it('unions role capabilities only for active users', () => { expect(effectivePermissions(InternalUserStatus.ACTIVE, [Role.PROFESSOR, Role.ADMINISTRATIVE])).toEqual(new Set(['PEOPLE_READ', 'PORTAL_PIN_RESET', 'PEOPLE_CREATE', 'PEOPLE_UPDATE_GENERAL', 'PEOPLE_GLOBAL_INACTIVATE', 'TEAM_READ', 'TEAM_STANDARD_USER_MANAGE', 'TEAM_STANDARD_CREDENTIAL_RESET'])); });
+  it('unions role capabilities only for active users', () => { expect(effectivePermissions(InternalUserStatus.ACTIVE, [Role.PROFESSOR, Role.ADMINISTRATIVE])).toEqual(new Set(['PEOPLE_READ', 'PORTAL_PIN_RESET', 'PEOPLE_CREATE', 'PEOPLE_UPDATE_GENERAL', 'PEOPLE_GLOBAL_INACTIVATE', 'SALA_SCHEDULE_MANAGE', 'SALA_PLAN_CATALOG_MANAGE', 'TEAM_READ', 'TEAM_STANDARD_USER_MANAGE', 'TEAM_STANDARD_CREDENTIAL_RESET'])); });
   it('returns no permissions for inactive users', () => { expect(effectivePermissions(InternalUserStatus.INACTIVE, [Role.GENERAL_ADMIN])).toEqual(new Set()); });
 });

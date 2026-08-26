@@ -563,6 +563,10 @@ Las superposiciones horarias requieren lógica de aplicación porque dependen de
 
 ## 26. Capacidad de Sala
 
+Toda capacidad persistida (general, específica u override) debe ser un entero
+estrictamente positivo (`>= 1`). El cierre de una ocurrencia se representa con
+un tipo de excepción explícito y nunca con capacidad `0`.
+
 La capacidad no se protege mediante un simple:
 
 ```text

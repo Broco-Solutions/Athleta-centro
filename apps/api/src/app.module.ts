@@ -17,10 +17,12 @@ import { PeopleController } from './people/people.controller';
 import { PeopleService } from './people/people.service';
 import { TeamController } from './team/team.controller';
 import { TeamService } from './team/team.service';
+import { SalaController } from './sala/sala.controller';
+import { SalaService } from './sala/sala.service';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }), LoggerModule.forRoot({ pinoHttp: { redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers.x-csrf-token', 'req.body', 'res.headers.set-cookie'] } as never })],
-  controllers: [HealthController, AuthController, PeopleController, TeamController], providers: [PrismaService, InternalUserService, AuthService, AuthRateLimitService, AuthSecurityMiddleware, PermissionsGuard, PeopleService, TeamService, { provide: APP_FILTER, useClass: HttpExceptionFilter }], exports: [PrismaService, InternalUserService, AuthService, PeopleService, TeamService],
+  controllers: [HealthController, AuthController, PeopleController, TeamController, SalaController], providers: [PrismaService, InternalUserService, AuthService, AuthRateLimitService, AuthSecurityMiddleware, PermissionsGuard, PeopleService, TeamService, SalaService, { provide: APP_FILTER, useClass: HttpExceptionFilter }], exports: [PrismaService, InternalUserService, AuthService, PeopleService, TeamService, SalaService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

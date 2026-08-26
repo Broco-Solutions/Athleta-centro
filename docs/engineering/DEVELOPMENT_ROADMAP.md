@@ -935,13 +935,7 @@ Construir el circuito operativo principal de Sala sin depender de Clínica más 
 
 ### M2.1 — Sala configuration
 
-**Status:** BLOCKED
-
-**Blocker:** `SAL-HOR-08` remains `PENDING_FUNCTIONAL_DEFINITION`: the
-functional source of truth does not define whether schedule capacity must be
-strictly positive or whether `0` is a valid capacity/closure representation.
-Implementing the database check or API validation would invent a functional
-rule, so this milestone cannot safely start until that definition is resolved.
+**Status:** DONE
 
 **Model:** `MODEL_STANDARD`
 
