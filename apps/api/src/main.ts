@@ -11,6 +11,7 @@ async function bootstrap(): Promise<void> {
   app.enableCors({ origin: process.env.WEB_ORIGIN, credentials: true, methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'] });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   app.setGlobalPrefix('api', { exclude: [{ path: 'health', method: RequestMethod.GET }] });
-  await app.listen(process.env.PORT ?? 3001);
+  const port = Number(process.env.PORT ?? 3001);
+  await app.listen(port, '0.0.0.0');
 }
 void bootstrap();
