@@ -3,10 +3,11 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@athleta/ui';
-import { cancelSalaReservation, changeFixedSalaBooking, createFixedSalaBooking, createSalaReservation, endFixedSalaBooking, getSalaAvailability, listFixedSalaBookings, listPeople, listPersonSalaParticipations, listSalaReservations, listSalaSchedule, updateSalaConfiguration } from '@athleta/api-client';
+import { cancelSalaReservation, changeFixedSalaBooking, createFixedSalaBooking, createSalaReservation, endFixedSalaBooking, getSalaAvailability, listFixedSalaBookings, listPeople, listPersonSalaParticipations, listPersonSalaRoutines, listSalaExerciseDefinitions, listSalaReservations, listSalaSchedule, replaceSalaRoutine, updateSalaConfiguration } from '@athleta/api-client';
 import { WorkspaceShell } from '../../features/auth/workspace-shell';
 import { currentSession } from '../../features/auth/auth';
 import { AgendaPanel } from '../../features/sala/agenda-panel';
+import { RoutinePanel, type ExerciseDefinition, type Routine } from '../../features/sala/routine-panel';
 
 type Person = { id: string; firstName: string; lastName: string; dni: string };
 type Slot = { id: string; weekday: string; startTime: string };
@@ -48,6 +49,7 @@ export default function SalaPage(): React.JSX.Element {
   const slotRows = Array.isArray(slots.data) ? slots.data : [];
   const availabilityRows = Array.isArray(availability.data) ? availability.data : [];
   const activeParticipations = participations.data.filter((participation) => !participation.endDate);
+  const routineApi = { list: async (id: string, options: RequestInit): Promise<Routine[]> => unwrapList<Routine>(await listPersonSalaRoutines(id, options)), exercises: async (options: RequestInit): Promise<ExerciseDefinition[]> => unwrapList<ExerciseDefinition>(await listSalaExerciseDefinitions(options)), create: async (input: Parameters<typeof replaceSalaRoutine>[0], options: RequestInit) => replaceSalaRoutine(input, options), replace: async (_id: string, input: Parameters<typeof replaceSalaRoutine>[0], options: RequestInit) => replaceSalaRoutine(input, options) };
 
   return (
     <WorkspaceShell active="Sala">
@@ -60,6 +62,7 @@ export default function SalaPage(): React.JSX.Element {
         <div className="mt-5 grid gap-5 lg:grid-cols-2"><div><h3 className="font-semibold">Turnos fijos</h3>{fixedBookings.data.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">Sin turnos fijos.</p> : fixedBookings.data.map((booking) => <div key={booking.id} className="flex flex-wrap items-center justify-between gap-2 border-b py-3 text-sm"><span>{booking.scheduleSlot?.weekday} {booking.scheduleSlot?.startTime} · {booking.startDate} · {booking.endDate ?? 'Sin fecha de finalización'}</span>{!booking.endDate ? <span className="flex gap-2"><Button type="button" variant="secondary" onClick={() => changeFixed.mutate(booking.id)}>Modificar</Button><Button type="button" variant="secondary" onClick={() => finishFixed.mutate(booking.id)}>Finalizar</Button></span> : null}</div>)}</div><div><h3 className="font-semibold">Reservas puntuales</h3>{reservations.data.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">Sin reservas puntuales.</p> : reservations.data.map((reservation) => <div key={reservation.id} className="flex items-center justify-between gap-2 border-b py-3 text-sm"><span>{reservation.date} · {reservation.scheduleSlot?.startTime} · {reservation.cancelledAt ? 'Cancelada' : 'Activa'}</span>{!reservation.cancelledAt ? <Button type="button" variant="secondary" onClick={() => cancelReservation.mutate(reservation.id)}>Cancelar</Button> : null}</div>)}</div></div>
       </section>
       <AgendaPanel date={date} onDateChange={setDate} csrfToken={csrfToken} people={peopleRows} />
+      {personId && participationId ? <RoutinePanel personId={personId} participationId={participationId} csrfToken={csrfToken} api={routineApi} /> : null}
     </WorkspaceShell>
   );
 }

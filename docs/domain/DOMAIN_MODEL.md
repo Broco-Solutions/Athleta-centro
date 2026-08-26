@@ -755,7 +755,7 @@ RoutineDay
 
 Conceptualmente contiene la configuración de ejercicio necesaria para esa rutina.
 
-La estrategia exacta de snapshot frente a cambios de `ExerciseDefinition` se terminará de definir según las respuestas funcionales.
+`RoutineExercise` referencia la definición vigente de `ExerciseDefinition`; los cambios de nombre, músculo o descripción se reflejan en las rutinas que la utilizan, mientras que retirar un ejercicio solo afecta rutinas activas tras confirmación.
 
 ---
 

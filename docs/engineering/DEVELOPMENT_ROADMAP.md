@@ -1039,6 +1039,8 @@ No automatic absence conversion.
 
 ### M2.5 — Routines
 
+**Status:** DONE
+
 **Model:** `MODEL_DEEP`
 
 Scope:

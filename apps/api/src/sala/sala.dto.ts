@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsDateString, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { SalaOccurrenceStatus, SalaScheduleExceptionType, SalaWeekday } from '@prisma/client';
 
@@ -23,3 +23,29 @@ export class SalaAgendaEntryDto { @ApiProperty({ type: String, format: 'uuid' })
 export class SalaAgendaSlotDto { @ApiProperty({ type: String, format: 'uuid' }) id!: string; @ApiProperty({ type: String }) weekday!: string; @ApiProperty({ type: String }) startTime!: string; @ApiProperty({ type: Number }) durationMinutes!: number; }
 export class SalaAgendaGroupDto { @ApiProperty({ type: () => SalaAgendaSlotDto }) slot!: SalaAgendaSlotDto; @ApiProperty({ type: Number }) capacity!: number; @ApiProperty({ type: Number }) reserved!: number; @ApiProperty({ type: Number }) available!: number; @ApiProperty({ type: Boolean }) isOverbooked!: boolean; @ApiProperty({ type: Boolean }) isClosed!: boolean; @ApiProperty({ type: () => [SalaAgendaEntryDto] }) people!: SalaAgendaEntryDto[]; }
 export class SalaAgendaResponseDto { @ApiProperty({ type: [SalaAgendaGroupDto] }) data!: SalaAgendaGroupDto[]; }
+export class ExerciseDefinitionDto {
+  @ApiProperty({ type: String, maxLength: 120 }) @IsString() @MinLength(1) @MaxLength(120) name!: string;
+  @ApiProperty({ type: String, maxLength: 120 }) @IsString() @MinLength(1) @MaxLength(120) primaryMuscle!: string;
+  @ApiPropertyOptional({ type: String, maxLength: 500, nullable: true }) @IsOptional() @IsString() @MaxLength(500) description?: string | null;
+}
+export class RetireExerciseDefinitionDto {
+  @ApiPropertyOptional({ type: Boolean, default: false }) @IsOptional() @IsBoolean() confirmActiveRoutineImpact = false;
+}
+export class RoutineExerciseDto {
+  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() exerciseDefinitionId!: string;
+  @ApiPropertyOptional({ type: String, maxLength: 80, nullable: true }) @IsOptional() @IsString() @MaxLength(80) series?: string | null;
+  @ApiPropertyOptional({ type: String, maxLength: 80, nullable: true }) @IsOptional() @IsString() @MaxLength(80) repetitions?: string | null;
+  @ApiPropertyOptional({ type: String, maxLength: 80, nullable: true }) @IsOptional() @IsString() @MaxLength(80) duration?: string | null;
+  @ApiPropertyOptional({ type: String, maxLength: 80, nullable: true }) @IsOptional() @IsString() @MaxLength(80) load?: string | null;
+  @ApiPropertyOptional({ type: String, maxLength: 80, nullable: true }) @IsOptional() @IsString() @MaxLength(80) rest?: string | null;
+  @ApiPropertyOptional({ type: String, maxLength: 500, nullable: true }) @IsOptional() @IsString() @MaxLength(500) notes?: string | null;
+}
+export class RoutineDayDto {
+  @ApiPropertyOptional({ type: String, maxLength: 120, nullable: true }) @IsOptional() @IsString() @MaxLength(120) name?: string | null;
+  @ApiProperty({ type: () => [RoutineExerciseDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RoutineExerciseDto) exercises!: RoutineExerciseDto[];
+}
+export class ReplaceRoutineDto {
+  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() salaParticipationId!: string;
+  @ApiProperty({ type: () => [RoutineDayDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RoutineDayDto) days!: RoutineDayDto[];
+}

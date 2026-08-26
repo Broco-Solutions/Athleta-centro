@@ -318,6 +318,71 @@ export interface OccurrenceCorrectionDto {
   status: OccurrenceCorrectionDtoStatus;
 }
 
+export interface RoutineExerciseDto {
+  exerciseDefinitionId: string;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  series?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  repetitions?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  duration?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  load?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  rest?: string | null;
+  /**
+   * @maxLength 500
+   * @nullable
+   */
+  notes?: string | null;
+}
+
+export interface RoutineDayDto {
+  /**
+   * @maxLength 120
+   * @nullable
+   */
+  name?: string | null;
+  exercises: RoutineExerciseDto[];
+}
+
+export interface ReplaceRoutineDto {
+  personId: string;
+  salaParticipationId: string;
+  days: RoutineDayDto[];
+}
+
+export interface ExerciseDefinitionDto {
+  /** @maxLength 120 */
+  name: string;
+  /** @maxLength 120 */
+  primaryMuscle: string;
+  /**
+   * @maxLength 500
+   * @nullable
+   */
+  description?: string | null;
+}
+
+export interface RetireExerciseDefinitionDto {
+  confirmActiveRoutineImpact?: boolean;
+}
+
 export interface UpdateSalaConfigurationDto {
   /** @minimum 1 */
   capacity: number;
@@ -1927,6 +1992,285 @@ export const createSpontaneousSalaOccurrence = async (occurrenceReferenceDto: Oc
 
   const data: createSpontaneousSalaOccurrenceResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createSpontaneousSalaOccurrenceResponse
+}
+
+
+
+export type listPersonSalaRoutinesResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listPersonSalaRoutinesResponseSuccess = (listPersonSalaRoutinesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPersonSalaRoutinesResponse = (listPersonSalaRoutinesResponseSuccess)
+
+export const getListPersonSalaRoutinesUrl = (personId: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/routines`
+}
+
+export const listPersonSalaRoutines = async (personId: string, options?: RequestInit): Promise<listPersonSalaRoutinesResponse> => {
+
+  const res = await fetch(getListPersonSalaRoutinesUrl(personId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listPersonSalaRoutinesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPersonSalaRoutinesResponse
+}
+
+
+
+export type replaceSalaRoutineResponse201 = {
+  data: void
+  status: 201
+}
+
+export type replaceSalaRoutineResponseSuccess = (replaceSalaRoutineResponse201) & {
+  headers: Headers;
+};
+;
+
+export type replaceSalaRoutineResponse = (replaceSalaRoutineResponseSuccess)
+
+export const getReplaceSalaRoutineUrl = () => {
+
+
+
+
+  return `/api/sala/routines`
+}
+
+export const replaceSalaRoutine = async (replaceRoutineDto: ReplaceRoutineDto, options?: RequestInit): Promise<replaceSalaRoutineResponse> => {
+
+  const res = await fetch(getReplaceSalaRoutineUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      replaceRoutineDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: replaceSalaRoutineResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as replaceSalaRoutineResponse
+}
+
+
+
+export type duplicateSalaRoutineResponse201 = {
+  data: void
+  status: 201
+}
+
+export type duplicateSalaRoutineResponseSuccess = (duplicateSalaRoutineResponse201) & {
+  headers: Headers;
+};
+;
+
+export type duplicateSalaRoutineResponse = (duplicateSalaRoutineResponseSuccess)
+
+export const getDuplicateSalaRoutineUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/routines/${id}/duplicate`
+}
+
+export const duplicateSalaRoutine = async (id: string, options?: RequestInit): Promise<duplicateSalaRoutineResponse> => {
+
+  const res = await fetch(getDuplicateSalaRoutineUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: duplicateSalaRoutineResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as duplicateSalaRoutineResponse
+}
+
+
+
+export type listSalaExerciseDefinitionsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listSalaExerciseDefinitionsResponseSuccess = (listSalaExerciseDefinitionsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listSalaExerciseDefinitionsResponse = (listSalaExerciseDefinitionsResponseSuccess)
+
+export const getListSalaExerciseDefinitionsUrl = () => {
+
+
+
+
+  return `/api/sala/exercise-definitions`
+}
+
+export const listSalaExerciseDefinitions = async ( options?: RequestInit): Promise<listSalaExerciseDefinitionsResponse> => {
+
+  const res = await fetch(getListSalaExerciseDefinitionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSalaExerciseDefinitionsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSalaExerciseDefinitionsResponse
+}
+
+
+
+export type createSalaExerciseDefinitionResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createSalaExerciseDefinitionResponseSuccess = (createSalaExerciseDefinitionResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSalaExerciseDefinitionResponse = (createSalaExerciseDefinitionResponseSuccess)
+
+export const getCreateSalaExerciseDefinitionUrl = () => {
+
+
+
+
+  return `/api/sala/exercise-definitions`
+}
+
+export const createSalaExerciseDefinition = async (exerciseDefinitionDto: ExerciseDefinitionDto, options?: RequestInit): Promise<createSalaExerciseDefinitionResponse> => {
+
+  const res = await fetch(getCreateSalaExerciseDefinitionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      exerciseDefinitionDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSalaExerciseDefinitionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSalaExerciseDefinitionResponse
+}
+
+
+
+export type updateSalaExerciseDefinitionResponse200 = {
+  data: void
+  status: 200
+}
+
+export type updateSalaExerciseDefinitionResponseSuccess = (updateSalaExerciseDefinitionResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateSalaExerciseDefinitionResponse = (updateSalaExerciseDefinitionResponseSuccess)
+
+export const getUpdateSalaExerciseDefinitionUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/exercise-definitions/${id}`
+}
+
+export const updateSalaExerciseDefinition = async (id: string,
+    exerciseDefinitionDto: ExerciseDefinitionDto, options?: RequestInit): Promise<updateSalaExerciseDefinitionResponse> => {
+
+  const res = await fetch(getUpdateSalaExerciseDefinitionUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      exerciseDefinitionDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateSalaExerciseDefinitionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateSalaExerciseDefinitionResponse
+}
+
+
+
+export type retireSalaExerciseDefinitionResponse201 = {
+  data: void
+  status: 201
+}
+
+export type retireSalaExerciseDefinitionResponseSuccess = (retireSalaExerciseDefinitionResponse201) & {
+  headers: Headers;
+};
+;
+
+export type retireSalaExerciseDefinitionResponse = (retireSalaExerciseDefinitionResponseSuccess)
+
+export const getRetireSalaExerciseDefinitionUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/exercise-definitions/${id}/retire`
+}
+
+export const retireSalaExerciseDefinition = async (id: string,
+    retireExerciseDefinitionDto: RetireExerciseDefinitionDto, options?: RequestInit): Promise<retireSalaExerciseDefinitionResponse> => {
+
+  const res = await fetch(getRetireSalaExerciseDefinitionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      retireExerciseDefinitionDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: retireSalaExerciseDefinitionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as retireSalaExerciseDefinitionResponse
 }
 
 

@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, Role, SalaOccurrenceOrigin, SalaOccurrenceStatus, SalaScheduleExceptionType, InternalUserStatus, SalaWeekday } from '@prisma/client';
+import { Prisma, Role, RoutineStatus, SalaOccurrenceOrigin, SalaOccurrenceStatus, SalaScheduleExceptionType, InternalUserStatus, SalaWeekday } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import type { ChangeFixedBookingDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, PlanDto, ReplaceScheduleSlotDto, ScheduleExceptionDto, ScheduleSlotDto, UpdateSalaConfigurationDto } from './sala.dto';
+import type { ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, PlanDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ScheduleExceptionDto, ScheduleSlotDto, UpdateSalaConfigurationDto } from './sala.dto';
 @Injectable()
 export class SalaService {
   constructor(private readonly prisma: PrismaService) {}
@@ -23,7 +23,7 @@ export class SalaService {
     try { return await this.prisma.salaParticipation.create({ data: { personId: input.personId, mainProfessorId: input.mainProfessorId, planId: input.planId, startDate: this.date(input.startDate) }, include: { plan: true, mainProfessor: true } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_ACTIVE_PARTICIPATION_EXISTS', message: 'Person already has an active Sala participation' }); throw error; }
   }
   async listParticipations(personId: string) { return this.prisma.salaParticipation.findMany({ where: { personId }, orderBy: { startDate: 'desc' }, include: { plan: true, mainProfessor: true } }); }
-  async leave(id: string, failureAfterMutations = false, actorId?: string) { return this.prisma.$transaction(async (tx) => { const current = await tx.salaParticipation.findFirst({ where: { id, endDate: null } }); if (!current) throw new NotFoundException({ code: 'SALA_ACTIVE_PARTICIPATION_NOT_FOUND', message: 'Active participation not found' }); const now = new Date(); const today = this.date(this.todayOperational()); await tx.fixedSalaBooking.updateMany({ where: { salaParticipationId: id, OR: [{ endDate: null }, { endDate: { gt: today } }] }, data: { endDate: today } }); await tx.oneOffReservation.updateMany({ where: { salaParticipationId: id, date: { gte: today }, cancelledAt: null }, data: { cancelledAt: now } }); await tx.salaOccurrence.updateMany({ where: { personId: current.personId, date: { gte: today }, status: { not: SalaOccurrenceStatus.CANCELLED } }, data: { status: SalaOccurrenceStatus.CANCELLED, ...(actorId ? { lastModifiedBy: actorId } : {}) } }); if (failureAfterMutations) throw new Error('SIMULATED_LEAVE_FAILURE'); return tx.salaParticipation.update({ where: { id }, data: { endDate: today }, include: { plan: true, mainProfessor: true } }); }); }
+  async leave(id: string, failureAfterMutations = false, actorId?: string) { return this.prisma.$transaction(async (tx) => { const current = await tx.salaParticipation.findFirst({ where: { id, endDate: null } }); if (!current) throw new NotFoundException({ code: 'SALA_ACTIVE_PARTICIPATION_NOT_FOUND', message: 'Active participation not found' }); const now = new Date(); const today = this.date(this.todayOperational()); await tx.fixedSalaBooking.updateMany({ where: { salaParticipationId: id, OR: [{ endDate: null }, { endDate: { gt: today } }] }, data: { endDate: today } }); await tx.oneOffReservation.updateMany({ where: { salaParticipationId: id, date: { gte: today }, cancelledAt: null }, data: { cancelledAt: now } }); await tx.salaOccurrence.updateMany({ where: { personId: current.personId, date: { gte: today }, status: { not: SalaOccurrenceStatus.CANCELLED } }, data: { status: SalaOccurrenceStatus.CANCELLED, ...(actorId ? { lastModifiedBy: actorId } : {}) } }); await tx.routine.updateMany({ where: { salaParticipationId: id, status: RoutineStatus.ACTIVE }, data: { status: RoutineStatus.HISTORICAL } }); if (failureAfterMutations) throw new Error('SIMULATED_LEAVE_FAILURE'); return tx.salaParticipation.update({ where: { id }, data: { endDate: today }, include: { plan: true, mainProfessor: true } }); }); }
   async changeProfessor(id: string, mainProfessorId: string) { const professor = await this.prisma.internalUser.findUnique({ where: { id: mainProfessorId }, include: { roles: true } }); if (!professor || professor.status !== InternalUserStatus.ACTIVE || !professor.roles.some((role) => role.role === Role.PROFESSOR)) throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Professor is not eligible' }); return this.prisma.salaParticipation.update({ where: { id }, data: { mainProfessorId }, include: { plan: true, mainProfessor: true } }); }
   async changePlan(id: string, planId: string) { const plan = await this.prisma.salaPlan.findUnique({ where: { id: planId } }); if (!plan || !plan.isSelectable) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'Plan is not selectable' }); return this.prisma.salaParticipation.update({ where: { id }, data: { planId }, include: { plan: true, mainProfessor: true } }); }
   async hasActiveSalaParticipation(personId: string) { return (await this.prisma.salaParticipation.count({ where: { personId, endDate: null } })) > 0; }
@@ -35,6 +35,43 @@ export class SalaService {
   async listReservations(personId: string) { return this.prisma.oneOffReservation.findMany({ where: { personId }, include: { scheduleSlot: true }, orderBy: { date: 'desc' } }); }
   async endFixed(id: string, endDate: string) { try { return await this.prisma.fixedSalaBooking.update({ where: { id }, data: { endDate: this.date(endDate) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_FIXED_BOOKING_NOT_FOUND', message: 'Fixed booking not found' }); throw error; } }
   async cancelReservation(id: string) { try { return await this.prisma.oneOffReservation.update({ where: { id }, data: { cancelledAt: new Date() } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_RESERVATION_NOT_FOUND', message: 'Reservation not found' }); throw error; } }
+  async listExerciseDefinitions(includeInactive = false) { return this.prisma.exerciseDefinition.findMany({ where: includeInactive ? {} : { isActive: true }, orderBy: { name: 'asc' } }); }
+  async createExerciseDefinition(input: ExerciseDefinitionDto) { try { return await this.prisma.exerciseDefinition.create({ data: { name: input.name.trim(), primaryMuscle: input.primaryMuscle.trim(), description: this.optionalText(input.description) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_EXERCISE_DUPLICATE', message: 'Exercise already exists' }); throw error; } }
+  async updateExerciseDefinition(id: string, input: ExerciseDefinitionDto) { try { return await this.prisma.exerciseDefinition.update({ where: { id }, data: { name: input.name.trim(), primaryMuscle: input.primaryMuscle.trim(), description: this.optionalText(input.description) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_EXERCISE_NOT_FOUND', message: 'Exercise not found' }); if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_EXERCISE_DUPLICATE', message: 'Exercise already exists' }); throw error; } }
+  async retireExerciseDefinition(id: string, confirmActiveRoutineImpact: boolean) {
+    return this.prisma.$transaction(async (tx) => {
+      const exercise = await tx.exerciseDefinition.findUnique({ where: { id } });
+      if (!exercise || !exercise.isActive) throw new NotFoundException({ code: 'SALA_EXERCISE_NOT_FOUND', message: 'Exercise not found' });
+      const activeUses = await tx.routineExercise.count({ where: { exerciseDefinitionId: id, routineDay: { routine: { status: RoutineStatus.ACTIVE } } } });
+      if (activeUses > 0 && !confirmActiveRoutineImpact) throw new ConflictException({ code: 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED', message: 'Confirmation is required because active routines are affected', details: { activeRoutineExercises: activeUses } });
+      if (activeUses > 0) await tx.routineExercise.deleteMany({ where: { exerciseDefinitionId: id, routineDay: { routine: { status: RoutineStatus.ACTIVE } } } });
+      const retired = await tx.exerciseDefinition.update({ where: { id }, data: { isActive: false } });
+      return { exercise: retired, affectedActiveRoutineExercises: activeUses };
+    });
+  }
+  async listRoutines(personId: string) { return this.prisma.routine.findMany({ where: { personId }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } }, salaParticipation: { select: { id: true, startDate: true, endDate: true } } }, orderBy: { version: 'desc' } }); }
+  async replaceRoutine(input: ReplaceRoutineDto, failureAfterArchive = false) {
+    this.validateRoutine(input);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM people WHERE id = ${input.personId}::uuid FOR UPDATE`;
+      const participation = await tx.salaParticipation.findFirst({ where: { id: input.salaParticipationId, personId: input.personId, endDate: null }, select: { id: true } });
+      if (!participation) throw new BadRequestException({ code: 'SALA_ACTIVE_PARTICIPATION_REQUIRED', message: 'An active Sala participation is required' });
+      const exerciseIds = [...new Set(input.days.flatMap((day) => day.exercises.map((exercise) => exercise.exerciseDefinitionId)))];
+      const validExercises = await tx.exerciseDefinition.count({ where: { id: { in: exerciseIds }, isActive: true } });
+      if (validExercises !== exerciseIds.length) throw new BadRequestException({ code: 'SALA_EXERCISE_INVALID', message: 'Every routine exercise must reference an active catalog exercise' });
+      const currentVersion = await tx.routine.aggregate({ where: { personId: input.personId }, _max: { version: true } });
+      await tx.routine.updateMany({ where: { personId: input.personId, status: RoutineStatus.ACTIVE }, data: { status: RoutineStatus.HISTORICAL } });
+      if (failureAfterArchive) throw new Error('SIMULATED_ROUTINE_REPLACEMENT_FAILURE');
+      return tx.routine.create({ data: { personId: input.personId, salaParticipationId: input.salaParticipationId, status: RoutineStatus.ACTIVE, version: (currentVersion._max.version ?? 0) + 1, days: { create: input.days.map((day, dayIndex) => ({ position: dayIndex + 1, name: this.optionalText(day.name), exercises: { create: day.exercises.map((exercise, exerciseIndex) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, position: exerciseIndex + 1, series: this.optionalText(exercise.series), repetitions: this.optionalText(exercise.repetitions), duration: this.optionalText(exercise.duration), load: this.optionalText(exercise.load), rest: this.optionalText(exercise.rest), notes: this.optionalText(exercise.notes) })) } })) } }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } } } });
+    });
+  }
+  async duplicateRoutine(id: string) {
+    const source = await this.prisma.routine.findUnique({ where: { id }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' } } } } } });
+    if (!source) throw new NotFoundException({ code: 'SALA_ROUTINE_NOT_FOUND', message: 'Routine not found' });
+    const participation = await this.prisma.salaParticipation.findFirst({ where: { personId: source.personId, endDate: null }, select: { id: true } });
+    if (!participation) throw new BadRequestException({ code: 'SALA_ACTIVE_PARTICIPATION_REQUIRED', message: 'An active Sala participation is required' });
+    return this.replaceRoutine({ personId: source.personId, salaParticipationId: participation.id, days: source.days.map((day) => ({ name: day.name, exercises: day.exercises.map((exercise) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, series: exercise.series, repetitions: exercise.repetitions, duration: exercise.duration, load: exercise.load, rest: exercise.rest, notes: exercise.notes })) })) });
+  }
   async agenda(date: string) {
     const day = this.date(date);
     const personSelect = { id: true, firstName: true, lastName: true, dni: true } as const;
@@ -99,6 +136,8 @@ export class SalaService {
   private date(value: string): Date { return new Date(`${value}T00:00:00.000Z`); }
   private weekday(value: Date): SalaWeekday { return ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'][value.getUTCDay()] as SalaWeekday; }
   private todayOperational(): string { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()); const values = Object.fromEntries(parts.map((part) => [part.type, part.value])); return `${values.year}-${values.month}-${values.day}`; }
+  private optionalText(value: string | null | undefined): string | null { const normalized = value?.trim(); return normalized ? normalized : null; }
+  private validateRoutine(input: ReplaceRoutineDto): void { for (const day of input.days) for (const exercise of day.exercises) if (this.optionalText(exercise.repetitions) && this.optionalText(exercise.duration)) throw new BadRequestException({ code: 'SALA_ROUTINE_REPETITIONS_DURATION_EXCLUSIVE', message: 'Repetitions and duration are alternatives' }); }
   private minutes(value: Date): number { return value.getUTCHours() * 60 + value.getUTCMinutes(); }
   private overlaps(a: number, ad: number, b: number, bd: number): boolean { return a < b + bd && b < a + ad; }
 }
