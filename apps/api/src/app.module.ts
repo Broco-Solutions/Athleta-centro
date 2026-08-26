@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { APP_FILTER } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import { ConfigModule } from '@nestjs/config';
@@ -24,6 +24,6 @@ import { TeamService } from './team/team.service';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(cookieParser(), AuthSecurityMiddleware).forRoutes('*');
+    consumer.apply(cookieParser(), AuthSecurityMiddleware).forRoutes({ path: '*path', method: RequestMethod.ALL });
   }
 }
