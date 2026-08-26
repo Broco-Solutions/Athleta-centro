@@ -189,6 +189,21 @@ export interface TeamRoleDto {
   role: TeamRoleDtoRole;
 }
 
+export interface JoinSalaDto {
+  personId: string;
+  mainProfessorId: string;
+  planId: string;
+  startDate: string;
+}
+
+export interface ChangeProfessorDto {
+  mainProfessorId: string;
+}
+
+export interface ChangePlanDto {
+  planId: string;
+}
+
 export interface UpdateSalaConfigurationDto {
   /** @minimum 1 */
   capacity: number;
@@ -208,6 +223,42 @@ export type ListPeopleParams = {
 pageSize?: number;
 page?: number;
 search?: string;
+};
+
+export type ListPersonSalaParticipations200DataItem = { [key: string]: unknown };
+
+export type ListPersonSalaParticipations200 = {
+  data?: ListPersonSalaParticipations200DataItem[];
+};
+
+export type JoinSala200Data = { [key: string]: unknown };
+
+export type JoinSala200 = {
+  data?: JoinSala200Data;
+};
+
+export type LeaveSala200Data = { [key: string]: unknown };
+
+export type LeaveSala200 = {
+  data?: LeaveSala200Data;
+};
+
+export type ChangeSalaProfessor200Data = { [key: string]: unknown };
+
+export type ChangeSalaProfessor200 = {
+  data?: ChangeSalaProfessor200Data;
+};
+
+export type ChangeSalaPlan200Data = { [key: string]: unknown };
+
+export type ChangeSalaPlan200 = {
+  data?: ChangeSalaPlan200Data;
+};
+
+export type ListSalaPlans200DataItem = { [key: string]: unknown };
+
+export type ListSalaPlans200 = {
+  data?: ListSalaPlans200DataItem[];
 };
 
 /**
@@ -934,6 +985,206 @@ export const reactivateTeamUser = async (id: string, options?: RequestInit): Pro
 
 
 
+export type listPersonSalaParticipationsResponse200 = {
+  data: ListPersonSalaParticipations200
+  status: 200
+}
+
+export type listPersonSalaParticipationsResponseSuccess = (listPersonSalaParticipationsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPersonSalaParticipationsResponse = (listPersonSalaParticipationsResponseSuccess)
+
+export const getListPersonSalaParticipationsUrl = (personId: string,) => {
+
+
+
+
+  return `/api/sala/participations/person/${personId}`
+}
+
+export const listPersonSalaParticipations = async (personId: string, options?: RequestInit): Promise<listPersonSalaParticipationsResponse> => {
+
+  const res = await fetch(getListPersonSalaParticipationsUrl(personId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listPersonSalaParticipationsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPersonSalaParticipationsResponse
+}
+
+
+
+export type joinSalaResponse200 = {
+  data: JoinSala200
+  status: 200
+}
+
+export type joinSalaResponseSuccess = (joinSalaResponse200) & {
+  headers: Headers;
+};
+;
+
+export type joinSalaResponse = (joinSalaResponseSuccess)
+
+export const getJoinSalaUrl = () => {
+
+
+
+
+  return `/api/sala/participations`
+}
+
+export const joinSala = async (joinSalaDto: JoinSalaDto, options?: RequestInit): Promise<joinSalaResponse> => {
+
+  const res = await fetch(getJoinSalaUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      joinSalaDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: joinSalaResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as joinSalaResponse
+}
+
+
+
+export type leaveSalaResponse200 = {
+  data: LeaveSala200
+  status: 200
+}
+
+export type leaveSalaResponseSuccess = (leaveSalaResponse200) & {
+  headers: Headers;
+};
+;
+
+export type leaveSalaResponse = (leaveSalaResponseSuccess)
+
+export const getLeaveSalaUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/participations/${id}/leave`
+}
+
+export const leaveSala = async (id: string, options?: RequestInit): Promise<leaveSalaResponse> => {
+
+  const res = await fetch(getLeaveSalaUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: leaveSalaResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as leaveSalaResponse
+}
+
+
+
+export type changeSalaProfessorResponse200 = {
+  data: ChangeSalaProfessor200
+  status: 200
+}
+
+export type changeSalaProfessorResponseSuccess = (changeSalaProfessorResponse200) & {
+  headers: Headers;
+};
+;
+
+export type changeSalaProfessorResponse = (changeSalaProfessorResponseSuccess)
+
+export const getChangeSalaProfessorUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/participations/${id}/change-professor`
+}
+
+export const changeSalaProfessor = async (id: string,
+    changeProfessorDto: ChangeProfessorDto, options?: RequestInit): Promise<changeSalaProfessorResponse> => {
+
+  const res = await fetch(getChangeSalaProfessorUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      changeProfessorDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: changeSalaProfessorResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as changeSalaProfessorResponse
+}
+
+
+
+export type changeSalaPlanResponse200 = {
+  data: ChangeSalaPlan200
+  status: 200
+}
+
+export type changeSalaPlanResponseSuccess = (changeSalaPlanResponse200) & {
+  headers: Headers;
+};
+;
+
+export type changeSalaPlanResponse = (changeSalaPlanResponseSuccess)
+
+export const getChangeSalaPlanUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/participations/${id}/change-plan`
+}
+
+export const changeSalaPlan = async (id: string,
+    changePlanDto: ChangePlanDto, options?: RequestInit): Promise<changeSalaPlanResponse> => {
+
+  const res = await fetch(getChangeSalaPlanUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      changePlanDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: changeSalaPlanResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as changeSalaPlanResponse
+}
+
+
+
 export type getSalaConfigurationResponse200 = {
   data: void
   status: 200
@@ -1014,7 +1265,7 @@ export const updateSalaConfiguration = async (updateSalaConfigurationDto: Update
 
 
 export type listSalaPlansResponse200 = {
-  data: void
+  data: ListSalaPlans200
   status: 200
 }
 

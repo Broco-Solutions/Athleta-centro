@@ -33,3 +33,9 @@ test('manages a standard team account through explicit lifecycle actions', async
   await page.getByRole('button', { name: 'Reactivar acceso' }).click();
   await expect(targetRow.getByText('Activo')).toBeVisible();
 });
+test('manages Sala participation periods from a Person', async ({ page }) => {
+  fixture('sala'); await login(page, 'e2e.sala@athleta.test'); await page.getByRole('link', { name: 'Personas' }).click(); await page.getByLabel('Buscar Personas').fill('40999777'); await page.getByText('SalaE2E, Persona').click();
+  await expect(page.getByText('Participación en Sala')).toBeVisible(); await page.getByLabel('Plan').selectOption({ label: 'Plan E2E' }); await page.getByLabel('Profesor principal').selectOption({ label: 'E2E, Profesor' }); await page.getByRole('button', { name: 'Incorporar a Sala' }).click();
+  await expect(page.getByText('Plan actual')).toBeVisible(); await page.getByLabel('Cambiar Plan').selectOption({ label: 'Plan E2E' }); page.once('dialog', (dialog) => dialog.accept()); await page.getByRole('button', { name: 'Dar de baja' }).click(); await expect(page.getByRole('button', { name: 'Dar de baja' })).toBeHidden(); await expect(page.getByText(/Historial/)).toBeVisible();
+  await page.getByLabel('Plan').selectOption({ label: 'Plan E2E' }); await page.getByLabel('Profesor principal').selectOption({ label: 'E2E, Profesor' }); await page.getByRole('button', { name: 'Incorporar a Sala' }).click(); await expect(page.getByText('Plan actual')).toBeVisible();
+});

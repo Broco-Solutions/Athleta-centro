@@ -1,14 +1,19 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { PermissionsGuard, RequirePermissions } from '../auth/permissions.guard';
-import { PlanDto, ScheduleExceptionDto, ScheduleSlotDto, UpdateSalaConfigurationDto } from './sala.dto';
+import { ChangePlanDto, ChangeProfessorDto, JoinSalaDto, PlanDto, ScheduleExceptionDto, ScheduleSlotDto, UpdateSalaConfigurationDto } from './sala.dto';
 import { SalaService } from './sala.service';
 @ApiTags('Sala') @Controller('sala') @UseGuards(PermissionsGuard)
 export class SalaController {
   constructor(private readonly sala: SalaService) {}
+  @Get('participations/person/:personId') @RequirePermissions('SALA_RELATION_READ') @ApiOperation({ operationId: 'listPersonSalaParticipations' }) @ApiParam({ name: 'personId', type: String, format: 'uuid' }) @ApiOkResponse({ schema: { type: 'object', properties: { data: { type: 'array', items: { type: 'object' } } } } }) async personParticipations(@Param('personId') personId: string) { return { data: await this.sala.listParticipations(personId) }; }
+  @Post('participations') @RequirePermissions('SALA_PARTICIPATION_MANAGE') @ApiOperation({ operationId: 'joinSala' }) @ApiBody({ type: JoinSalaDto }) @ApiOkResponse({ schema: { type: 'object', properties: { data: { type: 'object' } } } }) async join(@Body() body: JoinSalaDto) { return { data: await this.sala.join(body) }; }
+  @Post('participations/:id/leave') @RequirePermissions('SALA_PARTICIPATION_MANAGE') @ApiOperation({ operationId: 'leaveSala' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) @ApiOkResponse({ schema: { type: 'object', properties: { data: { type: 'object' } } } }) async leave(@Param('id') id: string) { return { data: await this.sala.leave(id) }; }
+  @Post('participations/:id/change-professor') @RequirePermissions('SALA_PARTICIPATION_MANAGE') @ApiOperation({ operationId: 'changeSalaProfessor' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) @ApiBody({ type: ChangeProfessorDto }) @ApiOkResponse({ schema: { type: 'object', properties: { data: { type: 'object' } } } }) async changeProfessor(@Param('id') id: string, @Body() body: ChangeProfessorDto) { return { data: await this.sala.changeProfessor(id, body.mainProfessorId) }; }
+  @Post('participations/:id/change-plan') @RequirePermissions('SALA_PARTICIPATION_MANAGE') @ApiOperation({ operationId: 'changeSalaPlan' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) @ApiBody({ type: ChangePlanDto }) @ApiOkResponse({ schema: { type: 'object', properties: { data: { type: 'object' } } } }) async changePlan(@Param('id') id: string, @Body() body: ChangePlanDto) { return { data: await this.sala.changePlan(id, body.planId) }; }
   @Get('configuration') @RequirePermissions('SALA_SCHEDULE_MANAGE') @ApiOperation({ operationId: 'getSalaConfiguration' }) async configuration() { return { data: await this.sala.configuration() }; }
   @Patch('configuration') @RequirePermissions('SALA_SCHEDULE_MANAGE') @ApiOperation({ operationId: 'updateSalaConfiguration' }) @ApiBody({ type: UpdateSalaConfigurationDto }) async updateConfiguration(@Body() body: UpdateSalaConfigurationDto) { return { data: await this.sala.updateConfiguration(body) }; }
-  @Get('plans') @RequirePermissions('SALA_PLAN_CATALOG_MANAGE') @ApiOperation({ operationId: 'listSalaPlans' }) async plans() { return { data: await this.sala.listPlans() }; }
+  @Get('plans') @RequirePermissions('SALA_PLAN_CATALOG_MANAGE') @ApiOperation({ operationId: 'listSalaPlans' }) @ApiOkResponse({ schema: { type: 'object', properties: { data: { type: 'array', items: { type: 'object' } } } } }) async plans() { return { data: await this.sala.listPlans() }; }
   @Post('plans') @RequirePermissions('SALA_PLAN_CATALOG_MANAGE') @ApiOperation({ operationId: 'createSalaPlan' }) async createPlan(@Body() body: PlanDto) { return { data: await this.sala.createPlan(body) }; }
   @Patch('plans/:id') @RequirePermissions('SALA_PLAN_CATALOG_MANAGE') @ApiOperation({ operationId: 'updateSalaPlan' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) async updatePlan(@Param('id') id: string, @Body() body: PlanDto) { return { data: await this.sala.updatePlan(id, body) }; }
   @Get('schedule') @RequirePermissions('SALA_SCHEDULE_MANAGE') @ApiOperation({ operationId: 'listSalaSchedule' }) async schedule() { return { data: await this.sala.listSlots() }; }

@@ -961,6 +961,8 @@ PostgreSQL queries
 
 ### M2.2 — Sala participation
 
+**Status:** DONE
+
 **Model:** `MODEL_DEEP`
 
 Scope:
