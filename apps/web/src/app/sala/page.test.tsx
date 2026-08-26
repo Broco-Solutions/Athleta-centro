@@ -1,0 +1,12 @@
+import React from 'react';
+import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { HttpResponse, http } from 'msw';
+import { setupServer } from 'msw/node';
+import SalaPage from './page';
+const server = setupServer(); const nativeFetch = globalThis.fetch;
+const session = { user: { id: 'admin', firstName: 'Admin', lastName: 'User', email: 'admin@test.local' }, roles: ['ADMINISTRATIVE'], permissions: ['SALA_RELATION_READ', 'SALA_AGENDA_MANAGE'], mustChangePassword: false, csrfToken: 'csrf' };
+beforeAll(() => { globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch; server.listen({ onUnhandledRequest: 'bypass' }); });
+beforeEach(() => { server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: session })), http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: { data: [{ id: 'person', firstName: 'Ada', lastName: 'Sintética', dni: '20123456' }] } })), http.get('http://localhost:3000/api/sala/schedule', () => HttpResponse.json({ data: [{ id: 'slot', weekday: 'MONDAY', startTime: '09:00' }] })), http.get('http://localhost:3000/api/sala/availability', () => HttpResponse.json({ data: [{ slotId: 'slot', capacity: 1, reserved: 0, available: 1, isOverbooked: false, isClosed: false }] }))); });
+afterEach(() => server.resetHandlers()); afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
+it('renders availability and fixed booking controls', async () => { render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SalaPage /></QueryClientProvider>); expect(await screen.findByText('Disponible')).toBeInTheDocument(); expect(screen.getByText('Turnos fijos')).toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Crear turno fijo' })).toBeDisabled(); });

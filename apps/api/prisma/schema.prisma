@@ -124,6 +124,8 @@ model Person {
   portalCredential      PortalCredential?
   portalSessions        Session[]
   salaParticipations    SalaParticipation[]
+  fixedBookings         FixedSalaBooking[]
+  reservations          OneOffReservation[]
 
   @@index([lastName, firstName])
   @@index([normalizedEmail])
@@ -160,6 +162,8 @@ model SalaParticipation {
   person           Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
   mainProfessor    InternalUser @relation(fields: [mainProfessorId], references: [id], onDelete: Restrict)
   plan             SalaPlan     @relation(fields: [planId], references: [id], onDelete: Restrict)
+  fixedBookings    FixedSalaBooking[]
+  reservations     OneOffReservation[]
   @@index([personId])
   @@index([mainProfessorId])
   @@index([planId])
@@ -172,11 +176,48 @@ model SalaScheduleSlot {
   startTime       DateTime          @map("start_time") @db.Time(0)
   durationMinutes Int               @default(60) @map("duration_minutes")
   specificCapacity Int?             @map("specific_capacity")
+  isActive        Boolean           @default(true) @map("is_active")
+  endedAt         DateTime?         @map("ended_at") @db.Date
   createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
   exceptions      SalaScheduleException[]
+  fixedBookings   FixedSalaBooking[]
+  reservations    OneOffReservation[]
   @@unique([weekday, startTime])
   @@map("sala_schedule_slots")
+}
+
+model FixedSalaBooking {
+  id                  String   @id @default(uuid()) @db.Uuid
+  personId            String   @map("person_id") @db.Uuid
+  salaParticipationId String   @map("sala_participation_id") @db.Uuid
+  scheduleSlotId      String   @map("schedule_slot_id") @db.Uuid
+  startDate           DateTime @map("start_date") @db.Date
+  endDate             DateTime? @map("end_date") @db.Date
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  person              Person @relation(fields: [personId], references: [id], onDelete: Restrict)
+  salaParticipation  SalaParticipation @relation(fields: [salaParticipationId], references: [id], onDelete: Restrict)
+  scheduleSlot        SalaScheduleSlot @relation(fields: [scheduleSlotId], references: [id], onDelete: Restrict)
+  @@index([personId])
+  @@index([salaParticipationId])
+  @@index([scheduleSlotId])
+  @@map("fixed_sala_bookings")
+}
+
+model OneOffReservation {
+  id                  String   @id @default(uuid()) @db.Uuid
+  personId            String   @map("person_id") @db.Uuid
+  salaParticipationId String   @map("sala_participation_id") @db.Uuid
+  scheduleSlotId      String   @map("schedule_slot_id") @db.Uuid
+  date                DateTime @db.Date
+  cancelledAt         DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  person              Person @relation(fields: [personId], references: [id], onDelete: Restrict)
+  salaParticipation  SalaParticipation @relation(fields: [salaParticipationId], references: [id], onDelete: Restrict)
+  scheduleSlot        SalaScheduleSlot @relation(fields: [scheduleSlotId], references: [id], onDelete: Restrict)
+  @@unique([personId, scheduleSlotId, date])
+  @@index([date, scheduleSlotId])
+  @@map("one_off_reservations")
 }
 
 model SalaScheduleException {

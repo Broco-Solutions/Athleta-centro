@@ -990,6 +990,8 @@ concurrency
 
 ### M2.3 — Fixed and one-off bookings
 
+**Status:** DONE
+
 **Model:** `MODEL_DEEP`
 
 Scope:

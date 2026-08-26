@@ -204,9 +204,95 @@ export interface ChangePlanDto {
   planId: string;
 }
 
+export interface FixedBookingDto {
+  personId: string;
+  salaParticipationId: string;
+  scheduleSlotId: string;
+  startDate: string;
+  /** @nullable */
+  endDate?: string | null;
+  confirmOverbooking?: boolean;
+}
+
+export interface ChangeFixedBookingDto {
+  personId: string;
+  salaParticipationId: string;
+  scheduleSlotId: string;
+  startDate: string;
+  /** @nullable */
+  endDate?: string | null;
+  confirmOverbooking?: boolean;
+  id: string;
+}
+
+export interface EndFixedBookingDto {
+  endDate: string;
+}
+
+export interface OneOffReservationDto {
+  personId: string;
+  salaParticipationId: string;
+  scheduleSlotId: string;
+  date: string;
+  confirmOverbooking?: boolean;
+}
+
 export interface UpdateSalaConfigurationDto {
   /** @minimum 1 */
   capacity: number;
+}
+
+export type ScheduleSlotDtoWeekday = typeof ScheduleSlotDtoWeekday[keyof typeof ScheduleSlotDtoWeekday];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ScheduleSlotDtoWeekday = {
+  MONDAY: 'MONDAY',
+  TUESDAY: 'TUESDAY',
+  WEDNESDAY: 'WEDNESDAY',
+  THURSDAY: 'THURSDAY',
+  FRIDAY: 'FRIDAY',
+  SATURDAY: 'SATURDAY',
+  SUNDAY: 'SUNDAY',
+} as const;
+
+export interface ScheduleSlotDto {
+  weekday: ScheduleSlotDtoWeekday;
+  startTime: string;
+  /** @minimum 1 */
+  durationMinutes?: number;
+  /**
+   * @minimum 1
+   * @nullable
+   */
+  specificCapacity?: number | null;
+}
+
+export type ReplaceScheduleSlotDtoWeekday = typeof ReplaceScheduleSlotDtoWeekday[keyof typeof ReplaceScheduleSlotDtoWeekday];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReplaceScheduleSlotDtoWeekday = {
+  MONDAY: 'MONDAY',
+  TUESDAY: 'TUESDAY',
+  WEDNESDAY: 'WEDNESDAY',
+  THURSDAY: 'THURSDAY',
+  FRIDAY: 'FRIDAY',
+  SATURDAY: 'SATURDAY',
+  SUNDAY: 'SUNDAY',
+} as const;
+
+export interface ReplaceScheduleSlotDto {
+  weekday: ReplaceScheduleSlotDtoWeekday;
+  startTime: string;
+  /** @minimum 1 */
+  durationMinutes?: number;
+  /**
+   * @minimum 1
+   * @nullable
+   */
+  specificCapacity?: number | null;
+  effectiveDate: string;
 }
 
 export type InternalLoginBody = {
@@ -253,6 +339,10 @@ export type ChangeSalaPlan200Data = { [key: string]: unknown };
 
 export type ChangeSalaPlan200 = {
   data?: ChangeSalaPlan200Data;
+};
+
+export type GetSalaAvailabilityParams = {
+date: string;
 };
 
 export type ListSalaPlans200DataItem = { [key: string]: unknown };
@@ -1185,6 +1275,331 @@ export const changeSalaPlan = async (id: string,
 
 
 
+export type getSalaAvailabilityResponse200 = {
+  data: void
+  status: 200
+}
+
+export type getSalaAvailabilityResponseSuccess = (getSalaAvailabilityResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getSalaAvailabilityResponse = (getSalaAvailabilityResponseSuccess)
+
+export const getGetSalaAvailabilityUrl = (params: GetSalaAvailabilityParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/sala/availability?${stringifiedParams}` : `/api/sala/availability`
+}
+
+export const getSalaAvailability = async (params: GetSalaAvailabilityParams, options?: RequestInit): Promise<getSalaAvailabilityResponse> => {
+
+  const res = await fetch(getGetSalaAvailabilityUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSalaAvailabilityResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSalaAvailabilityResponse
+}
+
+
+
+export type listFixedSalaBookingsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listFixedSalaBookingsResponseSuccess = (listFixedSalaBookingsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listFixedSalaBookingsResponse = (listFixedSalaBookingsResponseSuccess)
+
+export const getListFixedSalaBookingsUrl = (personId: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/fixed-bookings`
+}
+
+export const listFixedSalaBookings = async (personId: string, options?: RequestInit): Promise<listFixedSalaBookingsResponse> => {
+
+  const res = await fetch(getListFixedSalaBookingsUrl(personId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listFixedSalaBookingsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listFixedSalaBookingsResponse
+}
+
+
+
+export type createFixedSalaBookingResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createFixedSalaBookingResponseSuccess = (createFixedSalaBookingResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createFixedSalaBookingResponse = (createFixedSalaBookingResponseSuccess)
+
+export const getCreateFixedSalaBookingUrl = () => {
+
+
+
+
+  return `/api/sala/fixed-bookings`
+}
+
+export const createFixedSalaBooking = async (fixedBookingDto: FixedBookingDto, options?: RequestInit): Promise<createFixedSalaBookingResponse> => {
+
+  const res = await fetch(getCreateFixedSalaBookingUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      fixedBookingDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createFixedSalaBookingResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createFixedSalaBookingResponse
+}
+
+
+
+export type changeFixedSalaBookingResponse201 = {
+  data: void
+  status: 201
+}
+
+export type changeFixedSalaBookingResponseSuccess = (changeFixedSalaBookingResponse201) & {
+  headers: Headers;
+};
+;
+
+export type changeFixedSalaBookingResponse = (changeFixedSalaBookingResponseSuccess)
+
+export const getChangeFixedSalaBookingUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/fixed-bookings/${id}/change`
+}
+
+export const changeFixedSalaBooking = async (id: string,
+    changeFixedBookingDto: ChangeFixedBookingDto, options?: RequestInit): Promise<changeFixedSalaBookingResponse> => {
+
+  const res = await fetch(getChangeFixedSalaBookingUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      changeFixedBookingDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: changeFixedSalaBookingResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as changeFixedSalaBookingResponse
+}
+
+
+
+export type endFixedSalaBookingResponse201 = {
+  data: void
+  status: 201
+}
+
+export type endFixedSalaBookingResponseSuccess = (endFixedSalaBookingResponse201) & {
+  headers: Headers;
+};
+;
+
+export type endFixedSalaBookingResponse = (endFixedSalaBookingResponseSuccess)
+
+export const getEndFixedSalaBookingUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/fixed-bookings/${id}/end`
+}
+
+export const endFixedSalaBooking = async (id: string,
+    endFixedBookingDto: EndFixedBookingDto, options?: RequestInit): Promise<endFixedSalaBookingResponse> => {
+
+  const res = await fetch(getEndFixedSalaBookingUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      endFixedBookingDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: endFixedSalaBookingResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as endFixedSalaBookingResponse
+}
+
+
+
+export type createSalaReservationResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createSalaReservationResponseSuccess = (createSalaReservationResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSalaReservationResponse = (createSalaReservationResponseSuccess)
+
+export const getCreateSalaReservationUrl = () => {
+
+
+
+
+  return `/api/sala/reservations`
+}
+
+export const createSalaReservation = async (oneOffReservationDto: OneOffReservationDto, options?: RequestInit): Promise<createSalaReservationResponse> => {
+
+  const res = await fetch(getCreateSalaReservationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      oneOffReservationDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSalaReservationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSalaReservationResponse
+}
+
+
+
+export type listSalaReservationsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listSalaReservationsResponseSuccess = (listSalaReservationsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listSalaReservationsResponse = (listSalaReservationsResponseSuccess)
+
+export const getListSalaReservationsUrl = (personId: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/reservations`
+}
+
+export const listSalaReservations = async (personId: string, options?: RequestInit): Promise<listSalaReservationsResponse> => {
+
+  const res = await fetch(getListSalaReservationsUrl(personId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSalaReservationsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSalaReservationsResponse
+}
+
+
+
+export type cancelSalaReservationResponse201 = {
+  data: void
+  status: 201
+}
+
+export type cancelSalaReservationResponseSuccess = (cancelSalaReservationResponse201) & {
+  headers: Headers;
+};
+;
+
+export type cancelSalaReservationResponse = (cancelSalaReservationResponseSuccess)
+
+export const getCancelSalaReservationUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/reservations/${id}/cancel`
+}
+
+export const cancelSalaReservation = async (id: string, options?: RequestInit): Promise<cancelSalaReservationResponse> => {
+
+  const res = await fetch(getCancelSalaReservationUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: cancelSalaReservationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as cancelSalaReservationResponse
+}
+
+
+
 export type getSalaConfigurationResponse200 = {
   data: void
   status: 200
@@ -1455,6 +1870,88 @@ export const createSalaScheduleSlot = async ( options?: RequestInit): Promise<cr
 
   const data: createSalaScheduleSlotResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createSalaScheduleSlotResponse
+}
+
+
+
+export type updateSalaScheduleSlotResponse200 = {
+  data: void
+  status: 200
+}
+
+export type updateSalaScheduleSlotResponseSuccess = (updateSalaScheduleSlotResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateSalaScheduleSlotResponse = (updateSalaScheduleSlotResponseSuccess)
+
+export const getUpdateSalaScheduleSlotUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/schedule/${id}`
+}
+
+export const updateSalaScheduleSlot = async (id: string,
+    scheduleSlotDto: ScheduleSlotDto, options?: RequestInit): Promise<updateSalaScheduleSlotResponse> => {
+
+  const res = await fetch(getUpdateSalaScheduleSlotUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      scheduleSlotDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateSalaScheduleSlotResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateSalaScheduleSlotResponse
+}
+
+
+
+export type replaceSalaScheduleSlotResponse201 = {
+  data: void
+  status: 201
+}
+
+export type replaceSalaScheduleSlotResponseSuccess = (replaceSalaScheduleSlotResponse201) & {
+  headers: Headers;
+};
+;
+
+export type replaceSalaScheduleSlotResponse = (replaceSalaScheduleSlotResponseSuccess)
+
+export const getReplaceSalaScheduleSlotUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/schedule/${id}/replace`
+}
+
+export const replaceSalaScheduleSlot = async (id: string,
+    replaceScheduleSlotDto: ReplaceScheduleSlotDto, options?: RequestInit): Promise<replaceSalaScheduleSlotResponse> => {
+
+  const res = await fetch(getReplaceSalaScheduleSlotUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      replaceScheduleSlotDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: replaceSalaScheduleSlotResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as replaceSalaScheduleSlotResponse
 }
 
 

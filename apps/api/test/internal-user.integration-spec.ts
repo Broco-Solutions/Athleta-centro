@@ -8,7 +8,7 @@ describe('InternalUser persistence and lifecycle', () => {
   const service = new InternalUserService(prisma);
   beforeAll(() => prisma.$connect());
   afterAll(() => prisma.$disconnect());
-  afterEach(async () => { await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); });
+  afterEach(async () => { await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); });
   it('normalizes email and enforces its database uniqueness', async () => {
     await service.create({ firstName: 'Ada', lastName: 'Lovelace', email: ' Ada@Athleta.test ', roles: [Role.PROFESSOR] });
     await expect(service.create({ firstName: 'Grace', lastName: 'Hopper', email: 'ada@athleta.test', roles: [Role.ADMINISTRATIVE] })).rejects.toMatchObject({ code: 'P2002' });

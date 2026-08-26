@@ -12,7 +12,7 @@ describe('auth PostgreSQL persistence and constraints', () => {
 
   beforeAll(() => prisma.$connect());
   afterAll(() => prisma.$disconnect());
-  afterEach(async () => { await prisma.authAttemptBucket.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); });
+  afterEach(async () => { await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.authAttemptBucket.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); });
 
   async function user(email = 'persistence@athleta.test') { return users.create({ firstName: 'Synthetic', lastName: 'User', email, roles: [Role.PROFESSOR] }); }
 
