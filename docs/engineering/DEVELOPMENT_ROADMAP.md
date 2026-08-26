@@ -874,7 +874,7 @@ Use Cases must enforce documented preconditions.
 
 ### M1.5A — Portal credentials foundation
 
-**Status:** IN_PROGRESS
+**Status:** DONE
 
 Portal credentials are provisioned atomically with Person creation and can be
 reset by authorized internal users. PINs are Argon2id-hashed and returned only
@@ -934,6 +934,14 @@ Construir el circuito operativo principal de Sala sin depender de Clínica más 
 ---
 
 ### M2.1 — Sala configuration
+
+**Status:** BLOCKED
+
+**Blocker:** `SAL-HOR-08` remains `PENDING_FUNCTIONAL_DEFINITION`: the
+functional source of truth does not define whether schedule capacity must be
+strictly positive or whether `0` is a valid capacity/closure representation.
+Implementing the database check or API validation would invent a functional
+rule, so this milestone cannot safely start until that definition is resolved.
 
 **Model:** `MODEL_STANDARD`
 
