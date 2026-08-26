@@ -13,5 +13,6 @@ async function bootstrap(): Promise<void> {
   app.setGlobalPrefix('api', { exclude: [{ path: 'health', method: RequestMethod.GET }] });
   const port = Number(process.env.PORT ?? 3001);
   await app.listen(port, '0.0.0.0');
+  app.get(Logger).log(`Athleta API listening on 0.0.0.0:${port}`);
 }
 void bootstrap();
