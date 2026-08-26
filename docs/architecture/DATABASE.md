@@ -827,11 +827,13 @@ status
 origin
 fixedBookingId?
 oneOffReservationId?
-lastModifiedBy?
-lastModifiedAt?
+createdBy
+createdAt
+lastModifiedBy
+lastModifiedAt
 ```
 
-La materialización exacta de ocurrencias futuras permanece pendiente de definición funcional/técnica final.
+Se utiliza materialización lazy: los bookings proyectan `RESERVED` para la fecha consultada y solo se persiste la ocurrencia concreta cuando existe una operación explícita. La DB garantiza unicidad por `personId + scheduleSlotId + date`, FKs históricas `RESTRICT` y coherencia entre `origin` y la referencia de booking mediante `CHECK`.
 
 ---
 

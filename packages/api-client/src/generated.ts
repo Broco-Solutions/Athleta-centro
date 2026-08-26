@@ -237,6 +237,87 @@ export interface OneOffReservationDto {
   confirmOverbooking?: boolean;
 }
 
+export interface SalaAgendaSlotDto {
+  id: string;
+  weekday: string;
+  startTime: string;
+  durationMinutes: number;
+}
+
+export interface SalaAgendaPersonDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dni: string;
+}
+
+export type SalaAgendaEntryDtoOrigin = typeof SalaAgendaEntryDtoOrigin[keyof typeof SalaAgendaEntryDtoOrigin];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SalaAgendaEntryDtoOrigin = {
+  FIXED: 'FIXED',
+  ONE_OFF: 'ONE_OFF',
+  SPONTANEOUS: 'SPONTANEOUS',
+} as const;
+
+export type SalaAgendaEntryDtoStatus = typeof SalaAgendaEntryDtoStatus[keyof typeof SalaAgendaEntryDtoStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SalaAgendaEntryDtoStatus = {
+  RESERVED: 'RESERVED',
+  ATTENDED: 'ATTENDED',
+  CANCELLED: 'CANCELLED',
+  ABSENT: 'ABSENT',
+} as const;
+
+export interface SalaAgendaEntryDto {
+  personId: string;
+  person: SalaAgendaPersonDto;
+  origin: SalaAgendaEntryDtoOrigin;
+  status: SalaAgendaEntryDtoStatus;
+  isMaterialized: boolean;
+}
+
+export interface SalaAgendaGroupDto {
+  slot: SalaAgendaSlotDto;
+  capacity: number;
+  reserved: number;
+  available: number;
+  isOverbooked: boolean;
+  isClosed: boolean;
+  people: SalaAgendaEntryDto[];
+}
+
+export interface SalaAgendaResponseDto {
+  data: SalaAgendaGroupDto[];
+}
+
+export interface OccurrenceReferenceDto {
+  personId: string;
+  scheduleSlotId: string;
+  date: string;
+}
+
+export type OccurrenceCorrectionDtoStatus = typeof OccurrenceCorrectionDtoStatus[keyof typeof OccurrenceCorrectionDtoStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const OccurrenceCorrectionDtoStatus = {
+  RESERVED: 'RESERVED',
+  ATTENDED: 'ATTENDED',
+  CANCELLED: 'CANCELLED',
+  ABSENT: 'ABSENT',
+} as const;
+
+export interface OccurrenceCorrectionDto {
+  personId: string;
+  scheduleSlotId: string;
+  date: string;
+  status: OccurrenceCorrectionDtoStatus;
+}
+
 export interface UpdateSalaConfigurationDto {
   /** @minimum 1 */
   capacity: number;
@@ -342,6 +423,10 @@ export type ChangeSalaPlan200 = {
 };
 
 export type GetSalaAvailabilityParams = {
+date: string;
+};
+
+export type GetSalaAgendaParams = {
 date: string;
 };
 
@@ -1596,6 +1681,252 @@ export const cancelSalaReservation = async (id: string, options?: RequestInit): 
 
   const data: cancelSalaReservationResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as cancelSalaReservationResponse
+}
+
+
+
+export type getSalaAgendaResponse200 = {
+  data: SalaAgendaResponseDto
+  status: 200
+}
+
+export type getSalaAgendaResponseSuccess = (getSalaAgendaResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getSalaAgendaResponse = (getSalaAgendaResponseSuccess)
+
+export const getGetSalaAgendaUrl = (params: GetSalaAgendaParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/sala/agenda?${stringifiedParams}` : `/api/sala/agenda`
+}
+
+export const getSalaAgenda = async (params: GetSalaAgendaParams, options?: RequestInit): Promise<getSalaAgendaResponse> => {
+
+  const res = await fetch(getGetSalaAgendaUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSalaAgendaResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSalaAgendaResponse
+}
+
+
+
+export type markSalaOccurrenceAttendedResponse201 = {
+  data: void
+  status: 201
+}
+
+export type markSalaOccurrenceAttendedResponseSuccess = (markSalaOccurrenceAttendedResponse201) & {
+  headers: Headers;
+};
+;
+
+export type markSalaOccurrenceAttendedResponse = (markSalaOccurrenceAttendedResponseSuccess)
+
+export const getMarkSalaOccurrenceAttendedUrl = () => {
+
+
+
+
+  return `/api/sala/occurrences/attend`
+}
+
+export const markSalaOccurrenceAttended = async (occurrenceReferenceDto: OccurrenceReferenceDto, options?: RequestInit): Promise<markSalaOccurrenceAttendedResponse> => {
+
+  const res = await fetch(getMarkSalaOccurrenceAttendedUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      occurrenceReferenceDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: markSalaOccurrenceAttendedResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as markSalaOccurrenceAttendedResponse
+}
+
+
+
+export type markSalaOccurrenceAbsentResponse201 = {
+  data: void
+  status: 201
+}
+
+export type markSalaOccurrenceAbsentResponseSuccess = (markSalaOccurrenceAbsentResponse201) & {
+  headers: Headers;
+};
+;
+
+export type markSalaOccurrenceAbsentResponse = (markSalaOccurrenceAbsentResponseSuccess)
+
+export const getMarkSalaOccurrenceAbsentUrl = () => {
+
+
+
+
+  return `/api/sala/occurrences/absent`
+}
+
+export const markSalaOccurrenceAbsent = async (occurrenceReferenceDto: OccurrenceReferenceDto, options?: RequestInit): Promise<markSalaOccurrenceAbsentResponse> => {
+
+  const res = await fetch(getMarkSalaOccurrenceAbsentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      occurrenceReferenceDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: markSalaOccurrenceAbsentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as markSalaOccurrenceAbsentResponse
+}
+
+
+
+export type cancelSalaOccurrenceResponse201 = {
+  data: void
+  status: 201
+}
+
+export type cancelSalaOccurrenceResponseSuccess = (cancelSalaOccurrenceResponse201) & {
+  headers: Headers;
+};
+;
+
+export type cancelSalaOccurrenceResponse = (cancelSalaOccurrenceResponseSuccess)
+
+export const getCancelSalaOccurrenceUrl = () => {
+
+
+
+
+  return `/api/sala/occurrences/cancel`
+}
+
+export const cancelSalaOccurrence = async (occurrenceReferenceDto: OccurrenceReferenceDto, options?: RequestInit): Promise<cancelSalaOccurrenceResponse> => {
+
+  const res = await fetch(getCancelSalaOccurrenceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      occurrenceReferenceDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: cancelSalaOccurrenceResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as cancelSalaOccurrenceResponse
+}
+
+
+
+export type correctSalaOccurrenceResponse201 = {
+  data: void
+  status: 201
+}
+
+export type correctSalaOccurrenceResponseSuccess = (correctSalaOccurrenceResponse201) & {
+  headers: Headers;
+};
+;
+
+export type correctSalaOccurrenceResponse = (correctSalaOccurrenceResponseSuccess)
+
+export const getCorrectSalaOccurrenceUrl = () => {
+
+
+
+
+  return `/api/sala/occurrences/correct`
+}
+
+export const correctSalaOccurrence = async (occurrenceCorrectionDto: OccurrenceCorrectionDto, options?: RequestInit): Promise<correctSalaOccurrenceResponse> => {
+
+  const res = await fetch(getCorrectSalaOccurrenceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      occurrenceCorrectionDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: correctSalaOccurrenceResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as correctSalaOccurrenceResponse
+}
+
+
+
+export type createSpontaneousSalaOccurrenceResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createSpontaneousSalaOccurrenceResponseSuccess = (createSpontaneousSalaOccurrenceResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSpontaneousSalaOccurrenceResponse = (createSpontaneousSalaOccurrenceResponseSuccess)
+
+export const getCreateSpontaneousSalaOccurrenceUrl = () => {
+
+
+
+
+  return `/api/sala/occurrences/spontaneous`
+}
+
+export const createSpontaneousSalaOccurrence = async (occurrenceReferenceDto: OccurrenceReferenceDto, options?: RequestInit): Promise<createSpontaneousSalaOccurrenceResponse> => {
+
+  const res = await fetch(getCreateSpontaneousSalaOccurrenceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      occurrenceReferenceDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSpontaneousSalaOccurrenceResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSpontaneousSalaOccurrenceResponse
 }
 
 

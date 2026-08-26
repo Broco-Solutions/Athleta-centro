@@ -514,9 +514,7 @@ initial state
 → ATTENDED
 ```
 
-si así queda confirmado funcionalmente.
-
-En caso de duda sobre esta última regla debe respetarse la definición del Analista.
+La creación de una incorporación `SPONTANEOUS` se expone para la fecha operativa actual. `SAL-TUR-08` permanece pendiente exclusivamente para decidir si puede crearse retrospectivamente con ese origen específico.
 
 ---
 
@@ -544,7 +542,7 @@ hasta que un usuario autorizado corrija su estado.
 
 # 21. Correcciones de SalaOccurrence
 
-La especificación permite correcciones posteriores sin límite general de tiempo.
+La especificación permite correcciones posteriores sin límite general de tiempo y no define una matriz rígida de transición.
 
 Conceptualmente pueden existir correcciones entre:
 
@@ -555,15 +553,7 @@ CANCELLED
 ABSENT
 ```
 
-pero las transiciones exactas admitidas entre todos los pares quedan:
-
-```text
-PENDING_FUNCTIONAL_DEFINITION
-```
-
-si no fueron todavía confirmadas por el Analista.
-
-Codex no debe imponer una matriz de transición arbitraria.
+Todos esos estados pueden corregirse manualmente por un usuario autorizado, incluyendo `ABSENT → ATTENDED` y `ATTENDED → ABSENT`. La corrección afecta únicamente la ocurrencia concreta.
 
 ---
 
@@ -2139,13 +2129,17 @@ está permitido.
 
 ## FixedSalaBooking / SalaOccurrence
 
-Confirmar reglas finales relacionadas con:
+La persistencia utiliza proyección/materialización lazy:
 
 ```text
-creation in overcapacity
-historical correction
-materialization of occurrences
+FixedSalaBooking / OneOffReservation + concrete date
+→ virtual RESERVED occurrence
+
+explicit attendance operation
+→ persisted SalaOccurrence
 ```
+
+No se pre-materializan masivamente ocurrencias futuras. `SAL-TUR-08` sigue pendiente solo para la creación retrospectiva con origen específicamente `SPONTANEOUS`.
 
 ---
 

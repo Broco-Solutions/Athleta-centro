@@ -1652,7 +1652,7 @@ ABSENT
 
 La DB debe impedir valores arbitrarios.
 
-La matriz exacta de transición entre ellos se protege en Application Service y permanece parcialmente pendiente de definición funcional.
+No existe una matriz rígida: un usuario autorizado puede corregir manualmente cualquiera de estos estados. La DB protege el enum, la unicidad `Person + fecha + horario` y la coherencia entre origen y booking; Application valida la referencia operacional y registra trazabilidad.
 
 ---
 
@@ -1906,7 +1906,6 @@ ClinicalAttention ↔ ClinicalEvaluation cardinality
 ClinicalAttention ↔ Treatment cardinality
 ClinicalStudy ↔ FileAsset cardinality
 multiple Treatment reopen/finalization cycles
-exact SalaOccurrence correction matrix
 ```
 
 ---

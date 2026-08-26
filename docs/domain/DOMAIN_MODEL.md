@@ -678,23 +678,11 @@ Esto permite unificar la operación diaria y la asistencia independientemente de
 
 # 25. Materialización de occurrences
 
-**Estado:** `PENDING_FUNCTIONAL_DEFINITION / DATABASE_DESIGN`
+**Estado técnico:** `LAZY_MATERIALIZATION`
 
-Todavía no se define si las ocurrencias de Turnos fijos:
+Las ocurrencias futuras de `FixedSalaBooking` no se pre-materializan masivamente. La agenda proyecta `RESERVED` para una fecha concreta combinando bookings, reservas y excepciones. Una `SalaOccurrence` se persiste cuando existe una operación explícita sobre esa fecha (`ATTENDED`, `ABSENT`, `CANCELLED`, corrección o incorporación `SPONTANEOUS`).
 
-```text
-se crean anticipadamente
-```
-
-o:
-
-```text
-se calculan bajo demanda
-```
-
-La decisión se tomará luego de cerrar comportamiento funcional y necesidades de consultas.
-
-Codex no deberá decidirlo durante la implementación inicial.
+Esta estrategia es reversible y no modifica el comportamiento funcional externo.
 
 ---
 

@@ -34,6 +34,8 @@ model InternalUser {
   credential      InternalCredential?
   sessions        Session[]
   salaParticipations SalaParticipation[]
+  createdSalaOccurrences  SalaOccurrence[] @relation("SalaOccurrenceCreatedBy")
+  modifiedSalaOccurrences SalaOccurrence[] @relation("SalaOccurrenceModifiedBy")
 
   @@map("internal_users")
 }
@@ -64,6 +66,17 @@ enum SalaWeekday {
 enum SalaScheduleExceptionType {
   CLOSURE
   CAPACITY_OVERRIDE
+}
+enum SalaOccurrenceOrigin {
+  FIXED
+  ONE_OFF
+  SPONTANEOUS
+}
+enum SalaOccurrenceStatus {
+  RESERVED
+  ATTENDED
+  CANCELLED
+  ABSENT
 }
 
 model InternalCredential {
@@ -126,6 +139,7 @@ model Person {
   salaParticipations    SalaParticipation[]
   fixedBookings         FixedSalaBooking[]
   reservations          OneOffReservation[]
+  salaOccurrences       SalaOccurrence[]
 
   @@index([lastName, firstName])
   @@index([normalizedEmail])
@@ -176,6 +190,7 @@ model SalaScheduleSlot {
   startTime       DateTime          @map("start_time") @db.Time(0)
   durationMinutes Int               @default(60) @map("duration_minutes")
   specificCapacity Int?             @map("specific_capacity")
+  startsAt        DateTime          @default(dbgenerated("'1970-01-01'::date")) @map("starts_at") @db.Date
   isActive        Boolean           @default(true) @map("is_active")
   endedAt         DateTime?         @map("ended_at") @db.Date
   createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -183,6 +198,7 @@ model SalaScheduleSlot {
   exceptions      SalaScheduleException[]
   fixedBookings   FixedSalaBooking[]
   reservations    OneOffReservation[]
+  occurrences     SalaOccurrence[]
   @@unique([weekday, startTime])
   @@map("sala_schedule_slots")
 }
@@ -198,6 +214,7 @@ model FixedSalaBooking {
   person              Person @relation(fields: [personId], references: [id], onDelete: Restrict)
   salaParticipation  SalaParticipation @relation(fields: [salaParticipationId], references: [id], onDelete: Restrict)
   scheduleSlot        SalaScheduleSlot @relation(fields: [scheduleSlotId], references: [id], onDelete: Restrict)
+  occurrences         SalaOccurrence[]
   @@index([personId])
   @@index([salaParticipationId])
   @@index([scheduleSlotId])
@@ -215,9 +232,34 @@ model OneOffReservation {
   person              Person @relation(fields: [personId], references: [id], onDelete: Restrict)
   salaParticipation  SalaParticipation @relation(fields: [salaParticipationId], references: [id], onDelete: Restrict)
   scheduleSlot        SalaScheduleSlot @relation(fields: [scheduleSlotId], references: [id], onDelete: Restrict)
+  occurrences         SalaOccurrence[]
   @@unique([personId, scheduleSlotId, date])
   @@index([date, scheduleSlotId])
   @@map("one_off_reservations")
+}
+
+model SalaOccurrence {
+  id                  String                @id @default(uuid()) @db.Uuid
+  personId            String                @map("person_id") @db.Uuid
+  scheduleSlotId      String                @map("schedule_slot_id") @db.Uuid
+  date                DateTime              @db.Date
+  origin              SalaOccurrenceOrigin
+  status              SalaOccurrenceStatus
+  fixedSalaBookingId  String?               @map("fixed_sala_booking_id") @db.Uuid
+  oneOffReservationId String?               @map("one_off_reservation_id") @db.Uuid
+  createdBy           String                @map("created_by") @db.Uuid
+  createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastModifiedAt      DateTime              @updatedAt @map("last_modified_at") @db.Timestamptz(6)
+  lastModifiedBy      String                @map("last_modified_by") @db.Uuid
+  person              Person                @relation(fields: [personId], references: [id], onDelete: Restrict)
+  scheduleSlot        SalaScheduleSlot      @relation(fields: [scheduleSlotId], references: [id], onDelete: Restrict)
+  fixedSalaBooking    FixedSalaBooking?     @relation(fields: [fixedSalaBookingId], references: [id], onDelete: Restrict)
+  oneOffReservation   OneOffReservation?    @relation(fields: [oneOffReservationId], references: [id], onDelete: Restrict)
+  creator             InternalUser          @relation("SalaOccurrenceCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
+  lastModifier        InternalUser          @relation("SalaOccurrenceModifiedBy", fields: [lastModifiedBy], references: [id], onDelete: Restrict)
+  @@unique([personId, scheduleSlotId, date])
+  @@index([date, scheduleSlotId])
+  @@map("sala_occurrences")
 }
 
 model SalaScheduleException {

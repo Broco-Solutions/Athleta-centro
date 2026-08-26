@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, Role, SalaScheduleExceptionType, InternalUserStatus, SalaWeekday } from '@prisma/client';
+import { Prisma, Role, SalaOccurrenceOrigin, SalaOccurrenceStatus, SalaScheduleExceptionType, InternalUserStatus, SalaWeekday } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import type { ChangeFixedBookingDto, FixedBookingDto, OneOffReservationDto, PlanDto, ReplaceScheduleSlotDto, ScheduleExceptionDto, ScheduleSlotDto, UpdateSalaConfigurationDto } from './sala.dto';
+import type { ChangeFixedBookingDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, PlanDto, ReplaceScheduleSlotDto, ScheduleExceptionDto, ScheduleSlotDto, UpdateSalaConfigurationDto } from './sala.dto';
 @Injectable()
 export class SalaService {
   constructor(private readonly prisma: PrismaService) {}
@@ -12,7 +12,7 @@ export class SalaService {
   async updatePlan(id: string, input: PlanDto) { try { return await this.prisma.salaPlan.update({ where: { id }, data: { name: input.name.trim(), monthlyAmount: input.monthlyAmount, ...(input.isSelectable !== undefined ? { isSelectable: input.isSelectable } : {}) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_PLAN_NOT_FOUND', message: 'Plan not found' }); throw error; } }
   async listSlots() { return this.prisma.salaScheduleSlot.findMany({ where: { isActive: true }, include: { exceptions: true }, orderBy: [{ weekday: 'asc' }, { startTime: 'asc' }] }); }
   async updateSlot(id: string, input: ScheduleSlotDto) { try { return await this.prisma.salaScheduleSlot.update({ where: { id }, data: { durationMinutes: input.durationMinutes ?? 60, specificCapacity: input.specificCapacity ?? null }, include: { exceptions: true } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_SCHEDULE_NOT_FOUND', message: 'Schedule slot not found' }); throw error; } }
-  async replaceSlot(id: string, input: ReplaceScheduleSlotDto, failureAfterMutations = false) { return this.prisma.$transaction(async (tx) => { const old = await tx.salaScheduleSlot.findUnique({ where: { id } }); if (!old || !old.isActive) throw new NotFoundException({ code: 'SALA_SCHEDULE_NOT_FOUND', message: 'Schedule slot not found' }); const effective = this.date(input.effectiveDate); await tx.fixedSalaBooking.updateMany({ where: { scheduleSlotId: id, OR: [{ endDate: null }, { endDate: { gte: effective } }] }, data: { endDate: new Date(effective.getTime() - 86400000) } }); await tx.oneOffReservation.updateMany({ where: { scheduleSlotId: id, date: { gte: effective }, cancelledAt: null }, data: { cancelledAt: new Date() } }); if (failureAfterMutations) throw new Error('SIMULATED_SCHEDULE_REPLACEMENT_FAILURE'); await tx.salaScheduleSlot.update({ where: { id }, data: { isActive: false, endedAt: effective } }); return tx.salaScheduleSlot.create({ data: { weekday: input.weekday, startTime: this.time(input.startTime), durationMinutes: input.durationMinutes ?? old.durationMinutes, specificCapacity: input.specificCapacity ?? null }, include: { exceptions: true } }); }); }
+  async replaceSlot(id: string, input: ReplaceScheduleSlotDto, failureAfterMutations = false) { return this.prisma.$transaction(async (tx) => { const old = await tx.salaScheduleSlot.findUnique({ where: { id } }); if (!old || !old.isActive) throw new NotFoundException({ code: 'SALA_SCHEDULE_NOT_FOUND', message: 'Schedule slot not found' }); const effective = this.date(input.effectiveDate); await tx.fixedSalaBooking.updateMany({ where: { scheduleSlotId: id, OR: [{ endDate: null }, { endDate: { gte: effective } }] }, data: { endDate: new Date(effective.getTime() - 86400000) } }); await tx.oneOffReservation.updateMany({ where: { scheduleSlotId: id, date: { gte: effective }, cancelledAt: null }, data: { cancelledAt: new Date() } }); if (failureAfterMutations) throw new Error('SIMULATED_SCHEDULE_REPLACEMENT_FAILURE'); await tx.salaScheduleSlot.update({ where: { id }, data: { isActive: false, endedAt: effective } }); return tx.salaScheduleSlot.create({ data: { weekday: input.weekday, startTime: this.time(input.startTime), startsAt: effective, durationMinutes: input.durationMinutes ?? old.durationMinutes, specificCapacity: input.specificCapacity ?? null }, include: { exceptions: true } }); }); }
   async createSlot(input: ScheduleSlotDto) { const start = this.time(input.startTime); const duration = input.durationMinutes ?? 60; if (duration < 1 || duration > 1440) throw new BadRequestException({ code: 'SALA_SCHEDULE_DURATION_INVALID', message: 'Duration is invalid' }); const endMinutes = this.minutes(start) + duration; if (endMinutes > 24 * 60) throw new BadRequestException({ code: 'SALA_SCHEDULE_END_INVALID', message: 'Schedule must end before midnight' }); const existing = await this.prisma.salaScheduleSlot.findMany({ where: { weekday: input.weekday } }); if (existing.some((slot) => this.overlaps(this.minutes(slot.startTime), slot.durationMinutes, this.minutes(start), duration))) throw new ConflictException({ code: 'SALA_SCHEDULE_OVERLAP', message: 'Schedule slots cannot overlap' }); try { return await this.prisma.salaScheduleSlot.create({ data: { weekday: input.weekday, startTime: start, durationMinutes: duration, specificCapacity: input.specificCapacity ?? null } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_SCHEDULE_DUPLICATE', message: 'Schedule slot already exists' }); throw error; } }
   async addException(slotId: string, input: ScheduleExceptionDto) { if (input.type === SalaScheduleExceptionType.CLOSURE && input.capacityOverride != null) throw new BadRequestException({ code: 'SALA_EXCEPTION_CAPACITY_INVALID', message: 'Closure cannot define capacity override' }); if (input.type === SalaScheduleExceptionType.CAPACITY_OVERRIDE && input.capacityOverride == null) throw new BadRequestException({ code: 'SALA_EXCEPTION_CAPACITY_REQUIRED', message: 'Capacity override is required' }); try { const capacityOverride = input.type === SalaScheduleExceptionType.CAPACITY_OVERRIDE ? (input.capacityOverride ?? null) : null; return await this.prisma.salaScheduleException.create({ data: { scheduleSlotId: slotId, date: this.date(input.date), type: input.type, capacityOverride } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_EXCEPTION_DUPLICATE', message: 'Exception already exists for this date' }); if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') throw new NotFoundException({ code: 'SALA_SCHEDULE_NOT_FOUND', message: 'Schedule slot not found' }); throw error; } }
   async join(input: { personId: string; mainProfessorId: string; planId: string; startDate: string }) {
@@ -23,7 +23,7 @@ export class SalaService {
     try { return await this.prisma.salaParticipation.create({ data: { personId: input.personId, mainProfessorId: input.mainProfessorId, planId: input.planId, startDate: this.date(input.startDate) }, include: { plan: true, mainProfessor: true } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_ACTIVE_PARTICIPATION_EXISTS', message: 'Person already has an active Sala participation' }); throw error; }
   }
   async listParticipations(personId: string) { return this.prisma.salaParticipation.findMany({ where: { personId }, orderBy: { startDate: 'desc' }, include: { plan: true, mainProfessor: true } }); }
-  async leave(id: string, failureAfterMutations = false) { return this.prisma.$transaction(async (tx) => { const current = await tx.salaParticipation.findFirst({ where: { id, endDate: null } }); if (!current) throw new NotFoundException({ code: 'SALA_ACTIVE_PARTICIPATION_NOT_FOUND', message: 'Active participation not found' }); const today = new Date(); await tx.fixedSalaBooking.updateMany({ where: { salaParticipationId: id, OR: [{ endDate: null }, { endDate: { gt: today } }] }, data: { endDate: today } }); await tx.oneOffReservation.updateMany({ where: { salaParticipationId: id, date: { gte: today }, cancelledAt: null }, data: { cancelledAt: today } }); if (failureAfterMutations) throw new Error('SIMULATED_LEAVE_FAILURE'); return tx.salaParticipation.update({ where: { id }, data: { endDate: today }, include: { plan: true, mainProfessor: true } }); }); }
+  async leave(id: string, failureAfterMutations = false, actorId?: string) { return this.prisma.$transaction(async (tx) => { const current = await tx.salaParticipation.findFirst({ where: { id, endDate: null } }); if (!current) throw new NotFoundException({ code: 'SALA_ACTIVE_PARTICIPATION_NOT_FOUND', message: 'Active participation not found' }); const now = new Date(); const today = this.date(this.todayOperational()); await tx.fixedSalaBooking.updateMany({ where: { salaParticipationId: id, OR: [{ endDate: null }, { endDate: { gt: today } }] }, data: { endDate: today } }); await tx.oneOffReservation.updateMany({ where: { salaParticipationId: id, date: { gte: today }, cancelledAt: null }, data: { cancelledAt: now } }); await tx.salaOccurrence.updateMany({ where: { personId: current.personId, date: { gte: today }, status: { not: SalaOccurrenceStatus.CANCELLED } }, data: { status: SalaOccurrenceStatus.CANCELLED, ...(actorId ? { lastModifiedBy: actorId } : {}) } }); if (failureAfterMutations) throw new Error('SIMULATED_LEAVE_FAILURE'); return tx.salaParticipation.update({ where: { id }, data: { endDate: today }, include: { plan: true, mainProfessor: true } }); }); }
   async changeProfessor(id: string, mainProfessorId: string) { const professor = await this.prisma.internalUser.findUnique({ where: { id: mainProfessorId }, include: { roles: true } }); if (!professor || professor.status !== InternalUserStatus.ACTIVE || !professor.roles.some((role) => role.role === Role.PROFESSOR)) throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Professor is not eligible' }); return this.prisma.salaParticipation.update({ where: { id }, data: { mainProfessorId }, include: { plan: true, mainProfessor: true } }); }
   async changePlan(id: string, planId: string) { const plan = await this.prisma.salaPlan.findUnique({ where: { id: planId } }); if (!plan || !plan.isSelectable) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'Plan is not selectable' }); return this.prisma.salaParticipation.update({ where: { id }, data: { planId }, include: { plan: true, mainProfessor: true } }); }
   async hasActiveSalaParticipation(personId: string) { return (await this.prisma.salaParticipation.count({ where: { personId, endDate: null } })) > 0; }
@@ -35,8 +35,70 @@ export class SalaService {
   async listReservations(personId: string) { return this.prisma.oneOffReservation.findMany({ where: { personId }, include: { scheduleSlot: true }, orderBy: { date: 'desc' } }); }
   async endFixed(id: string, endDate: string) { try { return await this.prisma.fixedSalaBooking.update({ where: { id }, data: { endDate: this.date(endDate) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_FIXED_BOOKING_NOT_FOUND', message: 'Fixed booking not found' }); throw error; } }
   async cancelReservation(id: string) { try { return await this.prisma.oneOffReservation.update({ where: { id }, data: { cancelledAt: new Date() } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_RESERVATION_NOT_FOUND', message: 'Reservation not found' }); throw error; } }
+  async agenda(date: string) {
+    const day = this.date(date);
+    const personSelect = { id: true, firstName: true, lastName: true, dni: true } as const;
+    const [slots, explicit, config] = await Promise.all([
+      this.prisma.salaScheduleSlot.findMany({
+        where: { weekday: this.weekday(day), startsAt: { lte: day }, OR: [{ endedAt: null }, { endedAt: { gte: day } }] },
+        include: {
+          exceptions: { where: { date: day } },
+          fixedBookings: { where: { startDate: { lte: day }, OR: [{ endDate: null }, { endDate: { gte: day } }] }, include: { person: { select: personSelect } } },
+          reservations: { where: { date: day }, include: { person: { select: personSelect } } },
+        },
+        orderBy: { startTime: 'asc' },
+      }),
+      this.prisma.salaOccurrence.findMany({ where: { date: day }, include: { person: { select: personSelect } } }),
+      this.configuration(),
+    ]);
+    return slots.map((slot) => {
+      const exception = slot.exceptions[0];
+      const isClosed = exception?.type === SalaScheduleExceptionType.CLOSURE;
+      const capacity = exception?.type === SalaScheduleExceptionType.CAPACITY_OVERRIDE ? (exception.capacityOverride ?? 1) : (slot.specificCapacity ?? config?.generalCapacity ?? 1);
+      const entries = new Map<string, { person: typeof slot.fixedBookings[number]['person']; origin: SalaOccurrenceOrigin; status: SalaOccurrenceStatus; fixedSalaBookingId: string | null; oneOffReservationId: string | null; isMaterialized: boolean }>();
+      for (const booking of slot.fixedBookings) entries.set(booking.personId, { person: booking.person, origin: SalaOccurrenceOrigin.FIXED, status: isClosed ? SalaOccurrenceStatus.CANCELLED : SalaOccurrenceStatus.RESERVED, fixedSalaBookingId: booking.id, oneOffReservationId: null, isMaterialized: false });
+      for (const reservation of slot.reservations) entries.set(reservation.personId, { person: reservation.person, origin: SalaOccurrenceOrigin.ONE_OFF, status: reservation.cancelledAt || isClosed ? SalaOccurrenceStatus.CANCELLED : SalaOccurrenceStatus.RESERVED, fixedSalaBookingId: null, oneOffReservationId: reservation.id, isMaterialized: false });
+      for (const occurrence of explicit.filter((item) => item.scheduleSlotId === slot.id)) entries.set(occurrence.personId, { person: occurrence.person, origin: occurrence.origin, status: occurrence.status, fixedSalaBookingId: occurrence.fixedSalaBookingId, oneOffReservationId: occurrence.oneOffReservationId, isMaterialized: true });
+      const people = [...entries].map(([personId, value]) => ({ personId, ...value }));
+      const reserved = people.filter((entry) => entry.status !== SalaOccurrenceStatus.CANCELLED).length;
+      return { slot: { id: slot.id, weekday: slot.weekday, startTime: slot.startTime, durationMinutes: slot.durationMinutes }, capacity, reserved, available: Math.max(capacity - reserved, 0), isOverbooked: reserved > capacity, isClosed, people };
+    });
+  }
+  async commandOccurrence(input: OccurrenceReferenceDto & { status: SalaOccurrenceStatus; origin?: SalaOccurrenceOrigin }, actorId: string) {
+    const day = this.date(input.date);
+    const isSpontaneous = input.origin === SalaOccurrenceOrigin.SPONTANEOUS;
+    if (isSpontaneous && input.date !== this.todayOperational()) throw new BadRequestException({ code: 'SALA_SPONTANEOUS_DATE_NOT_AVAILABLE', message: 'Historical spontaneous attendance is not available' });
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM sala_schedule_slots WHERE id = ${input.scheduleSlotId}::uuid FOR UPDATE`;
+      const [slot, person, existing, fixed, oneOff] = await Promise.all([
+        tx.salaScheduleSlot.findFirst({ where: { id: input.scheduleSlotId, weekday: this.weekday(day), startsAt: { lte: day }, OR: [{ endedAt: null }, { endedAt: { gte: day } }] }, select: { id: true } }),
+        tx.person.findUnique({ where: { id: input.personId }, select: { id: true } }),
+        tx.salaOccurrence.findUnique({ where: { personId_scheduleSlotId_date: { personId: input.personId, scheduleSlotId: input.scheduleSlotId, date: day } } }),
+        tx.fixedSalaBooking.findFirst({ where: { personId: input.personId, scheduleSlotId: input.scheduleSlotId, startDate: { lte: day }, OR: [{ endDate: null }, { endDate: { gte: day } }] }, select: { id: true } }),
+        tx.oneOffReservation.findUnique({ where: { personId_scheduleSlotId_date: { personId: input.personId, scheduleSlotId: input.scheduleSlotId, date: day } }, select: { id: true } }),
+      ]);
+      if (!slot) throw new NotFoundException({ code: 'SALA_OCCURRENCE_SLOT_INVALID', message: 'Schedule occurrence not found' });
+      if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
+      if (isSpontaneous) {
+        const participation = await tx.salaParticipation.findFirst({ where: { personId: input.personId, startDate: { lte: day }, OR: [{ endDate: null }, { endDate: { gte: day } }] }, select: { id: true } });
+        if (!participation) throw new BadRequestException({ code: 'SALA_PARTICIPATION_REQUIRED', message: 'An active Sala participation is required' });
+        if (existing || fixed || oneOff) throw new ConflictException({ code: 'SALA_OCCURRENCE_DUPLICATE', message: 'Person already has an operational presence for this schedule' });
+      } else if (!existing && !fixed && !oneOff) {
+        throw new NotFoundException({ code: 'SALA_OCCURRENCE_NOT_FOUND', message: 'Operational occurrence not found' });
+      }
+      const origin = isSpontaneous ? SalaOccurrenceOrigin.SPONTANEOUS : (existing?.origin ?? (oneOff ? SalaOccurrenceOrigin.ONE_OFF : SalaOccurrenceOrigin.FIXED));
+      return tx.salaOccurrence.upsert({
+        where: { personId_scheduleSlotId_date: { personId: input.personId, scheduleSlotId: input.scheduleSlotId, date: day } },
+        create: { personId: input.personId, scheduleSlotId: input.scheduleSlotId, date: day, origin, status: input.status, fixedSalaBookingId: fixed?.id ?? null, oneOffReservationId: oneOff?.id ?? null, createdBy: actorId, lastModifiedBy: actorId },
+        update: { status: input.status, lastModifiedBy: actorId },
+        include: { person: { select: { id: true, firstName: true, lastName: true, dni: true } } },
+      });
+    });
+  }
   private time(value: string): Date { if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) throw new BadRequestException({ code: 'SALA_SCHEDULE_TIME_INVALID', message: 'Time must use HH:mm' }); const [hour, minute] = value.split(':').map(Number); return new Date(Date.UTC(1970, 0, 1, hour, minute)); }
   private date(value: string): Date { return new Date(`${value}T00:00:00.000Z`); }
+  private weekday(value: Date): SalaWeekday { return ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'][value.getUTCDay()] as SalaWeekday; }
+  private todayOperational(): string { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()); const values = Object.fromEntries(parts.map((part) => [part.type, part.value])); return `${values.year}-${values.month}-${values.day}`; }
   private minutes(value: Date): number { return value.getUTCHours() * 60 + value.getUTCMinutes(); }
   private overlaps(a: number, ad: number, b: number, bd: number): boolean { return a < b + bd && b < a + ad; }
 }

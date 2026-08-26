@@ -1018,6 +1018,8 @@ date boundaries
 
 ### M2.4 — Sala occurrences and attendance
 
+**Status:** DONE
+
 **Model:** `MODEL_STANDARD`
 
 Scope:

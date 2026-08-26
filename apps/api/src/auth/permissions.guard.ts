@@ -16,8 +16,9 @@ export class PermissionsGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const required = this.reflector.getAllAndOverride<Permission[]>(PERMISSIONS_KEY, [context.getHandler(), context.getClass()]) ?? [];
     const anyRequired = this.reflector.getAllAndOverride<Permission[]>(ANY_PERMISSIONS_KEY, [context.getHandler(), context.getClass()]) ?? [];
-    const request = context.switchToHttp().getRequest<Request>();
+    const request = context.switchToHttp().getRequest<Request & { athletaUserId?: string }>();
     const current = await this.auth.current(request.cookies?.athleta_session);
+    request.athletaUserId = current.session.user.id;
     if (!required.every((permission) => current.session.permissions.includes(permission))) {
       throw new ForbiddenException({ code: 'PERMISSION_DENIED', message: 'Permission denied' });
     }

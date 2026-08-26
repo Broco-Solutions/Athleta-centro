@@ -1,7 +1,7 @@
 import { Type } from 'class-transformer';
 import { IsDateString, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { SalaScheduleExceptionType, SalaWeekday } from '@prisma/client';
+import { SalaOccurrenceStatus, SalaScheduleExceptionType, SalaWeekday } from '@prisma/client';
 
 export class CapacityDto { @ApiProperty({ type: Number, minimum: 1 }) @Type(() => Number) @IsInt() @Min(1) capacity!: number; }
 export class UpdateSalaConfigurationDto extends CapacityDto {}
@@ -16,3 +16,10 @@ export class FixedBookingDto { @ApiProperty({ type: String, format: 'uuid' }) @I
 export class OneOffReservationDto { @ApiProperty({ type: String, format: 'uuid' }) @IsString() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsString() salaParticipationId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsString() scheduleSlotId!: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) date!: string; @ApiPropertyOptional({ type: Boolean }) @IsOptional() confirmOverbooking?: boolean; }
 export class ChangeFixedBookingDto extends FixedBookingDto { @ApiProperty({ type: String, format: 'uuid' }) @IsString() id!: string; }
 export class EndFixedBookingDto { @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) endDate!: string; }
+export class OccurrenceReferenceDto { @ApiProperty({ type: String, format: 'uuid' }) @IsString() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsString() scheduleSlotId!: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) date!: string; }
+export class OccurrenceCorrectionDto extends OccurrenceReferenceDto { @ApiProperty({ enum: SalaOccurrenceStatus, type: String }) @IsEnum(SalaOccurrenceStatus) status!: SalaOccurrenceStatus; }
+export class SalaAgendaPersonDto { @ApiProperty({ type: String, format: 'uuid' }) id!: string; @ApiProperty({ type: String }) firstName!: string; @ApiProperty({ type: String }) lastName!: string; @ApiProperty({ type: String }) dni!: string; }
+export class SalaAgendaEntryDto { @ApiProperty({ type: String, format: 'uuid' }) personId!: string; @ApiProperty({ type: () => SalaAgendaPersonDto }) person!: SalaAgendaPersonDto; @ApiProperty({ enum: ['FIXED', 'ONE_OFF', 'SPONTANEOUS'], type: String }) origin!: string; @ApiProperty({ enum: SalaOccurrenceStatus, type: String }) status!: SalaOccurrenceStatus; @ApiProperty({ type: Boolean }) isMaterialized!: boolean; }
+export class SalaAgendaSlotDto { @ApiProperty({ type: String, format: 'uuid' }) id!: string; @ApiProperty({ type: String }) weekday!: string; @ApiProperty({ type: String }) startTime!: string; @ApiProperty({ type: Number }) durationMinutes!: number; }
+export class SalaAgendaGroupDto { @ApiProperty({ type: () => SalaAgendaSlotDto }) slot!: SalaAgendaSlotDto; @ApiProperty({ type: Number }) capacity!: number; @ApiProperty({ type: Number }) reserved!: number; @ApiProperty({ type: Number }) available!: number; @ApiProperty({ type: Boolean }) isOverbooked!: boolean; @ApiProperty({ type: Boolean }) isClosed!: boolean; @ApiProperty({ type: () => [SalaAgendaEntryDto] }) people!: SalaAgendaEntryDto[]; }
+export class SalaAgendaResponseDto { @ApiProperty({ type: [SalaAgendaGroupDto] }) data!: SalaAgendaGroupDto[]; }
