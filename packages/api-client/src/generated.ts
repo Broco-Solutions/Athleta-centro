@@ -383,6 +383,32 @@ export interface RetireExerciseDefinitionDto {
   confirmActiveRoutineImpact?: boolean;
 }
 
+export interface PhysicalTestDefinitionDto {
+  /** @maxLength 120 */
+  name: string;
+  /** @maxLength 80 */
+  type: string;
+  /**
+   * @maxLength 500
+   * @nullable
+   */
+  description?: string | null;
+}
+
+export interface PhysicalTestResultDto {
+  testDefinitionId: string;
+  /** @maxLength 500 */
+  resultText: string;
+}
+
+export interface PhysicalEvaluationDto {
+  personId: string;
+  salaParticipationId: string;
+  professorId: string;
+  evaluationDate: string;
+  results: PhysicalTestResultDto[];
+}
+
 export interface UpdateSalaConfigurationDto {
   /** @minimum 1 */
   capacity: number;
@@ -2271,6 +2297,203 @@ export const retireSalaExerciseDefinition = async (id: string,
 
   const data: retireSalaExerciseDefinitionResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as retireSalaExerciseDefinitionResponse
+}
+
+
+
+export type listSalaPhysicalTestDefinitionsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listSalaPhysicalTestDefinitionsResponseSuccess = (listSalaPhysicalTestDefinitionsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listSalaPhysicalTestDefinitionsResponse = (listSalaPhysicalTestDefinitionsResponseSuccess)
+
+export const getListSalaPhysicalTestDefinitionsUrl = () => {
+
+
+
+
+  return `/api/sala/physical-test-definitions`
+}
+
+export const listSalaPhysicalTestDefinitions = async ( options?: RequestInit): Promise<listSalaPhysicalTestDefinitionsResponse> => {
+
+  const res = await fetch(getListSalaPhysicalTestDefinitionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSalaPhysicalTestDefinitionsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSalaPhysicalTestDefinitionsResponse
+}
+
+
+
+export type createSalaPhysicalTestDefinitionResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createSalaPhysicalTestDefinitionResponseSuccess = (createSalaPhysicalTestDefinitionResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSalaPhysicalTestDefinitionResponse = (createSalaPhysicalTestDefinitionResponseSuccess)
+
+export const getCreateSalaPhysicalTestDefinitionUrl = () => {
+
+
+
+
+  return `/api/sala/physical-test-definitions`
+}
+
+export const createSalaPhysicalTestDefinition = async (physicalTestDefinitionDto: PhysicalTestDefinitionDto, options?: RequestInit): Promise<createSalaPhysicalTestDefinitionResponse> => {
+
+  const res = await fetch(getCreateSalaPhysicalTestDefinitionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      physicalTestDefinitionDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSalaPhysicalTestDefinitionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSalaPhysicalTestDefinitionResponse
+}
+
+
+
+export type retireSalaPhysicalTestDefinitionResponse201 = {
+  data: void
+  status: 201
+}
+
+export type retireSalaPhysicalTestDefinitionResponseSuccess = (retireSalaPhysicalTestDefinitionResponse201) & {
+  headers: Headers;
+};
+;
+
+export type retireSalaPhysicalTestDefinitionResponse = (retireSalaPhysicalTestDefinitionResponseSuccess)
+
+export const getRetireSalaPhysicalTestDefinitionUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/physical-test-definitions/${id}/retire`
+}
+
+export const retireSalaPhysicalTestDefinition = async (id: string, options?: RequestInit): Promise<retireSalaPhysicalTestDefinitionResponse> => {
+
+  const res = await fetch(getRetireSalaPhysicalTestDefinitionUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: retireSalaPhysicalTestDefinitionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as retireSalaPhysicalTestDefinitionResponse
+}
+
+
+
+export type listPersonPhysicalEvaluationsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listPersonPhysicalEvaluationsResponseSuccess = (listPersonPhysicalEvaluationsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPersonPhysicalEvaluationsResponse = (listPersonPhysicalEvaluationsResponseSuccess)
+
+export const getListPersonPhysicalEvaluationsUrl = (personId: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/physical-evaluations`
+}
+
+export const listPersonPhysicalEvaluations = async (personId: string, options?: RequestInit): Promise<listPersonPhysicalEvaluationsResponse> => {
+
+  const res = await fetch(getListPersonPhysicalEvaluationsUrl(personId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listPersonPhysicalEvaluationsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPersonPhysicalEvaluationsResponse
+}
+
+
+
+export type createSalaPhysicalEvaluationResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createSalaPhysicalEvaluationResponseSuccess = (createSalaPhysicalEvaluationResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSalaPhysicalEvaluationResponse = (createSalaPhysicalEvaluationResponseSuccess)
+
+export const getCreateSalaPhysicalEvaluationUrl = () => {
+
+
+
+
+  return `/api/sala/physical-evaluations`
+}
+
+export const createSalaPhysicalEvaluation = async (physicalEvaluationDto: PhysicalEvaluationDto, options?: RequestInit): Promise<createSalaPhysicalEvaluationResponse> => {
+
+  const res = await fetch(getCreateSalaPhysicalEvaluationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      physicalEvaluationDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSalaPhysicalEvaluationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSalaPhysicalEvaluationResponse
 }
 
 

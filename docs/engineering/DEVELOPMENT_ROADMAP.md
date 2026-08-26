@@ -1068,6 +1068,8 @@ concurrency
 
 ### M2.6 — Physical evaluations
 
+**Status:** DONE
+
 **Model:** `MODEL_STANDARD`
 
 Scope:
