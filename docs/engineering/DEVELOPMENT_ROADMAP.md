@@ -872,19 +872,14 @@ Use Cases must enforce documented preconditions.
 
 ---
 
-### M1.5 — Portal credentials foundation
+### M1.5A — Portal credentials foundation
 
-**Status:** BLOCKED_BY_ROADMAP_DEPENDENCY
+**Status:** IN_PROGRESS
 
-Portal login must enforce the documented `Person ACTIVE` precondition. That
-status is derived from active Sala participation, an active clinical treatment,
-or a future scheduled clinical appointment, whose persistence does not exist
-until later phases and whose transversal calculation is scheduled for M6.1.
-Gate 1 currently requires M1.5 before Phase 2, so implementing a successful
-Portal login here would require either bypassing the security precondition,
-persisting an unauthorized `Person.status`, or inventing an interim eligibility
-rule. The roadmap must be reordered or the milestone split before this slice can
-be completed safely.
+Portal credentials are provisioned atomically with Person creation and can be
+reset by authorized internal users. PINs are Argon2id-hashed and returned only
+once from create/reset responses. Portal authentication is split into M1.5B and
+remains blocked until M6.1 derives Person activity.
 
 **Model:** `MODEL_DEEP`
 
@@ -905,6 +900,17 @@ No Portal business screens yet.
 
 ---
 
+### M1.5B — Portal authentication
+
+**Status:** BLOCKED_BY_DEPENDENCY
+
+**Dependencies:** M1.5A and M6.1 (derived Person status).
+
+Portal login, sessions, PIN changes, and ACTIVE enforcement remain deferred
+until the real Sala, Clinic, and Treatment activity sources exist.
+
+---
+
 ### GATE 1
 
 Required:
@@ -913,7 +919,7 @@ Required:
 Internal authentication stable
 RBAC verified via HTTP
 People base usable
-Portal authentication foundation stable
+Portal credentials foundation stable (M1.5A)
 Playwright auth flows pass
 ```
 
@@ -1590,6 +1596,9 @@ Implementar operaciones que solo pueden finalizarse correctamente cuando varios 
 ### M6.1 — Derived Person status
 
 **Model:** `MODEL_DEEP`
+
+**Dependencies:** M2.2 Sala Participation, M3.1 Clinical Appointments, and
+M3.3 Treatments.
 
 Scope:
 

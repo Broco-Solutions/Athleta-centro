@@ -35,6 +35,11 @@ export interface PersonResponseDto {
   /** Derived from currently available relationships. */
   status: PersonResponseDtoStatus;
   contexts: string[];
+  /**
+   * Returned only once after creation.
+   * @pattern ^\d{4}$
+   */
+  initialPin?: string;
 }
 
 export interface PeopleMetaDto {
@@ -89,6 +94,11 @@ export interface UpdatePersonDto {
   emergencyContactPhone?: string;
   socialWorkId?: string;
   affiliateNumber?: string;
+}
+
+export interface PortalPinEnvelopeDto {
+  /** @pattern ^\d{4}$ */
+  data: string;
 }
 
 export type TeamUserDtoStatus = typeof TeamUserDtoStatus[keyof typeof TeamUserDtoStatus];
@@ -557,6 +567,45 @@ export const updatePerson = async (id: string,
 
   const data: updatePersonResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updatePersonResponse
+}
+
+
+
+export type resetPortalPinResponse200 = {
+  data: PortalPinEnvelopeDto
+  status: 200
+}
+
+export type resetPortalPinResponseSuccess = (resetPortalPinResponse200) & {
+  headers: Headers;
+};
+;
+
+export type resetPortalPinResponse = (resetPortalPinResponseSuccess)
+
+export const getResetPortalPinUrl = (id: string,) => {
+
+
+
+
+  return `/api/people/${id}/reset-portal-pin`
+}
+
+export const resetPortalPin = async (id: string, options?: RequestInit): Promise<resetPortalPinResponse> => {
+
+  const res = await fetch(getResetPortalPinUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: resetPortalPinResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as resetPortalPinResponse
 }
 
 

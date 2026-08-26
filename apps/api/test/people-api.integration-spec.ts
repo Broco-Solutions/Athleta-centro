@@ -1,4 +1,5 @@
 import cookieParser from 'cookie-parser';
+import * as argon2 from 'argon2';
 import request from 'supertest';
 import { Test } from '@nestjs/testing';
 import { ValidationPipe, type INestApplication } from '@nestjs/common';
@@ -20,13 +21,24 @@ describe('People API', () => {
     const authn = await session(Role.PROFESSOR);
     const created = await request(app.getHttpServer()).post('/api/people').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(payload).expect(201);
     expect(created.body.data).toMatchObject({ firstName: 'Ana', dni: payload.dni, birthDate: '1992-03-10', status: 'INACTIVE', contexts: [] });
+    expect(created.body.data.initialPin).toMatch(/^\d{4}$/);
+    expect(JSON.stringify(created.body)).not.toMatch(/pinHash|passwordHash/);
     const id = created.body.data.id as string;
+    const credential = await prisma.portalCredential.findUniqueOrThrow({ where: { personId: id } });
+    expect(credential.pinHash).not.toBe(created.body.data.initialPin);
+    expect(await argon2.verify(credential.pinHash, created.body.data.initialPin)).toBe(true);
     const detail = await request(app.getHttpServer()).get(`/api/people/${id}`).set('Cookie', authn.cookie).expect(200);
     expect(JSON.stringify(detail.body)).not.toMatch(/normalizedDni|normalizedEmail|createdAt|updatedAt/);
     const list = await request(app.getHttpServer()).get('/api/people?search=20.123&page=1&pageSize=10').set('Cookie', authn.cookie).expect(200);
     expect(list.body.meta).toMatchObject({ page: 1, pageSize: 10, total: 1, totalPages: 1 });
     const updated = await request(app.getHttpServer()).patch(`/api/people/${id}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ phone: '3515559999', email: null }).expect(200);
     expect(updated.body.data).toMatchObject({ phone: '3515559999', email: null });
+    expect(updated.body.data.initialPin).toBeUndefined();
+    const reset = await request(app.getHttpServer()).post(`/api/people/${id}/reset-portal-pin`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).expect(201);
+    expect(reset.body.data).toMatch(/^\d{4}$/);
+    expect(JSON.stringify(reset.body)).not.toMatch(/pinHash|passwordHash/);
+    const detailAfterReset = await request(app.getHttpServer()).get(`/api/people/${id}`).set('Cookie', authn.cookie).expect(200);
+    expect(detailAfterReset.body.data.initialPin).toBeUndefined();
   });
 
   it('returns stable duplicate and validation errors', async () => {

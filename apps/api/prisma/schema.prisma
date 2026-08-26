@@ -64,6 +64,7 @@ model Session {
   id             String        @id @default(uuid()) @db.Uuid
   kind           SessionKind
   internalUserId String?       @map("internal_user_id") @db.Uuid
+  personId       String?       @map("person_id") @db.Uuid
   secretHash     String        @unique @map("secret_hash")
   csrfToken      String        @map("csrf_token")
   expiresAt      DateTime      @map("expires_at") @db.Timestamptz(6)
@@ -71,7 +72,9 @@ model Session {
   revokedAt      DateTime?     @map("revoked_at") @db.Timestamptz(6)
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   internalUser   InternalUser? @relation(fields: [internalUserId], references: [id], onDelete: Cascade)
+  person         Person?       @relation(fields: [personId], references: [id], onDelete: Cascade)
   @@index([internalUserId])
+  @@index([personId])
   @@index([expiresAt])
   @@index([revokedAt])
   @@map("sessions")
@@ -103,8 +106,20 @@ model Person {
   affiliateNumber       String?  @map("affiliate_number")
   createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  portalCredential      PortalCredential?
+  portalSessions        Session[]
 
   @@index([lastName, firstName])
   @@index([normalizedEmail])
   @@map("people")
+}
+
+model PortalCredential {
+  personId             String   @id @map("person_id") @db.Uuid
+  pinHash              String   @map("pin_hash")
+  mustChangePin        Boolean  @default(true) @map("must_change_pin")
+  credentialsUpdatedAt DateTime @default(now()) @map("credentials_updated_at") @db.Timestamptz(6)
+  person               Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@map("portal_credentials")
 }
