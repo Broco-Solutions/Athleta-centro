@@ -1,0 +1,2 @@
+import {scaleValueInRange,validateScaleRange} from './evaluation.rules';
+describe('clinical SCALE rules',()=>{it('supports optional and decimal limits',()=>{expect(validateScaleRange(null,null)).toBe(true);expect(validateScaleRange('0.25','4.5')).toBe(true);expect(validateScaleRange('10','1')).toBe(false);expect(scaleValueInRange('4.5','0.25','4.5')).toBe(true);expect(scaleValueInRange('0.24','0.25',null)).toBe(false);expect(scaleValueInRange('100',null,'10')).toBe(false)});});

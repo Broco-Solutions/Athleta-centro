@@ -3865,19 +3865,19 @@ export const evolutionControllerUpdate = async (id: string, options?: RequestIni
 
 
 
-export type studyControllerCreateResponse201 = {
+export type createClinicalStudyResponse201 = {
   data: void
   status: 201
 }
 
-export type studyControllerCreateResponseSuccess = (studyControllerCreateResponse201) & {
+export type createClinicalStudyResponseSuccess = (createClinicalStudyResponse201) & {
   headers: Headers;
 };
 ;
 
-export type studyControllerCreateResponse = (studyControllerCreateResponseSuccess)
+export type createClinicalStudyResponse = (createClinicalStudyResponseSuccess)
 
-export const getStudyControllerCreateUrl = () => {
+export const getCreateClinicalStudyUrl = () => {
 
 
 
@@ -3885,9 +3885,9 @@ export const getStudyControllerCreateUrl = () => {
   return `/api/clinic/studies`
 }
 
-export const studyControllerCreate = async ( options?: RequestInit): Promise<studyControllerCreateResponse> => {
+export const createClinicalStudy = async ( options?: RequestInit): Promise<createClinicalStudyResponse> => {
 
-  const res = await fetch(getStudyControllerCreateUrl(),
+  const res = await fetch(getCreateClinicalStudyUrl(),
   {
     ...options,
     method: 'POST'
@@ -3898,25 +3898,25 @@ export const studyControllerCreate = async ( options?: RequestInit): Promise<stu
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: studyControllerCreateResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as studyControllerCreateResponse
+  const data: createClinicalStudyResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createClinicalStudyResponse
 }
 
 
 
-export type studyControllerListResponse200 = {
+export type listClinicalStudiesResponse200 = {
   data: void
   status: 200
 }
 
-export type studyControllerListResponseSuccess = (studyControllerListResponse200) & {
+export type listClinicalStudiesResponseSuccess = (listClinicalStudiesResponse200) & {
   headers: Headers;
 };
 ;
 
-export type studyControllerListResponse = (studyControllerListResponseSuccess)
+export type listClinicalStudiesResponse = (listClinicalStudiesResponseSuccess)
 
-export const getStudyControllerListUrl = () => {
+export const getListClinicalStudiesUrl = () => {
 
 
 
@@ -3924,9 +3924,9 @@ export const getStudyControllerListUrl = () => {
   return `/api/clinic/studies`
 }
 
-export const studyControllerList = async ( options?: RequestInit): Promise<studyControllerListResponse> => {
+export const listClinicalStudies = async ( options?: RequestInit): Promise<listClinicalStudiesResponse> => {
 
-  const res = await fetch(getStudyControllerListUrl(),
+  const res = await fetch(getListClinicalStudiesUrl(),
   {
     ...options,
     method: 'GET'
@@ -3937,25 +3937,25 @@ export const studyControllerList = async ( options?: RequestInit): Promise<study
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: studyControllerListResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as studyControllerListResponse
+  const data: listClinicalStudiesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listClinicalStudiesResponse
 }
 
 
 
-export type studyControllerDetailResponse200 = {
+export type getClinicalStudyResponse200 = {
   data: void
   status: 200
 }
 
-export type studyControllerDetailResponseSuccess = (studyControllerDetailResponse200) & {
+export type getClinicalStudyResponseSuccess = (getClinicalStudyResponse200) & {
   headers: Headers;
 };
 ;
 
-export type studyControllerDetailResponse = (studyControllerDetailResponseSuccess)
+export type getClinicalStudyResponse = (getClinicalStudyResponseSuccess)
 
-export const getStudyControllerDetailUrl = (id: string,) => {
+export const getGetClinicalStudyUrl = (id: string,) => {
 
 
 
@@ -3963,9 +3963,9 @@ export const getStudyControllerDetailUrl = (id: string,) => {
   return `/api/clinic/studies/${id}`
 }
 
-export const studyControllerDetail = async (id: string, options?: RequestInit): Promise<studyControllerDetailResponse> => {
+export const getClinicalStudy = async (id: string, options?: RequestInit): Promise<getClinicalStudyResponse> => {
 
-  const res = await fetch(getStudyControllerDetailUrl(id),
+  const res = await fetch(getGetClinicalStudyUrl(id),
   {
     ...options,
     method: 'GET'
@@ -3976,6 +3976,1059 @@ export const studyControllerDetail = async (id: string, options?: RequestInit): 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: studyControllerDetailResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as studyControllerDetailResponse
+  const data: getClinicalStudyResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getClinicalStudyResponse
+}
+
+
+
+export type updateClinicalStudyResponse200 = {
+  data: void
+  status: 200
+}
+
+export type updateClinicalStudyResponseSuccess = (updateClinicalStudyResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateClinicalStudyResponse = (updateClinicalStudyResponseSuccess)
+
+export const getUpdateClinicalStudyUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/studies/${id}`
+}
+
+export const updateClinicalStudy = async (id: string, options?: RequestInit): Promise<updateClinicalStudyResponse> => {
+
+  const res = await fetch(getUpdateClinicalStudyUrl(id),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateClinicalStudyResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateClinicalStudyResponse
+}
+
+
+
+export type attachClinicalStudyFileResponse201 = {
+  data: void
+  status: 201
+}
+
+export type attachClinicalStudyFileResponseSuccess = (attachClinicalStudyFileResponse201) & {
+  headers: Headers;
+};
+;
+
+export type attachClinicalStudyFileResponse = (attachClinicalStudyFileResponseSuccess)
+
+export const getAttachClinicalStudyFileUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/studies/${id}/file`
+}
+
+export const attachClinicalStudyFile = async (id: string, options?: RequestInit): Promise<attachClinicalStudyFileResponse> => {
+
+  const res = await fetch(getAttachClinicalStudyFileUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: attachClinicalStudyFileResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as attachClinicalStudyFileResponse
+}
+
+
+
+export type replaceClinicalStudyFileResponse200 = {
+  data: void
+  status: 200
+}
+
+export type replaceClinicalStudyFileResponseSuccess = (replaceClinicalStudyFileResponse200) & {
+  headers: Headers;
+};
+;
+
+export type replaceClinicalStudyFileResponse = (replaceClinicalStudyFileResponseSuccess)
+
+export const getReplaceClinicalStudyFileUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/studies/${id}/file`
+}
+
+export const replaceClinicalStudyFile = async (id: string, options?: RequestInit): Promise<replaceClinicalStudyFileResponse> => {
+
+  const res = await fetch(getReplaceClinicalStudyFileUrl(id),
+  {
+    ...options,
+    method: 'PUT'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: replaceClinicalStudyFileResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as replaceClinicalStudyFileResponse
+}
+
+
+
+export type removeClinicalStudyFileResponse200 = {
+  data: void
+  status: 200
+}
+
+export type removeClinicalStudyFileResponseSuccess = (removeClinicalStudyFileResponse200) & {
+  headers: Headers;
+};
+;
+
+export type removeClinicalStudyFileResponse = (removeClinicalStudyFileResponseSuccess)
+
+export const getRemoveClinicalStudyFileUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/studies/${id}/file`
+}
+
+export const removeClinicalStudyFile = async (id: string, options?: RequestInit): Promise<removeClinicalStudyFileResponse> => {
+
+  const res = await fetch(getRemoveClinicalStudyFileUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: removeClinicalStudyFileResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as removeClinicalStudyFileResponse
+}
+
+
+
+export type getClinicalStudyFileAccessResponse200 = {
+  data: void
+  status: 200
+}
+
+export type getClinicalStudyFileAccessResponseSuccess = (getClinicalStudyFileAccessResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getClinicalStudyFileAccessResponse = (getClinicalStudyFileAccessResponseSuccess)
+
+export const getGetClinicalStudyFileAccessUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/studies/${id}/file/access`
+}
+
+export const getClinicalStudyFileAccess = async (id: string, options?: RequestInit): Promise<getClinicalStudyFileAccessResponse> => {
+
+  const res = await fetch(getGetClinicalStudyFileAccessUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getClinicalStudyFileAccessResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getClinicalStudyFileAccessResponse
+}
+
+
+
+export type createClinicalEvaluationResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createClinicalEvaluationResponseSuccess = (createClinicalEvaluationResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createClinicalEvaluationResponse = (createClinicalEvaluationResponseSuccess)
+
+export const getCreateClinicalEvaluationUrl = (attentionId: string,) => {
+
+
+
+
+  return `/api/clinic/attentions/${attentionId}/evaluations`
+}
+
+export const createClinicalEvaluation = async (attentionId: string, options?: RequestInit): Promise<createClinicalEvaluationResponse> => {
+
+  const res = await fetch(getCreateClinicalEvaluationUrl(attentionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createClinicalEvaluationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createClinicalEvaluationResponse
+}
+
+
+
+export type listClinicalEvaluationsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listClinicalEvaluationsResponseSuccess = (listClinicalEvaluationsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listClinicalEvaluationsResponse = (listClinicalEvaluationsResponseSuccess)
+
+export const getListClinicalEvaluationsUrl = (attentionId: string,) => {
+
+
+
+
+  return `/api/clinic/attentions/${attentionId}/evaluations`
+}
+
+export const listClinicalEvaluations = async (attentionId: string, options?: RequestInit): Promise<listClinicalEvaluationsResponse> => {
+
+  const res = await fetch(getListClinicalEvaluationsUrl(attentionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listClinicalEvaluationsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listClinicalEvaluationsResponse
+}
+
+
+
+export type getClinicalEvaluationResponse200 = {
+  data: void
+  status: 200
+}
+
+export type getClinicalEvaluationResponseSuccess = (getClinicalEvaluationResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getClinicalEvaluationResponse = (getClinicalEvaluationResponseSuccess)
+
+export const getGetClinicalEvaluationUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/evaluations/${id}`
+}
+
+export const getClinicalEvaluation = async (id: string, options?: RequestInit): Promise<getClinicalEvaluationResponse> => {
+
+  const res = await fetch(getGetClinicalEvaluationUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getClinicalEvaluationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getClinicalEvaluationResponse
+}
+
+
+
+export type correctClinicalEvaluationResponse200 = {
+  data: void
+  status: 200
+}
+
+export type correctClinicalEvaluationResponseSuccess = (correctClinicalEvaluationResponse200) & {
+  headers: Headers;
+};
+;
+
+export type correctClinicalEvaluationResponse = (correctClinicalEvaluationResponseSuccess)
+
+export const getCorrectClinicalEvaluationUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/evaluations/${id}`
+}
+
+export const correctClinicalEvaluation = async (id: string, options?: RequestInit): Promise<correctClinicalEvaluationResponse> => {
+
+  const res = await fetch(getCorrectClinicalEvaluationUrl(id),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: correctClinicalEvaluationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as correctClinicalEvaluationResponse
+}
+
+
+
+export type evaluationControllerProtocolsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type evaluationControllerProtocolsResponseSuccess = (evaluationControllerProtocolsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type evaluationControllerProtocolsResponse = (evaluationControllerProtocolsResponseSuccess)
+
+export const getEvaluationControllerProtocolsUrl = () => {
+
+
+
+
+  return `/api/clinic/protocols`
+}
+
+export const evaluationControllerProtocols = async ( options?: RequestInit): Promise<evaluationControllerProtocolsResponse> => {
+
+  const res = await fetch(getEvaluationControllerProtocolsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: evaluationControllerProtocolsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as evaluationControllerProtocolsResponse
+}
+
+
+
+export type evaluationControllerCreateProtocolResponse201 = {
+  data: void
+  status: 201
+}
+
+export type evaluationControllerCreateProtocolResponseSuccess = (evaluationControllerCreateProtocolResponse201) & {
+  headers: Headers;
+};
+;
+
+export type evaluationControllerCreateProtocolResponse = (evaluationControllerCreateProtocolResponseSuccess)
+
+export const getEvaluationControllerCreateProtocolUrl = () => {
+
+
+
+
+  return `/api/clinic/protocols`
+}
+
+export const evaluationControllerCreateProtocol = async ( options?: RequestInit): Promise<evaluationControllerCreateProtocolResponse> => {
+
+  const res = await fetch(getEvaluationControllerCreateProtocolUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: evaluationControllerCreateProtocolResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as evaluationControllerCreateProtocolResponse
+}
+
+
+
+export type evaluationControllerRetireProtocolResponse200 = {
+  data: void
+  status: 200
+}
+
+export type evaluationControllerRetireProtocolResponseSuccess = (evaluationControllerRetireProtocolResponse200) & {
+  headers: Headers;
+};
+;
+
+export type evaluationControllerRetireProtocolResponse = (evaluationControllerRetireProtocolResponseSuccess)
+
+export const getEvaluationControllerRetireProtocolUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/protocols/${id}/retire`
+}
+
+export const evaluationControllerRetireProtocol = async (id: string, options?: RequestInit): Promise<evaluationControllerRetireProtocolResponse> => {
+
+  const res = await fetch(getEvaluationControllerRetireProtocolUrl(id),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: evaluationControllerRetireProtocolResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as evaluationControllerRetireProtocolResponse
+}
+
+
+
+export type evaluationControllerTestsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type evaluationControllerTestsResponseSuccess = (evaluationControllerTestsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type evaluationControllerTestsResponse = (evaluationControllerTestsResponseSuccess)
+
+export const getEvaluationControllerTestsUrl = () => {
+
+
+
+
+  return `/api/clinic/test-definitions`
+}
+
+export const evaluationControllerTests = async ( options?: RequestInit): Promise<evaluationControllerTestsResponse> => {
+
+  const res = await fetch(getEvaluationControllerTestsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: evaluationControllerTestsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as evaluationControllerTestsResponse
+}
+
+
+
+export type evaluationControllerCreateTestResponse201 = {
+  data: void
+  status: 201
+}
+
+export type evaluationControllerCreateTestResponseSuccess = (evaluationControllerCreateTestResponse201) & {
+  headers: Headers;
+};
+;
+
+export type evaluationControllerCreateTestResponse = (evaluationControllerCreateTestResponseSuccess)
+
+export const getEvaluationControllerCreateTestUrl = () => {
+
+
+
+
+  return `/api/clinic/test-definitions`
+}
+
+export const evaluationControllerCreateTest = async ( options?: RequestInit): Promise<evaluationControllerCreateTestResponse> => {
+
+  const res = await fetch(getEvaluationControllerCreateTestUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: evaluationControllerCreateTestResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as evaluationControllerCreateTestResponse
+}
+
+
+
+export type evaluationControllerRetireTestResponse200 = {
+  data: void
+  status: 200
+}
+
+export type evaluationControllerRetireTestResponseSuccess = (evaluationControllerRetireTestResponse200) & {
+  headers: Headers;
+};
+;
+
+export type evaluationControllerRetireTestResponse = (evaluationControllerRetireTestResponseSuccess)
+
+export const getEvaluationControllerRetireTestUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/test-definitions/${id}/retire`
+}
+
+export const evaluationControllerRetireTest = async (id: string, options?: RequestInit): Promise<evaluationControllerRetireTestResponse> => {
+
+  const res = await fetch(getEvaluationControllerRetireTestUrl(id),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: evaluationControllerRetireTestResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as evaluationControllerRetireTestResponse
+}
+
+
+
+export type evaluationControllerMethodsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type evaluationControllerMethodsResponseSuccess = (evaluationControllerMethodsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type evaluationControllerMethodsResponse = (evaluationControllerMethodsResponseSuccess)
+
+export const getEvaluationControllerMethodsUrl = () => {
+
+
+
+
+  return `/api/clinic/measurement-methods`
+}
+
+export const evaluationControllerMethods = async ( options?: RequestInit): Promise<evaluationControllerMethodsResponse> => {
+
+  const res = await fetch(getEvaluationControllerMethodsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: evaluationControllerMethodsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as evaluationControllerMethodsResponse
+}
+
+
+
+export type evaluationControllerCreateMethodResponse201 = {
+  data: void
+  status: 201
+}
+
+export type evaluationControllerCreateMethodResponseSuccess = (evaluationControllerCreateMethodResponse201) & {
+  headers: Headers;
+};
+;
+
+export type evaluationControllerCreateMethodResponse = (evaluationControllerCreateMethodResponseSuccess)
+
+export const getEvaluationControllerCreateMethodUrl = () => {
+
+
+
+
+  return `/api/clinic/measurement-methods`
+}
+
+export const evaluationControllerCreateMethod = async ( options?: RequestInit): Promise<evaluationControllerCreateMethodResponse> => {
+
+  const res = await fetch(getEvaluationControllerCreateMethodUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: evaluationControllerCreateMethodResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as evaluationControllerCreateMethodResponse
+}
+
+
+
+export type evaluationControllerRetireMethodResponse200 = {
+  data: void
+  status: 200
+}
+
+export type evaluationControllerRetireMethodResponseSuccess = (evaluationControllerRetireMethodResponse200) & {
+  headers: Headers;
+};
+;
+
+export type evaluationControllerRetireMethodResponse = (evaluationControllerRetireMethodResponseSuccess)
+
+export const getEvaluationControllerRetireMethodUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/measurement-methods/${id}/retire`
+}
+
+export const evaluationControllerRetireMethod = async (id: string, options?: RequestInit): Promise<evaluationControllerRetireMethodResponse> => {
+
+  const res = await fetch(getEvaluationControllerRetireMethodUrl(id),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: evaluationControllerRetireMethodResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as evaluationControllerRetireMethodResponse
+}
+
+
+
+export type listSocialWorksResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listSocialWorksResponseSuccess = (listSocialWorksResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listSocialWorksResponse = (listSocialWorksResponseSuccess)
+
+export const getListSocialWorksUrl = () => {
+
+
+
+
+  return `/api/clinic/social-works`
+}
+
+export const listSocialWorks = async ( options?: RequestInit): Promise<listSocialWorksResponse> => {
+
+  const res = await fetch(getListSocialWorksUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSocialWorksResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSocialWorksResponse
+}
+
+
+
+export type createSocialWorkResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createSocialWorkResponseSuccess = (createSocialWorkResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSocialWorkResponse = (createSocialWorkResponseSuccess)
+
+export const getCreateSocialWorkUrl = () => {
+
+
+
+
+  return `/api/clinic/social-works`
+}
+
+export const createSocialWork = async ( options?: RequestInit): Promise<createSocialWorkResponse> => {
+
+  const res = await fetch(getCreateSocialWorkUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSocialWorkResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSocialWorkResponse
+}
+
+
+
+export type retireSocialWorkResponse200 = {
+  data: void
+  status: 200
+}
+
+export type retireSocialWorkResponseSuccess = (retireSocialWorkResponse200) & {
+  headers: Headers;
+};
+;
+
+export type retireSocialWorkResponse = (retireSocialWorkResponseSuccess)
+
+export const getRetireSocialWorkUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/social-works/${id}/retire`
+}
+
+export const retireSocialWork = async (id: string, options?: RequestInit): Promise<retireSocialWorkResponse> => {
+
+  const res = await fetch(getRetireSocialWorkUrl(id),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: retireSocialWorkResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as retireSocialWorkResponse
+}
+
+
+
+export type listSocialWorkOrdersResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listSocialWorkOrdersResponseSuccess = (listSocialWorkOrdersResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listSocialWorkOrdersResponse = (listSocialWorkOrdersResponseSuccess)
+
+export const getListSocialWorkOrdersUrl = () => {
+
+
+
+
+  return `/api/clinic/orders`
+}
+
+export const listSocialWorkOrders = async ( options?: RequestInit): Promise<listSocialWorkOrdersResponse> => {
+
+  const res = await fetch(getListSocialWorkOrdersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSocialWorkOrdersResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSocialWorkOrdersResponse
+}
+
+
+
+export type createSocialWorkOrderResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createSocialWorkOrderResponseSuccess = (createSocialWorkOrderResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSocialWorkOrderResponse = (createSocialWorkOrderResponseSuccess)
+
+export const getCreateSocialWorkOrderUrl = () => {
+
+
+
+
+  return `/api/clinic/orders`
+}
+
+export const createSocialWorkOrder = async ( options?: RequestInit): Promise<createSocialWorkOrderResponse> => {
+
+  const res = await fetch(getCreateSocialWorkOrderUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSocialWorkOrderResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSocialWorkOrderResponse
+}
+
+
+
+export type createSalaClinicalIndicationResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createSalaClinicalIndicationResponseSuccess = (createSalaClinicalIndicationResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSalaClinicalIndicationResponse = (createSalaClinicalIndicationResponseSuccess)
+
+export const getCreateSalaClinicalIndicationUrl = () => {
+
+
+
+
+  return `/api/clinic/indications`
+}
+
+export const createSalaClinicalIndication = async ( options?: RequestInit): Promise<createSalaClinicalIndicationResponse> => {
+
+  const res = await fetch(getCreateSalaClinicalIndicationUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSalaClinicalIndicationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSalaClinicalIndicationResponse
+}
+
+
+
+export type listSalaClinicalIndicationsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listSalaClinicalIndicationsResponseSuccess = (listSalaClinicalIndicationsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listSalaClinicalIndicationsResponse = (listSalaClinicalIndicationsResponseSuccess)
+
+export const getListSalaClinicalIndicationsUrl = () => {
+
+
+
+
+  return `/api/clinic/indications`
+}
+
+export const listSalaClinicalIndications = async ( options?: RequestInit): Promise<listSalaClinicalIndicationsResponse> => {
+
+  const res = await fetch(getListSalaClinicalIndicationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSalaClinicalIndicationsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSalaClinicalIndicationsResponse
+}
+
+
+
+export type getSalaClinicalIndicationProjectionResponse200 = {
+  data: void
+  status: 200
+}
+
+export type getSalaClinicalIndicationProjectionResponseSuccess = (getSalaClinicalIndicationProjectionResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getSalaClinicalIndicationProjectionResponse = (getSalaClinicalIndicationProjectionResponseSuccess)
+
+export const getGetSalaClinicalIndicationProjectionUrl = (personId: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/clinical-indications`
+}
+
+export const getSalaClinicalIndicationProjection = async (personId: string, options?: RequestInit): Promise<getSalaClinicalIndicationProjectionResponse> => {
+
+  const res = await fetch(getGetSalaClinicalIndicationProjectionUrl(personId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSalaClinicalIndicationProjectionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSalaClinicalIndicationProjectionResponse
+}
+
+
+
+export type closeSalaClinicalIndicationResponse201 = {
+  data: void
+  status: 201
+}
+
+export type closeSalaClinicalIndicationResponseSuccess = (closeSalaClinicalIndicationResponse201) & {
+  headers: Headers;
+};
+;
+
+export type closeSalaClinicalIndicationResponse = (closeSalaClinicalIndicationResponseSuccess)
+
+export const getCloseSalaClinicalIndicationUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/indications/${id}/close`
+}
+
+export const closeSalaClinicalIndication = async (id: string, options?: RequestInit): Promise<closeSalaClinicalIndicationResponse> => {
+
+  const res = await fetch(getCloseSalaClinicalIndicationUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: closeSalaClinicalIndicationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as closeSalaClinicalIndicationResponse
 }

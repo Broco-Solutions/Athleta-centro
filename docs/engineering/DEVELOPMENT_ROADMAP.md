@@ -1195,7 +1195,7 @@ state transitions
 
 ### M3.2 — Appointment → Attention workflow
 
-**Status:** READY
+**Status:** DONE
 
 **Model:** `MODEL_DEEP`
 
@@ -1273,7 +1273,7 @@ Clinical privacy tests mandatory.
 
 ### M3.5 — Clinical evaluations
 
-**Status:** READY
+**Status:** DONE
 
 **Model:** `MODEL_DEEP`
 
@@ -1292,7 +1292,7 @@ Do not implement AI here yet.
 
 ### M3.6 — Studies and files
 
-**Status:** READY
+**Status:** DONE
 
 **Model:** `MODEL_DEEP`
 
@@ -1321,6 +1321,8 @@ privacy
 
 ### M3.7 — Social work
 
+**Status:** DONE
+
 **Model:** `MODEL_STANDARD`
 
 Scope:
@@ -1335,6 +1337,8 @@ clinical association
 ---
 
 ### M3.8 — Sala clinical indications
+
+**Status:** DONE
 
 **Model:** `MODEL_DEEP`
 
@@ -1359,6 +1363,8 @@ Administrative cannot read history
 ---
 
 ### M3.9 — Clinical UI
+
+**Status:** DONE
 
 **Model:** `MODEL_STANDARD`
 

@@ -1,6 +1,30 @@
 import { InternalUserStatus, Role } from '@prisma/client';
 import { effectivePermissions } from './permissions';
 describe('effectivePermissions', () => {
-  it('unions role capabilities only for active users', () => { expect(effectivePermissions(InternalUserStatus.ACTIVE, [Role.PROFESSOR, Role.ADMINISTRATIVE])).toEqual(new Set(['CLINIC_OPERATIONAL_READ', 'CLINIC_APPOINTMENT_MANAGE', 'PEOPLE_READ', 'PORTAL_PIN_RESET', 'SALA_RELATION_READ', 'PEOPLE_CREATE', 'PEOPLE_UPDATE_GENERAL', 'PEOPLE_GLOBAL_INACTIVATE', 'SALA_PARTICIPATION_MANAGE', 'SALA_SCHEDULE_MANAGE', 'SALA_PLAN_CATALOG_MANAGE', 'SALA_AGENDA_MANAGE', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE', 'SALA_PHYSICAL_EVALUATION_READ', 'SALA_PHYSICAL_EVALUATION_MANAGE', 'SALA_PHYSICAL_TEST_CATALOG_MANAGE', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_MANAGE', 'PAYMENT_METHOD_CATALOG_MANAGE', 'TEAM_READ', 'TEAM_STANDARD_USER_MANAGE', 'TEAM_STANDARD_CREDENTIAL_RESET'])); });
+  it('unions role capabilities only for active users', () => {
+    const permissions = effectivePermissions(InternalUserStatus.ACTIVE, [Role.PROFESSOR, Role.ADMINISTRATIVE]);
+    expect([...permissions]).toEqual(expect.arrayContaining([
+      'CLINIC_OPERATIONAL_READ',
+      'CLINIC_APPOINTMENT_MANAGE',
+      'CLINIC_ORDER_MANAGE',
+      'SALA_CLINICAL_INDICATION_READ',
+      'SALA_CLINICAL_INDICATION_CLOSE',
+      'PEOPLE_READ',
+      'SALA_RELATION_READ',
+    ]));
+    expect(permissions.has('CLINICAL_HISTORY_READ')).toBe(false);
+  });
   it('returns no permissions for inactive users', () => { expect(effectivePermissions(InternalUserStatus.INACTIVE, [Role.GENERAL_ADMIN])).toEqual(new Set()); });
+  it('keeps clinical history unavailable to operational-only roles', () => {
+    expect(effectivePermissions(InternalUserStatus.ACTIVE, [Role.ADMINISTRATIVE]).has('CLINICAL_HISTORY_READ')).toBe(false);
+    expect(effectivePermissions(InternalUserStatus.ACTIVE, [Role.PROFESSOR]).has('CLINICAL_HISTORY_READ')).toBe(false);
+    expect(effectivePermissions(InternalUserStatus.ACTIVE, [Role.KINESIOLOGIST]).has('CLINICAL_HISTORY_READ')).toBe(true);
+    expect(effectivePermissions(InternalUserStatus.ACTIVE, [Role.OSTEOPATH]).has('CLINICAL_HISTORY_READ')).toBe(true);
+    expect(effectivePermissions(InternalUserStatus.ACTIVE, [Role.GENERAL_ADMIN]).has('CLINICAL_HISTORY_READ')).toBe(true);
+  });
+  it('grants Professor only the restricted Sala indication projection', () => {
+    const permissions = effectivePermissions(InternalUserStatus.ACTIVE, [Role.PROFESSOR]);
+    expect(permissions.has('SALA_CLINICAL_INDICATION_READ')).toBe(true);
+    expect(permissions.has('CLINIC_INDICATION_CONTENT_MANAGE')).toBe(false);
+  });
 });

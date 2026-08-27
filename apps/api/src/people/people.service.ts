@@ -90,7 +90,7 @@ export class PeopleService {
     return { data: rows.map((person) => this.serialize(person)), meta: { page: query.page, pageSize: query.pageSize, total, totalPages: Math.ceil(total / query.pageSize) } };
   }
 
-  private createData(input: CreatePersonDto, normalizedDni: string): Prisma.PersonCreateInput {
+  private createData(input: CreatePersonDto, normalizedDni: string): Prisma.PersonUncheckedCreateInput {
     return { firstName: input.firstName.trim(), lastName: input.lastName.trim(), dni: input.dni.trim(), normalizedDni, phone: input.phone.trim(), birthDate: this.date(input.birthDate), email: input.email?.trim() || null, normalizedEmail: normalizeEmail(input.email), emergencyContactName: input.emergencyContactName?.trim() || null, emergencyContactPhone: input.emergencyContactPhone?.trim() || null, socialWorkId: input.socialWorkId ?? null, affiliateNumber: input.affiliateNumber?.trim() || null };
   }
   private generatePin(): string { return randomInt(0, 10000).toString().padStart(4, '0'); }

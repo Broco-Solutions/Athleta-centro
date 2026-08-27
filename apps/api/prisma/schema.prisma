@@ -47,6 +47,10 @@ model InternalUser {
   evolutionsAuthored Evolution[] @relation("EvolutionAuthor")
   evolutionsModified Evolution[] @relation("EvolutionModifier")
   evaluationsAuthored ClinicalEvaluation[] @relation("EvaluationAuthor")
+  evaluationsModified ClinicalEvaluation[] @relation("EvaluationModifier")
+  fileAssetsCreated FileAsset[]
+  indicationsResponsible SalaClinicalIndication[] @relation("IndicationProfessional")
+  indicationsClosed SalaClinicalIndication[] @relation("IndicationClosedBy")
 
   @@map("internal_users")
 }
@@ -169,6 +173,9 @@ model Person {
   clinicalAttentions ClinicalAttention[]
   treatments Treatment[]
   clinicalStudies ClinicalStudy[]
+  socialWork SocialWork? @relation(fields:[socialWorkId],references:[id],onDelete:Restrict)
+  socialWorkOrders SocialWorkOrder[]
+  salaClinicalIndications SalaClinicalIndication[]
 
   @@index([lastName, firstName])
   @@index([normalizedEmail])
@@ -205,12 +212,12 @@ model ClinicalAppointment {
 
 model ClinicalAttention {
   id String @id @default(uuid()) @db.Uuid
-  appointmentId String @unique @map("appointment_id") @db.Uuid
+  appointmentId String? @unique @map("appointment_id") @db.Uuid
   personId String @map("person_id") @db.Uuid
   professionalId String @map("professional_id") @db.Uuid
   occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  appointment ClinicalAppointment @relation(fields:[appointmentId],references:[id],onDelete:Restrict)
+  appointment ClinicalAppointment? @relation(fields:[appointmentId],references:[id],onDelete:Restrict)
   person Person @relation(fields:[personId],references:[id],onDelete:Restrict)
   professional InternalUser @relation(fields:[professionalId],references:[id],onDelete:Restrict)
   treatmentId String? @map("treatment_id") @db.Uuid
@@ -228,9 +235,21 @@ enum ClinicalTestResponseType {
   TEXT
 }
 
+enum SalaClinicalIndicationStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum TrainingCondition {
+  NO_RESTRICTIONS
+  RESTRICTED
+  DO_NOT_TRAIN
+}
+
 model ClinicalProtocol {
   id String @id @default(uuid()) @db.Uuid
   name String
+  normalizedName String @unique @map("normalized_name")
   isActive Boolean @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   evaluations ClinicalEvaluation[]
@@ -239,6 +258,7 @@ model ClinicalProtocol {
 model ClinicalTestDefinition {
   id String @id @default(uuid()) @db.Uuid
   name String
+  normalizedName String @unique @map("normalized_name")
   responseType ClinicalTestResponseType @map("response_type")
   scaleMin Decimal? @map("scale_min") @db.Decimal(14,4)
   scaleMax Decimal? @map("scale_max") @db.Decimal(14,4)
@@ -252,6 +272,7 @@ model ClinicalTestDefinition {
 model MeasurementMethod {
   id String @id @default(uuid()) @db.Uuid
   name String
+  normalizedName String @unique @map("normalized_name")
   description String?
   isSelectable Boolean @default(true) @map("is_selectable")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -271,6 +292,7 @@ model ClinicalEvaluation {
   attention ClinicalAttention @relation(fields:[attentionId], references:[id], onDelete:Restrict)
   protocol ClinicalProtocol? @relation(fields:[protocolId], references:[id], onDelete:Restrict)
   author InternalUser @relation("EvaluationAuthor", fields:[authorId], references:[id], onDelete:Restrict)
+  lastModifiedBy InternalUser? @relation("EvaluationModifier", fields:[lastModifiedById], references:[id], onDelete:Restrict)
   results ClinicalTestResult[]
   @@index([attentionId])
   @@map("clinical_evaluations")
@@ -283,7 +305,7 @@ model ClinicalTestResult {
   side String?
   observation String?
   value Json
-  definitionSnapshot Json
+  definitionSnapshot Json @map("definition_snapshot")
   evaluation ClinicalEvaluation @relation(fields:[evaluationId], references:[id], onDelete:Restrict)
   testDefinition ClinicalTestDefinition @relation(fields:[testDefinitionId], references:[id], onDelete:Restrict)
   measurementMethod MeasurementMethod? @relation(fields:[measurementMethodId], references:[id], onDelete:Restrict)
@@ -325,6 +347,7 @@ model Treatment {
   bodyAreaOrInjury String @map("body_area_or_injury")
   objective String?
   interventionPlan String?
+  currentStage String? @map("current_stage")
   startDate DateTime @map("start_date") @db.Date
   status TreatmentStatus @default(IN_PROGRESS)
   finishDate DateTime? @map("finish_date") @db.Date
@@ -336,6 +359,7 @@ model Treatment {
   responsibleProfessional InternalUser @relation(fields:[responsibleProfessionalId],references:[id],onDelete:Restrict)
   attentions ClinicalAttention[]
   studies ClinicalStudy[]
+  salaClinicalIndications SalaClinicalIndication[]
   @@index([personId,status])
   @@index([responsibleProfessionalId,status])
   @@map("treatments")
@@ -348,12 +372,76 @@ model ClinicalStudy {
   studyDate DateTime @map("study_date") @db.Date
   studyType String @map("study_type")
   description String?
-  fileName String? @map("file_name")
+  fileAssetId String? @unique @map("file_asset_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   person Person @relation(fields:[personId],references:[id],onDelete:Restrict)
   treatment Treatment? @relation(fields:[treatmentId],references:[id],onDelete:Restrict)
+  fileAsset FileAsset? @relation(fields:[fileAssetId],references:[id],onDelete:Restrict)
   @@index([personId, studyDate])
   @@map("clinical_studies")
+}
+
+model FileAsset {
+  id String @id @default(uuid()) @db.Uuid
+  storageKey String @unique @map("storage_key")
+  originalName String @map("original_name")
+  mimeType String @map("mime_type")
+  size Int
+  checksum String
+  createdById String @map("created_by_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy InternalUser @relation(fields:[createdById],references:[id],onDelete:Restrict)
+  clinicalStudy ClinicalStudy?
+  socialWorkOrder SocialWorkOrder?
+  @@map("file_assets")
+}
+
+model SocialWork {
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  normalizedName String @unique @map("normalized_name")
+  isSelectable Boolean @default(true) @map("is_selectable")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  people Person[]
+  orders SocialWorkOrder[]
+  @@map("social_works")
+}
+
+model SocialWorkOrder {
+  id String @id @default(uuid()) @db.Uuid
+  personId String @map("person_id") @db.Uuid
+  socialWorkId String @map("social_work_id") @db.Uuid
+  reference String
+  issueDate DateTime? @map("issue_date") @db.Date
+  expirationDate DateTime? @map("expiration_date") @db.Date
+  fileAssetId String? @unique @map("file_asset_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  person Person @relation(fields:[personId],references:[id],onDelete:Restrict)
+  socialWork SocialWork @relation(fields:[socialWorkId],references:[id],onDelete:Restrict)
+  fileAsset FileAsset? @relation(fields:[fileAssetId],references:[id],onDelete:Restrict)
+  @@index([personId,expirationDate])
+  @@map("social_work_orders")
+}
+
+model SalaClinicalIndication {
+  id String @id @default(uuid()) @db.Uuid
+  personId String @map("person_id") @db.Uuid
+  treatmentId String? @map("treatment_id") @db.Uuid
+  responsibleProfessionalId String @map("responsible_professional_id") @db.Uuid
+  trainingCondition TrainingCondition @map("training_condition")
+  affectedArea String? @map("affected_area")
+  instructions String?
+  status SalaClinicalIndicationStatus @default(ACTIVE)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  closedAt DateTime? @map("closed_at") @db.Timestamptz(6)
+  closedById String? @map("closed_by_id") @db.Uuid
+  person Person @relation(fields:[personId],references:[id],onDelete:Restrict)
+  treatment Treatment? @relation(fields:[treatmentId],references:[id],onDelete:Restrict)
+  responsibleProfessional InternalUser @relation("IndicationProfessional",fields:[responsibleProfessionalId],references:[id],onDelete:Restrict)
+  closedBy InternalUser? @relation("IndicationClosedBy",fields:[closedById],references:[id],onDelete:Restrict)
+  @@index([personId,status])
+  @@map("sala_clinical_indications")
 }
 
 model SalaConfiguration {
