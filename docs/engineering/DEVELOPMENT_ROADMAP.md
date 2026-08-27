@@ -1273,13 +1273,11 @@ Clinical privacy tests mandatory.
 
 ### M3.5 — Clinical evaluations
 
+**Status:** BLOCKED_BY_FUNCTIONAL_DEFINITION
+
+**Blocker:** CLI-EVA-08 — SCALE range and value representation undefined.
+
 **Model:** `MODEL_DEEP`
-
-Potential blocker:
-
-```text
-Attention ↔ ClinicalEvaluation multiplicity
-```
 
 Scope:
 
@@ -1296,13 +1294,9 @@ Do not implement AI here yet.
 
 ### M3.6 — Studies and files
 
+**Status:** READY
+
 **Model:** `MODEL_DEEP`
-
-Potential blocker:
-
-```text
-ClinicalStudy ↔ FileAsset cardinality
-```
 
 Scope:
 
