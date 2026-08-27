@@ -3745,3 +3745,120 @@ export const treatmentControllerReopen = async (id: string, options?: RequestIni
   const data: treatmentControllerReopenResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as treatmentControllerReopenResponse
 }
+
+
+
+export type evolutionControllerCreateResponse201 = {
+  data: void
+  status: 201
+}
+
+export type evolutionControllerCreateResponseSuccess = (evolutionControllerCreateResponse201) & {
+  headers: Headers;
+};
+;
+
+export type evolutionControllerCreateResponse = (evolutionControllerCreateResponseSuccess)
+
+export const getEvolutionControllerCreateUrl = (attentionId: string,) => {
+
+
+
+
+  return `/api/clinic/attentions/${attentionId}/evolution`
+}
+
+export const evolutionControllerCreate = async (attentionId: string, options?: RequestInit): Promise<evolutionControllerCreateResponse> => {
+
+  const res = await fetch(getEvolutionControllerCreateUrl(attentionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: evolutionControllerCreateResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as evolutionControllerCreateResponse
+}
+
+
+
+export type evolutionControllerGetResponse200 = {
+  data: void
+  status: 200
+}
+
+export type evolutionControllerGetResponseSuccess = (evolutionControllerGetResponse200) & {
+  headers: Headers;
+};
+;
+
+export type evolutionControllerGetResponse = (evolutionControllerGetResponseSuccess)
+
+export const getEvolutionControllerGetUrl = (attentionId: string,) => {
+
+
+
+
+  return `/api/clinic/attentions/${attentionId}/evolution`
+}
+
+export const evolutionControllerGet = async (attentionId: string, options?: RequestInit): Promise<evolutionControllerGetResponse> => {
+
+  const res = await fetch(getEvolutionControllerGetUrl(attentionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: evolutionControllerGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as evolutionControllerGetResponse
+}
+
+
+
+export type evolutionControllerUpdateResponse200 = {
+  data: void
+  status: 200
+}
+
+export type evolutionControllerUpdateResponseSuccess = (evolutionControllerUpdateResponse200) & {
+  headers: Headers;
+};
+;
+
+export type evolutionControllerUpdateResponse = (evolutionControllerUpdateResponseSuccess)
+
+export const getEvolutionControllerUpdateUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/evolutions/${id}`
+}
+
+export const evolutionControllerUpdate = async (id: string, options?: RequestInit): Promise<evolutionControllerUpdateResponse> => {
+
+  const res = await fetch(getEvolutionControllerUpdateUrl(id),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: evolutionControllerUpdateResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as evolutionControllerUpdateResponse
+}

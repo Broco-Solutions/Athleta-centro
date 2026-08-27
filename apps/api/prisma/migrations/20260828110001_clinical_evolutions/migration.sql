@@ -1,0 +1,5 @@
+CREATE TABLE "clinical_evolutions" ("id" UUID NOT NULL, "attention_id" UUID NOT NULL, "evolution_text" TEXT, "practices_or_maneuvers" TEXT, "indications_or_next_steps" TEXT, "author_id" UUID NOT NULL, "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP, "last_modified_by_id" UUID, "last_modified_at" TIMESTAMPTZ(6), CONSTRAINT "clinical_evolutions_pkey" PRIMARY KEY ("id"));
+CREATE UNIQUE INDEX "clinical_evolutions_attention_id_key" ON "clinical_evolutions"("attention_id");
+ALTER TABLE "clinical_evolutions" ADD CONSTRAINT "clinical_evolutions_attention_id_fkey" FOREIGN KEY ("attention_id") REFERENCES "clinical_attentions"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "clinical_evolutions" ADD CONSTRAINT "clinical_evolutions_author_id_fkey" FOREIGN KEY ("author_id") REFERENCES "internal_users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "clinical_evolutions" ADD CONSTRAINT "clinical_evolutions_last_modified_by_id_fkey" FOREIGN KEY ("last_modified_by_id") REFERENCES "internal_users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

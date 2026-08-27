@@ -44,6 +44,8 @@ model InternalUser {
   registeredPatients ClinicalPatient[]
   clinicalAttentions ClinicalAttention[]
   treatments Treatment[]
+  evolutionsAuthored Evolution[] @relation("EvolutionAuthor")
+  evolutionsModified Evolution[] @relation("EvolutionModifier")
 
   @@map("internal_users")
 }
@@ -211,7 +213,24 @@ model ClinicalAttention {
   professional InternalUser @relation(fields:[professionalId],references:[id],onDelete:Restrict)
   treatmentId String? @map("treatment_id") @db.Uuid
   treatment Treatment? @relation(fields:[treatmentId],references:[id],onDelete:Restrict)
+  evolution Evolution?
   @@map("clinical_attentions")
+}
+
+model Evolution {
+  id String @id @default(uuid()) @db.Uuid
+  attentionId String @unique @map("attention_id") @db.Uuid
+  evolutionText String? @map("evolution_text")
+  practicesOrManeuvers String? @map("practices_or_maneuvers")
+  indicationsOrNextSteps String? @map("indications_or_next_steps")
+  authorId String @map("author_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastModifiedById String? @map("last_modified_by_id") @db.Uuid
+  lastModifiedAt DateTime? @map("last_modified_at") @db.Timestamptz(6)
+  attention ClinicalAttention @relation(fields:[attentionId],references:[id],onDelete:Restrict)
+  author InternalUser @relation("EvolutionAuthor",fields:[authorId],references:[id],onDelete:Restrict)
+  lastModifiedBy InternalUser? @relation("EvolutionModifier",fields:[lastModifiedById],references:[id],onDelete:Restrict)
+  @@map("clinical_evolutions")
 }
 
 enum TreatmentStatus {
