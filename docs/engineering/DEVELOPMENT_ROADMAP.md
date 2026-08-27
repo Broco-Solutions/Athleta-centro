@@ -1273,9 +1273,7 @@ Clinical privacy tests mandatory.
 
 ### M3.5 — Clinical evaluations
 
-**Status:** BLOCKED_BY_FUNCTIONAL_DEFINITION
-
-**Blocker:** CLI-EVA-08 — SCALE range and value representation undefined.
+**Status:** READY
 
 **Model:** `MODEL_DEEP`
 
