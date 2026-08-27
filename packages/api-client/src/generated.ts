@@ -3589,3 +3589,159 @@ export const clinicControllerAbsent = async (id: string, options?: RequestInit):
   const data: clinicControllerAbsentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as clinicControllerAbsentResponse
 }
+
+
+
+export type treatmentControllerCreateResponse201 = {
+  data: void
+  status: 201
+}
+
+export type treatmentControllerCreateResponseSuccess = (treatmentControllerCreateResponse201) & {
+  headers: Headers;
+};
+;
+
+export type treatmentControllerCreateResponse = (treatmentControllerCreateResponseSuccess)
+
+export const getTreatmentControllerCreateUrl = () => {
+
+
+
+
+  return `/api/clinic/treatments`
+}
+
+export const treatmentControllerCreate = async ( options?: RequestInit): Promise<treatmentControllerCreateResponse> => {
+
+  const res = await fetch(getTreatmentControllerCreateUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: treatmentControllerCreateResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as treatmentControllerCreateResponse
+}
+
+
+
+export type treatmentControllerListResponse200 = {
+  data: void
+  status: 200
+}
+
+export type treatmentControllerListResponseSuccess = (treatmentControllerListResponse200) & {
+  headers: Headers;
+};
+;
+
+export type treatmentControllerListResponse = (treatmentControllerListResponseSuccess)
+
+export const getTreatmentControllerListUrl = () => {
+
+
+
+
+  return `/api/clinic/treatments`
+}
+
+export const treatmentControllerList = async ( options?: RequestInit): Promise<treatmentControllerListResponse> => {
+
+  const res = await fetch(getTreatmentControllerListUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: treatmentControllerListResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as treatmentControllerListResponse
+}
+
+
+
+export type treatmentControllerFinalizeResponse201 = {
+  data: void
+  status: 201
+}
+
+export type treatmentControllerFinalizeResponseSuccess = (treatmentControllerFinalizeResponse201) & {
+  headers: Headers;
+};
+;
+
+export type treatmentControllerFinalizeResponse = (treatmentControllerFinalizeResponseSuccess)
+
+export const getTreatmentControllerFinalizeUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/treatments/${id}/finalize`
+}
+
+export const treatmentControllerFinalize = async (id: string, options?: RequestInit): Promise<treatmentControllerFinalizeResponse> => {
+
+  const res = await fetch(getTreatmentControllerFinalizeUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: treatmentControllerFinalizeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as treatmentControllerFinalizeResponse
+}
+
+
+
+export type treatmentControllerReopenResponse201 = {
+  data: void
+  status: 201
+}
+
+export type treatmentControllerReopenResponseSuccess = (treatmentControllerReopenResponse201) & {
+  headers: Headers;
+};
+;
+
+export type treatmentControllerReopenResponse = (treatmentControllerReopenResponseSuccess)
+
+export const getTreatmentControllerReopenUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/treatments/${id}/reopen`
+}
+
+export const treatmentControllerReopen = async (id: string, options?: RequestInit): Promise<treatmentControllerReopenResponse> => {
+
+  const res = await fetch(getTreatmentControllerReopenUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: treatmentControllerReopenResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as treatmentControllerReopenResponse
+}

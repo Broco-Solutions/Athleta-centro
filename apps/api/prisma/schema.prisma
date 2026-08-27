@@ -43,6 +43,7 @@ model InternalUser {
   clinicalAppointments ClinicalAppointment[] @relation("ClinicalAppointmentProfessional")
   registeredPatients ClinicalPatient[]
   clinicalAttentions ClinicalAttention[]
+  treatments Treatment[]
 
   @@map("internal_users")
 }
@@ -163,6 +164,7 @@ model Person {
   clinicalPatient ClinicalPatient?
   clinicalAppointments ClinicalAppointment[]
   clinicalAttentions ClinicalAttention[]
+  treatments Treatment[]
 
   @@index([lastName, firstName])
   @@index([normalizedEmail])
@@ -207,7 +209,42 @@ model ClinicalAttention {
   appointment ClinicalAppointment @relation(fields:[appointmentId],references:[id],onDelete:Restrict)
   person Person @relation(fields:[personId],references:[id],onDelete:Restrict)
   professional InternalUser @relation(fields:[professionalId],references:[id],onDelete:Restrict)
+  treatmentId String? @map("treatment_id") @db.Uuid
+  treatment Treatment? @relation(fields:[treatmentId],references:[id],onDelete:Restrict)
   @@map("clinical_attentions")
+}
+
+enum TreatmentStatus {
+  IN_PROGRESS
+  FINISHED
+}
+enum TreatmentFinishReason {
+  DISCHARGE
+  INTERRUPTION
+  REFERRAL
+  OTHER
+}
+model Treatment {
+  id String @id @default(uuid()) @db.Uuid
+  personId String @map("person_id") @db.Uuid
+  responsibleProfessionalId String @map("responsible_professional_id") @db.Uuid
+  consultationReason String @map("consultation_reason")
+  bodyAreaOrInjury String @map("body_area_or_injury")
+  objective String?
+  interventionPlan String?
+  startDate DateTime @map("start_date") @db.Date
+  status TreatmentStatus @default(IN_PROGRESS)
+  finishDate DateTime? @map("finish_date") @db.Date
+  finishReason TreatmentFinishReason? @map("finish_reason")
+  conclusion String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  person Person @relation(fields:[personId],references:[id],onDelete:Restrict)
+  responsibleProfessional InternalUser @relation(fields:[responsibleProfessionalId],references:[id],onDelete:Restrict)
+  attentions ClinicalAttention[]
+  @@index([personId,status])
+  @@index([responsibleProfessionalId,status])
+  @@map("treatments")
 }
 
 model SalaConfiguration {
