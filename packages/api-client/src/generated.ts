@@ -409,6 +409,34 @@ export interface PhysicalEvaluationDto {
   results: PhysicalTestResultDto[];
 }
 
+export interface SalaPaymentDto {
+  personId: string;
+  year: number;
+  /**
+   * @minimum 1
+   * @maximum 12
+   */
+  month: number;
+  paidAt: string;
+  amount: string;
+  paymentMethodId: string;
+  operationId: string;
+  adjustmentReason?: string;
+}
+
+export interface CorrectSalaPaymentDto {
+  year: number;
+  /**
+   * @minimum 1
+   * @maximum 12
+   */
+  month: number;
+  paidAt: string;
+  amount: string;
+  paymentMethodId: string;
+  adjustmentReason?: string;
+}
+
 export interface UpdateSalaConfigurationDto {
   /** @minimum 1 */
   capacity: number;
@@ -466,6 +494,8 @@ export interface ReplaceScheduleSlotDto {
   specificCapacity?: number | null;
   effectiveDate: string;
 }
+
+export interface PaymentMethodInput { [key: string]: unknown }
 
 export type InternalLoginBody = {
   email: string;
@@ -2498,6 +2528,204 @@ export const createSalaPhysicalEvaluation = async (physicalEvaluationDto: Physic
 
 
 
+export type listSalaPaymentsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listSalaPaymentsResponseSuccess = (listSalaPaymentsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listSalaPaymentsResponse = (listSalaPaymentsResponseSuccess)
+
+export const getListSalaPaymentsUrl = (personId: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/payments`
+}
+
+export const listSalaPayments = async (personId: string, options?: RequestInit): Promise<listSalaPaymentsResponse> => {
+
+  const res = await fetch(getListSalaPaymentsUrl(personId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSalaPaymentsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSalaPaymentsResponse
+}
+
+
+
+export type getSalaPaymentSummaryResponse200 = {
+  data: void
+  status: 200
+}
+
+export type getSalaPaymentSummaryResponseSuccess = (getSalaPaymentSummaryResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getSalaPaymentSummaryResponse = (getSalaPaymentSummaryResponseSuccess)
+
+export const getGetSalaPaymentSummaryUrl = (personId: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/payment-summary`
+}
+
+export const getSalaPaymentSummary = async (personId: string, options?: RequestInit): Promise<getSalaPaymentSummaryResponse> => {
+
+  const res = await fetch(getGetSalaPaymentSummaryUrl(personId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSalaPaymentSummaryResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSalaPaymentSummaryResponse
+}
+
+
+
+export type createSalaPaymentResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createSalaPaymentResponseSuccess = (createSalaPaymentResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSalaPaymentResponse = (createSalaPaymentResponseSuccess)
+
+export const getCreateSalaPaymentUrl = () => {
+
+
+
+
+  return `/api/sala/payments`
+}
+
+export const createSalaPayment = async (salaPaymentDto: SalaPaymentDto, options?: RequestInit): Promise<createSalaPaymentResponse> => {
+
+  const res = await fetch(getCreateSalaPaymentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      salaPaymentDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSalaPaymentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSalaPaymentResponse
+}
+
+
+
+export type correctSalaPaymentResponse200 = {
+  data: void
+  status: 200
+}
+
+export type correctSalaPaymentResponseSuccess = (correctSalaPaymentResponse200) & {
+  headers: Headers;
+};
+;
+
+export type correctSalaPaymentResponse = (correctSalaPaymentResponseSuccess)
+
+export const getCorrectSalaPaymentUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/payments/${id}`
+}
+
+export const correctSalaPayment = async (id: string,
+    correctSalaPaymentDto: CorrectSalaPaymentDto, options?: RequestInit): Promise<correctSalaPaymentResponse> => {
+
+  const res = await fetch(getCorrectSalaPaymentUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      correctSalaPaymentDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: correctSalaPaymentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as correctSalaPaymentResponse
+}
+
+
+
+export type deleteSalaPaymentResponse201 = {
+  data: void
+  status: 201
+}
+
+export type deleteSalaPaymentResponseSuccess = (deleteSalaPaymentResponse201) & {
+  headers: Headers;
+};
+;
+
+export type deleteSalaPaymentResponse = (deleteSalaPaymentResponseSuccess)
+
+export const getDeleteSalaPaymentUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/payments/${id}/delete`
+}
+
+export const deleteSalaPayment = async (id: string, options?: RequestInit): Promise<deleteSalaPaymentResponse> => {
+
+  const res = await fetch(getDeleteSalaPaymentUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteSalaPaymentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as deleteSalaPaymentResponse
+}
+
+
+
 export type getSalaConfigurationResponse200 = {
   data: void
   status: 200
@@ -2889,4 +3117,124 @@ export const createSalaScheduleException = async (id: string, options?: RequestI
 
   const data: createSalaScheduleExceptionResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createSalaScheduleExceptionResponse
+}
+
+
+
+export type listPaymentMethodsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listPaymentMethodsResponseSuccess = (listPaymentMethodsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPaymentMethodsResponse = (listPaymentMethodsResponseSuccess)
+
+export const getListPaymentMethodsUrl = () => {
+
+
+
+
+  return `/api/finance/payment-methods`
+}
+
+export const listPaymentMethods = async ( options?: RequestInit): Promise<listPaymentMethodsResponse> => {
+
+  const res = await fetch(getListPaymentMethodsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listPaymentMethodsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPaymentMethodsResponse
+}
+
+
+
+export type createPaymentMethodResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createPaymentMethodResponseSuccess = (createPaymentMethodResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createPaymentMethodResponse = (createPaymentMethodResponseSuccess)
+
+export const getCreatePaymentMethodUrl = () => {
+
+
+
+
+  return `/api/finance/payment-methods`
+}
+
+export const createPaymentMethod = async (paymentMethodInput: PaymentMethodInput, options?: RequestInit): Promise<createPaymentMethodResponse> => {
+
+  const res = await fetch(getCreatePaymentMethodUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      paymentMethodInput,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createPaymentMethodResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createPaymentMethodResponse
+}
+
+
+
+export type updatePaymentMethodResponse200 = {
+  data: void
+  status: 200
+}
+
+export type updatePaymentMethodResponseSuccess = (updatePaymentMethodResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updatePaymentMethodResponse = (updatePaymentMethodResponseSuccess)
+
+export const getUpdatePaymentMethodUrl = (id: string,) => {
+
+
+
+
+  return `/api/finance/payment-methods/${id}`
+}
+
+export const updatePaymentMethod = async (id: string,
+    paymentMethodInput: PaymentMethodInput, options?: RequestInit): Promise<updatePaymentMethodResponse> => {
+
+  const res = await fetch(getUpdatePaymentMethodUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      paymentMethodInput,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updatePaymentMethodResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updatePaymentMethodResponse
 }

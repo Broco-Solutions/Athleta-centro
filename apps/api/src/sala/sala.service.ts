@@ -1,10 +1,30 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, Role, RoutineStatus, SalaOccurrenceOrigin, SalaOccurrenceStatus, SalaScheduleExceptionType, InternalUserStatus, SalaWeekday } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { FinanceCatalogService } from '../finance/finance.service';
 import type { ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ScheduleExceptionDto, ScheduleSlotDto, UpdateSalaConfigurationDto } from './sala.dto';
 @Injectable()
 export class SalaService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly financeCatalog: FinanceCatalogService) {}
+  listPaymentMethods() { return this.financeCatalog.listSelectable(); }
+  async listPayments(personId: string) { return this.prisma.salaPayment.findMany({ where: { personId }, include: { paymentMethod: true }, orderBy: [{ year: 'desc' }, { month: 'desc' }] }); }
+  async paymentSummary(personId: string, year: number, month: number) { const [payment, participation] = await Promise.all([this.prisma.salaPayment.findUnique({ where: { personId_year_month: { personId, year, month } }, include: { paymentMethod: true } }), this.prisma.salaParticipation.findFirst({ where: { personId, endDate: null }, include: { plan: true } })]); return { status: payment ? 'REGISTERED' : participation ? 'PENDING' : 'NOT_APPLICABLE', proposedAmount: participation?.plan.monthlyAmount?.toString() ?? null, payment }; }
+  async createPayment(input: { personId: string; year: number; month: number; paidAt: string; amount: string; paymentMethodId: string; operationId: string; adjustmentReason?: string }, actorId: string) {
+    if (input.month < 1 || input.month > 12) throw new BadRequestException({ code: 'SALA_PAYMENT_MONTH_INVALID', message: 'Month is invalid' });
+    if (new Date(`${input.paidAt}T00:00:00Z`) > new Date(`${this.todayOperational()}T00:00:00Z`)) throw new BadRequestException({ code: 'SALA_PAYMENT_DATE_FUTURE', message: 'Paid date cannot be future' });
+    if (!/^\d+$/.test(input.amount) || BigInt(input.amount) <= 0n) throw new BadRequestException({ code: 'SALA_PAYMENT_AMOUNT_INVALID', message: 'Amount is invalid' });
+    const method = await this.prisma.paymentMethod.findUnique({ where: { id: input.paymentMethodId } });
+    if (!method || !method.isSelectable) throw new BadRequestException({ code: 'PAYMENT_METHOD_NOT_SELECTABLE', message: 'Payment method is not selectable' });
+    try { return await this.prisma.salaPayment.create({ data: { personId: input.personId, year: input.year, month: input.month, paidAt: this.date(input.paidAt), amount: input.amount, paymentMethodId: input.paymentMethodId, registeredById: actorId, operationId: input.operationId, adjustmentReason: input.adjustmentReason?.trim() || null }, include: { paymentMethod: true } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') { const existing = await this.prisma.salaPayment.findUnique({ where: { operationId: input.operationId }, include: { paymentMethod: true } }); if (existing) return existing; throw new ConflictException({ code: 'SALA_PAYMENT_ALREADY_EXISTS', message: 'Payment already exists' }); } throw error; }
+  }
+  async updatePayment(id: string, input: { year: number; month: number; paidAt: string; amount: string; paymentMethodId: string; adjustmentReason?: string }, actorId: string) {
+    if (input.month < 1 || input.month > 12) throw new BadRequestException({ code: 'SALA_PAYMENT_MONTH_INVALID', message: 'Month is invalid' });
+    if (new Date(`${input.paidAt}T00:00:00Z`) > new Date(`${this.todayOperational()}T00:00:00Z`)) throw new BadRequestException({ code: 'SALA_PAYMENT_DATE_FUTURE', message: 'Paid date cannot be future' });
+    const method = await this.prisma.paymentMethod.findUnique({ where: { id: input.paymentMethodId } });
+    if (!method) throw new NotFoundException({ code: 'PAYMENT_METHOD_NOT_FOUND', message: 'Payment method not found' });
+    try { return await this.prisma.salaPayment.update({ where: { id }, data: { year: input.year, month: input.month, paidAt: this.date(input.paidAt), amount: input.amount, paymentMethodId: input.paymentMethodId, adjustmentReason: input.adjustmentReason?.trim() || null, lastModifiedById: actorId, lastModifiedAt: new Date() }, include: { paymentMethod: true } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_PAYMENT_ALREADY_EXISTS', message: 'Payment already exists' }); throw error; }
+  }
+  async deletePayment(id: string) { try { await this.prisma.salaPayment.delete({ where: { id } }); } catch { throw new NotFoundException({ code: 'SALA_PAYMENT_NOT_FOUND', message: 'Payment not found' }); } }
   async configuration() { return this.prisma.salaConfiguration.findUnique({ where: { id: 'default' } }); }
   async updateConfiguration(input: UpdateSalaConfigurationDto) { return this.prisma.salaConfiguration.upsert({ where: { id: 'default' }, create: { id: 'default', generalCapacity: input.capacity }, update: { generalCapacity: input.capacity } }); }
   async listPlans() { return this.prisma.salaPlan.findMany({ orderBy: { name: 'asc' } }); }

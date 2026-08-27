@@ -1087,6 +1087,8 @@ Must remain separate from ClinicalEvaluation.
 
 ### M2.7 — Sala payment
 
+**Status:** DONE
+
 **Model:** `MODEL_DEEP`
 
 Scope:

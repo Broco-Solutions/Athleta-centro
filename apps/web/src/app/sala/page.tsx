@@ -9,6 +9,7 @@ import { currentSession } from '../../features/auth/auth';
 import { AgendaPanel } from '../../features/sala/agenda-panel';
 import { RoutinePanel, type ExerciseDefinition, type Routine } from '../../features/sala/routine-panel';
 import { PhysicalEvaluationPanel } from '../../features/sala/physical-evaluation-panel';
+import { PaymentPanel } from '../../features/sala/payment-panel';
 
 type Person = { id: string; firstName: string; lastName: string; dni: string };
 type Slot = { id: string; weekday: string; startTime: string };
@@ -65,6 +66,7 @@ export default function SalaPage(): React.JSX.Element {
       <AgendaPanel date={date} onDateChange={setDate} csrfToken={csrfToken} people={peopleRows} />
       {personId && participationId ? <RoutinePanel personId={personId} participationId={participationId} csrfToken={csrfToken} api={routineApi} /> : null}
       {personId && participationId && session.data?.user?.id ? <PhysicalEvaluationPanel personId={personId} participationId={participationId} professorId={session.data.user.id} csrfToken={csrfToken} /> : null}
+      {personId ? <PaymentPanel personId={personId} csrfToken={csrfToken} /> : null}
     </WorkspaceShell>
   );
 }

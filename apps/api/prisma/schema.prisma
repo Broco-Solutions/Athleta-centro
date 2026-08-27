@@ -38,6 +38,8 @@ model InternalUser {
   modifiedSalaOccurrences SalaOccurrence[] @relation("SalaOccurrenceModifiedBy")
   physicalEvaluationsAsProfessor PhysicalEvaluation[] @relation("PhysicalEvaluationProfessor")
   createdPhysicalEvaluations PhysicalEvaluation[] @relation("PhysicalEvaluationCreatedBy")
+  salaPaymentsRegistered SalaPayment[]
+  salaPaymentsModified SalaPayment[] @relation("SalaPaymentModifiedBy")
 
   @@map("internal_users")
 }
@@ -148,6 +150,7 @@ model Person {
   salaOccurrences       SalaOccurrence[]
   routines              Routine[]
   physicalEvaluations   PhysicalEvaluation[]
+  salaPayments           SalaPayment[]
 
   @@index([lastName, firstName])
   @@index([normalizedEmail])
@@ -374,6 +377,41 @@ model SalaOccurrence {
   @@unique([personId, scheduleSlotId, date])
   @@index([date, scheduleSlotId])
   @@map("sala_occurrences")
+}
+
+model PaymentMethod {
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  isSelectable Boolean @default(true) @map("is_selectable")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  salaPayments SalaPayment[]
+  @@map("payment_methods")
+}
+
+model SalaPayment {
+  id String @id @default(uuid()) @db.Uuid
+  personId String @map("person_id") @db.Uuid
+  year Int
+  month Int
+  paidAt DateTime @map("paid_at") @db.Date
+  amount Decimal @db.Decimal(14,0)
+  paymentMethodId String @map("payment_method_id") @db.Uuid
+  registeredById String @map("registered_by_id") @db.Uuid
+  operationId String @map("operation_id") @db.Uuid
+  adjustmentReason String? @map("adjustment_reason")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lastModifiedById String? @map("last_modified_by_id") @db.Uuid
+  lastModifiedAt DateTime? @map("last_modified_at") @db.Timestamptz(6)
+  person Person @relation(fields: [personId], references: [id], onDelete: Restrict)
+  paymentMethod PaymentMethod @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
+  registeredBy InternalUser @relation(fields: [registeredById], references: [id], onDelete: Restrict)
+  lastModifiedBy InternalUser? @relation("SalaPaymentModifiedBy", fields: [lastModifiedById], references: [id], onDelete: Restrict)
+  @@unique([personId, year, month])
+  @@unique([operationId])
+  @@index([personId, year, month])
+  @@map("sala_payments")
 }
 
 model SalaScheduleException {
