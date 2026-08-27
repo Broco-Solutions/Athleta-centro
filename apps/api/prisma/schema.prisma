@@ -46,6 +46,7 @@ model InternalUser {
   treatments Treatment[]
   evolutionsAuthored Evolution[] @relation("EvolutionAuthor")
   evolutionsModified Evolution[] @relation("EvolutionModifier")
+  evaluationsAuthored ClinicalEvaluation[] @relation("EvaluationAuthor")
 
   @@map("internal_users")
 }
@@ -215,7 +216,79 @@ model ClinicalAttention {
   treatmentId String? @map("treatment_id") @db.Uuid
   treatment Treatment? @relation(fields:[treatmentId],references:[id],onDelete:Restrict)
   evolution Evolution?
+  evaluations ClinicalEvaluation[]
   @@map("clinical_attentions")
+}
+
+enum ClinicalTestResponseType {
+  CATEGORICAL
+  NUMERIC
+  SCALE
+  OPTIONS
+  TEXT
+}
+
+model ClinicalProtocol {
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  isActive Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  evaluations ClinicalEvaluation[]
+  @@map("clinical_protocols")
+}
+model ClinicalTestDefinition {
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  responseType ClinicalTestResponseType @map("response_type")
+  scaleMin Decimal? @map("scale_min") @db.Decimal(14,4)
+  scaleMax Decimal? @map("scale_max") @db.Decimal(14,4)
+  unit String?
+  options Json?
+  isSelectable Boolean @default(true) @map("is_selectable")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  results ClinicalTestResult[]
+  @@map("clinical_test_definitions")
+}
+model MeasurementMethod {
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  description String?
+  isSelectable Boolean @default(true) @map("is_selectable")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  results ClinicalTestResult[]
+  @@map("measurement_methods")
+}
+model ClinicalEvaluation {
+  id String @id @default(uuid()) @db.Uuid
+  attentionId String @map("attention_id") @db.Uuid
+  protocolId String? @map("protocol_id") @db.Uuid
+  bodyAreaOrType String @map("body_area_or_type")
+  conclusion String?
+  authorId String @map("author_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastModifiedById String? @map("last_modified_by_id") @db.Uuid
+  lastModifiedAt DateTime? @map("last_modified_at") @db.Timestamptz(6)
+  attention ClinicalAttention @relation(fields:[attentionId], references:[id], onDelete:Restrict)
+  protocol ClinicalProtocol? @relation(fields:[protocolId], references:[id], onDelete:Restrict)
+  author InternalUser @relation("EvaluationAuthor", fields:[authorId], references:[id], onDelete:Restrict)
+  results ClinicalTestResult[]
+  @@index([attentionId])
+  @@map("clinical_evaluations")
+}
+model ClinicalTestResult {
+  id String @id @default(uuid()) @db.Uuid
+  evaluationId String @map("evaluation_id") @db.Uuid
+  testDefinitionId String @map("test_definition_id") @db.Uuid
+  measurementMethodId String? @map("measurement_method_id") @db.Uuid
+  side String?
+  observation String?
+  value Json
+  definitionSnapshot Json
+  evaluation ClinicalEvaluation @relation(fields:[evaluationId], references:[id], onDelete:Restrict)
+  testDefinition ClinicalTestDefinition @relation(fields:[testDefinitionId], references:[id], onDelete:Restrict)
+  measurementMethod MeasurementMethod? @relation(fields:[measurementMethodId], references:[id], onDelete:Restrict)
+  @@index([evaluationId])
+  @@map("clinical_test_results")
 }
 
 model Evolution {
