@@ -1115,6 +1115,8 @@ permissions
 
 ### M2.8 — Sala user interface
 
+**Status:** DONE
+
 **Model:** `MODEL_STANDARD`
 
 Scope:
