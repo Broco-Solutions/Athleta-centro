@@ -3475,6 +3475,45 @@ export const clinicControllerCorrect = async (id: string, options?: RequestInit)
 
 
 
+export type clinicControllerAttendResponse201 = {
+  data: void
+  status: 201
+}
+
+export type clinicControllerAttendResponseSuccess = (clinicControllerAttendResponse201) & {
+  headers: Headers;
+};
+;
+
+export type clinicControllerAttendResponse = (clinicControllerAttendResponseSuccess)
+
+export const getClinicControllerAttendUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/appointments/${id}/attend`
+}
+
+export const clinicControllerAttend = async (id: string, options?: RequestInit): Promise<clinicControllerAttendResponse> => {
+
+  const res = await fetch(getClinicControllerAttendUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: clinicControllerAttendResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as clinicControllerAttendResponse
+}
+
+
+
 export type clinicControllerCancelResponse201 = {
   data: void
   status: 201

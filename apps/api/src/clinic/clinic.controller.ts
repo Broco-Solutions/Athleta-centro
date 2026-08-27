@@ -11,6 +11,7 @@ export class ClinicController { constructor(private readonly clinic: ClinicServi
  @Get('appointments/:id') @RequirePermissions('CLINIC_OPERATIONAL_READ') @ApiParam({name:'id',type:String}) detail(@Param('id') id:string) { return {data:this.clinic.detail(id)}; }
  @Post('appointments/:id/reschedule') @RequirePermissions('CLINIC_APPOINTMENT_MANAGE') @ApiParam({name:'id',type:String}) reschedule(@Param('id') id:string,@Body() b:RescheduleAppointmentDto) { return {data:this.clinic.reschedule(id,b)}; }
  @Post('appointments/:id/correct') @RequirePermissions('CLINIC_APPOINTMENT_MANAGE') @ApiParam({name:'id',type:String}) correct(@Param('id') id:string,@Body() b:CorrectAppointmentDto) { return {data:this.clinic.correct(id,b.status)}; }
+ @Post('appointments/:id/attend') @RequirePermissions('CLINIC_APPOINTMENT_MANAGE') @ApiParam({name:'id',type:String}) attend(@Param('id') id:string,@Req() r:{athletaUserId?:string}) { return {data:this.clinic.attend(id,this.actor(r))}; }
  @Post('appointments/:id/cancel') @RequirePermissions('CLINIC_APPOINTMENT_MANAGE') @ApiParam({ name: 'id', type: String }) cancel(@Param('id') id: string) { return { data: this.clinic.transition(id, 'CANCELLED') }; }
  @Post('appointments/:id/absent') @RequirePermissions('CLINIC_APPOINTMENT_MANAGE') @ApiParam({ name: 'id', type: String }) absent(@Param('id') id: string) { return { data: this.clinic.transition(id, 'ABSENT') }; }
 }

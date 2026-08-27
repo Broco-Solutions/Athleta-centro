@@ -42,6 +42,7 @@ model InternalUser {
   salaPaymentsModified SalaPayment[] @relation("SalaPaymentModifiedBy")
   clinicalAppointments ClinicalAppointment[] @relation("ClinicalAppointmentProfessional")
   registeredPatients ClinicalPatient[]
+  clinicalAttentions ClinicalAttention[]
 
   @@map("internal_users")
 }
@@ -161,6 +162,7 @@ model Person {
   salaPayments           SalaPayment[]
   clinicalPatient ClinicalPatient?
   clinicalAppointments ClinicalAppointment[]
+  clinicalAttentions ClinicalAttention[]
 
   @@index([lastName, firstName])
   @@index([normalizedEmail])
@@ -188,10 +190,24 @@ model ClinicalAppointment {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   person Person @relation(fields: [personId], references: [id], onDelete: Restrict)
   professional InternalUser @relation("ClinicalAppointmentProfessional", fields: [professionalId], references: [id], onDelete: Restrict)
+  attention ClinicalAttention?
   @@index([personId, startAt])
   @@index([professionalId, startAt])
   @@index([status, startAt])
   @@map("clinical_appointments")
+}
+
+model ClinicalAttention {
+  id String @id @default(uuid()) @db.Uuid
+  appointmentId String @unique @map("appointment_id") @db.Uuid
+  personId String @map("person_id") @db.Uuid
+  professionalId String @map("professional_id") @db.Uuid
+  occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  appointment ClinicalAppointment @relation(fields:[appointmentId],references:[id],onDelete:Restrict)
+  person Person @relation(fields:[personId],references:[id],onDelete:Restrict)
+  professional InternalUser @relation(fields:[professionalId],references:[id],onDelete:Restrict)
+  @@map("clinical_attentions")
 }
 
 model SalaConfiguration {
