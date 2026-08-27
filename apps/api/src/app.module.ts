@@ -21,10 +21,11 @@ import { SalaController } from './sala/sala.controller';
 import { SalaService } from './sala/sala.service';
 import { FinanceController } from './finance/finance.controller';
 import { FinanceCatalogService } from './finance/finance.service';
+import { ClinicController } from './clinic/clinic.controller'; import { ClinicService } from './clinic/clinic.service';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }), LoggerModule.forRoot({ pinoHttp: { redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers.x-csrf-token', 'req.body', 'res.headers.set-cookie'] } as never })],
-  controllers: [HealthController, AuthController, PeopleController, TeamController, SalaController, FinanceController], providers: [PrismaService, InternalUserService, AuthService, AuthRateLimitService, AuthSecurityMiddleware, PermissionsGuard, PeopleService, TeamService, FinanceCatalogService, SalaService, { provide: APP_FILTER, useClass: HttpExceptionFilter }], exports: [PrismaService, InternalUserService, AuthService, PeopleService, TeamService, SalaService, FinanceCatalogService],
+  controllers: [HealthController, AuthController, PeopleController, TeamController, SalaController, FinanceController, ClinicController], providers: [PrismaService, InternalUserService, AuthService, AuthRateLimitService, AuthSecurityMiddleware, PermissionsGuard, PeopleService, TeamService, FinanceCatalogService, SalaService, ClinicService, { provide: APP_FILTER, useClass: HttpExceptionFilter }], exports: [PrismaService, InternalUserService, AuthService, PeopleService, TeamService, SalaService, FinanceCatalogService, ClinicService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

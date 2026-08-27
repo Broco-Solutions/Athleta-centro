@@ -3238,3 +3238,315 @@ export const updatePaymentMethod = async (id: string,
   const data: updatePaymentMethodResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updatePaymentMethodResponse
 }
+
+
+
+export type registerClinicalPatientResponse201 = {
+  data: void
+  status: 201
+}
+
+export type registerClinicalPatientResponseSuccess = (registerClinicalPatientResponse201) & {
+  headers: Headers;
+};
+;
+
+export type registerClinicalPatientResponse = (registerClinicalPatientResponseSuccess)
+
+export const getRegisterClinicalPatientUrl = () => {
+
+
+
+
+  return `/api/clinic/patients`
+}
+
+export const registerClinicalPatient = async ( options?: RequestInit): Promise<registerClinicalPatientResponse> => {
+
+  const res = await fetch(getRegisterClinicalPatientUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: registerClinicalPatientResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as registerClinicalPatientResponse
+}
+
+
+
+export type createClinicalAppointmentResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createClinicalAppointmentResponseSuccess = (createClinicalAppointmentResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createClinicalAppointmentResponse = (createClinicalAppointmentResponseSuccess)
+
+export const getCreateClinicalAppointmentUrl = () => {
+
+
+
+
+  return `/api/clinic/appointments`
+}
+
+export const createClinicalAppointment = async ( options?: RequestInit): Promise<createClinicalAppointmentResponse> => {
+
+  const res = await fetch(getCreateClinicalAppointmentUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createClinicalAppointmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createClinicalAppointmentResponse
+}
+
+
+
+export type listClinicalAppointmentsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listClinicalAppointmentsResponseSuccess = (listClinicalAppointmentsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listClinicalAppointmentsResponse = (listClinicalAppointmentsResponseSuccess)
+
+export const getListClinicalAppointmentsUrl = () => {
+
+
+
+
+  return `/api/clinic/appointments`
+}
+
+export const listClinicalAppointments = async ( options?: RequestInit): Promise<listClinicalAppointmentsResponse> => {
+
+  const res = await fetch(getListClinicalAppointmentsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listClinicalAppointmentsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listClinicalAppointmentsResponse
+}
+
+
+
+export type clinicControllerDetailResponse200 = {
+  data: void
+  status: 200
+}
+
+export type clinicControllerDetailResponseSuccess = (clinicControllerDetailResponse200) & {
+  headers: Headers;
+};
+;
+
+export type clinicControllerDetailResponse = (clinicControllerDetailResponseSuccess)
+
+export const getClinicControllerDetailUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/appointments/${id}`
+}
+
+export const clinicControllerDetail = async (id: string, options?: RequestInit): Promise<clinicControllerDetailResponse> => {
+
+  const res = await fetch(getClinicControllerDetailUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: clinicControllerDetailResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as clinicControllerDetailResponse
+}
+
+
+
+export type clinicControllerRescheduleResponse201 = {
+  data: void
+  status: 201
+}
+
+export type clinicControllerRescheduleResponseSuccess = (clinicControllerRescheduleResponse201) & {
+  headers: Headers;
+};
+;
+
+export type clinicControllerRescheduleResponse = (clinicControllerRescheduleResponseSuccess)
+
+export const getClinicControllerRescheduleUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/appointments/${id}/reschedule`
+}
+
+export const clinicControllerReschedule = async (id: string, options?: RequestInit): Promise<clinicControllerRescheduleResponse> => {
+
+  const res = await fetch(getClinicControllerRescheduleUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: clinicControllerRescheduleResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as clinicControllerRescheduleResponse
+}
+
+
+
+export type clinicControllerCorrectResponse201 = {
+  data: void
+  status: 201
+}
+
+export type clinicControllerCorrectResponseSuccess = (clinicControllerCorrectResponse201) & {
+  headers: Headers;
+};
+;
+
+export type clinicControllerCorrectResponse = (clinicControllerCorrectResponseSuccess)
+
+export const getClinicControllerCorrectUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/appointments/${id}/correct`
+}
+
+export const clinicControllerCorrect = async (id: string, options?: RequestInit): Promise<clinicControllerCorrectResponse> => {
+
+  const res = await fetch(getClinicControllerCorrectUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: clinicControllerCorrectResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as clinicControllerCorrectResponse
+}
+
+
+
+export type clinicControllerCancelResponse201 = {
+  data: void
+  status: 201
+}
+
+export type clinicControllerCancelResponseSuccess = (clinicControllerCancelResponse201) & {
+  headers: Headers;
+};
+;
+
+export type clinicControllerCancelResponse = (clinicControllerCancelResponseSuccess)
+
+export const getClinicControllerCancelUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/appointments/${id}/cancel`
+}
+
+export const clinicControllerCancel = async (id: string, options?: RequestInit): Promise<clinicControllerCancelResponse> => {
+
+  const res = await fetch(getClinicControllerCancelUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: clinicControllerCancelResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as clinicControllerCancelResponse
+}
+
+
+
+export type clinicControllerAbsentResponse201 = {
+  data: void
+  status: 201
+}
+
+export type clinicControllerAbsentResponseSuccess = (clinicControllerAbsentResponse201) & {
+  headers: Headers;
+};
+;
+
+export type clinicControllerAbsentResponse = (clinicControllerAbsentResponseSuccess)
+
+export const getClinicControllerAbsentUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/appointments/${id}/absent`
+}
+
+export const clinicControllerAbsent = async (id: string, options?: RequestInit): Promise<clinicControllerAbsentResponse> => {
+
+  const res = await fetch(getClinicControllerAbsentUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: clinicControllerAbsentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as clinicControllerAbsentResponse
+}

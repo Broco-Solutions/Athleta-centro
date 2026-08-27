@@ -1164,6 +1164,8 @@ Algunos milestones pueden permanecer `BLOCKED` hasta cerrar cardinalidades pendi
 
 ### M3.1 — Clinical appointments
 
+**Status:** DONE
+
 **Model:** `MODEL_DEEP`
 
 Scope:
@@ -1193,15 +1195,11 @@ state transitions
 
 ### M3.2 — Appointment → Attention workflow
 
+**Status:** READY
+
 **Model:** `MODEL_DEEP`
 
-Potential blocker:
-
-```text
-Appointment ↔ Attention cardinality
-```
-
-Do not finalize constraints until confirmed.
+ClinicalAppointment has at most one ClinicalAttention; attendance creation is transactional.
 
 Scope when READY:
 

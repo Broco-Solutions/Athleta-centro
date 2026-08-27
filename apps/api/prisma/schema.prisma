@@ -40,6 +40,8 @@ model InternalUser {
   createdPhysicalEvaluations PhysicalEvaluation[] @relation("PhysicalEvaluationCreatedBy")
   salaPaymentsRegistered SalaPayment[]
   salaPaymentsModified SalaPayment[] @relation("SalaPaymentModifiedBy")
+  clinicalAppointments ClinicalAppointment[] @relation("ClinicalAppointmentProfessional")
+  registeredPatients ClinicalPatient[]
 
   @@map("internal_users")
 }
@@ -78,6 +80,12 @@ enum SalaOccurrenceOrigin {
 }
 enum SalaOccurrenceStatus {
   RESERVED
+  ATTENDED
+  CANCELLED
+  ABSENT
+}
+enum ClinicalAppointmentStatus {
+  SCHEDULED
   ATTENDED
   CANCELLED
   ABSENT
@@ -151,10 +159,39 @@ model Person {
   routines              Routine[]
   physicalEvaluations   PhysicalEvaluation[]
   salaPayments           SalaPayment[]
+  clinicalPatient ClinicalPatient?
+  clinicalAppointments ClinicalAppointment[]
 
   @@index([lastName, firstName])
   @@index([normalizedEmail])
   @@map("people")
+}
+
+model ClinicalPatient {
+  personId String @id @map("person_id") @db.Uuid
+  registeredById String @map("registered_by_id") @db.Uuid
+  registeredAt DateTime @default(now()) @map("registered_at") @db.Timestamptz(6)
+  person Person @relation(fields: [personId], references: [id], onDelete: Restrict)
+  registeredBy InternalUser @relation(fields: [registeredById], references: [id], onDelete: Restrict)
+  @@map("clinical_patients")
+}
+
+model ClinicalAppointment {
+  id String @id @default(uuid()) @db.Uuid
+  personId String @map("person_id") @db.Uuid
+  professionalId String @map("professional_id") @db.Uuid
+  startAt DateTime @map("start_at") @db.Timestamptz(6)
+  durationMinutes Int @default(60) @map("duration_minutes")
+  status ClinicalAppointmentStatus @default(SCHEDULED)
+  operationalNote String? @map("operational_note")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  person Person @relation(fields: [personId], references: [id], onDelete: Restrict)
+  professional InternalUser @relation("ClinicalAppointmentProfessional", fields: [professionalId], references: [id], onDelete: Restrict)
+  @@index([personId, startAt])
+  @@index([professionalId, startAt])
+  @@index([status, startAt])
+  @@map("clinical_appointments")
 }
 
 model SalaConfiguration {
