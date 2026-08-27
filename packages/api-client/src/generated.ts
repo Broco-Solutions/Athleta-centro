@@ -3862,3 +3862,120 @@ export const evolutionControllerUpdate = async (id: string, options?: RequestIni
   const data: evolutionControllerUpdateResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as evolutionControllerUpdateResponse
 }
+
+
+
+export type studyControllerCreateResponse201 = {
+  data: void
+  status: 201
+}
+
+export type studyControllerCreateResponseSuccess = (studyControllerCreateResponse201) & {
+  headers: Headers;
+};
+;
+
+export type studyControllerCreateResponse = (studyControllerCreateResponseSuccess)
+
+export const getStudyControllerCreateUrl = () => {
+
+
+
+
+  return `/api/clinic/studies`
+}
+
+export const studyControllerCreate = async ( options?: RequestInit): Promise<studyControllerCreateResponse> => {
+
+  const res = await fetch(getStudyControllerCreateUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: studyControllerCreateResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as studyControllerCreateResponse
+}
+
+
+
+export type studyControllerListResponse200 = {
+  data: void
+  status: 200
+}
+
+export type studyControllerListResponseSuccess = (studyControllerListResponse200) & {
+  headers: Headers;
+};
+;
+
+export type studyControllerListResponse = (studyControllerListResponseSuccess)
+
+export const getStudyControllerListUrl = () => {
+
+
+
+
+  return `/api/clinic/studies`
+}
+
+export const studyControllerList = async ( options?: RequestInit): Promise<studyControllerListResponse> => {
+
+  const res = await fetch(getStudyControllerListUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: studyControllerListResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as studyControllerListResponse
+}
+
+
+
+export type studyControllerDetailResponse200 = {
+  data: void
+  status: 200
+}
+
+export type studyControllerDetailResponseSuccess = (studyControllerDetailResponse200) & {
+  headers: Headers;
+};
+;
+
+export type studyControllerDetailResponse = (studyControllerDetailResponseSuccess)
+
+export const getStudyControllerDetailUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/studies/${id}`
+}
+
+export const studyControllerDetail = async (id: string, options?: RequestInit): Promise<studyControllerDetailResponse> => {
+
+  const res = await fetch(getStudyControllerDetailUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: studyControllerDetailResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as studyControllerDetailResponse
+}

@@ -167,6 +167,7 @@ model Person {
   clinicalAppointments ClinicalAppointment[]
   clinicalAttentions ClinicalAttention[]
   treatments Treatment[]
+  clinicalStudies ClinicalStudy[]
 
   @@index([lastName, firstName])
   @@index([normalizedEmail])
@@ -261,9 +262,25 @@ model Treatment {
   person Person @relation(fields:[personId],references:[id],onDelete:Restrict)
   responsibleProfessional InternalUser @relation(fields:[responsibleProfessionalId],references:[id],onDelete:Restrict)
   attentions ClinicalAttention[]
+  studies ClinicalStudy[]
   @@index([personId,status])
   @@index([responsibleProfessionalId,status])
   @@map("treatments")
+}
+
+model ClinicalStudy {
+  id String @id @default(uuid()) @db.Uuid
+  personId String @map("person_id") @db.Uuid
+  treatmentId String? @map("treatment_id") @db.Uuid
+  studyDate DateTime @map("study_date") @db.Date
+  studyType String @map("study_type")
+  description String?
+  fileName String? @map("file_name")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  person Person @relation(fields:[personId],references:[id],onDelete:Restrict)
+  treatment Treatment? @relation(fields:[treatmentId],references:[id],onDelete:Restrict)
+  @@index([personId, studyDate])
+  @@map("clinical_studies")
 }
 
 model SalaConfiguration {
