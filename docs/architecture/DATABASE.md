@@ -768,6 +768,13 @@ No confundir duplicado exacto con superposición horaria.
 
 Representa configuración recurrente.
 
+El registro representa una ventana semanal de apertura. Los slots operativos
+no se crean manualmente: se derivan en intervalos fijos de 15 minutos. La
+duración de un booking proviene de `SalaServiceType.durationMinutes`, que debe
+ser positiva y múltiplo de 15. El booking conserva su hora de inicio y servicio;
+la capacidad se calcula para cada bloque ocupado y se valida atómicamente bajo
+lock antes de persistir.
+
 Campos conceptuales:
 
 ```text

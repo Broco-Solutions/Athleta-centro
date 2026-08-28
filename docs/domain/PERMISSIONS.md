@@ -411,6 +411,22 @@ GENERAL_ADMIN
 
 ---
 
+# 18.1. SALA_SERVICE_DURATION_MANAGE
+
+Permite administrar los tipos de servicio de Sala y su duración estándar en
+múltiplos de 15 minutos.
+
+Roles:
+
+```text
+GENERAL_ADMIN
+```
+
+La lectura de servicios seleccionables continúa disponible para los actores que
+operan agenda mediante `SALA_RELATION_READ`.
+
+---
+
 # 19. SALA_AGENDA_MANAGE
 
 Permite operar:

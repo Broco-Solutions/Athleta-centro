@@ -207,7 +207,11 @@ export interface ChangePlanDto {
 export interface FixedBookingDto {
   personId: string;
   salaParticipationId: string;
+  /** Weekly opening window */
   scheduleSlotId: string;
+  serviceTypeId: string;
+  /** @pattern ^([01]\d|2[0-3]):(00|15|30|45)$ */
+  startTime: string;
   startDate: string;
   /** @nullable */
   endDate?: string | null;
@@ -217,7 +221,11 @@ export interface FixedBookingDto {
 export interface ChangeFixedBookingDto {
   personId: string;
   salaParticipationId: string;
+  /** Weekly opening window */
   scheduleSlotId: string;
+  serviceTypeId: string;
+  /** @pattern ^([01]\d|2[0-3]):(00|15|30|45)$ */
+  startTime: string;
   startDate: string;
   /** @nullable */
   endDate?: string | null;
@@ -232,16 +240,30 @@ export interface EndFixedBookingDto {
 export interface OneOffReservationDto {
   personId: string;
   salaParticipationId: string;
+  /** Weekly opening window */
   scheduleSlotId: string;
+  serviceTypeId: string;
+  /** @pattern ^([01]\d|2[0-3]):(00|15|30|45)$ */
+  startTime: string;
   date: string;
   confirmOverbooking?: boolean;
 }
 
+export type SalaAgendaSlotDtoDurationMinutes = typeof SalaAgendaSlotDtoDurationMinutes[keyof typeof SalaAgendaSlotDtoDurationMinutes];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SalaAgendaSlotDtoDurationMinutes = {
+  NUMBER_15: 15,
+} as const;
+
 export interface SalaAgendaSlotDto {
+  /** Derived 15-minute slot identifier */
   id: string;
+  scheduleSlotId: string;
   weekday: string;
   startTime: string;
-  durationMinutes: number;
+  durationMinutes: SalaAgendaSlotDtoDurationMinutes;
 }
 
 export interface SalaAgendaPersonDto {
@@ -440,6 +462,13 @@ export interface CorrectSalaPaymentDto {
 export interface UpdateSalaConfigurationDto {
   /** @minimum 1 */
   capacity: number;
+}
+
+export interface SalaServiceTypeDto {
+  name: string;
+  /** @minimum 15 */
+  durationMinutes: number;
+  isSelectable?: boolean;
 }
 
 export type ScheduleSlotDtoWeekday = typeof ScheduleSlotDtoWeekday[keyof typeof ScheduleSlotDtoWeekday];
@@ -2918,6 +2947,126 @@ export const updateSalaPlan = async (id: string, options?: RequestInit): Promise
 
   const data: updateSalaPlanResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateSalaPlanResponse
+}
+
+
+
+export type listSalaServiceTypesResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listSalaServiceTypesResponseSuccess = (listSalaServiceTypesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listSalaServiceTypesResponse = (listSalaServiceTypesResponseSuccess)
+
+export const getListSalaServiceTypesUrl = () => {
+
+
+
+
+  return `/api/sala/service-types`
+}
+
+export const listSalaServiceTypes = async ( options?: RequestInit): Promise<listSalaServiceTypesResponse> => {
+
+  const res = await fetch(getListSalaServiceTypesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSalaServiceTypesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSalaServiceTypesResponse
+}
+
+
+
+export type createSalaServiceTypeResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createSalaServiceTypeResponseSuccess = (createSalaServiceTypeResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSalaServiceTypeResponse = (createSalaServiceTypeResponseSuccess)
+
+export const getCreateSalaServiceTypeUrl = () => {
+
+
+
+
+  return `/api/sala/service-types`
+}
+
+export const createSalaServiceType = async (salaServiceTypeDto: SalaServiceTypeDto, options?: RequestInit): Promise<createSalaServiceTypeResponse> => {
+
+  const res = await fetch(getCreateSalaServiceTypeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      salaServiceTypeDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSalaServiceTypeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSalaServiceTypeResponse
+}
+
+
+
+export type updateSalaServiceTypeResponse200 = {
+  data: void
+  status: 200
+}
+
+export type updateSalaServiceTypeResponseSuccess = (updateSalaServiceTypeResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateSalaServiceTypeResponse = (updateSalaServiceTypeResponseSuccess)
+
+export const getUpdateSalaServiceTypeUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/service-types/${id}`
+}
+
+export const updateSalaServiceType = async (id: string,
+    salaServiceTypeDto: SalaServiceTypeDto, options?: RequestInit): Promise<updateSalaServiceTypeResponse> => {
+
+  const res = await fetch(getUpdateSalaServiceTypeUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      salaServiceTypeDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateSalaServiceTypeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateSalaServiceTypeResponse
 }
 
 

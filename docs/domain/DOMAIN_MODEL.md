@@ -582,6 +582,16 @@ La disponibilidad habitual de Sala se representa mediante:
 SalaScheduleSlot
 ```
 
+`SalaScheduleSlot` representa una ventana semanal de apertura, no la duración de
+un servicio. Dentro de cada ventana se derivan bloques operativos consecutivos
+de **15 minutos**, tamaño fijo y no configurable. La capacidad general o
+específica se aplica a cada bloque.
+
+La duración estándar pertenece al tipo de servicio de Sala, es configurable por
+Administración general y debe ser un múltiplo positivo de 15 minutos. Una
+reserva consume todos los bloques consecutivos comprendidos entre su inicio y
+su fin; disponibilidad y sobrecupo se evalúan sobre el conjunto completo.
+
 Conceptualmente contiene:
 
 ```text

@@ -484,6 +484,20 @@ model SalaParticipation {
   @@map("sala_participations")
 }
 
+model SalaServiceType {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String   @db.VarChar(120)
+  normalizedName  String   @unique @map("normalized_name") @db.VarChar(120)
+  durationMinutes Int      @map("duration_minutes")
+  isSelectable    Boolean  @default(true) @map("is_selectable")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  fixedBookings   FixedSalaBooking[]
+  reservations    OneOffReservation[]
+
+  @@map("sala_service_types")
+}
+
 model ExerciseDefinition {
   id            String            @id @default(uuid()) @db.Uuid
   name          String            @db.VarChar(120)
@@ -612,16 +626,20 @@ model FixedSalaBooking {
   personId            String   @map("person_id") @db.Uuid
   salaParticipationId String   @map("sala_participation_id") @db.Uuid
   scheduleSlotId      String   @map("schedule_slot_id") @db.Uuid
+  serviceTypeId       String?  @map("service_type_id") @db.Uuid
+  startTime           DateTime? @map("start_time") @db.Time(0)
   startDate           DateTime @map("start_date") @db.Date
   endDate             DateTime? @map("end_date") @db.Date
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   person              Person @relation(fields: [personId], references: [id], onDelete: Restrict)
   salaParticipation  SalaParticipation @relation(fields: [salaParticipationId], references: [id], onDelete: Restrict)
   scheduleSlot        SalaScheduleSlot @relation(fields: [scheduleSlotId], references: [id], onDelete: Restrict)
+  serviceType         SalaServiceType? @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
   occurrences         SalaOccurrence[]
   @@index([personId])
   @@index([salaParticipationId])
   @@index([scheduleSlotId])
+  @@index([serviceTypeId])
   @@map("fixed_sala_bookings")
 }
 
@@ -630,15 +648,19 @@ model OneOffReservation {
   personId            String   @map("person_id") @db.Uuid
   salaParticipationId String   @map("sala_participation_id") @db.Uuid
   scheduleSlotId      String   @map("schedule_slot_id") @db.Uuid
+  serviceTypeId       String?  @map("service_type_id") @db.Uuid
+  startTime           DateTime? @map("start_time") @db.Time(0)
   date                DateTime @db.Date
   cancelledAt         DateTime? @map("cancelled_at") @db.Timestamptz(6)
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   person              Person @relation(fields: [personId], references: [id], onDelete: Restrict)
   salaParticipation  SalaParticipation @relation(fields: [salaParticipationId], references: [id], onDelete: Restrict)
   scheduleSlot        SalaScheduleSlot @relation(fields: [scheduleSlotId], references: [id], onDelete: Restrict)
+  serviceType         SalaServiceType? @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
   occurrences         SalaOccurrence[]
   @@unique([personId, scheduleSlotId, date])
   @@index([date, scheduleSlotId])
+  @@index([serviceTypeId])
   @@map("one_off_reservations")
 }
 

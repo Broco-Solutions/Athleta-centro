@@ -6,8 +6,10 @@ Una capacidad se marca `VERIFIED_WORKFLOW` únicamente cuando se verificó entra
 |---|---|---|---|---|---|---|---|---|
 | People | Crear/editar Persona | people manage | `/api/people` | Sí | Personas → Nueva/Editar | General Admin | ACCESSIBLE | Mantener |
 | People | Ficha de Persona | people read | `/api/people/:id` | Sí | Personas → Abrir ficha | Todos autorizados | ACCESSIBLE_AND_VERIFIED | E2E navegación real |
-| Sala | Planes y horarios | SALA_PLAN_CATALOG_MANAGE / SALA_SCHEDULE_MANAGE | `/api/sala/plans`, `/api/sala/schedule` | Sí | Sala → Configuración | General Admin | ACCESSIBLE_AND_VERIFIED | E2E navegación real |
-| Sala | Participación, reservas y asistencia | permisos Sala | `/api/sala/*` | Sí | Sala / ficha Persona | Roles Sala | ACCESSIBLE | Mantener |
+| Sala | Planes y ventanas semanales | SALA_PLAN_CATALOG_MANAGE / SALA_SCHEDULE_MANAGE | `/api/sala/plans`, `/api/sala/schedule` | Sí | Sala → Configuración | YES | General Admin | VERIFIED_WORKFLOW | Navegación y mutación verificadas |
+| Sala | Servicios y duración estándar | SALA_SERVICE_DURATION_MANAGE | `/api/sala/service-types` | Sí | Sala → Configuración → Servicios y duraciones | YES | General Admin | VERIFIED_WORKFLOW | DB + API; duración múltiplo de 15 |
+| Sala | Reservas multi-slot y sobrecupo | SALA_AGENDA_MANAGE | `/api/sala/reservations`, `/api/sala/availability` | Sí | Sala → Reservas | YES | Administrative | VERIFIED_WORKFLOW | E2E crea 60 min, ocupa 4 slots, confirma y persiste sobrecupo |
+| Sala | Participación y asistencia | permisos Sala | `/api/sala/*` | Sí | Sala / ficha Persona | YES | Roles Sala | VERIFIED_WORKFLOW | Integración + E2E ocurrencias |
 | Sala | Rutinas, evaluaciones y pagos | permisos Sala | `/api/sala/*` | Sí | Sala → Persona | Roles Sala | ACCESSIBLE | Mantener |
 | Clinic | Agenda y appointments | CLINIC_APPOINTMENT_MANAGE | `/api/clinic/appointments` | Sí | Clínica → Agenda / ficha Persona | Kine, Osteo, Admin | ACCESSIBLE | Mantener |
 | Clinic | Atención directa/appointment → atención | CLINIC_APPOINTMENT_MANAGE | `/api/clinic/appointments/:id/attend` | Sí | Clínica → Appointment | Roles clínicos | ACCESSIBLE | Mantener |
@@ -26,5 +28,7 @@ Health checks, sesiones, idempotencia y helpers internos son **BACKEND_ONLY_BY_D
 - [x] Clínica conserva el shell/sidebar global.
 - [x] Personas ofrece una ficha contextual navegable.
 - [x] Sala ofrece Configuración, Planes y Horarios.
+- [x] Configuración separa Planes, ventanas, Servicios y duraciones, Capacidad y Excepciones.
+- [x] Reserva multi-slot recorre selector de entidad → mutación → cuatro bloques → sobrecupo confirmado → refresh persistente.
 - [x] Empty states de configuración incluyen CTA o explicación según permiso.
 - [x] Las pruebas E2E de navegación deben recorrer Inicio → Personas → Sala → Clínica conservando sidebar.

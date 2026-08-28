@@ -34,6 +34,7 @@ describe('SalaOccurrence persistence and API', () => {
     await prisma.salaOccurrence.deleteMany();
     await prisma.oneOffReservation.deleteMany();
     await prisma.fixedSalaBooking.deleteMany();
+    await prisma.salaServiceType.deleteMany();
     await prisma.salaParticipation.deleteMany();
     await prisma.salaScheduleException.deleteMany();
     await prisma.salaScheduleSlot.deleteMany();
