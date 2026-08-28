@@ -3473,6 +3473,45 @@ export const registerClinicalPatient = async ( options?: RequestInit): Promise<r
 
 
 
+export type listClinicalAppointmentServicesResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listClinicalAppointmentServicesResponseSuccess = (listClinicalAppointmentServicesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listClinicalAppointmentServicesResponse = (listClinicalAppointmentServicesResponseSuccess)
+
+export const getListClinicalAppointmentServicesUrl = () => {
+
+
+
+
+  return `/api/clinic/services`
+}
+
+export const listClinicalAppointmentServices = async ( options?: RequestInit): Promise<listClinicalAppointmentServicesResponse> => {
+
+  const res = await fetch(getListClinicalAppointmentServicesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listClinicalAppointmentServicesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listClinicalAppointmentServicesResponse
+}
+
+
+
 export type createClinicalAppointmentResponse201 = {
   data: void
   status: 201

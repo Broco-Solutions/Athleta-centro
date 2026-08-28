@@ -195,6 +195,7 @@ model ClinicalAppointment {
   id String @id @default(uuid()) @db.Uuid
   personId String @map("person_id") @db.Uuid
   professionalId String @map("professional_id") @db.Uuid
+  serviceTypeId String? @map("service_type_id") @db.Uuid
   startAt DateTime @map("start_at") @db.Timestamptz(6)
   durationMinutes Int @default(60) @map("duration_minutes")
   status ClinicalAppointmentStatus @default(SCHEDULED)
@@ -203,9 +204,11 @@ model ClinicalAppointment {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   person Person @relation(fields: [personId], references: [id], onDelete: Restrict)
   professional InternalUser @relation("ClinicalAppointmentProfessional", fields: [professionalId], references: [id], onDelete: Restrict)
+  serviceType SalaServiceType? @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
   attention ClinicalAttention?
   @@index([personId, startAt])
   @@index([professionalId, startAt])
+  @@index([serviceTypeId])
   @@index([status, startAt])
   @@map("clinical_appointments")
 }
@@ -494,6 +497,7 @@ model SalaServiceType {
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   fixedBookings   FixedSalaBooking[]
   reservations    OneOffReservation[]
+  clinicalAppointments ClinicalAppointment[]
 
   @@map("sala_service_types")
 }
