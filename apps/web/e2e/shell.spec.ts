@@ -43,6 +43,7 @@ test('operates lazy Sala occurrences and manual attendance corrections', async (
   fixture('occurrence');
   await login(page, 'e2e.occurrence@athleta.test');
   await page.getByRole('link', { name: 'Sala' }).click();
+  await expect(page.getByText(/1970|MONDAY|TUESDAY/)).toHaveCount(0);
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   const addDays = (value: string, days: number) => { const date = new Date(`${value}T00:00:00.000Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); };
   const fixedRow = page.locator('li').filter({ hasText: 'OccurrenceE2E, Fija' });
@@ -106,4 +107,23 @@ test('exposes Sala configuration from the Sala workspace', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Configuración de Sala' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Planes' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Horarios semanales' })).toBeVisible();
+});
+
+test('navigates from People to a real Person workspace and clinical entry flows', async ({ page }) => {
+  fixture('sala');
+  await login(page, 'e2e.sala@athleta.test');
+  await page.getByRole('link', { name: 'Personas' }).click();
+  const row = page.getByRole('row').filter({ hasText: 'SalaE2E, Persona' }).first();
+  await row.getByRole('link', { name: 'Abrir ficha' }).click();
+  await expect(page).toHaveURL(/\/people\/[0-9a-f-]+$/);
+  await expect(page.getByRole('heading', { name: 'Ficha de Persona' })).toBeVisible();
+  await page.getByRole('link', { name: 'Abrir ficha clínica' }).click();
+  await expect(page).toHaveURL(/\/clinic\?personId=/);
+  await expect(page.getByRole('link', { name: 'Clínica' })).toBeVisible();
+  await page.goBack();
+  await page.getByRole('link', { name: 'Agendar turno' }).click();
+  await expect(page.getByRole('heading', { name: 'Agendar turno clínico' })).toBeVisible();
+  await page.goBack();
+  await page.getByRole('link', { name: 'Registrar atención' }).click();
+  await expect(page.getByRole('heading', { name: 'Registrar atención directa' })).toBeVisible();
 });

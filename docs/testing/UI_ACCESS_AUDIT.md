@@ -5,8 +5,8 @@ Auditoría de puntos de entrada visibles para las capacidades implementadas hast
 | Module | Capability | Permission | API | UI exists | Entry point | Role tested | Status | Action |
 |---|---|---|---|---|---|---|---|---|
 | People | Crear/editar Persona | people manage | `/api/people` | Sí | Personas → Nueva/Editar | General Admin | ACCESSIBLE | Mantener |
-| People | Ficha de Persona | people read | `/api/people/:id` | Sí | Personas → Abrir ficha | Todos autorizados | ACCESSIBLE | Mantener |
-| Sala | Planes y horarios | SALA_PLAN_CATALOG_MANAGE / SALA_SCHEDULE_MANAGE | `/api/sala/plans`, `/api/sala/schedule` | Sí | Sala → Configuración | General Admin | ACCESSIBLE | Mantener |
+| People | Ficha de Persona | people read | `/api/people/:id` | Sí | Personas → Abrir ficha | Todos autorizados | ACCESSIBLE_AND_VERIFIED | E2E navegación real |
+| Sala | Planes y horarios | SALA_PLAN_CATALOG_MANAGE / SALA_SCHEDULE_MANAGE | `/api/sala/plans`, `/api/sala/schedule` | Sí | Sala → Configuración | General Admin | ACCESSIBLE_AND_VERIFIED | E2E navegación real |
 | Sala | Participación, reservas y asistencia | permisos Sala | `/api/sala/*` | Sí | Sala / ficha Persona | Roles Sala | ACCESSIBLE | Mantener |
 | Sala | Rutinas, evaluaciones y pagos | permisos Sala | `/api/sala/*` | Sí | Sala → Persona | Roles Sala | ACCESSIBLE | Mantener |
 | Clinic | Agenda y appointments | CLINIC_APPOINTMENT_MANAGE | `/api/clinic/appointments` | Sí | Clínica → Agenda / ficha Persona | Kine, Osteo, Admin | ACCESSIBLE | Mantener |
