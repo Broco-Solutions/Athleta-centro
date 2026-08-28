@@ -14,6 +14,7 @@ beforeAll(() => {
 });
 beforeEach(() => {
   server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { data: { user: { id: 'u1', firstName: 'Admin', lastName: 'Test', email: 'admin@test.local' }, roles: ['GENERAL_ADMIN'], permissions: [], mustChangePassword: false, csrfToken: 'csrf' } } })),
     http.get('http://localhost:3000/api/clinic/appointments', () => HttpResponse.json({ data: [] })),
     http.get('http://localhost:3000/api/clinic/studies', () => HttpResponse.json({ data: [{ id: 'study', studyDate: '2026-08-27', studyType: 'Radiografía', fileAsset: null }] })),
     http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: [{ id: 'work', name: 'Cobertura sintética' }] })),

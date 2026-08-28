@@ -88,3 +88,22 @@ test('navigates the consolidated Phase 3 clinical workspace', async ({ page }) =
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
 });
+
+test('keeps global navigation available across workspaces', async ({ page }) => {
+  fixture('normal');
+  await login(page, 'e2e.normal@athleta.test');
+  for (const section of ['Inicio', 'Personas', 'Sala', 'Clínica']) {
+    await page.getByRole('link', { name: section }).click();
+    await expect(page.getByRole('link', { name: section })).toBeVisible();
+  }
+});
+
+test('exposes Sala configuration from the Sala workspace', async ({ page }) => {
+  fixture('sala');
+  await login(page, 'e2e.sala@athleta.test');
+  await page.getByRole('link', { name: 'Sala' }).click();
+  await page.getByRole('link', { name: 'Configuración' }).click();
+  await expect(page.getByRole('heading', { name: 'Configuración de Sala' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Planes' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Horarios semanales' })).toBeVisible();
+});

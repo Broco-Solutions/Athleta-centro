@@ -55,7 +55,7 @@ export default function SalaPage(): React.JSX.Element {
 
   return (
     <WorkspaceShell active="Sala">
-      <h1 className="mb-6 text-3xl font-semibold">Sala</h1>
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-3"><h1 className="text-3xl font-semibold">Sala</h1><a href="/sala/configuration" className="rounded-md border px-3 py-2 text-sm font-medium">Configuración</a></header>
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="rounded-md border bg-white p-5"><h2 className="mb-4 text-lg font-semibold">Capacidad general</h2><form onSubmit={(event) => { event.preventDefault(); saveCapacity.mutate(); }}><input aria-label="Capacidad general" type="number" min="1" value={capacity} onChange={(event) => setCapacity(event.target.value)} className="h-10 w-full rounded-md border px-3" /><Button className="mt-4" type="submit" disabled={saveCapacity.isPending}>Guardar capacidad</Button></form></section>
         <section className="rounded-md border bg-white p-5"><h2 className="mb-4 text-lg font-semibold">Disponibilidad</h2><input aria-label="Fecha de disponibilidad" type="date" value={date} onChange={(event) => setDate(event.target.value)} className="h-10 w-full rounded-md border px-3" /><div className="mt-4 grid gap-2">{availabilityRows.map((state) => <div key={state.slotId} className="rounded border p-3 text-sm"><div className="flex justify-between"><span>{slotRows.find((slot) => slot.id === state.slotId)?.startTime ?? state.slotId.slice(0, 8)}</span><span>{state.isClosed ? 'Cerrado' : state.isOverbooked ? 'Sobrecupo' : state.available === 0 ? 'Completo' : 'Disponible'}</span></div><p>Capacidad {state.capacity} · Reservados {state.reserved} · Disponibles {state.available}</p></div>)}</div></section>
