@@ -1,8 +1,8 @@
 # UI access audit — Phase 3
 
-Auditoría de puntos de entrada visibles para las capacidades implementadas hasta Phase 3.
+Una capacidad se marca `VERIFIED_WORKFLOW` únicamente cuando se verificó entrada, selección válida de entidades, mutación, resultado visible y permisos. Las que todavía tienen una ruta o UI parcial permanecen `PARTIAL_WORKFLOW`.
 
-| Module | Capability | Permission | API | UI exists | Entry point | Role tested | Status | Action |
+| Module | Capability | Permission | API | UI exists | Entry point | Mutation verified | Role tested | Status | Action |
 |---|---|---|---|---|---|---|---|---|
 | People | Crear/editar Persona | people manage | `/api/people` | Sí | Personas → Nueva/Editar | General Admin | ACCESSIBLE | Mantener |
 | People | Ficha de Persona | people read | `/api/people/:id` | Sí | Personas → Abrir ficha | Todos autorizados | ACCESSIBLE_AND_VERIFIED | E2E navegación real |

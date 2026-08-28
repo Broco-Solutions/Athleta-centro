@@ -103,7 +103,7 @@ test('exposes Sala configuration from the Sala workspace', async ({ page }) => {
   fixture('sala');
   await login(page, 'e2e.sala@athleta.test');
   await page.getByRole('link', { name: 'Sala' }).click();
-  await page.getByRole('link', { name: 'Configuración' }).click();
+  await page.getByRole('link', { name: 'Configuración', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Configuración de Sala' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Planes' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Horarios semanales' })).toBeVisible();
