@@ -617,7 +617,7 @@ model SalaScheduleSlot {
   fixedBookings   FixedSalaBooking[]
   reservations    OneOffReservation[]
   occurrences     SalaOccurrence[]
-  @@unique([weekday, startTime])
+  @@index([weekday, startTime])
   @@map("sala_schedule_slots")
 }
 
@@ -627,6 +627,7 @@ model FixedSalaBooking {
   salaParticipationId String   @map("sala_participation_id") @db.Uuid
   scheduleSlotId      String   @map("schedule_slot_id") @db.Uuid
   serviceTypeId       String?  @map("service_type_id") @db.Uuid
+  serviceDurationMinutes Int? @map("service_duration_minutes")
   startTime           DateTime? @map("start_time") @db.Time(0)
   startDate           DateTime @map("start_date") @db.Date
   endDate             DateTime? @map("end_date") @db.Date
@@ -649,6 +650,7 @@ model OneOffReservation {
   salaParticipationId String   @map("sala_participation_id") @db.Uuid
   scheduleSlotId      String   @map("schedule_slot_id") @db.Uuid
   serviceTypeId       String?  @map("service_type_id") @db.Uuid
+  serviceDurationMinutes Int? @map("service_duration_minutes")
   startTime           DateTime? @map("start_time") @db.Time(0)
   date                DateTime @db.Date
   cancelledAt         DateTime? @map("cancelled_at") @db.Timestamptz(6)

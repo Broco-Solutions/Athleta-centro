@@ -76,10 +76,10 @@ test('operates lazy Sala occurrences and manual attendance corrections', async (
 test('books a 60-minute Sala service across four slots and confirms overcapacity', async ({ page }) => {
   fixture('multislot'); await login(page, 'e2e.multislot@athleta.test'); await page.getByRole('link', { name: 'Sala' }).click();
   await page.getByLabel('Fecha de disponibilidad').fill('2026-08-31');
-  await page.getByLabel('Alumno').selectOption({ label: 'Persona1 MultiSlotE2E · 40999551' }); await page.getByLabel('Participación').selectOption({ index: 1 }); await page.getByLabel('Servicio').selectOption({ label: 'Gimnasio E2E · 60 min' }); await page.getByLabel('Ventana semanal').selectOption({ label: 'Lunes · desde 08:00' }); await page.getByLabel('Hora de inicio').selectOption('12:00'); await page.getByRole('button', { name: 'Reserva puntual' }).click();
+  await page.getByLabel('Alumno').selectOption({ label: 'Persona1 MultiSlotE2E · 40999551' }); await page.getByLabel('Participación').selectOption({ index: 1 }); await page.getByLabel('Servicio').selectOption({ label: 'Gimnasio E2E · 60 min' }); await page.getByLabel('Hora de inicio').selectOption('12:00'); await page.getByRole('button', { name: 'Reserva puntual' }).click();
   for (const time of ['12:00–12:15','12:15–12:30','12:30–12:45','12:45–13:00']) await expect(page.getByText(time).first()).toBeVisible();
   await page.getByLabel('Alumno').selectOption({ label: 'Persona2 MultiSlotE2E · 40999552' }); await page.getByLabel('Participación').selectOption({ index: 1 }); await page.getByRole('button', { name: 'Reserva puntual' }).click(); await expect(page.getByText(/supera la capacidad/)).toBeVisible(); await page.getByRole('button', { name: 'Confirmar sobrecupo' }).click(); await expect(page.getByText('Sobrecupo').first()).toBeVisible(); await page.reload(); await page.getByLabel('Fecha de disponibilidad').fill('2026-08-31'); await expect(page.getByText('Sobrecupo').first()).toBeVisible();
-  await expect(page.getByLabel('Hora de inicio').getByRole('option', { name: '19:15' })).toHaveCount(0);
+  await page.getByLabel('Servicio').selectOption({ label: 'Gimnasio E2E · 60 min' }); await expect(page.getByLabel('Hora de inicio').getByRole('option', { name: '19:15' })).toHaveCount(0);
 });
 test('navigates the consolidated Phase 3 clinical workspace', async ({ page }) => {
   fixture('clinic');

@@ -497,6 +497,10 @@ export interface ScheduleSlotDto {
   specificCapacity?: number | null;
 }
 
+export interface ReplaceWeeklyScheduleDto {
+  windows: ScheduleSlotDto[];
+}
+
 export type ReplaceScheduleSlotDtoWeekday = typeof ReplaceScheduleSlotDtoWeekday[keyof typeof ReplaceScheduleSlotDtoWeekday];
 
 
@@ -3145,6 +3149,46 @@ export const createSalaScheduleSlot = async ( options?: RequestInit): Promise<cr
 
   const data: createSalaScheduleSlotResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createSalaScheduleSlotResponse
+}
+
+
+
+export type replaceSalaWeeklyScheduleResponse200 = {
+  data: void
+  status: 200
+}
+
+export type replaceSalaWeeklyScheduleResponseSuccess = (replaceSalaWeeklyScheduleResponse200) & {
+  headers: Headers;
+};
+;
+
+export type replaceSalaWeeklyScheduleResponse = (replaceSalaWeeklyScheduleResponseSuccess)
+
+export const getReplaceSalaWeeklyScheduleUrl = () => {
+
+
+
+
+  return `/api/sala/schedule/week`
+}
+
+export const replaceSalaWeeklySchedule = async (replaceWeeklyScheduleDto: ReplaceWeeklyScheduleDto, options?: RequestInit): Promise<replaceSalaWeeklyScheduleResponse> => {
+
+  const res = await fetch(getReplaceSalaWeeklyScheduleUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      replaceWeeklyScheduleDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: replaceSalaWeeklyScheduleResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as replaceSalaWeeklyScheduleResponse
 }
 
 

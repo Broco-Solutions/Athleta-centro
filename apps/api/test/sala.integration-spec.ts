@@ -35,6 +35,21 @@ describe('Sala configuration API', () => {
     const overlap = await request(app.getHttpServer()).post('/api/sala/schedule').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ weekday: 'TUESDAY', startTime: '09:30', durationMinutes: 30 }).expect(409);
     expect(overlap.body.code).toBe('SALA_SCHEDULE_OVERLAP');
   });
+  it('replaces the complete weekly configuration atomically, including closed days and split ranges', async () => {
+    const authn = await session(Role.ADMINISTRATIVE);
+    const weekly = { windows: [
+      { weekday: 'MONDAY', startTime: '08:00', durationMinutes: 240 },
+      { weekday: 'MONDAY', startTime: '16:00', durationMinutes: 240 },
+      { weekday: 'TUESDAY', startTime: '08:00', durationMinutes: 720 },
+    ] };
+    await request(app.getHttpServer()).put('/api/sala/schedule/week').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(weekly).expect(200);
+    const listed = await request(app.getHttpServer()).get('/api/sala/schedule').set('Cookie', authn.cookie).expect(200);
+    expect(listed.body.data).toEqual(expect.arrayContaining([expect.objectContaining({ weekday: 'MONDAY' }), expect.objectContaining({ weekday: 'TUESDAY' })]));
+    expect(listed.body.data.filter((slot: { weekday: string }) => slot.weekday === 'SUNDAY')).toHaveLength(0);
+    await request(app.getHttpServer()).put('/api/sala/schedule/week').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ windows: [{ weekday: 'MONDAY', startTime: '08:00', durationMinutes: 240 }, { weekday: 'MONDAY', startTime: '11:00', durationMinutes: 120 }] }).expect(409);
+    const afterRejected = await request(app.getHttpServer()).get('/api/sala/schedule').set('Cookie', authn.cookie).expect(200);
+    expect(afterRejected.body.data).toHaveLength(3);
+  });
   it('enforces catalog permissions independently from schedule permissions', async () => {
     const authn = await session(Role.PROFESSOR);
     await request(app.getHttpServer()).post('/api/sala/plans').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ name: 'No', monthlyAmount: 1 }).expect(403);
