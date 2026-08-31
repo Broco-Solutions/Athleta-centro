@@ -31,8 +31,7 @@ it('renders the daily agenda states and navigates the clinical workspace', async
   renderPage();
   expect(await screen.findByText('No hay turnos para esta fecha.')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Estudios' }));
-  expect(await screen.findByText('Radiografía')).toBeInTheDocument();
-  expect(screen.getByText(/Sin archivo/)).toBeInTheDocument();
+  expect(await screen.findByText(/Seleccioná un Paciente/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Obra social' }));
   expect(await screen.findByText(/1 obras sociales configuradas/)).toBeInTheDocument();
 });

@@ -19,6 +19,9 @@ Una capacidad se marca `VERIFIED_WORKFLOW` únicamente cuando se verificó entra
 | Clinic | Studies y archivos privados | CLINIC_STUDY_MANAGE | `/api/clinic/studies` | Sí | Ficha clínica → Estudios | Roles clínicos | ACCESSIBLE | Mantener |
 | Clinic | Social Work y Orders | CLINIC_ORDER_MANAGE | `/api/clinic/social-works` | Sí | Ficha clínica → Obra social | Roles clínicos/Admin | ACCESSIBLE | Mantener |
 | Clinic | Sala Clinical Indications | CLINIC_INDICATION_CONTENT_MANAGE / SALA projection | `/api/clinic/indications` | Sí | Clínica → Indicaciones / Sala | Clínicos/Professor | ACCESSIBLE | Mantener |
+| Clinic | Workspace contextual por paciente | CLINICAL_HISTORY_READ | `/api/clinic/patients`, `/api/clinic/attentions` | Sí | Clínica → `?personId=` → tabs | N/A | VERIFIED_WORKFLOW | Contexto preservado en tabs y deep-link |
+| Finance | Medios de pago compartidos | PAYMENT_METHOD_CATALOG_MANAGE | `/api/finance/payment-methods` | Sí | Finanzas → Medios de pago | YES | VERIFIED_WORKFLOW | Crear, editar y retirar; catálogo compartido |
+| Finance | Registrar cobro clínico | CLINICAL_INCOME_MANAGE | `/api/finance/clinical-incomes` | Sí | Ficha clínica → Registrar cobro / Finanzas | YES | VERIFIED_WORKFLOW | Formulario contextual con selectores válidos |
 | Team | Usuarios, roles y credenciales | team permissions | `/api/team/*` | Sí | Equipo | General Admin | ACCESSIBLE | Mantener |
 
 Health checks, sesiones, idempotencia y helpers internos son **BACKEND_ONLY_BY_DESIGN**. No requieren CTA.

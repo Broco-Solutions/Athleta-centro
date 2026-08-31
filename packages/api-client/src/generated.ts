@@ -4368,6 +4368,45 @@ export const registerDirectClinicalAttention = async ( options?: RequestInit): P
 
 
 
+export type listClinicalAttentionsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listClinicalAttentionsResponseSuccess = (listClinicalAttentionsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listClinicalAttentionsResponse = (listClinicalAttentionsResponseSuccess)
+
+export const getListClinicalAttentionsUrl = () => {
+
+
+
+
+  return `/api/clinic/attentions`
+}
+
+export const listClinicalAttentions = async ( options?: RequestInit): Promise<listClinicalAttentionsResponse> => {
+
+  const res = await fetch(getListClinicalAttentionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listClinicalAttentionsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listClinicalAttentionsResponse
+}
+
+
+
 export type clinicControllerDetailResponse200 = {
   data: void
   status: 200
