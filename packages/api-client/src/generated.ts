@@ -6042,3 +6042,315 @@ export const closeSalaClinicalIndication = async (id: string, options?: RequestI
   const data: closeSalaClinicalIndicationResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as closeSalaClinicalIndicationResponse
 }
+
+
+
+export type portalControllerLoginResponse200 = {
+  data: void
+  status: 200
+}
+
+export type portalControllerLoginResponseSuccess = (portalControllerLoginResponse200) & {
+  headers: Headers;
+};
+;
+
+export type portalControllerLoginResponse = (portalControllerLoginResponseSuccess)
+
+export const getPortalControllerLoginUrl = () => {
+
+
+
+
+  return `/api/portal/auth/login`
+}
+
+export const portalControllerLogin = async ( options?: RequestInit): Promise<portalControllerLoginResponse> => {
+
+  const res = await fetch(getPortalControllerLoginUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: portalControllerLoginResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as portalControllerLoginResponse
+}
+
+
+
+export type portalControllerLogoutResponse200 = {
+  data: void
+  status: 200
+}
+
+export type portalControllerLogoutResponseSuccess = (portalControllerLogoutResponse200) & {
+  headers: Headers;
+};
+;
+
+export type portalControllerLogoutResponse = (portalControllerLogoutResponseSuccess)
+
+export const getPortalControllerLogoutUrl = () => {
+
+
+
+
+  return `/api/portal/auth/logout`
+}
+
+export const portalControllerLogout = async ( options?: RequestInit): Promise<portalControllerLogoutResponse> => {
+
+  const res = await fetch(getPortalControllerLogoutUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: portalControllerLogoutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as portalControllerLogoutResponse
+}
+
+
+
+export type portalControllerSessionResponse200 = {
+  data: void
+  status: 200
+}
+
+export type portalControllerSessionResponseSuccess = (portalControllerSessionResponse200) & {
+  headers: Headers;
+};
+;
+
+export type portalControllerSessionResponse = (portalControllerSessionResponseSuccess)
+
+export const getPortalControllerSessionUrl = () => {
+
+
+
+
+  return `/api/portal/auth/session`
+}
+
+export const portalControllerSession = async ( options?: RequestInit): Promise<portalControllerSessionResponse> => {
+
+  const res = await fetch(getPortalControllerSessionUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: portalControllerSessionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as portalControllerSessionResponse
+}
+
+
+
+export type portalControllerChangeResponse200 = {
+  data: void
+  status: 200
+}
+
+export type portalControllerChangeResponseSuccess = (portalControllerChangeResponse200) & {
+  headers: Headers;
+};
+;
+
+export type portalControllerChangeResponse = (portalControllerChangeResponseSuccess)
+
+export const getPortalControllerChangeUrl = () => {
+
+
+
+
+  return `/api/portal/auth/change-pin`
+}
+
+export const portalControllerChange = async ( options?: RequestInit): Promise<portalControllerChangeResponse> => {
+
+  const res = await fetch(getPortalControllerChangeUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: portalControllerChangeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as portalControllerChangeResponse
+}
+
+
+
+export type portalControllerMeResponse200 = {
+  data: void
+  status: 200
+}
+
+export type portalControllerMeResponseSuccess = (portalControllerMeResponse200) & {
+  headers: Headers;
+};
+;
+
+export type portalControllerMeResponse = (portalControllerMeResponseSuccess)
+
+export const getPortalControllerMeUrl = () => {
+
+
+
+
+  return `/api/portal/me`
+}
+
+export const portalControllerMe = async ( options?: RequestInit): Promise<portalControllerMeResponse> => {
+
+  const res = await fetch(getPortalControllerMeUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: portalControllerMeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as portalControllerMeResponse
+}
+
+
+
+export type portalControllerSalaResponse200 = {
+  data: void
+  status: 200
+}
+
+export type portalControllerSalaResponseSuccess = (portalControllerSalaResponse200) & {
+  headers: Headers;
+};
+;
+
+export type portalControllerSalaResponse = (portalControllerSalaResponseSuccess)
+
+export const getPortalControllerSalaUrl = () => {
+
+
+
+
+  return `/api/portal/sala`
+}
+
+export const portalControllerSala = async ( options?: RequestInit): Promise<portalControllerSalaResponse> => {
+
+  const res = await fetch(getPortalControllerSalaUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: portalControllerSalaResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as portalControllerSalaResponse
+}
+
+
+
+export type portalControllerAppointmentsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type portalControllerAppointmentsResponseSuccess = (portalControllerAppointmentsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type portalControllerAppointmentsResponse = (portalControllerAppointmentsResponseSuccess)
+
+export const getPortalControllerAppointmentsUrl = () => {
+
+
+
+
+  return `/api/portal/clinic/appointments`
+}
+
+export const portalControllerAppointments = async ( options?: RequestInit): Promise<portalControllerAppointmentsResponse> => {
+
+  const res = await fetch(getPortalControllerAppointmentsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: portalControllerAppointmentsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as portalControllerAppointmentsResponse
+}
+
+
+
+export type portalControllerCancelResponse200 = {
+  data: void
+  status: 200
+}
+
+export type portalControllerCancelResponseSuccess = (portalControllerCancelResponse200) & {
+  headers: Headers;
+};
+;
+
+export type portalControllerCancelResponse = (portalControllerCancelResponseSuccess)
+
+export const getPortalControllerCancelUrl = (id: string,) => {
+
+
+
+
+  return `/api/portal/clinic/appointments/${id}/cancel`
+}
+
+export const portalControllerCancel = async (id: string, options?: RequestInit): Promise<portalControllerCancelResponse> => {
+
+  const res = await fetch(getPortalControllerCancelUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: portalControllerCancelResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as portalControllerCancelResponse
+}
