@@ -14,7 +14,7 @@ export class StudyController {
   @Post() @ApiOperation({ operationId: 'createClinicalStudy' }) @RequirePermissions('CLINIC_STUDY_MANAGE')
   async create(@Body() body: Record<string, unknown>) { return { data: await this.studies.create(body) }; }
   @Get() @ApiOperation({ operationId: 'listClinicalStudies' }) @RequirePermissions('CLINICAL_HISTORY_READ')
-  list(@Query('personId') personId?: string) { return { data: this.studies.list(personId) }; }
+  async list(@Query('personId') personId?: string) { return { data: await this.studies.list(personId) }; }
   @Get(':id') @ApiOperation({ operationId: 'getClinicalStudy' }) @ApiParam({ name: 'id', type: String }) @RequirePermissions('CLINICAL_HISTORY_READ')
   async detail(@Param('id') id: string) { return { data: await this.studies.detail(id) }; }
   @Patch(':id') @ApiOperation({ operationId: 'updateClinicalStudy' }) @ApiParam({ name: 'id', type: String }) @RequirePermissions('CLINIC_STUDY_MANAGE')

@@ -9,7 +9,7 @@ import { SocialWorkService } from './social-work.service';
 export class SocialWorkController {
   constructor(private readonly socialWork: SocialWorkService) {}
   @Get('social-works') @ApiOperation({ operationId: 'listSocialWorks' }) @RequirePermissions('CLINIC_OPERATIONAL_READ')
-  listCatalog() { return { data: this.socialWork.listCatalog() }; }
+  async listCatalog() { return { data: await this.socialWork.listCatalog() }; }
   @Post('social-works') @ApiOperation({ operationId: 'createSocialWork' }) @RequirePermissions('CLINIC_ORDER_MANAGE')
   async createCatalog(@Body() body: { name: string }) { return { data: await this.socialWork.createCatalog(body.name) }; }
   @Patch('social-works/:id/retire') @ApiOperation({ operationId: 'retireSocialWork' }) @ApiParam({ name: 'id', type: String }) @RequirePermissions('CLINIC_ORDER_MANAGE')

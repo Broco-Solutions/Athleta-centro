@@ -12,7 +12,7 @@ export class IndicationController {
   @Post('clinic/indications') @ApiOperation({ operationId: 'createSalaClinicalIndication' }) @RequirePermissions('CLINIC_INDICATION_CONTENT_MANAGE')
   async create(@Body() body: Record<string, unknown>, @Req() request: { athletaUserId?: string }) { return { data: await this.indications.create(this.actor(request), body as never) }; }
   @Get('clinic/indications') @ApiOperation({ operationId: 'listSalaClinicalIndications' }) @RequirePermissions('CLINICAL_HISTORY_READ')
-  full(@Query('personId') personId: string) { return { data: this.indications.listFull(personId) }; }
+  async full(@Query('personId') personId: string) { return { data: await this.indications.listFull(personId) }; }
   @Get('sala/people/:personId/clinical-indications') @ApiOperation({ operationId: 'getSalaClinicalIndicationProjection' }) @ApiParam({ name: 'personId', type: String }) @RequirePermissions('SALA_CLINICAL_INDICATION_READ')
   async safe(@Param('personId') personId: string) { return { data: await this.indications.safe(personId) }; }
   @Post('clinic/indications/:id/close') @ApiOperation({ operationId: 'closeSalaClinicalIndication' }) @ApiParam({ name: 'id', type: String }) @RequirePermissions('SALA_CLINICAL_INDICATION_CLOSE')

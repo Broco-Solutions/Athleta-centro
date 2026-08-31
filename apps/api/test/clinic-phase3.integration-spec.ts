@@ -55,8 +55,20 @@ describe('Clinic Phase 3 persistence workflows', () => {
     const dni = `55${Date.now()}`.slice(0, 12); const person = await prisma.person.create({ data: { firstName: 'Paciente', lastName: 'Servicio', dni, normalizedDni: dni, phone: '3510000000', birthDate: new Date('1990-01-01') } }); await prisma.clinicalPatient.create({ data: { personId: person.id, registeredById: professional.id } });
     const service = await prisma.salaServiceType.create({ data: { name: `Kinesiología ${token}`, normalizedName: `kinesiología ${token}`, durationMinutes: 60 } }); const future = new Date(Date.now() + 86_400_000).toISOString();
     const appointment = await clinic.create({ personId: person.id, serviceId: service.id, professionalId: professional.id, startAt: future }); expect(appointment.durationMinutes).toBe(60); expect(appointment.serviceTypeId).toBe(service.id);
+    expect((await clinic.list(undefined, undefined, person.id)).some((item) => item.id === appointment.id)).toBe(true);
     await prisma.salaServiceType.update({ where: { id: service.id }, data: { durationMinutes: 45 } }); expect((await prisma.clinicalAppointment.findUniqueOrThrow({ where: { id: appointment.id } })).durationMinutes).toBe(60);
     const next = await clinic.create({ personId: person.id, serviceId: service.id, professionalId: professional.id, startAt: new Date(Date.now() + 172_800_000).toISOString() }); expect(next.durationMinutes).toBe(45);
+  });
+
+  it('persists direct attention and returns it from the patient read model', async () => {
+    const token = suffix();
+    const professional = await prisma.internalUser.create({ data: { firstName: 'Profesional', lastName: 'Atención', email: `${token}@phase3.test`, normalizedEmail: `${token}@phase3.test`, roles: { create: { role: Role.KINESIOLOGIST } } } });
+    const dni = `55${Date.now()}`.slice(0, 12);
+    const person = await prisma.person.create({ data: { firstName: 'Paciente', lastName: 'Atención', dni, normalizedDni: dni, phone: '3510000000', birthDate: new Date('1990-01-01') } });
+    await prisma.clinicalPatient.create({ data: { personId: person.id, registeredById: professional.id } });
+    const attention = await clinic.registerDirectAttention({ personId: person.id, professionalId: professional.id, occurredAt: new Date().toISOString() });
+    expect(await prisma.clinicalAttention.findUnique({ where: { id: attention.id } })).toEqual(expect.objectContaining({ personId: person.id }));
+    expect((await clinic.listAttentions(person.id)).some((item) => item.id === attention.id)).toBe(true);
   });
 
   it('registers a clinical patient idempotently without changing Sala participation', async () => {
