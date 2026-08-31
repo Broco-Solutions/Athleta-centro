@@ -15,7 +15,7 @@ describe('People API', () => {
   afterEach(async () => { await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.person.deleteMany(); await prisma.authAttemptBucket.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); });
   afterAll(() => app.close());
   async function session(role: Role) { const user = await users.create({ firstName: 'API', lastName: 'User', email: `${role.toLowerCase()}@people.test`, roles: [role] }); await auth.provisionCredential(user.id, 'ValidPass1!'); await prisma.internalCredential.update({ where: { internalUserId: user.id }, data: { mustChangePassword: false } }); const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200); return { cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string }; }
-  const payload = { context: 'SALA', firstName: 'Ana', lastName: 'Sintética', dni: '20.123.456', phone: '3515550102', birthDate: '1992-03-10' };
+  const payload = { firstName: 'Ana', lastName: 'Sintética', dni: '20.123.456', phone: '3515550102', birthDate: '1992-03-10' };
 
   it('creates, reads, searches, paginates and updates safe general data', async () => {
     const authn = await session(Role.PROFESSOR);

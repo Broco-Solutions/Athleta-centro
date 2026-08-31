@@ -1,11 +1,8 @@
 import { Type } from 'class-transformer';
-import { IsDateString, IsEmail, IsEnum, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
-
-export enum PersonCreationContext { SALA = 'SALA', CLINIC = 'CLINIC' }
+import { IsDateString, IsEmail, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 
 export class CreatePersonDto {
-  @ApiProperty({ enum: PersonCreationContext }) @IsEnum(PersonCreationContext) context!: PersonCreationContext;
   @ApiProperty({ type: String }) @IsString() @MinLength(1) @MaxLength(100) firstName!: string;
   @ApiProperty({ type: String }) @IsString() @MinLength(1) @MaxLength(100) lastName!: string;
   @ApiProperty({ type: String }) @IsString() @MinLength(1) @MaxLength(30) dni!: string;
@@ -18,7 +15,7 @@ export class CreatePersonDto {
   @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() @MaxLength(100) affiliateNumber?: string;
 }
 
-export class UpdatePersonDto extends PartialType(OmitType(CreatePersonDto, ['context'] as const)) {}
+export class UpdatePersonDto extends PartialType(CreatePersonDto) {}
 
 export class ListPeopleQueryDto {
   @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() @MaxLength(100) search?: string;
@@ -40,6 +37,8 @@ export class PersonResponseDto {
   @ApiPropertyOptional({ type: String, nullable: true }) affiliateNumber!: string | null;
   @ApiProperty({ type: String, enum: ['INACTIVE'], description: 'Derived from currently available relationships.' }) status!: 'INACTIVE';
   @ApiProperty({ type: () => [String] }) contexts!: string[];
+  @ApiProperty({ type: Boolean, description: 'Whether this person has an active Sala participation.' }) hasSalaParticipation!: boolean;
+  @ApiProperty({ type: Boolean, description: 'Whether this person is explicitly registered as a clinical patient.' }) isClinicalPatient!: boolean;
   @ApiPropertyOptional({ type: String, pattern: '^\\d{4}$', description: 'Returned only once after creation.' }) initialPin?: string;
 }
 

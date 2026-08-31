@@ -29,10 +29,11 @@ it('renders loading, empty and operational attendance states', async () => {
   server.use(http.get('http://localhost:3000/api/sala/agenda', async () => { await delay(30); return HttpResponse.json({ data: [group('RESERVED'), { ...group('ATTENDED'), slot: { id: `${slotId}-2`, startTime: '1970-01-01T10:00:00.000Z', durationMinutes: 60 }, people: [{ personId: `${person.id}-2`, person: { ...person, id: `${person.id}-2`, firstName: 'Bea' }, origin: 'ONE_OFF', status: 'ATTENDED' }] }, { ...group('ABSENT'), slot: { id: `${slotId}-3`, startTime: '1970-01-01T11:00:00.000Z', durationMinutes: 60 } }, { ...group('CANCELLED'), slot: { id: `${slotId}-4`, startTime: '1970-01-01T12:00:00.000Z', durationMinutes: 60 }, isClosed: true }] }); }));
   renderAgenda();
   expect(screen.getByRole('status')).toHaveTextContent('Cargando agenda');
-  expect(await screen.findByText('Reservado')).toBeInTheDocument();
-  expect(screen.getByText('Asistió', { selector: 'span' })).toBeInTheDocument();
-  expect(screen.getByText('Ausente', { selector: 'span' })).toBeInTheDocument();
-  expect(screen.getByText('Cancelado', { selector: 'span' })).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: /09:00/ })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /09:00/ }));
+  expect(screen.getByRole('button', { name: 'Asistió' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Ausente' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Cancelar' })).toBeInTheDocument();
   expect(screen.getByText('Cerrado')).toBeInTheDocument();
 });
 
@@ -50,7 +51,8 @@ it('marks attendance and refreshes the agenda using the generated client', async
     http.post('http://localhost:3000/api/sala/occurrences/attend', async ({ request }) => { submitted = await request.json(); status = 'ATTENDED'; return HttpResponse.json({ data: { status } }, { status: 201 }); }),
   );
   renderAgenda();
-  await screen.findByText('Reservado');
+  await screen.findByRole('button', { name: /09:00/ });
+  fireEvent.click(screen.getByRole('button', { name: /09:00/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Asistió' }));
   await waitFor(() => expect(submitted).toEqual({ personId: person.id, scheduleSlotId: slotId, date: '2026-08-27' }));
   await waitFor(() => expect(screen.getByText('Asistió', { selector: 'span' })).toBeInTheDocument());
@@ -64,7 +66,8 @@ it('supports corrections and exposes backend errors for duplicate spontaneous at
     http.post('http://localhost:3000/api/sala/occurrences/spontaneous', () => HttpResponse.json({ statusCode: 409, code: 'SALA_OCCURRENCE_DUPLICATE', message: 'Duplicate' }, { status: 409 })),
   );
   renderAgenda(today);
-  await screen.findByText('Asistió', { selector: 'span' });
+  await screen.findByRole('button', { name: /09:00/ });
+  fireEvent.click(screen.getByRole('button', { name: /09:00/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Ausente' }));
   fireEvent.change(screen.getByLabelText('Persona espontánea'), { target: { value: person.id } });
   fireEvent.change(screen.getByLabelText('Horario espontáneo'), { target: { value: slotId } });

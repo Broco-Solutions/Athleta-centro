@@ -48,6 +48,7 @@ test('operates lazy Sala occurrences and manual attendance corrections', async (
   const addDays = (value: string, days: number) => { const date = new Date(`${value}T00:00:00.000Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); };
   const fixedRow = page.locator('li').filter({ hasText: 'OccurrenceE2E, Fija' });
   await page.getByLabel('Fecha de agenda').fill(today);
+  await page.getByRole('button', { name: /20:00/ }).first().click();
   await expect(fixedRow.getByText('Reservado')).toBeVisible();
   await fixedRow.getByRole('button', { name: 'Asistió' }).click();
   await expect(fixedRow.getByText('Asistió', { exact: true })).toBeVisible();
@@ -125,6 +126,16 @@ test('navigates from People to a real Person workspace and clinical entry flows'
   await row.getByRole('link', { name: 'Abrir ficha' }).click();
   await expect(page).toHaveURL(/\/people\/[0-9a-f-]+$/);
   await expect(page.getByRole('heading', { name: 'Ficha de Persona' })).toBeVisible();
+  await page.getByRole('button', { name: 'Dar de alta en Clínica' }).click();
+  await expect(page.getByText('Paciente de Clínica')).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('Paciente de Clínica')).toBeVisible();
+  await page.getByRole('button', { name: /Cerrar sesión/ }).click();
+  await login(page, 'e2e.sala@athleta.test');
+  await page.getByRole('link', { name: 'Personas' }).click();
+  await page.getByLabel('Buscar Personas').fill('40999777');
+  await page.getByRole('row').filter({ hasText: 'SalaE2E, Persona' }).first().getByRole('link', { name: 'Abrir ficha' }).click();
+  await expect(page.getByText('Paciente de Clínica')).toBeVisible();
   await page.getByRole('link', { name: 'Abrir ficha clínica' }).click();
   await expect(page).toHaveURL(/\/clinic\?personId=/);
   await expect(page.getByRole('link', { name: 'Clínica' })).toBeVisible();

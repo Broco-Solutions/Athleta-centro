@@ -2,7 +2,7 @@ import { ConflictException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../src/app.module';
 import { PeopleService } from '../src/people/people.service';
-import { type CreatePersonDto, PersonCreationContext } from '../src/people/person.dto';
+import { type CreatePersonDto } from '../src/people/person.dto';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 describe('People PostgreSQL persistence', () => {
@@ -10,7 +10,7 @@ describe('People PostgreSQL persistence', () => {
   beforeAll(async () => { const module = await Test.createTestingModule({ imports: [AppModule] }).compile(); prisma = module.get(PrismaService); people = module.get(PeopleService); });
   beforeEach(async () => { await prisma.clinicalPatient.deleteMany(); await prisma.person.deleteMany(); });
   afterAll(() => prisma.$disconnect());
-  const input = (dni = '12.345.678'): CreatePersonDto => ({ context: PersonCreationContext.SALA, firstName: 'Persona', lastName: 'Sintética', dni, phone: '3515550101', birthDate: '1991-07-15', email: ' PERSON@Example.test ' });
+  const input = (dni = '12.345.678'): CreatePersonDto => ({ firstName: 'Persona', lastName: 'Sintética', dni, phone: '3515550101', birthDate: '1991-07-15', email: ' PERSON@Example.test ' });
 
   it('persists normalized identity, optional email and DATE without timezone drift', async () => {
     const created = await people.create(input());

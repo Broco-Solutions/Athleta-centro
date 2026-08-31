@@ -43,6 +43,7 @@ describe('Clinic Phase 3 persistence workflows', () => {
     await prisma.measurementMethod.deleteMany();
     await prisma.clinicalProtocol.deleteMany();
     await prisma.clinicalAttention.deleteMany();
+    await prisma.salaParticipation.deleteMany({ where: { person: { dni: { startsWith: '55' } } } });
     await prisma.clinicalPatient.deleteMany();
     await prisma.internalUserRole.deleteMany({ where: { internalUser: { email: { contains: '@phase3.test' } } } });
     await prisma.internalUser.deleteMany({ where: { email: { contains: '@phase3.test' } } });
@@ -56,6 +57,20 @@ describe('Clinic Phase 3 persistence workflows', () => {
     const appointment = await clinic.create({ personId: person.id, serviceId: service.id, professionalId: professional.id, startAt: future }); expect(appointment.durationMinutes).toBe(60); expect(appointment.serviceTypeId).toBe(service.id);
     await prisma.salaServiceType.update({ where: { id: service.id }, data: { durationMinutes: 45 } }); expect((await prisma.clinicalAppointment.findUniqueOrThrow({ where: { id: appointment.id } })).durationMinutes).toBe(60);
     const next = await clinic.create({ personId: person.id, serviceId: service.id, professionalId: professional.id, startAt: new Date(Date.now() + 172_800_000).toISOString() }); expect(next.durationMinutes).toBe(45);
+  });
+
+  it('registers a clinical patient idempotently without changing Sala participation', async () => {
+    const token = suffix();
+    const professional = await prisma.internalUser.create({ data: { firstName: 'Profesional', lastName: 'Alta', email: `${token}@phase3.test`, normalizedEmail: `${token}@phase3.test`, roles: { create: { role: Role.KINESIOLOGIST } } } });
+    const professor = await prisma.internalUser.create({ data: { firstName: 'Profesor', lastName: 'Sala', email: `${token}-sala@phase3.test`, normalizedEmail: `${token}-sala@phase3.test`, roles: { create: { role: Role.PROFESSOR } } } });
+    const plan = await prisma.salaPlan.create({ data: { name: `Plan ${token}`, monthlyAmount: 1000 } });
+    const dni = `55${Date.now()}`.slice(0, 12);
+    const person = await prisma.person.create({ data: { firstName: 'Paciente', lastName: 'Coexistente', dni, normalizedDni: dni, phone: '3510000000', birthDate: new Date('1990-01-01') } });
+    const participation = await prisma.salaParticipation.create({ data: { personId: person.id, mainProfessorId: professor.id, planId: plan.id, startDate: new Date('2026-08-01') } });
+    await clinic.registerPatient(person.id, professional.id);
+    await clinic.registerPatient(person.id, professional.id);
+    expect(await prisma.clinicalPatient.count({ where: { personId: person.id } })).toBe(1);
+    expect((await prisma.salaParticipation.findUniqueOrThrow({ where: { id: participation.id } })).endDate).toBeNull();
   });
 
   it('preserves evaluation snapshots and permits multiple evaluations and repeated tests', async () => {

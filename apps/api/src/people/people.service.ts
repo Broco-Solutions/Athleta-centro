@@ -70,7 +70,7 @@ export class PeopleService {
   }
 
   async get(id: string) {
-    const person = await this.prisma.person.findUnique({ where: { id } });
+    const person = await this.prisma.person.findUnique({ where: { id }, include: { clinicalPatient: { select: { personId: true } }, salaParticipations: { where: { endDate: null }, select: { id: true } } } });
     if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
     return this.serialize(person);
   }
@@ -84,7 +84,7 @@ export class PeopleService {
       ...(normalized ? [{ normalizedDni: { contains: normalized } } satisfies Prisma.PersonWhereInput] : []),
     ] } : {};
     const [rows, total] = await this.prisma.$transaction([
-      this.prisma.person.findMany({ where, orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }], skip: (query.page - 1) * query.pageSize, take: query.pageSize }),
+      this.prisma.person.findMany({ where, orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }], skip: (query.page - 1) * query.pageSize, take: query.pageSize, include: { clinicalPatient: { select: { personId: true } }, salaParticipations: { where: { endDate: null }, select: { id: true } } } }),
       this.prisma.person.count({ where }),
     ]);
     return { data: rows.map((person) => this.serialize(person)), meta: { page: query.page, pageSize: query.pageSize, total, totalPages: Math.ceil(total / query.pageSize) } };
@@ -95,8 +95,10 @@ export class PeopleService {
   }
   private generatePin(): string { return randomInt(0, 10000).toString().padStart(4, '0'); }
   private date(value: string): Date { return new Date(`${value}T00:00:00.000Z`); }
-  private serialize(person: { id: string; firstName: string; lastName: string; dni: string; phone: string; birthDate: Date; email: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; socialWorkId: string | null; affiliateNumber: string | null }) {
-    return { id: person.id, firstName: person.firstName, lastName: person.lastName, dni: person.dni, phone: person.phone, birthDate: person.birthDate.toISOString().slice(0, 10), email: person.email, emergencyContactName: person.emergencyContactName, emergencyContactPhone: person.emergencyContactPhone, socialWorkId: person.socialWorkId, affiliateNumber: person.affiliateNumber, status: 'INACTIVE' as const, contexts: [] as string[] };
+  private serialize(person: { id: string; firstName: string; lastName: string; dni: string; phone: string; birthDate: Date; email: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; socialWorkId: string | null; affiliateNumber: string | null; clinicalPatient?: { personId: string } | null; salaParticipations?: { id: string }[] }) {
+    const isClinicalPatient = Boolean(person.clinicalPatient);
+    const hasSalaParticipation = (person.salaParticipations?.length ?? 0) > 0;
+    return { id: person.id, firstName: person.firstName, lastName: person.lastName, dni: person.dni, phone: person.phone, birthDate: person.birthDate.toISOString().slice(0, 10), email: person.email, emergencyContactName: person.emergencyContactName, emergencyContactPhone: person.emergencyContactPhone, socialWorkId: person.socialWorkId, affiliateNumber: person.affiliateNumber, status: 'INACTIVE' as const, contexts: [hasSalaParticipation ? 'SALA' : '', isClinicalPatient ? 'CLINIC' : ''].filter(Boolean), hasSalaParticipation, isClinicalPatient };
   }
   private duplicateDni(): never { throw new ConflictException({ code: 'PERSON_DNI_ALREADY_EXISTS', message: 'A person with this DNI already exists' }); }
 }

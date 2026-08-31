@@ -35,6 +35,10 @@ export interface PersonResponseDto {
   /** Derived from currently available relationships. */
   status: PersonResponseDtoStatus;
   contexts: string[];
+  /** Whether this person has an active Sala participation. */
+  hasSalaParticipation: boolean;
+  /** Whether this person is explicitly registered as a clinical patient. */
+  isClinicalPatient: boolean;
   /**
    * Returned only once after creation.
    * @pattern ^\d{4}$
@@ -58,17 +62,7 @@ export interface PersonEnvelopeDto {
   data: PersonResponseDto;
 }
 
-export type CreatePersonDtoContext = typeof CreatePersonDtoContext[keyof typeof CreatePersonDtoContext];
-
-
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export const CreatePersonDtoContext = {
-  SALA: 'SALA',
-  CLINIC: 'CLINIC',
-} as const;
-
 export interface CreatePersonDto {
-  context: CreatePersonDtoContext;
   firstName: string;
   lastName: string;
   dni: string;
