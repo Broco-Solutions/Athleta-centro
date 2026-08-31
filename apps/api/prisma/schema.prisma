@@ -22,35 +22,37 @@ enum InternalUserStatus {
 }
 
 model InternalUser {
-  id              String             @id @default(uuid()) @db.Uuid
-  firstName       String             @map("first_name")
-  lastName        String             @map("last_name")
-  email           String
-  normalizedEmail String             @unique @map("normalized_email")
-  status          InternalUserStatus @default(ACTIVE)
-  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
-  roles           InternalUserRole[]
-  credential      InternalCredential?
-  sessions        Session[]
-  salaParticipations SalaParticipation[]
-  createdSalaOccurrences  SalaOccurrence[] @relation("SalaOccurrenceCreatedBy")
-  modifiedSalaOccurrences SalaOccurrence[] @relation("SalaOccurrenceModifiedBy")
-  physicalEvaluationsAsProfessor PhysicalEvaluation[] @relation("PhysicalEvaluationProfessor")
-  createdPhysicalEvaluations PhysicalEvaluation[] @relation("PhysicalEvaluationCreatedBy")
-  salaPaymentsRegistered SalaPayment[]
-  salaPaymentsModified SalaPayment[] @relation("SalaPaymentModifiedBy")
-  clinicalAppointments ClinicalAppointment[] @relation("ClinicalAppointmentProfessional")
-  registeredPatients ClinicalPatient[]
-  clinicalAttentions ClinicalAttention[]
-  treatments Treatment[]
-  evolutionsAuthored Evolution[] @relation("EvolutionAuthor")
-  evolutionsModified Evolution[] @relation("EvolutionModifier")
-  evaluationsAuthored ClinicalEvaluation[] @relation("EvaluationAuthor")
-  evaluationsModified ClinicalEvaluation[] @relation("EvaluationModifier")
-  fileAssetsCreated FileAsset[]
-  indicationsResponsible SalaClinicalIndication[] @relation("IndicationProfessional")
-  indicationsClosed SalaClinicalIndication[] @relation("IndicationClosedBy")
+  id                             String                   @id @default(uuid()) @db.Uuid
+  firstName                      String                   @map("first_name")
+  lastName                       String                   @map("last_name")
+  email                          String
+  normalizedEmail                String                   @unique @map("normalized_email")
+  status                         InternalUserStatus       @default(ACTIVE)
+  createdAt                      DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                      DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  roles                          InternalUserRole[]
+  credential                     InternalCredential?
+  sessions                       Session[]
+  salaParticipations             SalaParticipation[]
+  createdSalaOccurrences         SalaOccurrence[]         @relation("SalaOccurrenceCreatedBy")
+  modifiedSalaOccurrences        SalaOccurrence[]         @relation("SalaOccurrenceModifiedBy")
+  physicalEvaluationsAsProfessor PhysicalEvaluation[]     @relation("PhysicalEvaluationProfessor")
+  createdPhysicalEvaluations     PhysicalEvaluation[]     @relation("PhysicalEvaluationCreatedBy")
+  salaPaymentsRegistered         SalaPayment[]
+  salaPaymentsModified           SalaPayment[]            @relation("SalaPaymentModifiedBy")
+  expensesRegistered             Expense[]
+  clinicalIncomesRegistered      ClinicalIncome[]
+  clinicalAppointments           ClinicalAppointment[]    @relation("ClinicalAppointmentProfessional")
+  registeredPatients             ClinicalPatient[]
+  clinicalAttentions             ClinicalAttention[]
+  treatments                     Treatment[]
+  evolutionsAuthored             Evolution[]              @relation("EvolutionAuthor")
+  evolutionsModified             Evolution[]              @relation("EvolutionModifier")
+  evaluationsAuthored            ClinicalEvaluation[]     @relation("EvaluationAuthor")
+  evaluationsModified            ClinicalEvaluation[]     @relation("EvaluationModifier")
+  fileAssetsCreated              FileAsset[]
+  indicationsResponsible         SalaClinicalIndication[] @relation("IndicationProfessional")
+  indicationsClosed              SalaClinicalIndication[] @relation("IndicationClosedBy")
 
   @@map("internal_users")
 }
@@ -78,27 +80,43 @@ enum SalaWeekday {
   SATURDAY
   SUNDAY
 }
+
 enum SalaScheduleExceptionType {
   CLOSURE
   CAPACITY_OVERRIDE
 }
+
 enum SalaOccurrenceOrigin {
   FIXED
   ONE_OFF
   SPONTANEOUS
 }
+
 enum SalaOccurrenceStatus {
   RESERVED
   ATTENDED
   CANCELLED
   ABSENT
 }
+
 enum ClinicalAppointmentStatus {
   SCHEDULED
   ATTENDED
   CANCELLED
   ABSENT
 }
+
+enum ExpenseArea {
+  SALA
+  CLINIC
+  GENERAL
+}
+
+enum ClinicalIncomePayer {
+  PATIENT
+  SOCIAL_WORK
+}
+
 enum RoutineStatus {
   ACTIVE
   HISTORICAL
@@ -110,6 +128,7 @@ model InternalCredential {
   mustChangePassword   Boolean      @default(true) @map("must_change_password")
   credentialsUpdatedAt DateTime     @default(now()) @map("credentials_updated_at") @db.Timestamptz(6)
   internalUser         InternalUser @relation(fields: [internalUserId], references: [id], onDelete: Cascade)
+
   @@map("internal_credentials")
 }
 
@@ -126,6 +145,7 @@ model Session {
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   internalUser   InternalUser? @relation(fields: [internalUserId], references: [id], onDelete: Cascade)
   person         Person?       @relation(fields: [personId], references: [id], onDelete: Cascade)
+
   @@index([internalUserId])
   @@index([personId])
   @@index([expiresAt])
@@ -144,37 +164,38 @@ model AuthAttemptBucket {
 }
 
 model Person {
-  id                    String   @id @default(uuid()) @db.Uuid
-  firstName             String   @map("first_name")
-  lastName              String   @map("last_name")
-  dni                   String
-  normalizedDni         String   @unique @map("normalized_dni")
-  phone                 String
-  birthDate             DateTime @map("birth_date") @db.Date
-  email                 String?
-  normalizedEmail       String?  @map("normalized_email")
-  emergencyContactName  String?  @map("emergency_contact_name")
-  emergencyContactPhone String?  @map("emergency_contact_phone")
-  socialWorkId          String?  @map("social_work_id") @db.Uuid
-  affiliateNumber       String?  @map("affiliate_number")
-  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  portalCredential      PortalCredential?
-  portalSessions        Session[]
-  salaParticipations    SalaParticipation[]
-  fixedBookings         FixedSalaBooking[]
-  reservations          OneOffReservation[]
-  salaOccurrences       SalaOccurrence[]
-  routines              Routine[]
-  physicalEvaluations   PhysicalEvaluation[]
-  salaPayments           SalaPayment[]
-  clinicalPatient ClinicalPatient?
-  clinicalAppointments ClinicalAppointment[]
-  clinicalAttentions ClinicalAttention[]
-  treatments Treatment[]
-  clinicalStudies ClinicalStudy[]
-  socialWork SocialWork? @relation(fields:[socialWorkId],references:[id],onDelete:Restrict)
-  socialWorkOrders SocialWorkOrder[]
+  id                      String                   @id @default(uuid()) @db.Uuid
+  firstName               String                   @map("first_name")
+  lastName                String                   @map("last_name")
+  dni                     String
+  normalizedDni           String                   @unique @map("normalized_dni")
+  phone                   String
+  birthDate               DateTime                 @map("birth_date") @db.Date
+  email                   String?
+  normalizedEmail         String?                  @map("normalized_email")
+  emergencyContactName    String?                  @map("emergency_contact_name")
+  emergencyContactPhone   String?                  @map("emergency_contact_phone")
+  socialWorkId            String?                  @map("social_work_id") @db.Uuid
+  affiliateNumber         String?                  @map("affiliate_number")
+  createdAt               DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  portalCredential        PortalCredential?
+  portalSessions          Session[]
+  salaParticipations      SalaParticipation[]
+  fixedBookings           FixedSalaBooking[]
+  reservations            OneOffReservation[]
+  salaOccurrences         SalaOccurrence[]
+  routines                Routine[]
+  physicalEvaluations     PhysicalEvaluation[]
+  salaPayments            SalaPayment[]
+  clinicalIncomes         ClinicalIncome[]
+  clinicalPatient         ClinicalPatient?
+  clinicalAppointments    ClinicalAppointment[]
+  clinicalAttentions      ClinicalAttention[]
+  treatments              Treatment[]
+  clinicalStudies         ClinicalStudy[]
+  socialWork              SocialWork?              @relation(fields: [socialWorkId], references: [id], onDelete: Restrict)
+  socialWorkOrders        SocialWorkOrder[]
   salaClinicalIndications SalaClinicalIndication[]
 
   @@index([lastName, firstName])
@@ -183,29 +204,31 @@ model Person {
 }
 
 model ClinicalPatient {
-  personId String @id @map("person_id") @db.Uuid
-  registeredById String @map("registered_by_id") @db.Uuid
-  registeredAt DateTime @default(now()) @map("registered_at") @db.Timestamptz(6)
-  person Person @relation(fields: [personId], references: [id], onDelete: Restrict)
-  registeredBy InternalUser @relation(fields: [registeredById], references: [id], onDelete: Restrict)
+  personId       String       @id @map("person_id") @db.Uuid
+  registeredById String       @map("registered_by_id") @db.Uuid
+  registeredAt   DateTime     @default(now()) @map("registered_at") @db.Timestamptz(6)
+  person         Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
+  registeredBy   InternalUser @relation(fields: [registeredById], references: [id], onDelete: Restrict)
+
   @@map("clinical_patients")
 }
 
 model ClinicalAppointment {
-  id String @id @default(uuid()) @db.Uuid
-  personId String @map("person_id") @db.Uuid
-  professionalId String @map("professional_id") @db.Uuid
-  serviceTypeId String? @map("service_type_id") @db.Uuid
-  startAt DateTime @map("start_at") @db.Timestamptz(6)
-  durationMinutes Int @default(60) @map("duration_minutes")
-  status ClinicalAppointmentStatus @default(SCHEDULED)
-  operationalNote String? @map("operational_note")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  person Person @relation(fields: [personId], references: [id], onDelete: Restrict)
-  professional InternalUser @relation("ClinicalAppointmentProfessional", fields: [professionalId], references: [id], onDelete: Restrict)
-  serviceType SalaServiceType? @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
-  attention ClinicalAttention?
+  id              String                    @id @default(uuid()) @db.Uuid
+  personId        String                    @map("person_id") @db.Uuid
+  professionalId  String                    @map("professional_id") @db.Uuid
+  serviceTypeId   String?                   @map("service_type_id") @db.Uuid
+  startAt         DateTime                  @map("start_at") @db.Timestamptz(6)
+  durationMinutes Int                       @default(60) @map("duration_minutes")
+  status          ClinicalAppointmentStatus @default(SCHEDULED)
+  operationalNote String?                   @map("operational_note")
+  createdAt       DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  person          Person                    @relation(fields: [personId], references: [id], onDelete: Restrict)
+  professional    InternalUser              @relation("ClinicalAppointmentProfessional", fields: [professionalId], references: [id], onDelete: Restrict)
+  serviceType     SalaServiceType?          @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
+  attention       ClinicalAttention?
+
   @@index([personId, startAt])
   @@index([professionalId, startAt])
   @@index([serviceTypeId])
@@ -214,19 +237,21 @@ model ClinicalAppointment {
 }
 
 model ClinicalAttention {
-  id String @id @default(uuid()) @db.Uuid
-  appointmentId String? @unique @map("appointment_id") @db.Uuid
-  personId String @map("person_id") @db.Uuid
-  professionalId String @map("professional_id") @db.Uuid
-  occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  appointment ClinicalAppointment? @relation(fields:[appointmentId],references:[id],onDelete:Restrict)
-  person Person @relation(fields:[personId],references:[id],onDelete:Restrict)
-  professional InternalUser @relation(fields:[professionalId],references:[id],onDelete:Restrict)
-  treatmentId String? @map("treatment_id") @db.Uuid
-  treatment Treatment? @relation(fields:[treatmentId],references:[id],onDelete:Restrict)
-  evolution Evolution?
-  evaluations ClinicalEvaluation[]
+  id              String               @id @default(uuid()) @db.Uuid
+  appointmentId   String?              @unique @map("appointment_id") @db.Uuid
+  personId        String               @map("person_id") @db.Uuid
+  professionalId  String               @map("professional_id") @db.Uuid
+  occurredAt      DateTime             @map("occurred_at") @db.Timestamptz(6)
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  appointment     ClinicalAppointment? @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  person          Person               @relation(fields: [personId], references: [id], onDelete: Restrict)
+  professional    InternalUser         @relation(fields: [professionalId], references: [id], onDelete: Restrict)
+  treatmentId     String?              @map("treatment_id") @db.Uuid
+  treatment       Treatment?           @relation(fields: [treatmentId], references: [id], onDelete: Restrict)
+  evolution       Evolution?
+  evaluations     ClinicalEvaluation[]
+  clinicalIncomes ClinicalIncome[]
+
   @@map("clinical_attentions")
 }
 
@@ -250,85 +275,95 @@ enum TrainingCondition {
 }
 
 model ClinicalProtocol {
-  id String @id @default(uuid()) @db.Uuid
-  name String
-  normalizedName String @unique @map("normalized_name")
-  isActive Boolean @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  evaluations ClinicalEvaluation[]
+  id             String               @id @default(uuid()) @db.Uuid
+  name           String
+  normalizedName String               @unique @map("normalized_name")
+  isActive       Boolean              @default(true) @map("is_active")
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  evaluations    ClinicalEvaluation[]
+
   @@map("clinical_protocols")
 }
+
 model ClinicalTestDefinition {
-  id String @id @default(uuid()) @db.Uuid
-  name String
-  normalizedName String @unique @map("normalized_name")
-  responseType ClinicalTestResponseType @map("response_type")
-  scaleMin Decimal? @map("scale_min") @db.Decimal(14,4)
-  scaleMax Decimal? @map("scale_max") @db.Decimal(14,4)
-  unit String?
-  options Json?
-  isSelectable Boolean @default(true) @map("is_selectable")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  results ClinicalTestResult[]
+  id             String                   @id @default(uuid()) @db.Uuid
+  name           String
+  normalizedName String                   @unique @map("normalized_name")
+  responseType   ClinicalTestResponseType @map("response_type")
+  scaleMin       Decimal?                 @map("scale_min") @db.Decimal(14, 4)
+  scaleMax       Decimal?                 @map("scale_max") @db.Decimal(14, 4)
+  unit           String?
+  options        Json?
+  isSelectable   Boolean                  @default(true) @map("is_selectable")
+  createdAt      DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  results        ClinicalTestResult[]
+
   @@map("clinical_test_definitions")
 }
+
 model MeasurementMethod {
-  id String @id @default(uuid()) @db.Uuid
-  name String
-  normalizedName String @unique @map("normalized_name")
-  description String?
-  isSelectable Boolean @default(true) @map("is_selectable")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  results ClinicalTestResult[]
+  id             String               @id @default(uuid()) @db.Uuid
+  name           String
+  normalizedName String               @unique @map("normalized_name")
+  description    String?
+  isSelectable   Boolean              @default(true) @map("is_selectable")
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  results        ClinicalTestResult[]
+
   @@map("measurement_methods")
 }
+
 model ClinicalEvaluation {
-  id String @id @default(uuid()) @db.Uuid
-  attentionId String @map("attention_id") @db.Uuid
-  protocolId String? @map("protocol_id") @db.Uuid
-  bodyAreaOrType String @map("body_area_or_type")
-  conclusion String?
-  authorId String @map("author_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  lastModifiedById String? @map("last_modified_by_id") @db.Uuid
-  lastModifiedAt DateTime? @map("last_modified_at") @db.Timestamptz(6)
-  attention ClinicalAttention @relation(fields:[attentionId], references:[id], onDelete:Restrict)
-  protocol ClinicalProtocol? @relation(fields:[protocolId], references:[id], onDelete:Restrict)
-  author InternalUser @relation("EvaluationAuthor", fields:[authorId], references:[id], onDelete:Restrict)
-  lastModifiedBy InternalUser? @relation("EvaluationModifier", fields:[lastModifiedById], references:[id], onDelete:Restrict)
-  results ClinicalTestResult[]
+  id               String               @id @default(uuid()) @db.Uuid
+  attentionId      String               @map("attention_id") @db.Uuid
+  protocolId       String?              @map("protocol_id") @db.Uuid
+  bodyAreaOrType   String               @map("body_area_or_type")
+  conclusion       String?
+  authorId         String               @map("author_id") @db.Uuid
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastModifiedById String?              @map("last_modified_by_id") @db.Uuid
+  lastModifiedAt   DateTime?            @map("last_modified_at") @db.Timestamptz(6)
+  attention        ClinicalAttention    @relation(fields: [attentionId], references: [id], onDelete: Restrict)
+  protocol         ClinicalProtocol?    @relation(fields: [protocolId], references: [id], onDelete: Restrict)
+  author           InternalUser         @relation("EvaluationAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  lastModifiedBy   InternalUser?        @relation("EvaluationModifier", fields: [lastModifiedById], references: [id], onDelete: Restrict)
+  results          ClinicalTestResult[]
+
   @@index([attentionId])
   @@map("clinical_evaluations")
 }
+
 model ClinicalTestResult {
-  id String @id @default(uuid()) @db.Uuid
-  evaluationId String @map("evaluation_id") @db.Uuid
-  testDefinitionId String @map("test_definition_id") @db.Uuid
-  measurementMethodId String? @map("measurement_method_id") @db.Uuid
-  side String?
-  observation String?
-  value Json
-  definitionSnapshot Json @map("definition_snapshot")
-  evaluation ClinicalEvaluation @relation(fields:[evaluationId], references:[id], onDelete:Restrict)
-  testDefinition ClinicalTestDefinition @relation(fields:[testDefinitionId], references:[id], onDelete:Restrict)
-  measurementMethod MeasurementMethod? @relation(fields:[measurementMethodId], references:[id], onDelete:Restrict)
+  id                  String                 @id @default(uuid()) @db.Uuid
+  evaluationId        String                 @map("evaluation_id") @db.Uuid
+  testDefinitionId    String                 @map("test_definition_id") @db.Uuid
+  measurementMethodId String?                @map("measurement_method_id") @db.Uuid
+  side                String?
+  observation         String?
+  value               Json
+  definitionSnapshot  Json                   @map("definition_snapshot")
+  evaluation          ClinicalEvaluation     @relation(fields: [evaluationId], references: [id], onDelete: Restrict)
+  testDefinition      ClinicalTestDefinition @relation(fields: [testDefinitionId], references: [id], onDelete: Restrict)
+  measurementMethod   MeasurementMethod?     @relation(fields: [measurementMethodId], references: [id], onDelete: Restrict)
+
   @@index([evaluationId])
   @@map("clinical_test_results")
 }
 
 model Evolution {
-  id String @id @default(uuid()) @db.Uuid
-  attentionId String @unique @map("attention_id") @db.Uuid
-  evolutionText String? @map("evolution_text")
-  practicesOrManeuvers String? @map("practices_or_maneuvers")
-  indicationsOrNextSteps String? @map("indications_or_next_steps")
-  authorId String @map("author_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  lastModifiedById String? @map("last_modified_by_id") @db.Uuid
-  lastModifiedAt DateTime? @map("last_modified_at") @db.Timestamptz(6)
-  attention ClinicalAttention @relation(fields:[attentionId],references:[id],onDelete:Restrict)
-  author InternalUser @relation("EvolutionAuthor",fields:[authorId],references:[id],onDelete:Restrict)
-  lastModifiedBy InternalUser? @relation("EvolutionModifier",fields:[lastModifiedById],references:[id],onDelete:Restrict)
+  id                     String            @id @default(uuid()) @db.Uuid
+  attentionId            String            @unique @map("attention_id") @db.Uuid
+  evolutionText          String?           @map("evolution_text")
+  practicesOrManeuvers   String?           @map("practices_or_maneuvers")
+  indicationsOrNextSteps String?           @map("indications_or_next_steps")
+  authorId               String            @map("author_id") @db.Uuid
+  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastModifiedById       String?           @map("last_modified_by_id") @db.Uuid
+  lastModifiedAt         DateTime?         @map("last_modified_at") @db.Timestamptz(6)
+  attention              ClinicalAttention @relation(fields: [attentionId], references: [id], onDelete: Restrict)
+  author                 InternalUser      @relation("EvolutionAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  lastModifiedBy         InternalUser?     @relation("EvolutionModifier", fields: [lastModifiedById], references: [id], onDelete: Restrict)
+
   @@map("clinical_evolutions")
 }
 
@@ -336,114 +371,124 @@ enum TreatmentStatus {
   IN_PROGRESS
   FINISHED
 }
+
 enum TreatmentFinishReason {
   DISCHARGE
   INTERRUPTION
   REFERRAL
   OTHER
 }
+
 model Treatment {
-  id String @id @default(uuid()) @db.Uuid
-  personId String @map("person_id") @db.Uuid
-  responsibleProfessionalId String @map("responsible_professional_id") @db.Uuid
-  consultationReason String @map("consultation_reason")
-  bodyAreaOrInjury String @map("body_area_or_injury")
-  objective String?
-  interventionPlan String?
-  currentStage String? @map("current_stage")
-  startDate DateTime @map("start_date") @db.Date
-  status TreatmentStatus @default(IN_PROGRESS)
-  finishDate DateTime? @map("finish_date") @db.Date
-  finishReason TreatmentFinishReason? @map("finish_reason")
-  conclusion String?
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  person Person @relation(fields:[personId],references:[id],onDelete:Restrict)
-  responsibleProfessional InternalUser @relation(fields:[responsibleProfessionalId],references:[id],onDelete:Restrict)
-  attentions ClinicalAttention[]
-  studies ClinicalStudy[]
-  salaClinicalIndications SalaClinicalIndication[]
-  @@index([personId,status])
-  @@index([responsibleProfessionalId,status])
+  id                        String                   @id @default(uuid()) @db.Uuid
+  personId                  String                   @map("person_id") @db.Uuid
+  responsibleProfessionalId String                   @map("responsible_professional_id") @db.Uuid
+  consultationReason        String                   @map("consultation_reason")
+  bodyAreaOrInjury          String                   @map("body_area_or_injury")
+  objective                 String?
+  interventionPlan          String?
+  currentStage              String?                  @map("current_stage")
+  startDate                 DateTime                 @map("start_date") @db.Date
+  status                    TreatmentStatus          @default(IN_PROGRESS)
+  finishDate                DateTime?                @map("finish_date") @db.Date
+  finishReason              TreatmentFinishReason?   @map("finish_reason")
+  conclusion                String?
+  createdAt                 DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  person                    Person                   @relation(fields: [personId], references: [id], onDelete: Restrict)
+  responsibleProfessional   InternalUser             @relation(fields: [responsibleProfessionalId], references: [id], onDelete: Restrict)
+  attentions                ClinicalAttention[]
+  studies                   ClinicalStudy[]
+  salaClinicalIndications   SalaClinicalIndication[]
+
+  @@index([personId, status])
+  @@index([responsibleProfessionalId, status])
   @@map("treatments")
 }
 
 model ClinicalStudy {
-  id String @id @default(uuid()) @db.Uuid
-  personId String @map("person_id") @db.Uuid
-  treatmentId String? @map("treatment_id") @db.Uuid
-  studyDate DateTime @map("study_date") @db.Date
-  studyType String @map("study_type")
+  id          String     @id @default(uuid()) @db.Uuid
+  personId    String     @map("person_id") @db.Uuid
+  treatmentId String?    @map("treatment_id") @db.Uuid
+  studyDate   DateTime   @map("study_date") @db.Date
+  studyType   String     @map("study_type")
   description String?
-  fileAssetId String? @unique @map("file_asset_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  person Person @relation(fields:[personId],references:[id],onDelete:Restrict)
-  treatment Treatment? @relation(fields:[treatmentId],references:[id],onDelete:Restrict)
-  fileAsset FileAsset? @relation(fields:[fileAssetId],references:[id],onDelete:Restrict)
+  fileAssetId String?    @unique @map("file_asset_id") @db.Uuid
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  person      Person     @relation(fields: [personId], references: [id], onDelete: Restrict)
+  treatment   Treatment? @relation(fields: [treatmentId], references: [id], onDelete: Restrict)
+  fileAsset   FileAsset? @relation(fields: [fileAssetId], references: [id], onDelete: Restrict)
+
   @@index([personId, studyDate])
   @@map("clinical_studies")
 }
 
 model FileAsset {
-  id String @id @default(uuid()) @db.Uuid
-  storageKey String @unique @map("storage_key")
-  originalName String @map("original_name")
-  mimeType String @map("mime_type")
-  size Int
-  checksum String
-  createdById String @map("created_by_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy InternalUser @relation(fields:[createdById],references:[id],onDelete:Restrict)
-  clinicalStudy ClinicalStudy?
+  id              String           @id @default(uuid()) @db.Uuid
+  storageKey      String           @unique @map("storage_key")
+  originalName    String           @map("original_name")
+  mimeType        String           @map("mime_type")
+  size            Int
+  checksum        String
+  createdById     String           @map("created_by_id") @db.Uuid
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy       InternalUser     @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  clinicalStudy   ClinicalStudy?
   socialWorkOrder SocialWorkOrder?
+
   @@map("file_assets")
 }
 
 model SocialWork {
-  id String @id @default(uuid()) @db.Uuid
-  name String
-  normalizedName String @unique @map("normalized_name")
-  isSelectable Boolean @default(true) @map("is_selectable")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  people Person[]
-  orders SocialWorkOrder[]
+  id              String            @id @default(uuid()) @db.Uuid
+  name            String
+  normalizedName  String            @unique @map("normalized_name")
+  isSelectable    Boolean           @default(true) @map("is_selectable")
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  people          Person[]
+  orders          SocialWorkOrder[]
+  clinicalIncomes ClinicalIncome[]
+
   @@map("social_works")
 }
 
 model SocialWorkOrder {
-  id String @id @default(uuid()) @db.Uuid
-  personId String @map("person_id") @db.Uuid
-  socialWorkId String @map("social_work_id") @db.Uuid
-  reference String
-  issueDate DateTime? @map("issue_date") @db.Date
-  expirationDate DateTime? @map("expiration_date") @db.Date
-  fileAssetId String? @unique @map("file_asset_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  person Person @relation(fields:[personId],references:[id],onDelete:Restrict)
-  socialWork SocialWork @relation(fields:[socialWorkId],references:[id],onDelete:Restrict)
-  fileAsset FileAsset? @relation(fields:[fileAssetId],references:[id],onDelete:Restrict)
-  @@index([personId,expirationDate])
+  id              String           @id @default(uuid()) @db.Uuid
+  personId        String           @map("person_id") @db.Uuid
+  socialWorkId    String           @map("social_work_id") @db.Uuid
+  reference       String
+  issueDate       DateTime?        @map("issue_date") @db.Date
+  expirationDate  DateTime?        @map("expiration_date") @db.Date
+  fileAssetId     String?          @unique @map("file_asset_id") @db.Uuid
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  person          Person           @relation(fields: [personId], references: [id], onDelete: Restrict)
+  socialWork      SocialWork       @relation(fields: [socialWorkId], references: [id], onDelete: Restrict)
+  fileAsset       FileAsset?       @relation(fields: [fileAssetId], references: [id], onDelete: Restrict)
+  clinicalIncomes ClinicalIncome[]
+
+  @@index([personId, expirationDate])
   @@map("social_work_orders")
 }
 
 model SalaClinicalIndication {
-  id String @id @default(uuid()) @db.Uuid
-  personId String @map("person_id") @db.Uuid
-  treatmentId String? @map("treatment_id") @db.Uuid
-  responsibleProfessionalId String @map("responsible_professional_id") @db.Uuid
-  trainingCondition TrainingCondition @map("training_condition")
-  affectedArea String? @map("affected_area")
-  instructions String?
-  status SalaClinicalIndicationStatus @default(ACTIVE)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  closedAt DateTime? @map("closed_at") @db.Timestamptz(6)
-  closedById String? @map("closed_by_id") @db.Uuid
-  person Person @relation(fields:[personId],references:[id],onDelete:Restrict)
-  treatment Treatment? @relation(fields:[treatmentId],references:[id],onDelete:Restrict)
-  responsibleProfessional InternalUser @relation("IndicationProfessional",fields:[responsibleProfessionalId],references:[id],onDelete:Restrict)
-  closedBy InternalUser? @relation("IndicationClosedBy",fields:[closedById],references:[id],onDelete:Restrict)
-  @@index([personId,status])
+  id                        String                       @id @default(uuid()) @db.Uuid
+  personId                  String                       @map("person_id") @db.Uuid
+  treatmentId               String?                      @map("treatment_id") @db.Uuid
+  responsibleProfessionalId String                       @map("responsible_professional_id") @db.Uuid
+  trainingCondition         TrainingCondition            @map("training_condition")
+  affectedArea              String?                      @map("affected_area")
+  instructions              String?
+  status                    SalaClinicalIndicationStatus @default(ACTIVE)
+  createdAt                 DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  closedAt                  DateTime?                    @map("closed_at") @db.Timestamptz(6)
+  closedById                String?                      @map("closed_by_id") @db.Uuid
+  person                    Person                       @relation(fields: [personId], references: [id], onDelete: Restrict)
+  treatment                 Treatment?                   @relation(fields: [treatmentId], references: [id], onDelete: Restrict)
+  responsibleProfessional   InternalUser                 @relation("IndicationProfessional", fields: [responsibleProfessionalId], references: [id], onDelete: Restrict)
+  closedBy                  InternalUser?                @relation("IndicationClosedBy", fields: [closedById], references: [id], onDelete: Restrict)
+
+  @@index([personId, status])
   @@map("sala_clinical_indications")
 }
 
@@ -451,36 +496,39 @@ model SalaConfiguration {
   id              String   @id @default("default")
   generalCapacity Int      @map("general_capacity")
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
   @@map("sala_configuration")
 }
 
 model SalaPlan {
-  id            String   @id @default(uuid()) @db.Uuid
-  name          String
-  monthlyAmount Decimal  @map("monthly_amount") @db.Decimal(14, 0)
-  isSelectable  Boolean  @default(true) @map("is_selectable")
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id             String              @id @default(uuid()) @db.Uuid
+  name           String
+  monthlyAmount  Decimal             @map("monthly_amount") @db.Decimal(14, 0)
+  isSelectable   Boolean             @default(true) @map("is_selectable")
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
   participations SalaParticipation[]
+
   @@map("sala_plans")
 }
 
 model SalaParticipation {
-  id               String       @id @default(uuid()) @db.Uuid
-  personId         String       @map("person_id") @db.Uuid
-  mainProfessorId  String       @map("main_professor_id") @db.Uuid
-  planId           String       @map("plan_id") @db.Uuid
-  startDate        DateTime     @map("start_date") @db.Date
-  endDate          DateTime?    @map("end_date") @db.Date
-  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
-  person           Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
-  mainProfessor    InternalUser @relation(fields: [mainProfessorId], references: [id], onDelete: Restrict)
-  plan             SalaPlan     @relation(fields: [planId], references: [id], onDelete: Restrict)
-  fixedBookings    FixedSalaBooking[]
-  reservations     OneOffReservation[]
-  routines         Routine[]
+  id                  String               @id @default(uuid()) @db.Uuid
+  personId            String               @map("person_id") @db.Uuid
+  mainProfessorId     String               @map("main_professor_id") @db.Uuid
+  planId              String               @map("plan_id") @db.Uuid
+  startDate           DateTime             @map("start_date") @db.Date
+  endDate             DateTime?            @map("end_date") @db.Date
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  person              Person               @relation(fields: [personId], references: [id], onDelete: Restrict)
+  mainProfessor       InternalUser         @relation(fields: [mainProfessorId], references: [id], onDelete: Restrict)
+  plan                SalaPlan             @relation(fields: [planId], references: [id], onDelete: Restrict)
+  fixedBookings       FixedSalaBooking[]
+  reservations        OneOffReservation[]
+  routines            Routine[]
   physicalEvaluations PhysicalEvaluation[]
+
   @@index([personId])
   @@index([mainProfessorId])
   @@index([planId])
@@ -488,28 +536,28 @@ model SalaParticipation {
 }
 
 model SalaServiceType {
-  id              String   @id @default(uuid()) @db.Uuid
-  name            String   @db.VarChar(120)
-  normalizedName  String   @unique @map("normalized_name") @db.VarChar(120)
-  durationMinutes Int      @map("duration_minutes")
-  isSelectable    Boolean  @default(true) @map("is_selectable")
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  fixedBookings   FixedSalaBooking[]
-  reservations    OneOffReservation[]
+  id                   String                @id @default(uuid()) @db.Uuid
+  name                 String                @db.VarChar(120)
+  normalizedName       String                @unique @map("normalized_name") @db.VarChar(120)
+  durationMinutes      Int                   @map("duration_minutes")
+  isSelectable         Boolean               @default(true) @map("is_selectable")
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  fixedBookings        FixedSalaBooking[]
+  reservations         OneOffReservation[]
   clinicalAppointments ClinicalAppointment[]
 
   @@map("sala_service_types")
 }
 
 model ExerciseDefinition {
-  id            String            @id @default(uuid()) @db.Uuid
-  name          String            @db.VarChar(120)
-  primaryMuscle String            @map("primary_muscle") @db.VarChar(120)
-  description   String?           @db.VarChar(500)
-  isActive      Boolean           @default(true) @map("is_active")
-  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id               String            @id @default(uuid()) @db.Uuid
+  name             String            @db.VarChar(120)
+  primaryMuscle    String            @map("primary_muscle") @db.VarChar(120)
+  description      String?           @db.VarChar(500)
+  isActive         Boolean           @default(true) @map("is_active")
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
   routineExercises RoutineExercise[]
 
   @@unique([name])
@@ -553,11 +601,11 @@ model RoutineExercise {
   series               String?            @db.VarChar(80)
   repetitions          String?            @db.VarChar(80)
   duration             String?            @db.VarChar(80)
-  load                  String?            @db.VarChar(80)
-  rest                  String?            @db.VarChar(80)
-  notes                 String?            @db.VarChar(500)
-  routineDay            RoutineDay         @relation(fields: [routineDayId], references: [id], onDelete: Cascade)
-  exerciseDefinition    ExerciseDefinition @relation(fields: [exerciseDefinitionId], references: [id], onDelete: Restrict)
+  load                 String?            @db.VarChar(80)
+  rest                 String?            @db.VarChar(80)
+  notes                String?            @db.VarChar(500)
+  routineDay           RoutineDay         @relation(fields: [routineDayId], references: [id], onDelete: Cascade)
+  exerciseDefinition   ExerciseDefinition @relation(fields: [exerciseDefinitionId], references: [id], onDelete: Restrict)
 
   @@unique([routineDayId, position])
   @@index([exerciseDefinitionId])
@@ -565,82 +613,87 @@ model RoutineExercise {
 }
 
 model PhysicalTestDefinition {
-  id          String   @id @default(uuid()) @db.Uuid
-  name        String   @db.VarChar(120)
-  type        String   @db.VarChar(80)
-  description String?  @db.VarChar(500)
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id          String               @id @default(uuid()) @db.Uuid
+  name        String               @db.VarChar(120)
+  type        String               @db.VarChar(80)
+  description String?              @db.VarChar(500)
+  isActive    Boolean              @default(true) @map("is_active")
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
   results     PhysicalTestResult[]
+
   @@unique([name])
   @@map("physical_test_definitions")
 }
 
 model PhysicalEvaluation {
-  id                  String              @id @default(uuid()) @db.Uuid
-  personId            String              @map("person_id") @db.Uuid
-  salaParticipationId String              @map("sala_participation_id") @db.Uuid
-  professorId         String              @map("professor_id") @db.Uuid
-  evaluationDate      DateTime            @map("evaluation_date") @db.Date
-  createdBy           String              @map("created_by") @db.Uuid
-  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
-  person              Person              @relation(fields: [personId], references: [id], onDelete: Restrict)
-  salaParticipation   SalaParticipation   @relation(fields: [salaParticipationId], references: [id], onDelete: Restrict)
+  id                  String               @id @default(uuid()) @db.Uuid
+  personId            String               @map("person_id") @db.Uuid
+  salaParticipationId String               @map("sala_participation_id") @db.Uuid
+  professorId         String               @map("professor_id") @db.Uuid
+  evaluationDate      DateTime             @map("evaluation_date") @db.Date
+  createdBy           String               @map("created_by") @db.Uuid
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  person              Person               @relation(fields: [personId], references: [id], onDelete: Restrict)
+  salaParticipation   SalaParticipation    @relation(fields: [salaParticipationId], references: [id], onDelete: Restrict)
   professor           InternalUser         @relation("PhysicalEvaluationProfessor", fields: [professorId], references: [id], onDelete: Restrict)
   creator             InternalUser         @relation("PhysicalEvaluationCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
   results             PhysicalTestResult[]
+
   @@index([personId, evaluationDate])
   @@map("physical_evaluations")
 }
 
 model PhysicalTestResult {
-  id                  String                @id @default(uuid()) @db.Uuid
-  evaluationId        String                @map("evaluation_id") @db.Uuid
-  testDefinitionId    String                @map("test_definition_id") @db.Uuid
-  resultText          String                @map("result_text") @db.VarChar(500)
-  evaluation          PhysicalEvaluation    @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
-  testDefinition      PhysicalTestDefinition @relation(fields: [testDefinitionId], references: [id], onDelete: Restrict)
+  id               String                 @id @default(uuid()) @db.Uuid
+  evaluationId     String                 @map("evaluation_id") @db.Uuid
+  testDefinitionId String                 @map("test_definition_id") @db.Uuid
+  resultText       String                 @map("result_text") @db.VarChar(500)
+  evaluation       PhysicalEvaluation     @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  testDefinition   PhysicalTestDefinition @relation(fields: [testDefinitionId], references: [id], onDelete: Restrict)
+
   @@index([testDefinitionId])
   @@map("physical_test_results")
 }
 
 model SalaScheduleSlot {
-  id              String            @id @default(uuid()) @db.Uuid
-  weekday         SalaWeekday
-  startTime       DateTime          @map("start_time") @db.Time(0)
-  durationMinutes Int               @default(60) @map("duration_minutes")
-  specificCapacity Int?             @map("specific_capacity")
-  startsAt        DateTime          @default(dbgenerated("'1970-01-01'::date")) @map("starts_at") @db.Date
-  isActive        Boolean           @default(true) @map("is_active")
-  endedAt         DateTime?         @map("ended_at") @db.Date
-  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
-  exceptions      SalaScheduleException[]
-  fixedBookings   FixedSalaBooking[]
-  reservations    OneOffReservation[]
-  occurrences     SalaOccurrence[]
+  id               String                  @id @default(uuid()) @db.Uuid
+  weekday          SalaWeekday
+  startTime        DateTime                @map("start_time") @db.Time(0)
+  durationMinutes  Int                     @default(60) @map("duration_minutes")
+  specificCapacity Int?                    @map("specific_capacity")
+  startsAt         DateTime                @default(dbgenerated("'1970-01-01'::date")) @map("starts_at") @db.Date
+  isActive         Boolean                 @default(true) @map("is_active")
+  endedAt          DateTime?               @map("ended_at") @db.Date
+  createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  exceptions       SalaScheduleException[]
+  fixedBookings    FixedSalaBooking[]
+  reservations     OneOffReservation[]
+  occurrences      SalaOccurrence[]
+
   @@index([weekday, startTime])
   @@map("sala_schedule_slots")
 }
 
 model FixedSalaBooking {
-  id                  String   @id @default(uuid()) @db.Uuid
-  personId            String   @map("person_id") @db.Uuid
-  salaParticipationId String   @map("sala_participation_id") @db.Uuid
-  scheduleSlotId      String   @map("schedule_slot_id") @db.Uuid
-  serviceTypeId       String?  @map("service_type_id") @db.Uuid
-  serviceDurationMinutes Int? @map("service_duration_minutes")
-  startTime           DateTime? @map("start_time") @db.Time(0)
-  startDate           DateTime @map("start_date") @db.Date
-  endDate             DateTime? @map("end_date") @db.Date
-  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  person              Person @relation(fields: [personId], references: [id], onDelete: Restrict)
-  salaParticipation  SalaParticipation @relation(fields: [salaParticipationId], references: [id], onDelete: Restrict)
-  scheduleSlot        SalaScheduleSlot @relation(fields: [scheduleSlotId], references: [id], onDelete: Restrict)
-  serviceType         SalaServiceType? @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
-  occurrences         SalaOccurrence[]
+  id                     String            @id @default(uuid()) @db.Uuid
+  personId               String            @map("person_id") @db.Uuid
+  salaParticipationId    String            @map("sala_participation_id") @db.Uuid
+  scheduleSlotId         String            @map("schedule_slot_id") @db.Uuid
+  serviceTypeId          String?           @map("service_type_id") @db.Uuid
+  serviceDurationMinutes Int?              @map("service_duration_minutes")
+  startTime              DateTime?         @map("start_time") @db.Time(0)
+  startDate              DateTime          @map("start_date") @db.Date
+  endDate                DateTime?         @map("end_date") @db.Date
+  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  person                 Person            @relation(fields: [personId], references: [id], onDelete: Restrict)
+  salaParticipation      SalaParticipation @relation(fields: [salaParticipationId], references: [id], onDelete: Restrict)
+  scheduleSlot           SalaScheduleSlot  @relation(fields: [scheduleSlotId], references: [id], onDelete: Restrict)
+  serviceType            SalaServiceType?  @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
+  occurrences            SalaOccurrence[]
+
   @@index([personId])
   @@index([salaParticipationId])
   @@index([scheduleSlotId])
@@ -649,21 +702,22 @@ model FixedSalaBooking {
 }
 
 model OneOffReservation {
-  id                  String   @id @default(uuid()) @db.Uuid
-  personId            String   @map("person_id") @db.Uuid
-  salaParticipationId String   @map("sala_participation_id") @db.Uuid
-  scheduleSlotId      String   @map("schedule_slot_id") @db.Uuid
-  serviceTypeId       String?  @map("service_type_id") @db.Uuid
-  serviceDurationMinutes Int? @map("service_duration_minutes")
-  startTime           DateTime? @map("start_time") @db.Time(0)
-  date                DateTime @db.Date
-  cancelledAt         DateTime? @map("cancelled_at") @db.Timestamptz(6)
-  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  person              Person @relation(fields: [personId], references: [id], onDelete: Restrict)
-  salaParticipation  SalaParticipation @relation(fields: [salaParticipationId], references: [id], onDelete: Restrict)
-  scheduleSlot        SalaScheduleSlot @relation(fields: [scheduleSlotId], references: [id], onDelete: Restrict)
-  serviceType         SalaServiceType? @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
-  occurrences         SalaOccurrence[]
+  id                     String            @id @default(uuid()) @db.Uuid
+  personId               String            @map("person_id") @db.Uuid
+  salaParticipationId    String            @map("sala_participation_id") @db.Uuid
+  scheduleSlotId         String            @map("schedule_slot_id") @db.Uuid
+  serviceTypeId          String?           @map("service_type_id") @db.Uuid
+  serviceDurationMinutes Int?              @map("service_duration_minutes")
+  startTime              DateTime?         @map("start_time") @db.Time(0)
+  date                   DateTime          @db.Date
+  cancelledAt            DateTime?         @map("cancelled_at") @db.Timestamptz(6)
+  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  person                 Person            @relation(fields: [personId], references: [id], onDelete: Restrict)
+  salaParticipation      SalaParticipation @relation(fields: [salaParticipationId], references: [id], onDelete: Restrict)
+  scheduleSlot           SalaScheduleSlot  @relation(fields: [scheduleSlotId], references: [id], onDelete: Restrict)
+  serviceType            SalaServiceType?  @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
+  occurrences            SalaOccurrence[]
+
   @@unique([personId, scheduleSlotId, date])
   @@index([date, scheduleSlotId])
   @@index([serviceTypeId])
@@ -671,71 +725,147 @@ model OneOffReservation {
 }
 
 model SalaOccurrence {
-  id                  String                @id @default(uuid()) @db.Uuid
-  personId            String                @map("person_id") @db.Uuid
-  scheduleSlotId      String                @map("schedule_slot_id") @db.Uuid
-  date                DateTime              @db.Date
+  id                  String               @id @default(uuid()) @db.Uuid
+  personId            String               @map("person_id") @db.Uuid
+  scheduleSlotId      String               @map("schedule_slot_id") @db.Uuid
+  date                DateTime             @db.Date
   origin              SalaOccurrenceOrigin
   status              SalaOccurrenceStatus
-  fixedSalaBookingId  String?               @map("fixed_sala_booking_id") @db.Uuid
-  oneOffReservationId String?               @map("one_off_reservation_id") @db.Uuid
-  createdBy           String                @map("created_by") @db.Uuid
-  createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
-  lastModifiedAt      DateTime              @updatedAt @map("last_modified_at") @db.Timestamptz(6)
-  lastModifiedBy      String                @map("last_modified_by") @db.Uuid
-  person              Person                @relation(fields: [personId], references: [id], onDelete: Restrict)
-  scheduleSlot        SalaScheduleSlot      @relation(fields: [scheduleSlotId], references: [id], onDelete: Restrict)
-  fixedSalaBooking    FixedSalaBooking?     @relation(fields: [fixedSalaBookingId], references: [id], onDelete: Restrict)
-  oneOffReservation   OneOffReservation?    @relation(fields: [oneOffReservationId], references: [id], onDelete: Restrict)
-  creator             InternalUser          @relation("SalaOccurrenceCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
-  lastModifier        InternalUser          @relation("SalaOccurrenceModifiedBy", fields: [lastModifiedBy], references: [id], onDelete: Restrict)
+  fixedSalaBookingId  String?              @map("fixed_sala_booking_id") @db.Uuid
+  oneOffReservationId String?              @map("one_off_reservation_id") @db.Uuid
+  createdBy           String               @map("created_by") @db.Uuid
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastModifiedAt      DateTime             @updatedAt @map("last_modified_at") @db.Timestamptz(6)
+  lastModifiedBy      String               @map("last_modified_by") @db.Uuid
+  person              Person               @relation(fields: [personId], references: [id], onDelete: Restrict)
+  scheduleSlot        SalaScheduleSlot     @relation(fields: [scheduleSlotId], references: [id], onDelete: Restrict)
+  fixedSalaBooking    FixedSalaBooking?    @relation(fields: [fixedSalaBookingId], references: [id], onDelete: Restrict)
+  oneOffReservation   OneOffReservation?   @relation(fields: [oneOffReservationId], references: [id], onDelete: Restrict)
+  creator             InternalUser         @relation("SalaOccurrenceCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
+  lastModifier        InternalUser         @relation("SalaOccurrenceModifiedBy", fields: [lastModifiedBy], references: [id], onDelete: Restrict)
+
   @@unique([personId, scheduleSlotId, date])
   @@index([date, scheduleSlotId])
   @@map("sala_occurrences")
 }
 
 model PaymentMethod {
-  id String @id @default(uuid()) @db.Uuid
-  name String
-  isSelectable Boolean @default(true) @map("is_selectable")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  salaPayments SalaPayment[]
+  id              String           @id @default(uuid()) @db.Uuid
+  name            String
+  isSelectable    Boolean          @default(true) @map("is_selectable")
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  salaPayments    SalaPayment[]
+  expenses        Expense[]
+  clinicalIncomes ClinicalIncome[]
+
   @@map("payment_methods")
 }
 
 model SalaPayment {
-  id String @id @default(uuid()) @db.Uuid
-  personId String @map("person_id") @db.Uuid
-  year Int
-  month Int
-  paidAt DateTime @map("paid_at") @db.Date
-  amount Decimal @db.Decimal(14,0)
-  paymentMethodId String @map("payment_method_id") @db.Uuid
-  registeredById String @map("registered_by_id") @db.Uuid
-  operationId String @map("operation_id") @db.Uuid
-  adjustmentReason String? @map("adjustment_reason")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  lastModifiedById String? @map("last_modified_by_id") @db.Uuid
-  lastModifiedAt DateTime? @map("last_modified_at") @db.Timestamptz(6)
-  person Person @relation(fields: [personId], references: [id], onDelete: Restrict)
-  paymentMethod PaymentMethod @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
-  registeredBy InternalUser @relation(fields: [registeredById], references: [id], onDelete: Restrict)
-  lastModifiedBy InternalUser? @relation("SalaPaymentModifiedBy", fields: [lastModifiedById], references: [id], onDelete: Restrict)
+  id               String        @id @default(uuid()) @db.Uuid
+  personId         String        @map("person_id") @db.Uuid
+  year             Int
+  month            Int
+  paidAt           DateTime      @map("paid_at") @db.Date
+  amount           Decimal       @db.Decimal(14, 0)
+  paymentMethodId  String        @map("payment_method_id") @db.Uuid
+  registeredById   String        @map("registered_by_id") @db.Uuid
+  operationId      String        @map("operation_id") @db.Uuid
+  adjustmentReason String?       @map("adjustment_reason")
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lastModifiedById String?       @map("last_modified_by_id") @db.Uuid
+  lastModifiedAt   DateTime?     @map("last_modified_at") @db.Timestamptz(6)
+  person           Person        @relation(fields: [personId], references: [id], onDelete: Restrict)
+  paymentMethod    PaymentMethod @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
+  registeredBy     InternalUser  @relation(fields: [registeredById], references: [id], onDelete: Restrict)
+  lastModifiedBy   InternalUser? @relation("SalaPaymentModifiedBy", fields: [lastModifiedById], references: [id], onDelete: Restrict)
+
   @@unique([personId, year, month])
   @@unique([operationId])
   @@index([personId, year, month])
   @@map("sala_payments")
 }
 
+model ExpenseCategory {
+  id             String    @id @default(uuid()) @db.Uuid
+  name           String
+  normalizedName String    @unique @map("normalized_name")
+  isSelectable   Boolean   @default(true) @map("is_selectable")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  expenses       Expense[]
+
+  @@map("expense_categories")
+}
+
+model Expense {
+  id              String          @id @default(uuid()) @db.Uuid
+  cashDate        DateTime        @map("cash_date") @db.Date
+  amount          Decimal         @db.Decimal(14, 0)
+  categoryId      String          @map("category_id") @db.Uuid
+  paymentMethodId String          @map("payment_method_id") @db.Uuid
+  area            ExpenseArea
+  description     String?
+  registeredById  String          @map("registered_by_id") @db.Uuid
+  operationId     String          @unique @map("operation_id") @db.Uuid
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  category        ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  paymentMethod   PaymentMethod   @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
+  registeredBy    InternalUser    @relation(fields: [registeredById], references: [id], onDelete: Restrict)
+
+  @@index([cashDate, area])
+  @@map("expenses")
+}
+
+model ClinicalIncome {
+  id                String              @id @default(uuid()) @db.Uuid
+  personId          String              @map("person_id") @db.Uuid
+  cashDate          DateTime            @map("cash_date") @db.Date
+  amount            Decimal             @db.Decimal(14, 0)
+  paymentMethodId   String              @map("payment_method_id") @db.Uuid
+  payer             ClinicalIncomePayer
+  socialWorkId      String?             @map("social_work_id") @db.Uuid
+  attentionId       String?             @map("attention_id") @db.Uuid
+  socialWorkOrderId String?             @map("social_work_order_id") @db.Uuid
+  observation       String?
+  registeredById    String              @map("registered_by_id") @db.Uuid
+  operationId       String              @unique @map("operation_id") @db.Uuid
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  person            Person              @relation(fields: [personId], references: [id], onDelete: Restrict)
+  paymentMethod     PaymentMethod       @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
+  socialWork        SocialWork?         @relation(fields: [socialWorkId], references: [id], onDelete: Restrict)
+  attention         ClinicalAttention?  @relation(fields: [attentionId], references: [id], onDelete: Restrict)
+  socialWorkOrder   SocialWorkOrder?    @relation(fields: [socialWorkOrderId], references: [id], onDelete: Restrict)
+  registeredBy      InternalUser        @relation(fields: [registeredById], references: [id], onDelete: Restrict)
+
+  @@index([cashDate, personId])
+  @@map("clinical_incomes")
+}
+
+model ExchangeRate {
+  id        String   @id @default(uuid()) @db.Uuid
+  year      Int
+  month     Int
+  rate      Decimal  @db.Decimal(14, 2)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([year, month])
+  @@map("exchange_rates")
+}
+
 model SalaScheduleException {
-  id              String                    @id @default(uuid()) @db.Uuid
-  scheduleSlotId  String                    @map("schedule_slot_id") @db.Uuid
-  date            DateTime                  @db.Date
-  type            SalaScheduleExceptionType
-  capacityOverride Int?                     @map("capacity_override")
-  scheduleSlot    SalaScheduleSlot          @relation(fields: [scheduleSlotId], references: [id], onDelete: Cascade)
+  id               String                    @id @default(uuid()) @db.Uuid
+  scheduleSlotId   String                    @map("schedule_slot_id") @db.Uuid
+  date             DateTime                  @db.Date
+  type             SalaScheduleExceptionType
+  capacityOverride Int?                      @map("capacity_override")
+  scheduleSlot     SalaScheduleSlot          @relation(fields: [scheduleSlotId], references: [id], onDelete: Cascade)
+
   @@unique([scheduleSlotId, date])
   @@map("sala_schedule_exceptions")
 }

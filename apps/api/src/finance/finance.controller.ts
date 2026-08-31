@@ -1,14 +1,37 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
+import * as XLSX from 'xlsx';
 import { ApiBody, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
+import { ClinicalIncomePayer, ExpenseArea } from '@prisma/client';
 import { PermissionsGuard, RequirePermissions } from '../auth/permissions.guard';
-import { UseGuards } from '@nestjs/common';
 import { FinanceCatalogService } from './finance.service';
-class PaymentMethodInput { @IsString() @MinLength(1) name!: string; @IsOptional() @IsBoolean() isSelectable?: boolean; }
-@ApiTags('Finance') @Controller('finance/payment-methods') @UseGuards(PermissionsGuard)
+class PaymentMethodInput { @IsString() @MinLength(1) name!: string; @IsOptional() isSelectable?: boolean; }
+class CategoryInput { @IsString() @MinLength(1) name!: string; @IsOptional() isSelectable?: boolean; }
+class ExpenseInput { @IsDateString({ strict: true }) cashDate!: string; @IsString() amount!: string; @IsUUID() categoryId!: string; @IsUUID() paymentMethodId!: string; @IsEnum(ExpenseArea) area!: ExpenseArea; @IsOptional() @IsString() description?: string; @IsUUID() operationId!: string; }
+class IncomeInput { @IsUUID() personId!: string; @IsDateString({ strict: true }) cashDate!: string; @IsString() amount!: string; @IsUUID() paymentMethodId!: string; @IsEnum(ClinicalIncomePayer) payer!: ClinicalIncomePayer; @IsOptional() @IsUUID() socialWorkId?: string; @IsOptional() @IsUUID() attentionId?: string; @IsOptional() @IsUUID() socialWorkOrderId?: string; @IsOptional() @IsString() observation?: string; @IsUUID() operationId!: string; }
+class RateInput { @IsInt() @Min(1) year!: number; @IsInt() @Min(1) month!: number; @IsString() rate!: string; }
+@ApiTags('Finance') @Controller('finance') @UseGuards(PermissionsGuard)
 export class FinanceController {
   constructor(private readonly finance: FinanceCatalogService) {}
-  @Get() @RequirePermissions('SALA_PAYMENT_READ') @ApiOperation({ operationId: 'listPaymentMethods' }) list() { return { data: this.finance.listAll() }; }
-  @Post() @RequirePermissions('PAYMENT_METHOD_CATALOG_MANAGE') @ApiOperation({ operationId: 'createPaymentMethod' }) @ApiBody({ type: PaymentMethodInput }) create(@Body() body: PaymentMethodInput) { return { data: this.finance.create(body.name) }; }
-  @Patch(':id') @RequirePermissions('PAYMENT_METHOD_CATALOG_MANAGE') @ApiParam({ name: 'id', type: String }) @ApiOperation({ operationId: 'updatePaymentMethod' }) @ApiBody({ type: PaymentMethodInput }) update(@Param('id') id: string, @Body() body: PaymentMethodInput) { return { data: this.finance.update(id, body.name, body.isSelectable) }; }
+  private actor(req: { athletaUserId?: string }) { if (!req.athletaUserId) throw new Error('actor'); return req.athletaUserId; }
+  @Get('payment-methods') @RequirePermissions('SALA_PAYMENT_READ') @ApiOperation({ operationId: 'listPaymentMethods' }) async listMethods() { return { data: await this.finance.listAll() }; }
+  @Post('payment-methods') @RequirePermissions('PAYMENT_METHOD_CATALOG_MANAGE') @ApiBody({ type: PaymentMethodInput }) async createMethod(@Body() b: PaymentMethodInput) { return { data: await this.finance.create(b.name) }; }
+  @Patch('payment-methods/:id') @RequirePermissions('PAYMENT_METHOD_CATALOG_MANAGE') @ApiParam({ name: 'id', type: String }) async updateMethod(@Param('id') id: string, @Body() b: PaymentMethodInput) { return { data: await this.finance.update(id, b.name, b.isSelectable) }; }
+  @Get('expense-categories') @RequirePermissions('EXPENSE_CREATE') async listCategories() { return { data: await this.finance.listCategories() }; }
+  @Post('expense-categories') @RequirePermissions('EXPENSE_CATEGORY_CATALOG_MANAGE') async createCategory(@Body() b: CategoryInput) { return { data: await this.finance.createCategory(b.name) }; }
+  @Patch('expense-categories/:id') @RequirePermissions('EXPENSE_CATEGORY_CATALOG_MANAGE') @ApiParam({ name: 'id', type: String }) async updateCategory(@Param('id') id: string, @Body() b: CategoryInput) { return { data: await this.finance.updateCategory(id, b.name, b.isSelectable) }; }
+  @Post('expenses') @RequirePermissions('EXPENSE_CREATE') @ApiBody({ type: ExpenseInput }) async createExpense(@Body() b: ExpenseInput, @Req() r: { athletaUserId?: string }) { return { data: await this.finance.createExpense({ ...b, registeredById: this.actor(r) }) }; }
+  @Get('expenses') @RequirePermissions('EXPENSE_HISTORY_READ') async listExpenses(@Query() q: { from?: string; to?: string; area?: ExpenseArea; categoryId?: string; paymentMethodId?: string }) { return { data: await this.finance.listExpenses(q) }; }
+  @Delete('expenses/:id') @RequirePermissions('EXPENSE_MANAGE') @ApiParam({ name: 'id', type: String }) async deleteExpense(@Param('id') id: string) { await this.finance.deleteExpense(id); return { data: null }; }
+  @Post('clinical-incomes') @RequirePermissions('CLINIC_INCOME_MANAGE') @ApiBody({ type: IncomeInput }) async createIncome(@Body() b: IncomeInput, @Req() r: { athletaUserId?: string }) { return { data: await this.finance.createClinicalIncome({ ...b, registeredById: this.actor(r) }) }; }
+  @Get('clinical-incomes') @RequirePermissions('CLINIC_INCOME_MANAGE') async listIncome(@Query() q: { personId?: string; from?: string; to?: string; paymentMethodId?: string }) { return { data: await this.finance.listClinicalIncomes(q) }; }
+  @Delete('clinical-incomes/:id') @RequirePermissions('CLINIC_INCOME_MANAGE') @ApiParam({ name: 'id', type: String }) async deleteIncome(@Param('id') id: string) { await this.finance.deleteClinicalIncome(id); return { data: null }; }
+  @Get('income') @RequirePermissions('FINANCE_OPERATIONAL_READ') async unified(@Query() q: { from?: string; to?: string; area?: string; personId?: string; paymentMethodId?: string }) { return { data: await this.finance.unifiedIncome(q) }; }
+  @Get('income/export') @RequirePermissions('FINANCE_EXPORT') async exportIncome(@Query() q: { from?: string; to?: string; area?: string; personId?: string; paymentMethodId?: string }, @Res() response: Response) { const rows = await this.finance.unifiedIncome(q); const sheet = XLSX.utils.json_to_sheet(rows.map(row => ({ Fecha: String(row.cashDate).slice(0, 10), Origen: row.source, Persona: `${row.person.firstName} ${row.person.lastName}`, Importe: row.amount, 'Medio de pago': row.paymentMethod.name }))); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, sheet, 'Ingresos'); const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }); response.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); response.setHeader('Content-Disposition', 'attachment; filename="athleta-ingresos.xlsx"'); response.send(buffer); }
+  @Get('expenses/export') @RequirePermissions('FINANCE_EXPORT') async exportExpenses(@Query() q: { from?: string; to?: string; area?: ExpenseArea; categoryId?: string; paymentMethodId?: string }, @Res() response: Response) { const rows = await this.finance.listExpenses(q); const sheet = XLSX.utils.json_to_sheet(rows.map(row => ({ Fecha: String(row.cashDate).slice(0, 10), Área: row.area, Categoría: row.category.name, Importe: row.amount, 'Medio de pago': row.paymentMethod.name, Descripción: row.description ?? '' }))); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, sheet, 'Gastos'); response.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); response.setHeader('Content-Disposition', 'attachment; filename="athleta-gastos.xlsx"'); response.send(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })); }
+  @Get('totals') @RequirePermissions('FINANCE_OPERATIONAL_READ') async totals(@Query() q: { from?: string; to?: string }) { const value = await this.finance.totals(q); const operational = Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'net')); return { data: operational }; }
+  @Get('executive-totals') @RequirePermissions('FINANCE_EXECUTIVE_READ') async executiveTotals(@Query() q: { from?: string; to?: string }) { return { data: await this.finance.totals(q) }; }
+  @Get('exchange-rates') @RequirePermissions('FINANCE_OPERATIONAL_READ') async rates() { return { data: await this.finance.listExchangeRates() }; }
+  @Post('exchange-rates') @RequirePermissions('EXCHANGE_RATE_MANAGE') async rate(@Body() b: RateInput) { return { data: await this.finance.upsertExchangeRate(b.year, b.month, b.rate) }; }
 }

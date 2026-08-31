@@ -524,6 +524,10 @@ export interface ReplaceScheduleSlotDto {
 
 export interface PaymentMethodInput { [key: string]: unknown }
 
+export interface ExpenseInput { [key: string]: unknown }
+
+export interface IncomeInput { [key: string]: unknown }
+
 export type InternalLoginBody = {
   email: string;
   password: string;
@@ -3425,19 +3429,19 @@ export const listPaymentMethods = async ( options?: RequestInit): Promise<listPa
 
 
 
-export type createPaymentMethodResponse201 = {
+export type financeControllerCreateMethodResponse201 = {
   data: void
   status: 201
 }
 
-export type createPaymentMethodResponseSuccess = (createPaymentMethodResponse201) & {
+export type financeControllerCreateMethodResponseSuccess = (financeControllerCreateMethodResponse201) & {
   headers: Headers;
 };
 ;
 
-export type createPaymentMethodResponse = (createPaymentMethodResponseSuccess)
+export type financeControllerCreateMethodResponse = (financeControllerCreateMethodResponseSuccess)
 
-export const getCreatePaymentMethodUrl = () => {
+export const getFinanceControllerCreateMethodUrl = () => {
 
 
 
@@ -3445,9 +3449,9 @@ export const getCreatePaymentMethodUrl = () => {
   return `/api/finance/payment-methods`
 }
 
-export const createPaymentMethod = async (paymentMethodInput: PaymentMethodInput, options?: RequestInit): Promise<createPaymentMethodResponse> => {
+export const financeControllerCreateMethod = async (paymentMethodInput: PaymentMethodInput, options?: RequestInit): Promise<financeControllerCreateMethodResponse> => {
 
-  const res = await fetch(getCreatePaymentMethodUrl(),
+  const res = await fetch(getFinanceControllerCreateMethodUrl(),
   {
     ...options,
     method: 'POST',
@@ -3459,25 +3463,25 @@ export const createPaymentMethod = async (paymentMethodInput: PaymentMethodInput
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: createPaymentMethodResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createPaymentMethodResponse
+  const data: financeControllerCreateMethodResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerCreateMethodResponse
 }
 
 
 
-export type updatePaymentMethodResponse200 = {
+export type financeControllerUpdateMethodResponse200 = {
   data: void
   status: 200
 }
 
-export type updatePaymentMethodResponseSuccess = (updatePaymentMethodResponse200) & {
+export type financeControllerUpdateMethodResponseSuccess = (financeControllerUpdateMethodResponse200) & {
   headers: Headers;
 };
 ;
 
-export type updatePaymentMethodResponse = (updatePaymentMethodResponseSuccess)
+export type financeControllerUpdateMethodResponse = (financeControllerUpdateMethodResponseSuccess)
 
-export const getUpdatePaymentMethodUrl = (id: string,) => {
+export const getFinanceControllerUpdateMethodUrl = (id: string,) => {
 
 
 
@@ -3485,23 +3489,647 @@ export const getUpdatePaymentMethodUrl = (id: string,) => {
   return `/api/finance/payment-methods/${id}`
 }
 
-export const updatePaymentMethod = async (id: string,
-    paymentMethodInput: PaymentMethodInput, options?: RequestInit): Promise<updatePaymentMethodResponse> => {
+export const financeControllerUpdateMethod = async (id: string, options?: RequestInit): Promise<financeControllerUpdateMethodResponse> => {
 
-  const res = await fetch(getUpdatePaymentMethodUrl(id),
+  const res = await fetch(getFinanceControllerUpdateMethodUrl(id),
   {
     ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      paymentMethodInput,)
+    method: 'PATCH'
+
+
   }
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: updatePaymentMethodResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updatePaymentMethodResponse
+  const data: financeControllerUpdateMethodResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerUpdateMethodResponse
+}
+
+
+
+export type financeControllerListCategoriesResponse200 = {
+  data: void
+  status: 200
+}
+
+export type financeControllerListCategoriesResponseSuccess = (financeControllerListCategoriesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type financeControllerListCategoriesResponse = (financeControllerListCategoriesResponseSuccess)
+
+export const getFinanceControllerListCategoriesUrl = () => {
+
+
+
+
+  return `/api/finance/expense-categories`
+}
+
+export const financeControllerListCategories = async ( options?: RequestInit): Promise<financeControllerListCategoriesResponse> => {
+
+  const res = await fetch(getFinanceControllerListCategoriesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: financeControllerListCategoriesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerListCategoriesResponse
+}
+
+
+
+export type financeControllerCreateCategoryResponse201 = {
+  data: void
+  status: 201
+}
+
+export type financeControllerCreateCategoryResponseSuccess = (financeControllerCreateCategoryResponse201) & {
+  headers: Headers;
+};
+;
+
+export type financeControllerCreateCategoryResponse = (financeControllerCreateCategoryResponseSuccess)
+
+export const getFinanceControllerCreateCategoryUrl = () => {
+
+
+
+
+  return `/api/finance/expense-categories`
+}
+
+export const financeControllerCreateCategory = async ( options?: RequestInit): Promise<financeControllerCreateCategoryResponse> => {
+
+  const res = await fetch(getFinanceControllerCreateCategoryUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: financeControllerCreateCategoryResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerCreateCategoryResponse
+}
+
+
+
+export type financeControllerUpdateCategoryResponse200 = {
+  data: void
+  status: 200
+}
+
+export type financeControllerUpdateCategoryResponseSuccess = (financeControllerUpdateCategoryResponse200) & {
+  headers: Headers;
+};
+;
+
+export type financeControllerUpdateCategoryResponse = (financeControllerUpdateCategoryResponseSuccess)
+
+export const getFinanceControllerUpdateCategoryUrl = (id: string,) => {
+
+
+
+
+  return `/api/finance/expense-categories/${id}`
+}
+
+export const financeControllerUpdateCategory = async (id: string, options?: RequestInit): Promise<financeControllerUpdateCategoryResponse> => {
+
+  const res = await fetch(getFinanceControllerUpdateCategoryUrl(id),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: financeControllerUpdateCategoryResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerUpdateCategoryResponse
+}
+
+
+
+export type financeControllerCreateExpenseResponse201 = {
+  data: void
+  status: 201
+}
+
+export type financeControllerCreateExpenseResponseSuccess = (financeControllerCreateExpenseResponse201) & {
+  headers: Headers;
+};
+;
+
+export type financeControllerCreateExpenseResponse = (financeControllerCreateExpenseResponseSuccess)
+
+export const getFinanceControllerCreateExpenseUrl = () => {
+
+
+
+
+  return `/api/finance/expenses`
+}
+
+export const financeControllerCreateExpense = async (expenseInput: ExpenseInput, options?: RequestInit): Promise<financeControllerCreateExpenseResponse> => {
+
+  const res = await fetch(getFinanceControllerCreateExpenseUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      expenseInput,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: financeControllerCreateExpenseResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerCreateExpenseResponse
+}
+
+
+
+export type financeControllerListExpensesResponse200 = {
+  data: void
+  status: 200
+}
+
+export type financeControllerListExpensesResponseSuccess = (financeControllerListExpensesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type financeControllerListExpensesResponse = (financeControllerListExpensesResponseSuccess)
+
+export const getFinanceControllerListExpensesUrl = () => {
+
+
+
+
+  return `/api/finance/expenses`
+}
+
+export const financeControllerListExpenses = async ( options?: RequestInit): Promise<financeControllerListExpensesResponse> => {
+
+  const res = await fetch(getFinanceControllerListExpensesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: financeControllerListExpensesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerListExpensesResponse
+}
+
+
+
+export type financeControllerDeleteExpenseResponse200 = {
+  data: void
+  status: 200
+}
+
+export type financeControllerDeleteExpenseResponseSuccess = (financeControllerDeleteExpenseResponse200) & {
+  headers: Headers;
+};
+;
+
+export type financeControllerDeleteExpenseResponse = (financeControllerDeleteExpenseResponseSuccess)
+
+export const getFinanceControllerDeleteExpenseUrl = (id: string,) => {
+
+
+
+
+  return `/api/finance/expenses/${id}`
+}
+
+export const financeControllerDeleteExpense = async (id: string, options?: RequestInit): Promise<financeControllerDeleteExpenseResponse> => {
+
+  const res = await fetch(getFinanceControllerDeleteExpenseUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: financeControllerDeleteExpenseResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerDeleteExpenseResponse
+}
+
+
+
+export type financeControllerCreateIncomeResponse201 = {
+  data: void
+  status: 201
+}
+
+export type financeControllerCreateIncomeResponseSuccess = (financeControllerCreateIncomeResponse201) & {
+  headers: Headers;
+};
+;
+
+export type financeControllerCreateIncomeResponse = (financeControllerCreateIncomeResponseSuccess)
+
+export const getFinanceControllerCreateIncomeUrl = () => {
+
+
+
+
+  return `/api/finance/clinical-incomes`
+}
+
+export const financeControllerCreateIncome = async (incomeInput: IncomeInput, options?: RequestInit): Promise<financeControllerCreateIncomeResponse> => {
+
+  const res = await fetch(getFinanceControllerCreateIncomeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      incomeInput,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: financeControllerCreateIncomeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerCreateIncomeResponse
+}
+
+
+
+export type financeControllerListIncomeResponse200 = {
+  data: void
+  status: 200
+}
+
+export type financeControllerListIncomeResponseSuccess = (financeControllerListIncomeResponse200) & {
+  headers: Headers;
+};
+;
+
+export type financeControllerListIncomeResponse = (financeControllerListIncomeResponseSuccess)
+
+export const getFinanceControllerListIncomeUrl = () => {
+
+
+
+
+  return `/api/finance/clinical-incomes`
+}
+
+export const financeControllerListIncome = async ( options?: RequestInit): Promise<financeControllerListIncomeResponse> => {
+
+  const res = await fetch(getFinanceControllerListIncomeUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: financeControllerListIncomeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerListIncomeResponse
+}
+
+
+
+export type financeControllerDeleteIncomeResponse200 = {
+  data: void
+  status: 200
+}
+
+export type financeControllerDeleteIncomeResponseSuccess = (financeControllerDeleteIncomeResponse200) & {
+  headers: Headers;
+};
+;
+
+export type financeControllerDeleteIncomeResponse = (financeControllerDeleteIncomeResponseSuccess)
+
+export const getFinanceControllerDeleteIncomeUrl = (id: string,) => {
+
+
+
+
+  return `/api/finance/clinical-incomes/${id}`
+}
+
+export const financeControllerDeleteIncome = async (id: string, options?: RequestInit): Promise<financeControllerDeleteIncomeResponse> => {
+
+  const res = await fetch(getFinanceControllerDeleteIncomeUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: financeControllerDeleteIncomeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerDeleteIncomeResponse
+}
+
+
+
+export type financeControllerUnifiedResponse200 = {
+  data: void
+  status: 200
+}
+
+export type financeControllerUnifiedResponseSuccess = (financeControllerUnifiedResponse200) & {
+  headers: Headers;
+};
+;
+
+export type financeControllerUnifiedResponse = (financeControllerUnifiedResponseSuccess)
+
+export const getFinanceControllerUnifiedUrl = () => {
+
+
+
+
+  return `/api/finance/income`
+}
+
+export const financeControllerUnified = async ( options?: RequestInit): Promise<financeControllerUnifiedResponse> => {
+
+  const res = await fetch(getFinanceControllerUnifiedUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: financeControllerUnifiedResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerUnifiedResponse
+}
+
+
+
+export type financeControllerExportIncomeResponse200 = {
+  data: void
+  status: 200
+}
+
+export type financeControllerExportIncomeResponseSuccess = (financeControllerExportIncomeResponse200) & {
+  headers: Headers;
+};
+;
+
+export type financeControllerExportIncomeResponse = (financeControllerExportIncomeResponseSuccess)
+
+export const getFinanceControllerExportIncomeUrl = () => {
+
+
+
+
+  return `/api/finance/income/export`
+}
+
+export const financeControllerExportIncome = async ( options?: RequestInit): Promise<financeControllerExportIncomeResponse> => {
+
+  const res = await fetch(getFinanceControllerExportIncomeUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: financeControllerExportIncomeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerExportIncomeResponse
+}
+
+
+
+export type financeControllerExportExpensesResponse200 = {
+  data: void
+  status: 200
+}
+
+export type financeControllerExportExpensesResponseSuccess = (financeControllerExportExpensesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type financeControllerExportExpensesResponse = (financeControllerExportExpensesResponseSuccess)
+
+export const getFinanceControllerExportExpensesUrl = () => {
+
+
+
+
+  return `/api/finance/expenses/export`
+}
+
+export const financeControllerExportExpenses = async ( options?: RequestInit): Promise<financeControllerExportExpensesResponse> => {
+
+  const res = await fetch(getFinanceControllerExportExpensesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: financeControllerExportExpensesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerExportExpensesResponse
+}
+
+
+
+export type financeControllerTotalsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type financeControllerTotalsResponseSuccess = (financeControllerTotalsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type financeControllerTotalsResponse = (financeControllerTotalsResponseSuccess)
+
+export const getFinanceControllerTotalsUrl = () => {
+
+
+
+
+  return `/api/finance/totals`
+}
+
+export const financeControllerTotals = async ( options?: RequestInit): Promise<financeControllerTotalsResponse> => {
+
+  const res = await fetch(getFinanceControllerTotalsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: financeControllerTotalsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerTotalsResponse
+}
+
+
+
+export type financeControllerExecutiveTotalsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type financeControllerExecutiveTotalsResponseSuccess = (financeControllerExecutiveTotalsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type financeControllerExecutiveTotalsResponse = (financeControllerExecutiveTotalsResponseSuccess)
+
+export const getFinanceControllerExecutiveTotalsUrl = () => {
+
+
+
+
+  return `/api/finance/executive-totals`
+}
+
+export const financeControllerExecutiveTotals = async ( options?: RequestInit): Promise<financeControllerExecutiveTotalsResponse> => {
+
+  const res = await fetch(getFinanceControllerExecutiveTotalsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: financeControllerExecutiveTotalsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerExecutiveTotalsResponse
+}
+
+
+
+export type financeControllerRatesResponse200 = {
+  data: void
+  status: 200
+}
+
+export type financeControllerRatesResponseSuccess = (financeControllerRatesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type financeControllerRatesResponse = (financeControllerRatesResponseSuccess)
+
+export const getFinanceControllerRatesUrl = () => {
+
+
+
+
+  return `/api/finance/exchange-rates`
+}
+
+export const financeControllerRates = async ( options?: RequestInit): Promise<financeControllerRatesResponse> => {
+
+  const res = await fetch(getFinanceControllerRatesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: financeControllerRatesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerRatesResponse
+}
+
+
+
+export type financeControllerRateResponse201 = {
+  data: void
+  status: 201
+}
+
+export type financeControllerRateResponseSuccess = (financeControllerRateResponse201) & {
+  headers: Headers;
+};
+;
+
+export type financeControllerRateResponse = (financeControllerRateResponseSuccess)
+
+export const getFinanceControllerRateUrl = () => {
+
+
+
+
+  return `/api/finance/exchange-rates`
+}
+
+export const financeControllerRate = async ( options?: RequestInit): Promise<financeControllerRateResponse> => {
+
+  const res = await fetch(getFinanceControllerRateUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: financeControllerRateResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as financeControllerRateResponse
 }
 
 

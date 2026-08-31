@@ -1411,6 +1411,8 @@ Unificar consultas financieras sin mezclar la propiedad de los movimientos de Sa
 
 ### M4.1 — Expenses
 
+**Status:** DONE
+
 **Model:** `MODEL_STANDARD`
 
 Scope:
@@ -1435,6 +1437,8 @@ amount exactness
 
 ### M4.2 — Clinical income
 
+**Status:** DONE
+
 **Model:** `MODEL_DEEP`
 
 Scope:
@@ -1447,11 +1451,13 @@ payment method
 exact money
 ```
 
-Functional details must be confirmed before implementation if ambiguity remains.
+Functional definitions for this milestone are confirmed and implemented in the current finance contracts.
 
 ---
 
 ### M4.3 — Unified financial read model
+
+**Status:** DONE
 
 **Model:** `MODEL_DEEP`
 
@@ -1471,6 +1477,8 @@ Do not merge source entities into one universal financial table.
 ---
 
 ### M4.4 — Financial dashboard
+
+**Status:** DONE
 
 **Model:** `MODEL_STANDARD`
 
@@ -1496,6 +1504,8 @@ date boundaries
 ---
 
 ### GATE 4
+
+**Status:** GREEN
 
 Mandatory:
 
