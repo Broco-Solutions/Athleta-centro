@@ -2,13 +2,14 @@ import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nest
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { PermissionsGuard, RequirePermissions } from '../auth/permissions.guard';
 import { ClinicService } from './clinic.service';
-import { AppointmentDto, PatientDto, RescheduleAppointmentDto, CorrectAppointmentDto } from './clinic.dto';
+import { AppointmentDto, PatientDto, RescheduleAppointmentDto, CorrectAppointmentDto, DirectAttentionDto } from './clinic.dto';
 @ApiTags('Clinic') @Controller('clinic') @UseGuards(PermissionsGuard)
 export class ClinicController { constructor(private readonly clinic: ClinicService) {} private actor(req: { athletaUserId?: string }) { if (!req.athletaUserId) throw new Error('actor'); return req.athletaUserId; }
  @Post('patients') @RequirePermissions('CLINIC_APPOINTMENT_MANAGE') @ApiOperation({ operationId: 'registerClinicalPatient' }) async register(@Body() b: PatientDto, @Req() r: { athletaUserId?: string }) { return { data: await this.clinic.registerPatient(b.personId, this.actor(r)) }; }
+ @Get('patients') @RequirePermissions('CLINIC_APPOINTMENT_MANAGE') @ApiOperation({ operationId: 'listClinicalPatients' }) async patients() { return { data: await this.clinic.listPatients() }; }
  @Get('services') @RequirePermissions('CLINIC_APPOINTMENT_MANAGE') @ApiOperation({ operationId: 'listClinicalAppointmentServices' }) async services() { return { data: await this.clinic.listServices() }; }
  @Post('appointments') @RequirePermissions('CLINIC_APPOINTMENT_MANAGE') @ApiOperation({ operationId: 'createClinicalAppointment' }) async create(@Body() b: AppointmentDto) { return { data: await this.clinic.create(b) }; }
- @Post('attentions') @RequirePermissions('CLINIC_APPOINTMENT_MANAGE') @ApiOperation({ operationId: 'registerDirectClinicalAttention' }) async directAttention(@Body() b: { personId: string; professionalId: string; occurredAt: string }) { return { data: await this.clinic.registerDirectAttention(b) }; }
+ @Post('attentions') @RequirePermissions('CLINIC_APPOINTMENT_MANAGE') @ApiOperation({ operationId: 'registerDirectClinicalAttention' }) async directAttention(@Body() b: DirectAttentionDto) { return { data: await this.clinic.registerDirectAttention(b) }; }
  @Get('appointments') @RequirePermissions('CLINIC_OPERATIONAL_READ') @ApiOperation({ operationId: 'listClinicalAppointments' }) list(@Query('from') from?: string, @Query('to') to?: string) { return { data: this.clinic.list(from, to) }; }
  @Get('appointments/:id') @RequirePermissions('CLINIC_OPERATIONAL_READ') @ApiParam({name:'id',type:String}) async detail(@Param('id') id:string) { return {data:await this.clinic.detail(id)}; }
  @Post('appointments/:id/reschedule') @RequirePermissions('CLINIC_APPOINTMENT_MANAGE') @ApiParam({name:'id',type:String}) async reschedule(@Param('id') id:string,@Body() b:RescheduleAppointmentDto) { return {data:await this.clinic.reschedule(id,b)}; }

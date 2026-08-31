@@ -2955,6 +2955,45 @@ export const updateSalaPlan = async (id: string, options?: RequestInit): Promise
 
 
 
+export type retireSalaPlanResponse201 = {
+  data: void
+  status: 201
+}
+
+export type retireSalaPlanResponseSuccess = (retireSalaPlanResponse201) & {
+  headers: Headers;
+};
+;
+
+export type retireSalaPlanResponse = (retireSalaPlanResponseSuccess)
+
+export const getRetireSalaPlanUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/plans/${id}/retire`
+}
+
+export const retireSalaPlan = async (id: string, options?: RequestInit): Promise<retireSalaPlanResponse> => {
+
+  const res = await fetch(getRetireSalaPlanUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: retireSalaPlanResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as retireSalaPlanResponse
+}
+
+
+
 export type listSalaServiceTypesResponse200 = {
   data: void
   status: 200
@@ -3314,6 +3353,45 @@ export const createSalaScheduleException = async (id: string, options?: RequestI
 
 
 
+export type removeSalaScheduleExceptionResponse200 = {
+  data: void
+  status: 200
+}
+
+export type removeSalaScheduleExceptionResponseSuccess = (removeSalaScheduleExceptionResponse200) & {
+  headers: Headers;
+};
+;
+
+export type removeSalaScheduleExceptionResponse = (removeSalaScheduleExceptionResponseSuccess)
+
+export const getRemoveSalaScheduleExceptionUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/schedule/exceptions/${id}`
+}
+
+export const removeSalaScheduleException = async (id: string, options?: RequestInit): Promise<removeSalaScheduleExceptionResponse> => {
+
+  const res = await fetch(getRemoveSalaScheduleExceptionUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: removeSalaScheduleExceptionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as removeSalaScheduleExceptionResponse
+}
+
+
+
 export type listPaymentMethodsResponse200 = {
   data: void
   status: 200
@@ -3469,6 +3547,45 @@ export const registerClinicalPatient = async ( options?: RequestInit): Promise<r
 
   const data: registerClinicalPatientResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as registerClinicalPatientResponse
+}
+
+
+
+export type listClinicalPatientsResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listClinicalPatientsResponseSuccess = (listClinicalPatientsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listClinicalPatientsResponse = (listClinicalPatientsResponseSuccess)
+
+export const getListClinicalPatientsUrl = () => {
+
+
+
+
+  return `/api/clinic/patients`
+}
+
+export const listClinicalPatients = async ( options?: RequestInit): Promise<listClinicalPatientsResponse> => {
+
+  const res = await fetch(getListClinicalPatientsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listClinicalPatientsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listClinicalPatientsResponse
 }
 
 

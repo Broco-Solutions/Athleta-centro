@@ -8,7 +8,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 describe('People PostgreSQL persistence', () => {
   let prisma: PrismaService; let people: PeopleService;
   beforeAll(async () => { const module = await Test.createTestingModule({ imports: [AppModule] }).compile(); prisma = module.get(PrismaService); people = module.get(PeopleService); });
-  beforeEach(() => prisma.person.deleteMany());
+  beforeEach(async () => { await prisma.clinicalPatient.deleteMany(); await prisma.person.deleteMany(); });
   afterAll(() => prisma.$disconnect());
   const input = (dni = '12.345.678'): CreatePersonDto => ({ context: PersonCreationContext.SALA, firstName: 'Persona', lastName: 'Sintética', dni, phone: '3515550101', birthDate: '1991-07-15', email: ' PERSON@Example.test ' });
 

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { SalaOccurrenceOrigin, SalaOccurrenceStatus } from '@prisma/client';
 import { PermissionsGuard, RequirePermissions } from '../auth/permissions.guard';
@@ -49,6 +49,7 @@ export class SalaController {
   @Get('plans') @RequirePermissions('SALA_PLAN_CATALOG_MANAGE') @ApiOperation({ operationId: 'listSalaPlans' }) @ApiOkResponse({ schema: { type: 'object', properties: { data: { type: 'array', items: { type: 'object' } } } } }) async plans() { return { data: await this.sala.listPlans() }; }
   @Post('plans') @RequirePermissions('SALA_PLAN_CATALOG_MANAGE') @ApiOperation({ operationId: 'createSalaPlan' }) async createPlan(@Body() body: PlanDto) { return { data: await this.sala.createPlan(body) }; }
   @Patch('plans/:id') @RequirePermissions('SALA_PLAN_CATALOG_MANAGE') @ApiOperation({ operationId: 'updateSalaPlan' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) async updatePlan(@Param('id') id: string, @Body() body: PlanDto) { return { data: await this.sala.updatePlan(id, body) }; }
+  @Post('plans/:id/retire') @RequirePermissions('SALA_PLAN_CATALOG_MANAGE') @ApiOperation({ operationId: 'retireSalaPlan' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) async retirePlan(@Param('id') id: string) { return { data: await this.sala.retirePlan(id) }; }
   @Get('service-types') @RequirePermissions('SALA_RELATION_READ') @ApiOperation({ operationId: 'listSalaServiceTypes' }) async serviceTypes() { return { data: await this.sala.listServiceTypes() }; }
   @Post('service-types') @RequirePermissions('SALA_SERVICE_DURATION_MANAGE') @ApiOperation({ operationId: 'createSalaServiceType' }) @ApiBody({ type: SalaServiceTypeDto }) async createServiceType(@Body() body: SalaServiceTypeDto) { return { data: await this.sala.createServiceType(body) }; }
   @Patch('service-types/:id') @RequirePermissions('SALA_SERVICE_DURATION_MANAGE') @ApiOperation({ operationId: 'updateSalaServiceType' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) @ApiBody({ type: SalaServiceTypeDto }) async updateServiceType(@Param('id') id: string, @Body() body: SalaServiceTypeDto) { return { data: await this.sala.updateServiceType(id, body) }; }
@@ -58,5 +59,6 @@ export class SalaController {
   @Patch('schedule/:id') @RequirePermissions('SALA_SCHEDULE_MANAGE') @ApiOperation({ operationId: 'updateSalaScheduleSlot' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) @ApiBody({ type: ScheduleSlotDto }) async updateSlot(@Param('id') id: string, @Body() body: ScheduleSlotDto) { return { data: await this.sala.updateSlot(id, body) }; }
   @Post('schedule/:id/replace') @RequirePermissions('SALA_SCHEDULE_MANAGE') @ApiOperation({ operationId: 'replaceSalaScheduleSlot' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) @ApiBody({ type: ReplaceScheduleSlotDto }) async replaceSlot(@Param('id') id: string, @Body() body: ReplaceScheduleSlotDto) { return { data: await this.sala.replaceSlot(id, body) }; }
   @Post('schedule/:id/exceptions') @RequirePermissions('SALA_SCHEDULE_MANAGE') @ApiOperation({ operationId: 'createSalaScheduleException' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) async addException(@Param('id') id: string, @Body() body: ScheduleExceptionDto) { return { data: await this.sala.addException(id, body) }; }
+  @Delete('schedule/exceptions/:id') @RequirePermissions('SALA_SCHEDULE_MANAGE') @ApiOperation({ operationId: 'removeSalaScheduleException' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) async removeException(@Param('id') id: string) { return { data: await this.sala.removeException(id) }; }
   private actor(request: Request & { athletaUserId?: string }): string { if (!request.athletaUserId) throw new Error('Authenticated actor missing'); return request.athletaUserId; }
 }
