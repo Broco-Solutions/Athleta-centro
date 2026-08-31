@@ -1529,6 +1529,8 @@ Portal authorization is ownership-based, not InternalUser RBAC.
 
 ### M5.1 — Portal shell
 
+**Status:** DONE
+
 **Model:** `MODEL_STANDARD`
 
 Scope:
@@ -1546,6 +1548,8 @@ Use `MODEL_VISION` for mobile review.
 
 ### M5.2 — Portal profile
 
+**Status:** DONE
+
 **Model:** `MODEL_STANDARD`
 
 Scope:
@@ -1559,6 +1563,8 @@ credential change
 ---
 
 ### M5.3 — Sala Portal
+
+**Status:** IN_PROGRESS
 
 **Model:** `MODEL_DEEP`
 
@@ -1578,6 +1584,8 @@ No internal overbooking.
 
 ### M5.4 — Clinical Portal
 
+**Status:** IN_PROGRESS
+
 **Model:** `MODEL_DEEP`
 
 Scope:
@@ -1593,6 +1601,8 @@ Must not expose internal clinical history unless explicitly defined.
 ---
 
 ### GATE 5
+
+**Status:** IN_PROGRESS
 
 Playwright mobile-first workflows:
 
