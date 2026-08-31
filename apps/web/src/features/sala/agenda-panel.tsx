@@ -99,15 +99,15 @@ export function AgendaPanel({ date, onDateChange, csrfToken, people }: { date: s
       {agenda.isLoading ? <p role="status" className="mt-5 text-sm text-muted-foreground">Cargando agenda…</p> : null}
       {agenda.isError ? <p role="alert" className="mt-5 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">No se pudo cargar la agenda.</p> : null}
       {!agenda.isLoading && !agenda.isError && groups.length === 0 ? <p className="mt-5 rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No hay horarios configurados para esta fecha.</p> : null}
-      <div className="mt-5 grid gap-4">
+      <div className="mt-5 overflow-hidden rounded-md border bg-white">
         {groups.map((group) => (
-          <article key={group.slot.id} className="rounded-md border">
-            <header className="flex flex-wrap items-center justify-between gap-3 border-b bg-slate-50 px-4 py-3">
+          <article key={group.slot.id} className="border-b last:border-b-0">
+            <header className="grid grid-cols-[4rem_1fr_auto] items-center gap-3 px-4 py-2">
               <div><h3 className="font-semibold">{timeLabel(group.slot.startTime)}</h3><p className="text-xs text-muted-foreground">Capacidad {group.capacity} · Reservados {group.reserved} · Disponibles {group.available}</p></div>
               <span className={cn('rounded-full px-2.5 py-1 text-xs font-medium', group.isClosed ? 'bg-slate-200 text-slate-800' : group.isOverbooked ? 'bg-red-50 text-red-800' : group.available === 0 ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-800')}>{group.isClosed ? 'Cerrado' : group.isOverbooked ? 'Sobrecupo' : group.available === 0 ? 'Completo' : 'Disponible'}</span>
             </header>
-            {group.people.length === 0 ? <p className="p-4 text-sm text-muted-foreground">Sin Personas registradas.</p> : <ul className="divide-y">{group.people.map((entry) => (
-              <li key={entry.personId} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
+            {group.people.length === 0 ? null : <ul className="divide-y border-t bg-slate-50/40">{group.people.map((entry) => (
+              <li key={entry.personId} className="flex flex-col gap-2 px-4 py-2 lg:flex-row lg:items-center lg:justify-between">
                 <div><p className="font-medium">{entry.person.lastName}, {entry.person.firstName}</p><p className="text-xs text-muted-foreground">DNI {entry.person.dni} · {originLabels[entry.origin]}</p></div>
                 <div className="flex flex-wrap items-center gap-2"><span className={cn('rounded-full px-2.5 py-1 text-xs font-medium', statusClasses[entry.status])}>{statusLabels[entry.status]}</span><Button type="button" variant="secondary" disabled={update.isPending} onClick={() => update.mutate({ personId: entry.personId, scheduleSlotId: group.slot.scheduleSlotId ?? group.slot.id, status: 'ATTENDED' })}>Asistió</Button><Button type="button" variant="secondary" disabled={update.isPending} onClick={() => update.mutate({ personId: entry.personId, scheduleSlotId: group.slot.scheduleSlotId ?? group.slot.id, status: 'ABSENT' })}>Ausente</Button><Button type="button" variant="secondary" disabled={update.isPending} onClick={() => update.mutate({ personId: entry.personId, scheduleSlotId: group.slot.scheduleSlotId ?? group.slot.id, status: 'CANCELLED' })}>Cancelar</Button></div>
               </li>
