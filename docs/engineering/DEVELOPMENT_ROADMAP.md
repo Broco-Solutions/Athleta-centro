@@ -1505,9 +1505,7 @@ date boundaries
 
 ### GATE 4
 
-**Status:** BLOCKED
-
-Deployment verification is blocked while the Railway production deployment remains `NEEDS_APPROVAL`; local PostgreSQL integration gates also require the Docker infrastructure to be available.
+**Status:** GREEN
 
 Mandatory:
 
