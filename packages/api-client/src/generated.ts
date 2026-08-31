@@ -6279,6 +6279,279 @@ export const portalControllerSala = async ( options?: RequestInit): Promise<port
 
 
 
+export type portalControllerAvailabilityResponse200 = {
+  data: void
+  status: 200
+}
+
+export type portalControllerAvailabilityResponseSuccess = (portalControllerAvailabilityResponse200) & {
+  headers: Headers;
+};
+;
+
+export type portalControllerAvailabilityResponse = (portalControllerAvailabilityResponseSuccess)
+
+export const getPortalControllerAvailabilityUrl = () => {
+
+
+
+
+  return `/api/portal/sala/availability`
+}
+
+export const portalControllerAvailability = async ( options?: RequestInit): Promise<portalControllerAvailabilityResponse> => {
+
+  const res = await fetch(getPortalControllerAvailabilityUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: portalControllerAvailabilityResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as portalControllerAvailabilityResponse
+}
+
+
+
+export type portalControllerReserveResponse201 = {
+  data: void
+  status: 201
+}
+
+export type portalControllerReserveResponseSuccess = (portalControllerReserveResponse201) & {
+  headers: Headers;
+};
+;
+
+export type portalControllerReserveResponse = (portalControllerReserveResponseSuccess)
+
+export const getPortalControllerReserveUrl = () => {
+
+
+
+
+  return `/api/portal/sala/reservations`
+}
+
+export const portalControllerReserve = async ( options?: RequestInit): Promise<portalControllerReserveResponse> => {
+
+  const res = await fetch(getPortalControllerReserveUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: portalControllerReserveResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as portalControllerReserveResponse
+}
+
+
+
+export type portalControllerCancelReservationResponse200 = {
+  data: void
+  status: 200
+}
+
+export type portalControllerCancelReservationResponseSuccess = (portalControllerCancelReservationResponse200) & {
+  headers: Headers;
+};
+;
+
+export type portalControllerCancelReservationResponse = (portalControllerCancelReservationResponseSuccess)
+
+export const getPortalControllerCancelReservationUrl = (id: string,) => {
+
+
+
+
+  return `/api/portal/sala/reservations/${id}/cancel`
+}
+
+export const portalControllerCancelReservation = async (id: string, options?: RequestInit): Promise<portalControllerCancelReservationResponse> => {
+
+  const res = await fetch(getPortalControllerCancelReservationUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: portalControllerCancelReservationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as portalControllerCancelReservationResponse
+}
+
+
+
+export type portalControllerFixedResponse200 = {
+  data: void
+  status: 200
+}
+
+export type portalControllerFixedResponseSuccess = (portalControllerFixedResponse200) & {
+  headers: Headers;
+};
+;
+
+export type portalControllerFixedResponse = (portalControllerFixedResponseSuccess)
+
+export const getPortalControllerFixedUrl = () => {
+
+
+
+
+  return `/api/portal/sala/fixed-bookings`
+}
+
+export const portalControllerFixed = async ( options?: RequestInit): Promise<portalControllerFixedResponse> => {
+
+  const res = await fetch(getPortalControllerFixedUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: portalControllerFixedResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as portalControllerFixedResponse
+}
+
+
+
+export type portalControllerCreateFixedResponse201 = {
+  data: void
+  status: 201
+}
+
+export type portalControllerCreateFixedResponseSuccess = (portalControllerCreateFixedResponse201) & {
+  headers: Headers;
+};
+;
+
+export type portalControllerCreateFixedResponse = (portalControllerCreateFixedResponseSuccess)
+
+export const getPortalControllerCreateFixedUrl = () => {
+
+
+
+
+  return `/api/portal/sala/fixed-bookings`
+}
+
+export const portalControllerCreateFixed = async ( options?: RequestInit): Promise<portalControllerCreateFixedResponse> => {
+
+  const res = await fetch(getPortalControllerCreateFixedUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: portalControllerCreateFixedResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as portalControllerCreateFixedResponse
+}
+
+
+
+export type portalControllerChangeFixedResponse201 = {
+  data: void
+  status: 201
+}
+
+export type portalControllerChangeFixedResponseSuccess = (portalControllerChangeFixedResponse201) & {
+  headers: Headers;
+};
+;
+
+export type portalControllerChangeFixedResponse = (portalControllerChangeFixedResponseSuccess)
+
+export const getPortalControllerChangeFixedUrl = (id: string,) => {
+
+
+
+
+  return `/api/portal/sala/fixed-bookings/${id}/change`
+}
+
+export const portalControllerChangeFixed = async (id: string, options?: RequestInit): Promise<portalControllerChangeFixedResponse> => {
+
+  const res = await fetch(getPortalControllerChangeFixedUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: portalControllerChangeFixedResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as portalControllerChangeFixedResponse
+}
+
+
+
+export type portalControllerEndFixedResponse201 = {
+  data: void
+  status: 201
+}
+
+export type portalControllerEndFixedResponseSuccess = (portalControllerEndFixedResponse201) & {
+  headers: Headers;
+};
+;
+
+export type portalControllerEndFixedResponse = (portalControllerEndFixedResponseSuccess)
+
+export const getPortalControllerEndFixedUrl = (id: string,) => {
+
+
+
+
+  return `/api/portal/sala/fixed-bookings/${id}/end`
+}
+
+export const portalControllerEndFixed = async (id: string, options?: RequestInit): Promise<portalControllerEndFixedResponse> => {
+
+  const res = await fetch(getPortalControllerEndFixedUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: portalControllerEndFixedResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as portalControllerEndFixedResponse
+}
+
+
+
 export type portalControllerAppointmentsResponse200 = {
   data: void
   status: 200
