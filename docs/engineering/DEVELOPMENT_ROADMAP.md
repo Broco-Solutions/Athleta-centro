@@ -1564,7 +1564,7 @@ credential change
 
 ### M5.3 — Sala Portal
 
-**Status:** DONE
+**Status:** IN_PROGRESS
 
 **Model:** `MODEL_DEEP`
 
@@ -1584,7 +1584,7 @@ No internal overbooking.
 
 ### M5.4 — Clinical Portal
 
-**Status:** DONE
+**Status:** IN_PROGRESS
 
 **Model:** `MODEL_DEEP`
 
