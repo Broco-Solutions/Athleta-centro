@@ -13,7 +13,7 @@ if (!['normal', 'temporary', 'inactive', 'people', 'team', 'sala', 'occurrence',
   if (kind === 'service') await prisma.salaServiceType.deleteMany({ where: { normalizedName: 'servicio retiro e2e' } });
   if (kind === 'portal-reset') {
     const existing = await prisma.person.findUnique({ where: { normalizedDni: '40999444' } });
-    if (existing) { await prisma.session.deleteMany({ where: { personId: existing.id } }); await prisma.portalCredential.deleteMany({ where: { personId: existing.id } }); await prisma.salaParticipation.deleteMany({ where: { personId: existing.id } }); await prisma.person.delete({ where: { id: existing.id } }); }
+    if (existing) { await prisma.session.deleteMany({ where: { personId: existing.id } }); await prisma.portalCredential.deleteMany({ where: { personId: existing.id } }); await prisma.salaOccurrence.deleteMany({ where: { personId: existing.id } }); await prisma.oneOffReservation.deleteMany({ where: { personId: existing.id } }); await prisma.fixedSalaBooking.deleteMany({ where: { personId: existing.id } }); await prisma.salaParticipation.deleteMany({ where: { personId: existing.id } }); await prisma.person.delete({ where: { id: existing.id } }); }
     await prisma.salaPlan.deleteMany({ where: { name: 'Portal Reset E2E' } });
   }
   if (kind === 'team') { const target = await prisma.internalUser.findUnique({ where: { normalizedEmail: 'e2e.created@athleta.test' } }); if (target) { await prisma.session.deleteMany({ where: { internalUserId: target.id } }); await prisma.internalCredential.deleteMany({ where: { internalUserId: target.id } }); await prisma.internalUserRole.deleteMany({ where: { internalUserId: target.id } }); await prisma.internalUser.delete({ where: { id: target.id } }); } }
