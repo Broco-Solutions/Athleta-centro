@@ -12,6 +12,7 @@ export type PersonResponseDtoStatus = typeof PersonResponseDtoStatus[keyof typeo
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const PersonResponseDtoStatus = {
+  ACTIVE: 'ACTIVE',
   INACTIVE: 'INACTIVE',
 } as const;
 
@@ -950,6 +951,45 @@ export const updatePerson = async (id: string,
 
   const data: updatePersonResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updatePersonResponse
+}
+
+
+
+export type inactivatePersonResponse201 = {
+  data: void
+  status: 201
+}
+
+export type inactivatePersonResponseSuccess = (inactivatePersonResponse201) & {
+  headers: Headers;
+};
+;
+
+export type inactivatePersonResponse = (inactivatePersonResponseSuccess)
+
+export const getInactivatePersonUrl = (id: string,) => {
+
+
+
+
+  return `/api/people/${id}/inactivate`
+}
+
+export const inactivatePerson = async (id: string, options?: RequestInit): Promise<inactivatePersonResponse> => {
+
+  const res = await fetch(getInactivatePersonUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: inactivatePersonResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as inactivatePersonResponse
 }
 
 
