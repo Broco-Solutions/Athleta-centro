@@ -54,6 +54,21 @@ describe('Sala configuration API', () => {
     const authn = await session(Role.PROFESSOR);
     await request(app.getHttpServer()).post('/api/sala/plans').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ name: 'No', monthlyAmount: 1 }).expect(403);
   });
+  it('retires services without deleting their historical catalog row', async () => {
+    const authn = await session(Role.GENERAL_ADMIN);
+    const name = `Retirable-${uniqueDni()}`;
+    const created = await request(app.getHttpServer()).post('/api/sala/service-types').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ name, durationMinutes: 45 }).expect(201);
+    const serviceId = created.body.data.id as string;
+    expect(created.body.data.isSelectable).toBe(true);
+    const activeList = await request(app.getHttpServer()).get('/api/sala/service-types').set('Cookie', authn.cookie).expect(200);
+    expect(activeList.body.data.some((service: { id: string }) => service.id === serviceId)).toBe(true);
+    await request(app.getHttpServer()).post(`/api/sala/service-types/${serviceId}/retire`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({}).expect(201);
+    const selectableAfterRetirement = await request(app.getHttpServer()).get('/api/sala/service-types').set('Cookie', authn.cookie).expect(200);
+    expect(selectableAfterRetirement.body.data.some((service: { id: string }) => service.id === serviceId)).toBe(false);
+    const allServices = await request(app.getHttpServer()).get('/api/sala/service-types/all').set('Cookie', authn.cookie).expect(200);
+    expect(allServices.body.data).toEqual(expect.arrayContaining([expect.objectContaining({ id: serviceId, name, durationMinutes: 45, isSelectable: false })]));
+    await expect(sala.retireServiceType(serviceId)).resolves.toMatchObject({ id: serviceId, isSelectable: false, durationMinutes: 45 });
+  });
   it('joins, leaves, preserves history and allows re-entry with new assignments', async () => {
     const authn = await session(Role.ADMINISTRATIVE); const dni = uniqueDni(); const person = await prisma.person.create({ data: { firstName: 'Ana', lastName: 'Sala', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1990-01-01T00:00:00Z') } }); const plan = await prisma.salaPlan.create({ data: { name: 'Plan', monthlyAmount: 1000 } }); const professor = await users.create({ firstName: 'Prof', lastName: 'Uno', email: `prof-one-${dni}@sala.test`, roles: [Role.PROFESSOR] });
     const joined = await request(app.getHttpServer()).post('/api/sala/participations').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-10' }).expect(201); expect(joined.body.data.endDate).toBeNull();

@@ -3111,6 +3111,45 @@ export const createSalaServiceType = async (salaServiceTypeDto: SalaServiceTypeD
 
 
 
+export type listAllSalaServiceTypesResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listAllSalaServiceTypesResponseSuccess = (listAllSalaServiceTypesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listAllSalaServiceTypesResponse = (listAllSalaServiceTypesResponseSuccess)
+
+export const getListAllSalaServiceTypesUrl = () => {
+
+
+
+
+  return `/api/sala/service-types/all`
+}
+
+export const listAllSalaServiceTypes = async ( options?: RequestInit): Promise<listAllSalaServiceTypesResponse> => {
+
+  const res = await fetch(getListAllSalaServiceTypesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listAllSalaServiceTypesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listAllSalaServiceTypesResponse
+}
+
+
+
 export type updateSalaServiceTypeResponse200 = {
   data: void
   status: 200
@@ -3148,6 +3187,45 @@ export const updateSalaServiceType = async (id: string,
 
   const data: updateSalaServiceTypeResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateSalaServiceTypeResponse
+}
+
+
+
+export type retireSalaServiceTypeResponse201 = {
+  data: void
+  status: 201
+}
+
+export type retireSalaServiceTypeResponseSuccess = (retireSalaServiceTypeResponse201) & {
+  headers: Headers;
+};
+;
+
+export type retireSalaServiceTypeResponse = (retireSalaServiceTypeResponseSuccess)
+
+export const getRetireSalaServiceTypeUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/service-types/${id}/retire`
+}
+
+export const retireSalaServiceType = async (id: string, options?: RequestInit): Promise<retireSalaServiceTypeResponse> => {
+
+  const res = await fetch(getRetireSalaServiceTypeUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: retireSalaServiceTypeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as retireSalaServiceTypeResponse
 }
 
 
