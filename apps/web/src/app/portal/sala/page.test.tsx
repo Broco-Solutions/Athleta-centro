@@ -36,7 +36,7 @@ it('enables a valid Portal Sala reservation and sends the selected start', async
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><PortalSala /></QueryClientProvider>);
   const reserve = await screen.findByRole('button', { name: 'Reservar horario' });
   expect(reserve).toBeDisabled();
-  fireEvent.change(screen.getByLabelText('Servicio'), { target: { value: 'service' } });
+  fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'service' } });
   fireEvent.change(screen.getByLabelText('Inicio'), { target: { value: 'window:09:00' } });
   await waitFor(() => expect(reserve).toBeEnabled());
   fireEvent.click(reserve);

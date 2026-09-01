@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@athleta/ui';
-import { cancelSalaReservation, changeFixedSalaBooking, createFixedSalaBooking, createSalaReservation, endFixedSalaBooking, getSalaAvailability, listFixedSalaBookings, listPeople, listPersonSalaParticipations, listPersonSalaRoutines, listSalaExerciseDefinitions, listSalaReservations, listSalaServiceTypes, replaceSalaRoutine } from '@athleta/api-client';
+import { cancelSalaReservation, changeFixedSalaBooking, createFixedSalaBooking, createSalaReservation, endFixedSalaBooking, getSalaAvailability, listFixedSalaBookings, listPeople, listPersonSalaParticipations, listPersonSalaRoutines, listSalaExerciseDefinitions, createSalaExerciseDefinition, listSalaReservations, listSalaServiceTypes, replaceSalaRoutine } from '@athleta/api-client';
 import { WorkspaceShell } from '../../features/auth/workspace-shell';
 import { currentSession } from '../../features/auth/auth';
 import { AgendaPanel } from '../../features/sala/agenda-panel';
@@ -11,6 +11,7 @@ import { RoutinePanel, type ExerciseDefinition, type Routine } from '../../featu
 import { PhysicalEvaluationPanel } from '../../features/sala/physical-evaluation-panel';
 import { PaymentPanel } from '../../features/sala/payment-panel';
 import { formatOperationalTime } from '../../lib/operational-time';
+import { formatOperationalDate } from '../../lib/operational-date';
 
 type Person = { id: string; firstName: string; lastName: string; dni: string };
 type Slot = { id: string; weekday: string; startTime: string };
@@ -43,8 +44,8 @@ export default function SalaPage(): React.JSX.Element {
   const services = useQuery({ queryKey: ['sala', 'service-types'], queryFn: async () => unwrapList<ServiceType>(await listSalaServiceTypes({ credentials: 'include' })), initialData: [] });
   const participations = useQuery({ queryKey: ['sala', 'parts', personId], queryFn: async () => unwrapList<Participation>(await listPersonSalaParticipations(personId, { credentials: 'include' })), enabled: Boolean(personId), initialData: [] });
   const availability = useQuery({ queryKey: ['sala', 'availability', date], queryFn: async () => unwrapList<Availability>(await getSalaAvailability({ date }, { credentials: 'include' })), initialData: [] });
-  const fixedBookings = useQuery({ queryKey: ['sala', 'fixed', personId], queryFn: async () => unwrapList<FixedBooking>(await listFixedSalaBookings(personId, { credentials: 'include' })), enabled: Boolean(personId), initialData: [] });
-  const reservations = useQuery({ queryKey: ['sala', 'reservations', personId], queryFn: async () => unwrapList<Reservation>(await listSalaReservations(personId, { credentials: 'include' })), enabled: Boolean(personId), initialData: [] });
+  const fixedBookings = useQuery({ queryKey: ['sala', 'fixed', personId], queryFn: async () => unwrapList<FixedBooking>(await listFixedSalaBookings(personId, { credentials: 'include' })).map((booking) => ({ ...booking, startDate: formatOperationalDate(booking.startDate), endDate: booking.endDate ? formatOperationalDate(booking.endDate) : booking.endDate })), enabled: Boolean(personId), initialData: [] });
+  const reservations = useQuery({ queryKey: ['sala', 'reservations', personId], queryFn: async () => unwrapList<Reservation>(await listSalaReservations(personId, { credentials: 'include' })).map((reservation) => ({ ...reservation, date: formatOperationalDate(reservation.date) })), enabled: Boolean(personId), initialData: [] });
 
   const refreshBookings = async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: ['sala', 'fixed'] }), queryClient.invalidateQueries({ queryKey: ['sala', 'reservations'] }), queryClient.invalidateQueries({ queryKey: ['sala', 'availability'] }), queryClient.invalidateQueries({ queryKey: ['sala', 'agenda'] })]); };
   const reserve = useMutation({ mutationFn: async () => { const response = await createSalaReservation({ personId, salaParticipationId: participationId, scheduleSlotId: selectedSlotId, serviceTypeId, startTime: bookingStartTime, date, confirmOverbooking }, requestOptions(csrfToken)); if (Number(response.status) === 409 && !confirmOverbooking) throw new Error('OVERBOOKING_CONFIRMATION_REQUIRED'); if (Number(response.status) >= 400) throw new Error('RESERVATION_FAILED'); }, onSuccess: async () => { setConfirmOverbooking(false); await refreshBookings(); }, onError: (error) => { if (String(error).includes('OVERBOOKING_CONFIRMATION_REQUIRED')) setConfirmOverbooking(true); } });
@@ -60,7 +61,7 @@ export default function SalaPage(): React.JSX.Element {
   const startOptions = availabilityRows.filter((state, index) => { if (state.isClosed || !selectedService) return !state.isClosed; const required = selectedService.durationMinutes / 15; const slotsForRange = availabilityRows.slice(index, index + required); return slotsForRange.length === required && slotsForRange.every((candidate, offset) => !candidate.isClosed && candidate.scheduleSlotId === state.scheduleSlotId && (offset === 0 || candidate.startTime === endTimeLabel(slotsForRange[offset - 1]!.startTime, 15))); });
   const selectedStart = startOptions.find((state) => state.startTime === bookingStartTime);
   const activeParticipations = participations.data.filter((participation) => !participation.endDate);
-  const routineApi = { list: async (id: string, options: RequestInit): Promise<Routine[]> => unwrapList<Routine>(await listPersonSalaRoutines(id, options)), exercises: async (options: RequestInit): Promise<ExerciseDefinition[]> => unwrapList<ExerciseDefinition>(await listSalaExerciseDefinitions(options)), create: async (input: Parameters<typeof replaceSalaRoutine>[0], options: RequestInit) => replaceSalaRoutine(input, options), replace: async (_id: string, input: Parameters<typeof replaceSalaRoutine>[0], options: RequestInit) => replaceSalaRoutine(input, options) };
+  const routineApi = { list: async (id: string, options: RequestInit): Promise<Routine[]> => unwrapList<Routine>(await listPersonSalaRoutines(id, options)), exercises: async (options: RequestInit): Promise<ExerciseDefinition[]> => unwrapList<ExerciseDefinition>(await listSalaExerciseDefinitions(options)), createExercise: async (input: { name: string; primaryMuscle: string; description?: string }, options: RequestInit) => createSalaExerciseDefinition(input, options), create: async (input: Parameters<typeof replaceSalaRoutine>[0], options: RequestInit) => replaceSalaRoutine(input, options), replace: async (_id: string, input: Parameters<typeof replaceSalaRoutine>[0], options: RequestInit) => replaceSalaRoutine(input, options) };
 
   const selectedSlotId = selectedStart?.scheduleSlotId ?? slotId;
   return (

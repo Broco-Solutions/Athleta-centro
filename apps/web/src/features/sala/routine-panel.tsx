@@ -63,6 +63,7 @@ export type RoutineApi = {
   exercises: (options: RequestInit) => Promise<ExerciseDefinition[]>;
   create: (input: RoutineInput, options: RequestInit) => Promise<unknown>;
   replace: (routineId: string, input: RoutineInput, options: RequestInit) => Promise<unknown>;
+  createExercise: (input: { name: string; primaryMuscle: string; description?: string }, options: RequestInit) => Promise<unknown>;
 };
 
 const exerciseSchema = z.object({
@@ -125,6 +126,7 @@ export function RoutinePanel({ personId, participationId, csrfToken, api }: { pe
   const [editing, setEditing] = useState(false);
   const [dayName, setDayName] = useState('Día 1');
   const [exercises, setExercises] = useState<ExerciseForm[]>([]);
+  const [newExercise, setNewExercise] = useState({ name: '', primaryMuscle: '', description: '' });
   const options = useMemo<RequestInit>(() => ({ credentials: 'include', headers: { 'x-csrf-token': csrfToken } }), [csrfToken]);
   const routines = useQuery({ queryKey: ['sala-routines', personId], queryFn: () => api.list(personId, options), enabled: Boolean(personId && participationId) });
   const definitions = useQuery({ queryKey: ['sala-exercise-definitions'], queryFn: () => api.exercises(options) });
@@ -137,6 +139,7 @@ export function RoutinePanel({ personId, participationId, csrfToken, api }: { pe
     },
     onSuccess: async () => { setEditing(false); setExercises([]); await queryClient.invalidateQueries({ queryKey: ['sala-routines', personId] }); },
   });
+  const exerciseMutation = useMutation({ mutationFn: () => api.createExercise(newExercise, options), onSuccess: async () => { setNewExercise({ name: '', primaryMuscle: '', description: '' }); await queryClient.invalidateQueries({ queryKey: ['sala-exercise-definitions'] }); } });
 
   const startEditing = () => {
     if (active) {
@@ -153,6 +156,7 @@ export function RoutinePanel({ personId, participationId, csrfToken, api }: { pe
   return (
     <section aria-labelledby="routine-heading" className="mt-4 rounded-md border bg-surface-muted p-4">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 id="routine-heading" className="font-semibold">Rutina</h3><p className="text-sm text-muted-foreground">Planificación de entrenamiento vigente e histórica.</p></div>{participationId ? <Button type="button" variant="secondary" onClick={startEditing}>{active ? 'Reemplazar rutina' : 'Crear rutina'}</Button> : null}</div>
+      <details className="mt-3 rounded-md border bg-white p-3"><summary className="cursor-pointer text-sm font-medium">Administrar ejercicios</summary><p className="mt-2 text-xs text-muted-foreground">Catálogo utilizado para armar rutinas.</p><div className="mt-3 grid gap-2 sm:grid-cols-3"><input aria-label="Nombre del ejercicio" placeholder="Nombre" value={newExercise.name} onChange={(event) => setNewExercise((current) => ({ ...current, name: event.target.value }))} /><input aria-label="Grupo muscular" placeholder="Grupo muscular" value={newExercise.primaryMuscle} onChange={(event) => setNewExercise((current) => ({ ...current, primaryMuscle: event.target.value }))} /><input aria-label="Descripción del ejercicio" placeholder="Descripción opcional" value={newExercise.description} onChange={(event) => setNewExercise((current) => ({ ...current, description: event.target.value }))} /></div><Button className="mt-2" type="button" disabled={!newExercise.name.trim() || !newExercise.primaryMuscle.trim() || exerciseMutation.isPending} onClick={() => exerciseMutation.mutate()}>Nuevo ejercicio</Button></details>
       {routines.isLoading ? <p role="status" className="mt-3 text-sm text-muted-foreground">Cargando rutina…</p> : null}
       {routines.isError ? <p role="alert" className="mt-3 text-sm text-red-700">No se pudo cargar la rutina.</p> : null}
       {!routines.isLoading && !routines.isError && !active ? <p className="mt-3 text-sm text-muted-foreground">No hay una rutina activa.</p> : null}
