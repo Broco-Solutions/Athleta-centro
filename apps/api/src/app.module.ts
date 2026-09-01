@@ -15,6 +15,7 @@ import { HttpExceptionFilter } from './common/http-exception.filter';
 import { PermissionsGuard } from './auth/permissions.guard';
 import { PeopleController } from './people/people.controller';
 import { PeopleService } from './people/people.service';
+import { PersonActivityService } from './people/person-activity.service';
 import { TeamController } from './team/team.controller';
 import { TeamService } from './team/team.service';
 import { SalaController } from './sala/sala.controller';
@@ -32,7 +33,7 @@ import { SocialWorkController } from './clinic/social-work.controller'; import {
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }), LoggerModule.forRoot({ pinoHttp: { redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers.x-csrf-token', 'req.body', 'res.headers.set-cookie'] } as never })],
-  controllers: [HealthController, AuthController, PeopleController, TeamController, SalaController, FinanceController, ClinicController, TreatmentController, EvolutionController, StudyController, EvaluationController, SocialWorkController, IndicationController, PortalController], providers: [PrismaService, InternalUserService, AuthService, AuthRateLimitService, AuthSecurityMiddleware, PermissionsGuard, PeopleService, TeamService, FinanceCatalogService, SalaService, ClinicService, TreatmentService, EvolutionService, StudyService, EvaluationService, ClinicalCatalogService, PrivateStorageService, SocialWorkService, IndicationService, PortalService, { provide: APP_FILTER, useClass: HttpExceptionFilter }], exports: [PrismaService, InternalUserService, AuthService, PeopleService, TeamService, SalaService, FinanceCatalogService, ClinicService, TreatmentService, EvolutionService, StudyService, EvaluationService, ClinicalCatalogService, PrivateStorageService, SocialWorkService, IndicationService, PortalService],
+  controllers: [HealthController, AuthController, PeopleController, TeamController, SalaController, FinanceController, ClinicController, TreatmentController, EvolutionController, StudyController, EvaluationController, SocialWorkController, IndicationController, PortalController], providers: [PrismaService, InternalUserService, AuthService, AuthRateLimitService, AuthSecurityMiddleware, PermissionsGuard, PeopleService, PersonActivityService, TeamService, FinanceCatalogService, SalaService, ClinicService, TreatmentService, EvolutionService, StudyService, EvaluationService, ClinicalCatalogService, PrivateStorageService, SocialWorkService, IndicationService, PortalService, { provide: APP_FILTER, useClass: HttpExceptionFilter }], exports: [PrismaService, InternalUserService, AuthService, PeopleService, PersonActivityService, TeamService, SalaService, FinanceCatalogService, ClinicService, TreatmentService, EvolutionService, StudyService, EvaluationService, ClinicalCatalogService, PrivateStorageService, SocialWorkService, IndicationService, PortalService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

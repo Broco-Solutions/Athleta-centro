@@ -35,7 +35,7 @@ export class PersonResponseDto {
   @ApiPropertyOptional({ type: String, nullable: true }) emergencyContactPhone!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true, format: 'uuid' }) socialWorkId!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) affiliateNumber!: string | null;
-  @ApiProperty({ type: String, enum: ['INACTIVE'], description: 'Derived from currently available relationships.' }) status!: 'INACTIVE';
+  @ApiProperty({ type: String, enum: ['ACTIVE', 'INACTIVE'], description: 'Derived from currently available relationships.' }) status!: 'ACTIVE' | 'INACTIVE';
   @ApiProperty({ type: () => [String] }) contexts!: string[];
   @ApiProperty({ type: Boolean, description: 'Whether this person has an active Sala participation.' }) hasSalaParticipation!: boolean;
   @ApiProperty({ type: Boolean, description: 'Whether this person is explicitly registered as a clinical patient.' }) isClinicalPatient!: boolean;
