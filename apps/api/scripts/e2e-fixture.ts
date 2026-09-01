@@ -7,10 +7,15 @@ const email = `e2e.${kind}@athleta.test`;
 const password = 'ValidPass1!';
 
 async function main(): Promise<void> {
-  if (!['normal', 'temporary', 'inactive', 'people', 'team', 'sala', 'occurrence', 'multislot', 'clinic', 'service'].includes(kind ?? '')) throw new Error('Unknown e2e fixture');
+if (!['normal', 'temporary', 'inactive', 'people', 'team', 'sala', 'occurrence', 'multislot', 'clinic', 'service', 'portal-reset'].includes(kind ?? '')) throw new Error('Unknown e2e fixture');
   if (kind === 'people') await prisma.person.deleteMany({ where: { normalizedDni: '40999888' } });
   if (kind === 'sala') { const existing = await prisma.person.findUnique({ where: { normalizedDni: '40999777' } }); if (existing) { await prisma.clinicalPatient.deleteMany({ where: { personId: existing.id } }); await prisma.salaParticipation.deleteMany({ where: { personId: existing.id } }); await prisma.person.delete({ where: { id: existing.id } }); } await prisma.salaPlan.deleteMany({ where: { name: 'Plan E2E' } }); const professor = await prisma.internalUser.findUnique({ where: { normalizedEmail: 'e2e.sala.professor@athleta.test' } }); if (professor) { await prisma.internalUserRole.deleteMany({ where: { internalUserId: professor.id } }); await prisma.internalUser.delete({ where: { id: professor.id } }); } }
   if (kind === 'service') await prisma.salaServiceType.deleteMany({ where: { normalizedName: 'servicio retiro e2e' } });
+  if (kind === 'portal-reset') {
+    const existing = await prisma.person.findUnique({ where: { normalizedDni: '40999444' } });
+    if (existing) { await prisma.session.deleteMany({ where: { personId: existing.id } }); await prisma.portalCredential.deleteMany({ where: { personId: existing.id } }); await prisma.salaParticipation.deleteMany({ where: { personId: existing.id } }); await prisma.person.delete({ where: { id: existing.id } }); }
+    await prisma.salaPlan.deleteMany({ where: { name: 'Portal Reset E2E' } });
+  }
   if (kind === 'team') { const target = await prisma.internalUser.findUnique({ where: { normalizedEmail: 'e2e.created@athleta.test' } }); if (target) { await prisma.session.deleteMany({ where: { internalUserId: target.id } }); await prisma.internalCredential.deleteMany({ where: { internalUserId: target.id } }); await prisma.internalUserRole.deleteMany({ where: { internalUserId: target.id } }); await prisma.internalUser.delete({ where: { id: target.id } }); } }
   if (kind === 'occurrence') {
     const people = await prisma.person.findMany({ where: { normalizedDni: { in: ['40999661', '40999662'] } }, select: { id: true } });
@@ -65,5 +70,10 @@ async function main(): Promise<void> {
     for (const [index, dni] of ['40999551','40999552'].entries()) { const person = await prisma.person.create({ data: { firstName: `Persona${index + 1}`, lastName: 'MultiSlotE2E', dni, normalizedDni: dni, phone: '3515550155', birthDate: new Date('1990-01-01T00:00:00Z') } }); await prisma.salaParticipation.create({ data: { personId: person.id, mainProfessorId: professor.id, planId: plan.id, startDate: new Date('2026-01-01T00:00:00Z') } }); }
   }
   if (kind === 'service') await prisma.salaServiceType.create({ data: { name: 'Servicio Retiro E2E', normalizedName: 'servicio retiro e2e', durationMinutes: 45 } });
+  if (kind === 'portal-reset') {
+    const plan = await prisma.salaPlan.create({ data: { name: 'Portal Reset E2E', monthlyAmount: 1000, isSelectable: true } });
+    const person = await prisma.person.create({ data: { firstName: 'Portal', lastName: 'ResetE2E', dni: '40999444', normalizedDni: '40999444', phone: '3515550144', birthDate: new Date('1990-01-01T00:00:00Z') } });
+    await prisma.salaParticipation.create({ data: { personId: person.id, mainProfessorId: user.id, planId: plan.id, startDate: new Date('2020-01-01T00:00:00Z') } });
+  }
 }
 void main().finally(() => prisma.$disconnect());
