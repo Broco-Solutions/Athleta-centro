@@ -7,9 +7,10 @@ const email = `e2e.${kind}@athleta.test`;
 const password = 'ValidPass1!';
 
 async function main(): Promise<void> {
-  if (!['normal', 'temporary', 'inactive', 'people', 'team', 'sala', 'occurrence', 'multislot', 'clinic'].includes(kind ?? '')) throw new Error('Unknown e2e fixture');
+  if (!['normal', 'temporary', 'inactive', 'people', 'team', 'sala', 'occurrence', 'multislot', 'clinic', 'service'].includes(kind ?? '')) throw new Error('Unknown e2e fixture');
   if (kind === 'people') await prisma.person.deleteMany({ where: { normalizedDni: '40999888' } });
   if (kind === 'sala') { const existing = await prisma.person.findUnique({ where: { normalizedDni: '40999777' } }); if (existing) { await prisma.clinicalPatient.deleteMany({ where: { personId: existing.id } }); await prisma.salaParticipation.deleteMany({ where: { personId: existing.id } }); await prisma.person.delete({ where: { id: existing.id } }); } await prisma.salaPlan.deleteMany({ where: { name: 'Plan E2E' } }); const professor = await prisma.internalUser.findUnique({ where: { normalizedEmail: 'e2e.sala.professor@athleta.test' } }); if (professor) { await prisma.internalUserRole.deleteMany({ where: { internalUserId: professor.id } }); await prisma.internalUser.delete({ where: { id: professor.id } }); } }
+  if (kind === 'service') await prisma.salaServiceType.deleteMany({ where: { normalizedName: 'servicio retiro e2e' } });
   if (kind === 'team') { const target = await prisma.internalUser.findUnique({ where: { normalizedEmail: 'e2e.created@athleta.test' } }); if (target) { await prisma.session.deleteMany({ where: { internalUserId: target.id } }); await prisma.internalCredential.deleteMany({ where: { internalUserId: target.id } }); await prisma.internalUserRole.deleteMany({ where: { internalUserId: target.id } }); await prisma.internalUser.delete({ where: { id: target.id } }); } }
   if (kind === 'occurrence') {
     const people = await prisma.person.findMany({ where: { normalizedDni: { in: ['40999661', '40999662'] } }, select: { id: true } });
@@ -37,7 +38,7 @@ async function main(): Promise<void> {
   await prisma.internalCredential.deleteMany({ where: { internalUser: { normalizedEmail: email } } });
   await prisma.internalUserRole.deleteMany({ where: { internalUser: { normalizedEmail: email } } });
   await prisma.internalUser.deleteMany({ where: { normalizedEmail: email } });
-  const user = await prisma.internalUser.create({ data: { firstName: 'E2E', lastName: kind ?? 'User', email, normalizedEmail: email, status: kind === 'inactive' ? 'INACTIVE' : 'ACTIVE', roles: { create: { role: kind === 'clinic' ? Role.GENERAL_ADMIN : kind === 'team' || kind === 'sala' || kind === 'occurrence' || kind === 'multislot' ? Role.ADMINISTRATIVE : Role.PROFESSOR } } } });
+  const user = await prisma.internalUser.create({ data: { firstName: 'E2E', lastName: kind ?? 'User', email, normalizedEmail: email, status: kind === 'inactive' ? 'INACTIVE' : 'ACTIVE', roles: { create: { role: kind === 'clinic' || kind === 'service' ? Role.GENERAL_ADMIN : kind === 'team' || kind === 'sala' || kind === 'occurrence' || kind === 'multislot' ? Role.ADMINISTRATIVE : Role.PROFESSOR } } } });
   await prisma.internalCredential.create({ data: { internalUserId: user.id, passwordHash: await argon2.hash(password, { type: argon2.argon2id }), mustChangePassword: kind === 'temporary' } });
   if (kind === 'sala') {
     const professor = await prisma.internalUser.create({ data: { firstName: 'Profesor', lastName: 'E2E', email: 'e2e.sala.professor@athleta.test', normalizedEmail: 'e2e.sala.professor@athleta.test', status: 'ACTIVE', roles: { create: { role: Role.PROFESSOR } } } });
@@ -63,5 +64,6 @@ async function main(): Promise<void> {
     await prisma.salaScheduleSlot.create({ data: { weekday: 'MONDAY', startTime: new Date('1970-01-01T08:00:00.000Z'), durationMinutes: 720, specificCapacity: 1 } }); await prisma.salaServiceType.create({ data: { name: 'Gimnasio E2E', normalizedName: 'gimnasio e2e', durationMinutes: 60 } });
     for (const [index, dni] of ['40999551','40999552'].entries()) { const person = await prisma.person.create({ data: { firstName: `Persona${index + 1}`, lastName: 'MultiSlotE2E', dni, normalizedDni: dni, phone: '3515550155', birthDate: new Date('1990-01-01T00:00:00Z') } }); await prisma.salaParticipation.create({ data: { personId: person.id, mainProfessorId: professor.id, planId: plan.id, startDate: new Date('2026-01-01T00:00:00Z') } }); }
   }
+  if (kind === 'service') await prisma.salaServiceType.create({ data: { name: 'Servicio Retiro E2E', normalizedName: 'servicio retiro e2e', durationMinutes: 45 } });
 }
 void main().finally(() => prisma.$disconnect());

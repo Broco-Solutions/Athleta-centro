@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 
-function fixture(kind: 'normal' | 'temporary' | 'inactive' | 'people' | 'team' | 'sala' | 'occurrence' | 'multislot' | 'clinic'): void { execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/e2e-fixture.ts', kind], { cwd: '../..', stdio: 'inherit' }); }
+function fixture(kind: 'normal' | 'temporary' | 'inactive' | 'people' | 'team' | 'sala' | 'occurrence' | 'multislot' | 'clinic' | 'service'): void { execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/e2e-fixture.ts', kind], { cwd: '../..', stdio: 'inherit' }); }
 async function login(page: import('@playwright/test').Page, email: string, password = 'ValidPass1!'): Promise<void> { await page.goto('/login'); await page.getByLabel('Email').fill(email); await page.getByLabel('Contraseña').fill(password); await page.getByRole('button', { name: /Ingresar/ }).click(); }
 
 test('redirects unauthenticated visitors to login through the Next-to-API rewrite', async ({ page }) => { await page.goto('/'); await expect(page).toHaveURL(/\/login$/); });
@@ -116,6 +116,24 @@ test('exposes Sala configuration from the Sala workspace', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Configuración de Sala' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Planes' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Horarios semanales' })).toBeVisible();
+});
+
+test('retires a Sala service and removes it from new-booking selectors', async ({ page }) => {
+  fixture('service');
+  await login(page, 'e2e.service@athleta.test');
+  await page.getByRole('link', { name: 'Sala' }).click();
+  await page.getByRole('link', { name: 'Configuración', exact: true }).click();
+  await page.getByRole('heading', { name: 'Servicios y duraciones' }).click();
+  const service = page.getByText(/Servicio Retiro E2E · 45 min/).locator('..');
+  await expect(service.getByRole('button', { name: 'Editar' })).toBeVisible();
+  page.once('dialog', (dialog) => dialog.accept());
+  await service.getByRole('button', { name: 'Retirar' }).click();
+  await expect(page.getByText(/Servicio Retiro E2E · 45 min · Retirado/)).toBeVisible();
+  await page.reload();
+  await page.getByRole('heading', { name: 'Servicios y duraciones' }).click();
+  await expect(page.getByText(/Servicio Retiro E2E · 45 min · Retirado/)).toBeVisible();
+  await page.getByRole('complementary').getByRole('link', { name: 'Sala' }).click();
+  await expect(page.getByLabel('Servicio').getByRole('option', { name: /Servicio Retiro E2E/ })).toHaveCount(0);
 });
 
 test('navigates from People to a real Person workspace and clinical entry flows', async ({ page }) => {
