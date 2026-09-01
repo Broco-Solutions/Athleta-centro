@@ -93,7 +93,7 @@ export class PeopleService {
   }
 
   async get(id: string) {
-    const person = await this.prisma.person.findUnique({ where: { id }, include: { clinicalPatient: { select: { personId: true } }, salaParticipations: { where: { endDate: null }, select: { id: true } } } });
+    const person = await this.prisma.person.findUnique({ where: { id }, include: { clinicalPatient: { select: { personId: true } }, salaParticipations: { where: { endDate: null }, select: { id: true } }, treatments: { where: { status: TreatmentStatus.IN_PROGRESS }, select: { id: true } }, clinicalAppointments: { where: { status: ClinicalAppointmentStatus.SCHEDULED, startAt: { gt: new Date() } }, orderBy: { startAt: 'asc' }, take: 1, select: { id: true, startAt: true } } } });
     if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
     return this.serialize(person);
   }
@@ -107,7 +107,7 @@ export class PeopleService {
       ...(normalized ? [{ normalizedDni: { contains: normalized } } satisfies Prisma.PersonWhereInput] : []),
     ] } : {};
     const [rows, total] = await this.prisma.$transaction([
-      this.prisma.person.findMany({ where, orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }], skip: (query.page - 1) * query.pageSize, take: query.pageSize, include: { clinicalPatient: { select: { personId: true } }, salaParticipations: { where: { endDate: null }, select: { id: true } } } }),
+      this.prisma.person.findMany({ where, orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }], skip: (query.page - 1) * query.pageSize, take: query.pageSize, include: { clinicalPatient: { select: { personId: true } }, salaParticipations: { where: { endDate: null }, select: { id: true } }, treatments: { where: { status: TreatmentStatus.IN_PROGRESS }, select: { id: true } }, clinicalAppointments: { where: { status: ClinicalAppointmentStatus.SCHEDULED, startAt: { gt: new Date() } }, orderBy: { startAt: 'asc' }, take: 1, select: { id: true, startAt: true } } } }),
       this.prisma.person.count({ where }),
     ]);
     return { data: await Promise.all(rows.map((person) => this.serialize(person))), meta: { page: query.page, pageSize: query.pageSize, total, totalPages: Math.ceil(total / query.pageSize) } };
@@ -118,10 +118,10 @@ export class PeopleService {
   }
   private generatePin(): string { return randomInt(0, 10000).toString().padStart(4, '0'); }
   private date(value: string): Date { return new Date(`${value}T00:00:00.000Z`); }
-  private async serialize(person: { id: string; firstName: string; lastName: string; dni: string; phone: string; birthDate: Date; email: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; socialWorkId: string | null; affiliateNumber: string | null; clinicalPatient?: { personId: string } | null; salaParticipations?: { id: string }[] }) {
+  private async serialize(person: { id: string; firstName: string; lastName: string; dni: string; phone: string; birthDate: Date; email: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; socialWorkId: string | null; affiliateNumber: string | null; clinicalPatient?: { personId: string } | null; salaParticipations?: { id: string }[]; treatments?: { id: string }[]; clinicalAppointments?: { id: string; startAt: Date }[] }) {
     const isClinicalPatient = Boolean(person.clinicalPatient);
     const hasSalaParticipation = (person.salaParticipations?.length ?? 0) > 0;
-    return { id: person.id, firstName: person.firstName, lastName: person.lastName, dni: person.dni, phone: person.phone, birthDate: person.birthDate.toISOString().slice(0, 10), email: person.email, emergencyContactName: person.emergencyContactName, emergencyContactPhone: person.emergencyContactPhone, socialWorkId: person.socialWorkId, affiliateNumber: person.affiliateNumber, status: await this.activity.isActive(person.id) ? 'ACTIVE' as const : 'INACTIVE' as const, contexts: [hasSalaParticipation ? 'SALA' : '', isClinicalPatient ? 'CLINIC' : ''].filter(Boolean), hasSalaParticipation, isClinicalPatient };
+    return { id: person.id, firstName: person.firstName, lastName: person.lastName, dni: person.dni, phone: person.phone, birthDate: person.birthDate.toISOString().slice(0, 10), email: person.email, emergencyContactName: person.emergencyContactName, emergencyContactPhone: person.emergencyContactPhone, socialWorkId: person.socialWorkId, affiliateNumber: person.affiliateNumber, status: await this.activity.isActive(person.id) ? 'ACTIVE' as const : 'INACTIVE' as const, contexts: [hasSalaParticipation ? 'SALA' : '', isClinicalPatient ? 'CLINIC' : ''].filter(Boolean), hasSalaParticipation, isClinicalPatient, activeTreatmentCount: person.treatments?.length ?? 0, nextClinicalAppointment: person.clinicalAppointments?.[0]?.startAt?.toISOString() ?? null };
   }
   private duplicateDni(): never { throw new ConflictException({ code: 'PERSON_DNI_ALREADY_EXISTS', message: 'A person with this DNI already exists' }); }
 }
