@@ -12,6 +12,7 @@
     "db:reset": "pnpm --filter @athleta/api prisma:reset",
     "db:seed": "pnpm --filter @athleta/api prisma:seed",
     "db:seed:demo": "pnpm --filter @athleta/api prisma:seed:demo",
+    "seed:uat": "pnpm --filter @athleta/api prisma:seed:demo",
     "generate:api": "pnpm --filter @athleta/api openapi:generate && pnpm --filter @athleta/api-client generate",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
