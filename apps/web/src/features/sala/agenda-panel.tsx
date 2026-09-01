@@ -10,6 +10,7 @@ import {
   markSalaOccurrenceAbsent,
   markSalaOccurrenceAttended,
 } from '@athleta/api-client';
+import { formatOperationalTime } from '../../lib/operational-time';
 
 type PersonOption = { id: string; firstName: string; lastName: string; dni: string };
 type OccurrenceStatus = 'RESERVED' | 'ATTENDED' | 'CANCELLED' | 'ABSENT';
@@ -52,11 +53,7 @@ function localDate(): string {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-function timeLabel(value: string): string {
-  const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) return `${String(parsed.getUTCHours()).padStart(2, '0')}:${String(parsed.getUTCMinutes()).padStart(2, '0')}`;
-  return value.slice(0, 5);
-}
+const timeLabel = formatOperationalTime;
 
 function mutationOptions(csrfToken: string): RequestInit {
   return { credentials: 'include', headers: { 'x-csrf-token': csrfToken } };

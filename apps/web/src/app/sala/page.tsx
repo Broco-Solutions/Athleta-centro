@@ -10,6 +10,7 @@ import { AgendaPanel } from '../../features/sala/agenda-panel';
 import { RoutinePanel, type ExerciseDefinition, type Routine } from '../../features/sala/routine-panel';
 import { PhysicalEvaluationPanel } from '../../features/sala/physical-evaluation-panel';
 import { PaymentPanel } from '../../features/sala/payment-panel';
+import { formatOperationalTime } from '../../lib/operational-time';
 
 type Person = { id: string; firstName: string; lastName: string; dni: string };
 type Slot = { id: string; weekday: string; startTime: string };
@@ -19,7 +20,7 @@ type Participation = { id: string; endDate?: string | null };
 type FixedBooking = { id: string; startDate: string; endDate?: string | null; scheduleSlot?: Slot };
 type Reservation = { id: string; date: string; cancelledAt?: string | null; scheduleSlot?: Slot };
 const weekdayLabels: Record<string, string> = { MONDAY: 'Lunes', TUESDAY: 'Martes', WEDNESDAY: 'Miércoles', THURSDAY: 'Jueves', FRIDAY: 'Viernes', SATURDAY: 'Sábado', SUNDAY: 'Domingo' };
-const timeLabel = (value: string): string => { const match = value.match(/(?:T|^)(\d{2}:\d{2})/); return match?.[1] ?? value.slice(0, 5); };
+const timeLabel = formatOperationalTime;
 const endTimeLabel = (start: string, duration: number): string => { const [hour, minute] = start.split(':').map(Number); const total = (hour ?? 0) * 60 + (minute ?? 0) + duration; return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`; };
 const weekdayLabel = (value: string): string => weekdayLabels[value] ?? value;
 

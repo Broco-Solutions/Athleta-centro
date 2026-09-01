@@ -3,6 +3,7 @@ import React from 'react';
 
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
+import { formatOperationalTime } from '../../lib/operational-time';
 
 export const portalFetch = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(`/api/portal/${path}`, { credentials: 'include', ...init });
@@ -16,7 +17,8 @@ export const formatDate = (value: string): string => {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', dateStyle: 'short' }).format(new Date(value));
 };
 export const formatDateTime = (value: string): string => new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
-export const formatTime = (value: string): string => value.match(/(?:T|^)(\d{2}:\d{2})/)?.[1] ?? value;
+export { formatOperationalTime };
+export const formatTime = formatOperationalTime;
 export const today = (): string => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
 
 export function PortalNav(): React.JSX.Element {
