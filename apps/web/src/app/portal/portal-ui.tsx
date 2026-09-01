@@ -16,6 +16,7 @@ export const formatDate = (value: string): string => {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', dateStyle: 'short' }).format(new Date(value));
 };
 export const formatDateTime = (value: string): string => new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
+export const formatTime = (value: string): string => value.match(/(?:T|^)(\d{2}:\d{2})/)?.[1] ?? value;
 export const today = (): string => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
 
 export function PortalNav(): React.JSX.Element {
