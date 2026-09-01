@@ -74,6 +74,7 @@ if (!['normal', 'temporary', 'inactive', 'people', 'team', 'sala', 'occurrence',
     const plan = await prisma.salaPlan.create({ data: { name: 'Portal Reset E2E', monthlyAmount: 1000, isSelectable: true } });
     const person = await prisma.person.create({ data: { firstName: 'Portal', lastName: 'ResetE2E', dni: '40999444', normalizedDni: '40999444', phone: '3515550144', birthDate: new Date('1990-01-01T00:00:00Z') } });
     await prisma.salaParticipation.create({ data: { personId: person.id, mainProfessorId: user.id, planId: plan.id, startDate: new Date('2020-01-01T00:00:00Z') } });
+    await prisma.portalCredential.create({ data: { personId: person.id, pinHash: await argon2.hash('1234', { type: argon2.argon2id }), mustChangePin: false } });
   }
 }
 void main().finally(() => prisma.$disconnect());

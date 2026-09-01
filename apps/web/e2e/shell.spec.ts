@@ -16,6 +16,10 @@ test('resets a Portal PIN through the custom dialog and enters with the returned
   const pinDialog = page.getByRole('dialog', { name: 'Nuevo PIN del Portal' }); await expect(pinDialog).toBeVisible(); const pin = await pinDialog.getByLabel('PIN temporal').textContent(); expect(pin?.trim()).toMatch(/^\d{4}$/); await pinDialog.getByRole('button', { name: 'Entendido' }).click(); await page.getByRole('button', { name: 'Cerrar', exact: true }).click(); await page.getByRole('button', { name: /Cerrar sesión/ }).click();
   await page.waitForURL(/\/login$/); await page.goto('/portal/login', { waitUntil: 'domcontentloaded' }); await page.getByLabel('DNI').fill('40999444'); await page.getByLabel('PIN de 4 dígitos').fill(pin!.trim()); await page.getByRole('button', { name: 'Ingresar' }).click(); await expect(page).toHaveURL(/\/portal\/change-pin$/);
 });
+test('exposes Portal Sala, Clínica and profile workflows after login', async ({ page }) => {
+  fixture('portal-reset'); await page.goto('/portal/login'); await page.getByLabel('DNI').fill('40999444'); await page.getByLabel('PIN de 4 dígitos').fill('1234'); await page.getByRole('button', { name: 'Ingresar' }).click(); await expect(page).toHaveURL(/\/portal$/);
+  await expect(page.getByRole('link', { name: 'Sala', exact: true })).toBeVisible(); await expect(page.getByRole('link', { name: 'Mis datos', exact: true })).toBeVisible(); await page.getByRole('link', { name: 'Sala', exact: true }).click(); await expect(page).toHaveURL(/\/portal\/sala$/); await expect(page.getByRole('heading', { name: 'Reservar horario' })).toBeVisible(); await expect(page.getByRole('heading', { name: 'Mi rutina' })).toBeVisible(); await page.getByRole('link', { name: 'Mis datos', exact: true }).click(); await expect(page).toHaveURL(/\/portal\/profile$/); await expect(page.getByText('DNI')).toBeVisible(); await expect(page.getByText('id:')).toHaveCount(0);
+});
 test('manages a standard team account through explicit lifecycle actions', async ({ page }) => {
   fixture('team');
   await login(page, 'e2e.team@athleta.test');

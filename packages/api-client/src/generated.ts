@@ -6436,6 +6436,45 @@ export const portalControllerSala = async ( options?: RequestInit): Promise<port
 
 
 
+export type portalControllerSalaServicesResponse200 = {
+  data: void
+  status: 200
+}
+
+export type portalControllerSalaServicesResponseSuccess = (portalControllerSalaServicesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type portalControllerSalaServicesResponse = (portalControllerSalaServicesResponseSuccess)
+
+export const getPortalControllerSalaServicesUrl = () => {
+
+
+
+
+  return `/api/portal/sala/services`
+}
+
+export const portalControllerSalaServices = async ( options?: RequestInit): Promise<portalControllerSalaServicesResponse> => {
+
+  const res = await fetch(getPortalControllerSalaServicesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: portalControllerSalaServicesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as portalControllerSalaServicesResponse
+}
+
+
+
 export type portalControllerAvailabilityResponse200 = {
   data: void
   status: 200
