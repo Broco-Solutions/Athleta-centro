@@ -1627,6 +1627,8 @@ Implementar operaciones que solo pueden finalizarse correctamente cuando varios 
 
 ### M6.1 — Derived Person status
 
+**Status:** DONE (`dceb8ef`)
+
 **Model:** `MODEL_DEEP`
 
 **Dependencies:** M2.2 Sala Participation, M3.1 Clinical Appointments, and
@@ -1646,6 +1648,8 @@ No persist `Person.status` as source of truth.
 ---
 
 ### M6.2 — Global Person inactivation
+
+**Status:** DONE (`932c072`)
 
 **Model:** `MODEL_DEEP`
 
@@ -1677,6 +1681,8 @@ negative scenarios
 
 ### M6.3 — InternalUser inactivation / role removal preconditions
 
+**Status:** DONE (`5ef6b82`)
+
 **Model:** `MODEL_DEEP`
 
 Scope:
@@ -1694,6 +1700,8 @@ Tests mandatory for each documented blocking condition.
 
 ### M6.4 — Cross-module read models
 
+**Status:** DONE (`5b02d1f`)
+
 **Model:** `MODEL_STANDARD`
 
 Scope:
@@ -1710,6 +1718,8 @@ Do not create a giant aggregate.
 ---
 
 ### GATE 6
+
+**Status:** LOCAL GREEN; deployment verification pending
 
 Required:
 
