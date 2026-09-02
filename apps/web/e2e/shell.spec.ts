@@ -190,3 +190,13 @@ test('navigates from People to a real Person workspace and clinical entry flows'
   await page.getByRole('link', { name: 'Registrar atención' }).click();
   await expect(page.getByRole('heading', { name: 'Registrar atención directa' })).toBeVisible();
 });
+
+test('renders the unified Reservations timeline with Sala and active professional rows', async ({ page }) => {
+  fixture('physical-evaluation');
+  await login(page, 'e2e.physical-evaluation@athleta.test');
+  await page.getByRole('link', { name: 'Reservas' }).click();
+  await expect(page.getByRole('heading', { name: 'Reservas' })).toBeVisible();
+  await expect(page.getByTestId('reservations-timeline').getByText('Sala', { exact: true })).toBeVisible();
+  await expect.poll(async () => page.getByTestId('reservations-timeline').locator('div.sticky p.font-medium').count()).toBeGreaterThan(1);
+  await expect(page.getByText(':15', { exact: true })).toHaveCount(0);
+});

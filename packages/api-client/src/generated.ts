@@ -556,6 +556,100 @@ export interface ExpenseInput { [key: string]: unknown }
 
 export interface IncomeInput { [key: string]: unknown }
 
+export interface ReservationsProfessionalDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+  discipline?: string;
+}
+
+export interface ReservationsPersonDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dni: string;
+}
+
+export type ReservationBookingDtoSource = typeof ReservationBookingDtoSource[keyof typeof ReservationBookingDtoSource];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReservationBookingDtoSource = {
+  SALA: 'SALA',
+  CLINIC: 'CLINIC',
+} as const;
+
+export type ReservationBookingDtoStatus = typeof ReservationBookingDtoStatus[keyof typeof ReservationBookingDtoStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReservationBookingDtoStatus = {
+  RESERVED: 'RESERVED',
+  SCHEDULED: 'SCHEDULED',
+  ATTENDED: 'ATTENDED',
+  ABSENT: 'ABSENT',
+  CANCELLED: 'CANCELLED',
+} as const;
+
+export type ReservationBookingDtoOrigin = typeof ReservationBookingDtoOrigin[keyof typeof ReservationBookingDtoOrigin];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReservationBookingDtoOrigin = {
+  FIXED: 'FIXED',
+  ONE_OFF: 'ONE_OFF',
+  SPONTANEOUS: 'SPONTANEOUS',
+  APPOINTMENT: 'APPOINTMENT',
+} as const;
+
+/**
+ * @nullable
+ */
+export type ReservationBookingDtoProfessional = ReservationsProfessionalDto | null;
+
+export interface ReservationBookingDto {
+  id: string;
+  source: ReservationBookingDtoSource;
+  person: ReservationsPersonDto;
+  startTime: string;
+  /** @minimum 15 */
+  durationMinutes: number;
+  serviceName: string;
+  status: ReservationBookingDtoStatus;
+  origin?: ReservationBookingDtoOrigin;
+  /** @nullable */
+  professional?: ReservationBookingDtoProfessional;
+  scheduleSlotId?: string;
+}
+
+export type ReservationRowDtoKind = typeof ReservationRowDtoKind[keyof typeof ReservationRowDtoKind];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReservationRowDtoKind = {
+  SALA: 'SALA',
+  PROFESSIONAL: 'PROFESSIONAL',
+} as const;
+
+/**
+ * @nullable
+ */
+export type ReservationRowDtoProfessional = ReservationsProfessionalDto | null;
+
+export interface ReservationRowDto {
+  kind: ReservationRowDtoKind;
+  /** @nullable */
+  professional?: ReservationRowDtoProfessional;
+  bookings: ReservationBookingDto[];
+}
+
+export interface ReservationsResponseDto {
+  date: string;
+  startTime: string;
+  endTime: string;
+  rows: ReservationRowDto[];
+}
+
 export type InternalLoginBody = {
   email: string;
   password: string;
@@ -614,6 +708,10 @@ export type ListSalaPlans200DataItem = { [key: string]: unknown };
 
 export type ListSalaPlans200 = {
   data?: ListSalaPlans200DataItem[];
+};
+
+export type GetReservationsTimelineParams = {
+date: string;
 };
 
 /**
@@ -6849,4 +6947,50 @@ export const portalControllerCancel = async (id: string, options?: RequestInit):
 
   const data: portalControllerCancelResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as portalControllerCancelResponse
+}
+
+
+
+export type getReservationsTimelineResponseDefault = {
+  data: ReservationsResponseDto
+  status: number
+}
+
+;
+export type getReservationsTimelineResponseError = (getReservationsTimelineResponseDefault) & {
+  headers: Headers;
+};
+
+export type getReservationsTimelineResponse = (getReservationsTimelineResponseError)
+
+export const getGetReservationsTimelineUrl = (params: GetReservationsTimelineParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/reservations?${stringifiedParams}` : `/api/reservations`
+}
+
+export const getReservationsTimeline = async (params: GetReservationsTimelineParams, options?: RequestInit): Promise<getReservationsTimelineResponse> => {
+
+  const res = await fetch(getGetReservationsTimelineUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getReservationsTimelineResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getReservationsTimelineResponse
 }
