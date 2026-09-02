@@ -171,6 +171,7 @@ describe('Sala configuration API', () => {
     expect(offeredWithoutSelf).toHaveLength(3);
     expect(offeredWithoutSelf.every((slot) => slot.available === 1)).toBe(true);
     const changed = await sala.changeFixed({ id: fixed.id, personId: person.id, salaParticipationId: participation.id, scheduleSlotId: window.id, serviceTypeId: service.id, startTime: '09:30', startDate: '2026-08-31' });
+    expect(changed.id).toBe(fixed.id);
     expect(changed.startTime?.toISOString().slice(11, 16)).toBe('09:30');
     const persisted = await prisma.fixedSalaBooking.findFirstOrThrow({ where: { id: changed.id } });
     expect({ startTime: persisted.startTime?.toISOString().slice(11, 16), serviceDurationMinutes: persisted.serviceDurationMinutes, scheduleSlotId: persisted.scheduleSlotId }).toEqual({ startTime: '09:30', serviceDurationMinutes: 45, scheduleSlotId: window.id });

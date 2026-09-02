@@ -49,7 +49,7 @@ function renderPortalSala(): void {
 
 function fixedHandlers(state: { weekday: string; startTime: string; active: boolean }, onChange?: (body: Record<string, string>) => void, onAvailability?: (url: string) => void): void {
   server.use(
-    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: state.active ? [{ id: 'fixed-1', startDate: '2026-01-01', startTime: state.startTime, serviceType: { id: 'service', name: 'Rehabilitación' }, scheduleSlot: { id: 'window', weekday: state.weekday } }] : [], routine: null, evaluations: [], paymentState: 'PENDING' } })),
+    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: state.active ? [{ id: 'fixed-1', startDate: '2026-09-07', startTime: state.startTime, serviceType: { id: 'service', name: 'Rehabilitación' }, scheduleSlot: { id: 'window', weekday: state.weekday } }] : [], routine: null, evaluations: [], paymentState: 'PENDING' } })),
     http.get('http://localhost:3000/api/portal/sala/availability', ({ request }) => { onAvailability?.(request.url); return HttpResponse.json({ data: [
       { scheduleSlotId: 'window', startTime: '09:00', endTime: '09:15', available: true, date: '2026-09-01' },
       { scheduleSlotId: 'window', startTime: '09:15', endTime: '09:30', available: true, date: '2026-09-01' },
@@ -71,14 +71,15 @@ it('updates an offered fixed-booking time and persists it after reload', async (
   const dialog = await screen.findByRole('dialog', { name: 'Modificar turno fijo' });
   expect(within(dialog).getByRole('combobox', { name: 'Servicio' })).toHaveValue('service');
   expect(within(dialog).getByRole('combobox', { name: 'Día' })).toHaveValue('MONDAY');
-  expect(within(dialog).getByRole('combobox', { name: 'Hora' })).toHaveValue('10:00');
+  expect(within(dialog).getByRole('combobox', { name: 'Hora' })).toHaveValue('window:10:00');
   await within(dialog).findByRole('option', { name: '09:30' });
-  fireEvent.change(within(dialog).getByRole('combobox', { name: 'Hora' }), { target: { value: '09:30' } });
+  fireEvent.change(within(dialog).getByRole('combobox', { name: 'Hora' }), { target: { value: 'window:09:30' } });
   const save = within(dialog).getByRole('button', { name: 'Guardar cambios' });
   await waitFor(() => expect(save).toBeEnabled());
   fireEvent.click(save);
   await waitFor(() => expect(changed).toMatchObject({ scheduleSlotId: 'window', serviceTypeId: 'service', startTime: '09:30', startDate: expect.any(String) }));
   expect(Object.keys(changed ?? {}).sort()).toEqual(['scheduleSlotId', 'serviceTypeId', 'startDate', 'startTime']);
+  expect(changed?.startDate).toBe('2026-09-07');
   expect(availabilityUrl).toContain('excludeFixedBookingId=fixed-1');
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Modificar turno fijo' })).not.toBeInTheDocument());
   expect(await screen.findByText('Turno fijo modificado.')).toBeInTheDocument();
