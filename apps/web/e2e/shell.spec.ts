@@ -163,13 +163,13 @@ test('creates a physical test from Sala configuration and keeps it after reload'
   fixture('service'); await login(page, 'e2e.service@athleta.test'); await page.getByRole('link', { name: 'Sala' }).click(); await page.getByRole('link', { name: 'Configuración', exact: true }).click(); await page.getByText('Tests físicos', { exact: true }).click(); await page.getByRole('button', { name: 'Nuevo test' }).click();
   const dialog = page.getByRole('dialog', { name: 'Nuevo test físico' }); const name = `Test físico E2E ${Date.now()}`; await dialog.getByLabel('Nombre del test físico').fill(name); await dialog.getByLabel('Tipo del test físico').fill('distancia'); await dialog.getByLabel('Descripción del test físico').fill('Dato de prueba'); const responsePromise = page.waitForResponse((response) => response.url().endsWith('/api/sala/physical-test-definitions') && response.request().method() === 'POST'); await dialog.getByRole('button', { name: 'Guardar' }).click(); expect((await responsePromise).status()).toBe(201); await expect(page.getByText(name)).toBeVisible(); await page.reload(); await page.getByText('Tests físicos', { exact: true }).click(); await expect(page.getByText(name)).toBeVisible();
 });
-test('registers a physical evaluation for Homer and keeps it after reload', async ({ page }) => {
-  fixture('physical-evaluation'); await login(page, 'e2e.physical-evaluation@athleta.test'); await page.getByRole('link', { name: 'Sala' }).click();
-  await page.getByLabel('Alumno').selectOption({ label: 'Homer Simpson · 45000001' }); await page.getByLabel('Participación').selectOption({ index: 1 });
+test('navigates from People to Homer Sala workspace and registers a physical evaluation', async ({ page }) => {
+  fixture('physical-evaluation'); await login(page, 'e2e.physical-evaluation@athleta.test'); await page.getByRole('link', { name: 'Personas' }).click(); await page.getByLabel('Buscar Personas').fill('45000001'); await page.getByRole('link', { name: 'Abrir Sala' }).click();
+  await expect(page.getByRole('heading', { name: 'Homer Simpson' })).toBeVisible(); await expect(page.getByText('Participación activa')).toBeVisible(); await expect(page.getByRole('link', { name: 'Evaluaciones físicas' })).toBeVisible(); await page.getByRole('link', { name: 'Evaluaciones físicas' }).click();
   await expect(page.getByRole('heading', { name: 'Evaluaciones físicas' })).toBeVisible(); await page.getByRole('button', { name: 'Nueva evaluación física' }).click();
   const dialog = page.getByRole('dialog', { name: 'Nueva evaluación física' }); await expect(dialog).toBeVisible(); await dialog.getByLabel('Test físico').selectOption({ label: 'Evaluación física E2E' }); await dialog.getByLabel('Resultado').fill('42');
   const responsePromise = page.waitForResponse((response) => response.url().endsWith('/api/sala/physical-evaluations') && response.request().method() === 'POST'); await dialog.getByRole('button', { name: 'Guardar' }).click(); expect((await responsePromise).status()).toBe(201);
-  await expect(page.getByText(/Evaluación física E2E: 42/)).toBeVisible(); await page.reload(); await page.getByLabel('Alumno').selectOption({ label: 'Homer Simpson · 45000001' }); await page.getByLabel('Participación').selectOption({ index: 1 }); await expect(page.getByText(/Evaluación física E2E: 42/)).toBeVisible();
+  await expect(page.getByText(/Evaluación física E2E: 42/)).toBeVisible(); await page.reload(); await expect(page.getByRole('heading', { name: 'Homer Simpson' })).toBeVisible(); await expect(page.getByText(/Evaluación física E2E: 42/)).toBeVisible();
 });
 
 test('navigates from People to a real Person workspace and clinical entry flows', async ({ page }) => {
@@ -179,7 +179,7 @@ test('navigates from People to a real Person workspace and clinical entry flows'
   const row = page.getByRole('row').filter({ hasText: 'SalaE2E, Persona' }).first();
   await row.getByRole('link', { name: 'Abrir ficha' }).click();
   await expect(page).toHaveURL(/\/people\/[0-9a-f-]+$/);
-  await expect(page.getByRole('heading', { name: 'Ficha de Persona' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Persona SalaE2E' })).toBeVisible();
   await page.getByRole('button', { name: 'Dar de alta en Clínica' }).click();
   await expect(page.getByText('Paciente de Clínica')).toBeVisible();
   await page.reload();

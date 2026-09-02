@@ -34,3 +34,10 @@ export function SalaContext({ personId }: { personId: string }): React.JSX.Eleme
   useEffect(() => { fetch(`/api/sala/participations/person/${personId}`, { credentials: 'include' }).then((r) => r.json()).then((v: { data?: { data?: Array<{ endDate?: string | null }> } | Array<{ endDate?: string | null }> }) => { const rows = Array.isArray(v.data) ? v.data : v.data?.data ?? []; setActive(rows.some((row) => !row.endDate)); }).catch(() => setActive(false)); }, [personId]);
   return <div className="mt-4 rounded-md bg-slate-50 p-3 text-sm">Sala<br />{active === null ? 'Verificando participación…' : active ? <span className="font-medium text-emerald-700">✓ Participación activa</span> : <span className="text-muted-foreground">Sin participación activa</span>}</div>;
 }
+
+export function PersonIdentity({ personId }: { personId: string }): React.JSX.Element {
+  const person = useQuery({ queryKey: ['person', personId], queryFn: async () => { const response = await fetch(`/api/people/${personId}`, { credentials: 'include' }); const payload = await response.json() as { data?: { firstName?: string; lastName?: string; dni?: string; status?: string } }; if (!response.ok || !payload.data) throw new Error('READ_FAILED'); return payload.data; } });
+  if (person.isLoading) return <><p className="text-sm text-muted-foreground">Cargando Persona…</p><h1 className="text-2xl font-semibold">Ficha de Persona</h1></>;
+  if (person.isError || !person.data) return <><h1 className="text-2xl font-semibold">Ficha de Persona</h1><p role="alert" className="text-sm text-red-700">No pudimos cargar la identidad.</p></>;
+  return <><h1 className="text-3xl font-semibold">{person.data.firstName} {person.data.lastName}</h1><p className="mt-1 text-sm">DNI {person.data.dni} · <span className={person.data.status === 'ACTIVE' ? 'font-medium text-emerald-700' : 'text-muted-foreground'}>{person.data.status === 'ACTIVE' ? 'Activo' : 'Inactivo'}</span></p></>;
+}

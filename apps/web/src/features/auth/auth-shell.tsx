@@ -14,5 +14,5 @@ export function AuthShell({ children }: { children: React.ReactNode }): React.JS
   const current = session.data;
   if (!current) return <main />;
   if (current.mustChangePassword) { if (typeof window !== 'undefined') window.location.assign('/change-password'); return <main />; }
-  return <>{children}<Button aria-label="Cerrar sesión" variant="ghost" className="fixed right-5 top-5" disabled={signOut.isPending} onClick={() => signOut.mutate(current.csrfToken)}><LogOut size={16} /> Cerrar sesión</Button></>;
+  return <><div className="fixed inset-x-0 top-0 z-40 flex h-14 justify-end border-b bg-background/95 px-4 backdrop-blur md:px-8"><Button aria-label="Cerrar sesión" variant="ghost" className="my-2" disabled={signOut.isPending} onClick={() => signOut.mutate(current.csrfToken)}><LogOut size={16} /> Cerrar sesión</Button></div>{children}</>;
 }
