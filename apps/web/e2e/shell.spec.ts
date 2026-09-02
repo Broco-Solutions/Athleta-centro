@@ -159,6 +159,10 @@ test('retires a Sala service and removes it from new-booking selectors', async (
   await page.getByRole('complementary').getByRole('link', { name: 'Sala' }).click();
   await expect(page.getByLabel('Servicio').getByRole('option', { name: /Servicio Retiro E2E/ })).toHaveCount(0);
 });
+test('creates a physical test from Sala configuration and keeps it after reload', async ({ page }) => {
+  fixture('service'); await login(page, 'e2e.service@athleta.test'); await page.getByRole('link', { name: 'Sala' }).click(); await page.getByRole('link', { name: 'Configuración', exact: true }).click(); await page.getByText('Tests físicos', { exact: true }).click(); await page.getByRole('button', { name: 'Nuevo test' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Nuevo test físico' }); const name = `Test físico E2E ${Date.now()}`; await dialog.getByLabel('Nombre del test físico').fill(name); await dialog.getByLabel('Tipo del test físico').fill('distancia'); await dialog.getByLabel('Descripción del test físico').fill('Dato de prueba'); const responsePromise = page.waitForResponse((response) => response.url().endsWith('/api/sala/physical-test-definitions') && response.request().method() === 'POST'); await dialog.getByRole('button', { name: 'Guardar' }).click(); expect((await responsePromise).status()).toBe(201); await expect(page.getByText(name)).toBeVisible(); await page.reload(); await page.getByText('Tests físicos', { exact: true }).click(); await expect(page.getByText(name)).toBeVisible();
+});
 
 test('navigates from People to a real Person workspace and clinical entry flows', async ({ page }) => {
   fixture('sala');
