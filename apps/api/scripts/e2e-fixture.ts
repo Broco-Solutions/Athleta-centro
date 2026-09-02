@@ -32,7 +32,7 @@ if (!['normal', 'temporary', 'inactive', 'people', 'team', 'sala', 'occurrence',
     await prisma.salaParticipation.deleteMany({ where: { personId: { in: personIds } } });
     await prisma.portalCredential.deleteMany({ where: { personId: { in: personIds } } });
     await prisma.person.deleteMany({ where: { id: { in: personIds } } });
-    const slots = await prisma.salaScheduleSlot.findMany({ where: { startTime: new Date('1970-01-01T20:00:00.000Z') }, select: { id: true } });
+    const slots = await prisma.salaScheduleSlot.findMany({ where: { OR: [{ startTime: new Date('1970-01-01T20:00:00.000Z') }, { startTime: new Date('1970-01-01T08:00:00.000Z'), durationMinutes: { in: [720, 780] } }] }, select: { id: true } });
     await prisma.salaScheduleException.deleteMany({ where: { scheduleSlotId: { in: slots.map((slot) => slot.id) } } });
     await prisma.salaScheduleSlot.deleteMany({ where: { id: { in: slots.map((slot) => slot.id) } } });
     await prisma.salaPlan.deleteMany({ where: { name: 'Occurrence E2E' } });
@@ -64,12 +64,12 @@ if (!['normal', 'temporary', 'inactive', 'people', 'team', 'sala', 'occurrence',
     const weekday = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'][day.getUTCDay()] as SalaWeekday;
     const professor = await prisma.internalUser.create({ data: { firstName: 'Profesor', lastName: 'Occurrence', email: 'e2e.occurrence.professor@athleta.test', normalizedEmail: 'e2e.occurrence.professor@athleta.test', status: 'ACTIVE', roles: { create: { role: Role.PROFESSOR } } } });
     const plan = await prisma.salaPlan.create({ data: { name: 'Occurrence E2E', monthlyAmount: 1000, isSelectable: true } });
-    const slot = await prisma.salaScheduleSlot.create({ data: { weekday, startTime: new Date('1970-01-01T20:00:00.000Z'), durationMinutes: 60, specificCapacity: 3 } });
+    const slot = await prisma.salaScheduleSlot.create({ data: { weekday, startTime: new Date('1970-01-01T08:00:00.000Z'), durationMinutes: 780, specificCapacity: 3 } });
     const fixedPerson = await prisma.person.create({ data: { firstName: 'Fija', lastName: 'OccurrenceE2E', dni: '40999661', normalizedDni: '40999661', phone: '3515550161', birthDate: new Date('1993-04-12T00:00:00Z') } });
     const spontaneousPerson = await prisma.person.create({ data: { firstName: 'Espontánea', lastName: 'OccurrenceE2E', dni: '40999662', normalizedDni: '40999662', phone: '3515550162', birthDate: new Date('1994-05-13T00:00:00Z') } });
     const fixedParticipation = await prisma.salaParticipation.create({ data: { personId: fixedPerson.id, mainProfessorId: professor.id, planId: plan.id, startDate: new Date('2026-01-01T00:00:00Z') } });
     await prisma.salaParticipation.create({ data: { personId: spontaneousPerson.id, mainProfessorId: professor.id, planId: plan.id, startDate: new Date('2026-01-01T00:00:00Z') } });
-    await prisma.fixedSalaBooking.create({ data: { personId: fixedPerson.id, salaParticipationId: fixedParticipation.id, scheduleSlotId: slot.id, startDate: new Date('2026-01-01T00:00:00Z') } });
+    await prisma.fixedSalaBooking.create({ data: { personId: fixedPerson.id, salaParticipationId: fixedParticipation.id, scheduleSlotId: slot.id, startTime: new Date('1970-01-01T20:00:00.000Z'), startDate: new Date('2026-01-01T00:00:00Z') } });
   }
   if (kind === 'multislot') {
     const professor = await prisma.internalUser.create({ data: { firstName: 'Profesor', lastName: 'MultiSlot', email: 'e2e.multislot.professor@athleta.test', normalizedEmail: 'e2e.multislot.professor@athleta.test', status: 'ACTIVE', roles: { create: { role: Role.PROFESSOR } } } }); const plan = await prisma.salaPlan.create({ data: { name: 'Multi slot E2E', monthlyAmount: 1000 } });

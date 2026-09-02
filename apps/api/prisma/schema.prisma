@@ -729,6 +729,7 @@ model SalaOccurrence {
   personId            String               @map("person_id") @db.Uuid
   scheduleSlotId      String               @map("schedule_slot_id") @db.Uuid
   date                DateTime             @db.Date
+  startTime           DateTime?            @map("start_time") @db.Time(0)
   origin              SalaOccurrenceOrigin
   status              SalaOccurrenceStatus
   fixedSalaBookingId  String?              @map("fixed_sala_booking_id") @db.Uuid

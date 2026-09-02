@@ -50,7 +50,7 @@ describe('SalaOccurrence persistence and API', () => {
 
   afterAll(() => app.close());
 
-  async function setup(date = '2026-08-27', weekday: SalaWeekday = 'THURSDAY') {
+  async function setup(date = '2026-08-27', weekday: SalaWeekday = 'THURSDAY', windowDuration = 60) {
     const suffix = randomUUID();
     const actor = await users.create({ firstName: 'Agenda', lastName: 'Operator', email: `operator-${suffix}@athleta.test`, roles: [Role.ADMINISTRATIVE] });
     const professor = await users.create({ firstName: 'Professor', lastName: 'Synthetic', email: `professor-${suffix}@athleta.test`, roles: [Role.PROFESSOR] });
@@ -58,7 +58,7 @@ describe('SalaOccurrence persistence and API', () => {
     const person = await prisma.person.create({ data: { firstName: 'Persona', lastName: 'Occurrence', dni, normalizedDni: dni, phone: '3515550101', birthDate: new Date('1990-01-01T00:00:00Z') } });
     const plan = await prisma.salaPlan.create({ data: { name: `Plan-${suffix}`, monthlyAmount: 1000 } });
     const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' });
-    const slot = await sala.createSlot({ weekday, startTime: '09:00', durationMinutes: 60, specificCapacity: 5 });
+    const slot = await sala.createSlot({ weekday, startTime: '09:00', durationMinutes: windowDuration, specificCapacity: 5 });
     return { actor, person, participation, slot, date };
   }
 
@@ -112,6 +112,21 @@ describe('SalaOccurrence persistence and API', () => {
     const spontaneous = await sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date, origin: SalaOccurrenceOrigin.SPONTANEOUS, status: SalaOccurrenceStatus.ATTENDED }, fixture.actor.id);
     expect(spontaneous).toMatchObject({ origin: 'SPONTANEOUS', status: 'ATTENDED' });
     await expect(sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date, origin: SalaOccurrenceOrigin.SPONTANEOUS, status: SalaOccurrenceStatus.ATTENDED }, fixture.actor.id)).rejects.toMatchObject({ response: { code: 'SALA_OCCURRENCE_DUPLICATE' } });
+  });
+
+  it('creates spontaneous attendance at the selected 15-minute start time', async () => {
+    const fixture = await setup('2026-08-27', 'THURSDAY', 120);
+    const spontaneous = await sala.createSpontaneousOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date, startTime: '09:30' }, fixture.actor.id);
+    expect(spontaneous).toMatchObject({ origin: 'SPONTANEOUS', status: 'ATTENDED' });
+    expect(await prisma.oneOffReservation.findUniqueOrThrow({ where: { personId_scheduleSlotId_date: { personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date } } })).toMatchObject({ serviceDurationMinutes: 60, startTime: new Date('1970-01-01T09:30:00.000Z') });
+    expect((await sala.agenda(fixture.date)).find((item) => item.slot.startTime === '09:30')?.people[0]).toMatchObject({ startTime: '09:30', durationMinutes: 60, origin: 'SPONTANEOUS' });
+  });
+
+  it('uses the 60-minute Sala default instead of the opening-window duration', async () => {
+    const fixture = await setup('2026-08-27', 'THURSDAY', 300);
+    const reservation = await sala.createReservation({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, date: fixture.date });
+    expect(reservation.serviceDurationMinutes).toBe(60);
+    expect((await sala.agenda(fixture.date)).find((item) => item.slot.startTime === '09:00')?.people[0]).toMatchObject({ startTime: '09:00', durationMinutes: 60 });
   });
 
   it('projects closure as CANCELLED while preserving the next fixed occurrence', async () => {

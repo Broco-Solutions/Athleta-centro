@@ -19,6 +19,7 @@ export class OneOffReservationDto { @ApiProperty({ type: String, format: 'uuid' 
 export class ChangeFixedBookingDto extends FixedBookingDto { @ApiProperty({ type: String, format: 'uuid' }) @IsString() id!: string; }
 export class EndFixedBookingDto { @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) endDate!: string; }
 export class OccurrenceReferenceDto { @ApiProperty({ type: String, format: 'uuid' }) @IsString() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsString() scheduleSlotId!: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) date!: string; }
+export class SpontaneousOccurrenceDto extends OccurrenceReferenceDto { @ApiProperty({ type: String, example: '10:30', pattern: '^([01]\\d|2[0-3]):(00|15|30|45)$' }) @Matches(/^([01]\d|2[0-3]):(00|15|30|45)$/) startTime!: string; }
 export class OccurrenceCorrectionDto extends OccurrenceReferenceDto { @ApiProperty({ enum: SalaOccurrenceStatus, type: String }) @IsEnum(SalaOccurrenceStatus) status!: SalaOccurrenceStatus; }
 export class SalaAgendaPersonDto { @ApiProperty({ type: String, format: 'uuid' }) id!: string; @ApiProperty({ type: String }) firstName!: string; @ApiProperty({ type: String }) lastName!: string; @ApiProperty({ type: String }) dni!: string; }
 export class SalaAgendaProfessionalDto { @ApiProperty({ type: String, format: 'uuid' }) id!: string; @ApiProperty({ type: String }) firstName!: string; @ApiProperty({ type: String }) lastName!: string; }

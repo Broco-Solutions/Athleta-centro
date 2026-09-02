@@ -362,6 +362,14 @@ export interface OccurrenceCorrectionDto {
   status: OccurrenceCorrectionDtoStatus;
 }
 
+export interface SpontaneousOccurrenceDto {
+  personId: string;
+  scheduleSlotId: string;
+  date: string;
+  /** @pattern ^([01]d|2[0-3]):(00|15|30|45)$ */
+  startTime: string;
+}
+
 export interface RoutineExerciseDto {
   exerciseDefinitionId: string;
   /**
@@ -2228,7 +2236,7 @@ export const getCreateSpontaneousSalaOccurrenceUrl = () => {
   return `/api/sala/occurrences/spontaneous`
 }
 
-export const createSpontaneousSalaOccurrence = async (occurrenceReferenceDto: OccurrenceReferenceDto, options?: RequestInit): Promise<createSpontaneousSalaOccurrenceResponse> => {
+export const createSpontaneousSalaOccurrence = async (spontaneousOccurrenceDto: SpontaneousOccurrenceDto, options?: RequestInit): Promise<createSpontaneousSalaOccurrenceResponse> => {
 
   const res = await fetch(getCreateSpontaneousSalaOccurrenceUrl(),
   {
@@ -2236,7 +2244,7 @@ export const createSpontaneousSalaOccurrence = async (occurrenceReferenceDto: Oc
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(
-      occurrenceReferenceDto,)
+      spontaneousOccurrenceDto,)
   }
 )
 
