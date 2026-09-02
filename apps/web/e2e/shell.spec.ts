@@ -86,10 +86,8 @@ test('operates lazy Sala occurrences and manual attendance corrections', async (
   await expect(page.getByRole('button', { name: /Espontánea OccurrenceE2E/ })).toContainText('60 min');
   await expect(page.getByText('Asistió').last()).toBeVisible();
   await page.getByRole('button', { name: 'Incorporación espontánea' }).click();
-  await page.getByLabel('Persona espontánea').selectOption({ label: 'OccurrenceE2E, Espontánea · 40999662' });
   await page.getByLabel('Horario espontáneo').selectOption({ label: '10:30' });
-  await page.getByRole('dialog').getByRole('button', { name: 'Incorporar' }).click();
-  await expect(page.getByText(/ya posee una presencia/)).toBeVisible();
+  await expect(page.getByLabel('Persona espontánea').getByRole('option', { name: 'OccurrenceE2E, Espontánea · 40999662' })).toHaveCount(0);
 });
 test('books a 60-minute Sala service across four slots and confirms overcapacity', async ({ page }) => {
   fixture('multislot'); await login(page, 'e2e.multislot@athleta.test'); await page.getByRole('link', { name: 'Sala' }).click();
