@@ -268,6 +268,16 @@ export interface SalaAgendaPersonDto {
   dni: string;
 }
 
+export interface SalaAgendaProfessionalDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
+export interface SalaAgendaServiceDto {
+  name: string;
+}
+
 export type SalaAgendaEntryDtoOrigin = typeof SalaAgendaEntryDtoOrigin[keyof typeof SalaAgendaEntryDtoOrigin];
 
 
@@ -289,12 +299,29 @@ export const SalaAgendaEntryDtoStatus = {
   ABSENT: 'ABSENT',
 } as const;
 
+/**
+ * @nullable
+ */
+export type SalaAgendaEntryDtoProfessional = SalaAgendaProfessionalDto | null;
+
+/**
+ * @nullable
+ */
+export type SalaAgendaEntryDtoService = SalaAgendaServiceDto | null;
+
 export interface SalaAgendaEntryDto {
   personId: string;
   person: SalaAgendaPersonDto;
   origin: SalaAgendaEntryDtoOrigin;
   status: SalaAgendaEntryDtoStatus;
   isMaterialized: boolean;
+  startTime: string;
+  /** @minimum 15 */
+  durationMinutes: number;
+  /** @nullable */
+  professional?: SalaAgendaEntryDtoProfessional;
+  /** @nullable */
+  service?: SalaAgendaEntryDtoService;
 }
 
 export interface SalaAgendaGroupDto {

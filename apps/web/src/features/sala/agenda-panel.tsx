@@ -1,121 +1,43 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, cn } from '@athleta/ui';
-import {
-  cancelSalaOccurrence,
-  createSpontaneousSalaOccurrence,
-  getSalaAgenda,
-  markSalaOccurrenceAbsent,
-  markSalaOccurrenceAttended,
-} from '@athleta/api-client';
+import { cancelSalaOccurrence, createSpontaneousSalaOccurrence, getSalaAgenda, markSalaOccurrenceAbsent, markSalaOccurrenceAttended } from '@athleta/api-client';
+import { CalendarPlus, Check, Clock3, UserRound, X } from 'lucide-react';
 import { formatOperationalTime } from '../../lib/operational-time';
 
-type PersonOption = { id: string; firstName: string; lastName: string; dni: string };
-type OccurrenceStatus = 'RESERVED' | 'ATTENDED' | 'CANCELLED' | 'ABSENT';
-type OccurrenceOrigin = 'FIXED' | 'ONE_OFF' | 'SPONTANEOUS';
-type AgendaPerson = {
-  personId: string;
-  person: PersonOption;
-  origin: OccurrenceOrigin;
-  status: OccurrenceStatus;
-};
-type AgendaGroup = {
-  slot: { id: string; scheduleSlotId?: string; startTime: string; durationMinutes: number };
-  capacity: number;
-  reserved: number;
-  available: number;
-  isOverbooked: boolean;
-  isClosed: boolean;
-  people: AgendaPerson[];
-};
+export type PersonOption = { id: string; firstName: string; lastName: string; dni: string };
+export type OccurrenceStatus = 'RESERVED' | 'ATTENDED' | 'CANCELLED' | 'ABSENT';
+export type OccurrenceOrigin = 'FIXED' | 'ONE_OFF' | 'SPONTANEOUS';
+export type AgendaEntry = { personId: string; person: PersonOption; origin: OccurrenceOrigin; status: OccurrenceStatus; isMaterialized?: boolean; startTime?: string; durationMinutes?: number; professional?: { id: string; firstName: string; lastName: string } | null; service?: { name: string } | null; scheduleSlotId?: string };
+export type AgendaGroup = { slot: { id: string; scheduleSlotId?: string; startTime: string; durationMinutes: number }; capacity: number; reserved: number; available: number; isOverbooked: boolean; isClosed: boolean; people: AgendaEntry[] };
+export type TimelineBooking = AgendaEntry & { startMinutes: number; durationMinutes: number; endMinutes: number; scheduleSlotId: string; groupId: string };
 
 const statusLabels: Record<OccurrenceStatus, string> = { RESERVED: 'Reservado', ATTENDED: 'Asistió', CANCELLED: 'Cancelado', ABSENT: 'Ausente' };
-const originLabels: Record<OccurrenceOrigin, string> = { FIXED: 'Turno fijo', ONE_OFF: 'Reserva puntual', SPONTANEOUS: 'Espontáneo' };
-const statusClasses: Record<OccurrenceStatus, string> = {
-  RESERVED: 'bg-sky-50 text-sky-800',
-  ATTENDED: 'bg-emerald-50 text-emerald-800',
-  CANCELLED: 'bg-slate-100 text-slate-700',
-  ABSENT: 'bg-amber-50 text-amber-900',
-};
+const originLabels: Record<OccurrenceOrigin, string> = { FIXED: 'Turno fijo', ONE_OFF: 'Reserva puntual', SPONTANEOUS: 'Espontánea' };
+const statusClasses: Record<OccurrenceStatus, string> = { RESERVED: 'border-sky-200 bg-sky-50 text-sky-900', ATTENDED: 'border-emerald-200 bg-emerald-50 text-emerald-900', CANCELLED: 'border-slate-200 bg-slate-100 text-slate-600', ABSENT: 'border-amber-200 bg-amber-50 text-amber-950' };
+const statusIcons: Record<OccurrenceStatus, React.ReactNode> = { RESERVED: <Clock3 size={13} />, ATTENDED: <Check size={13} />, CANCELLED: <X size={13} />, ABSENT: <UserRound size={13} /> };
+const SLOT_WIDTH = 56;
+const ROW_HEIGHT = 88;
 
-function unwrapAgenda(value: unknown): AgendaGroup[] {
-  const envelope = value as { data?: { data?: AgendaGroup[] } | AgendaGroup[] };
-  const body = envelope.data;
-  if (Array.isArray(body)) return body;
-  return body?.data ?? [];
-}
+function minutes(value: string): number { if (value.includes('T')) { const parsed = new Date(value); return parsed.getUTCHours() * 60 + parsed.getUTCMinutes(); } const [hour = 0, minute = 0] = value.slice(0, 5).split(':').map(Number); return hour * 60 + minute; }
+function time(value: number): string { return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`; }
+function unwrapAgenda(value: unknown): AgendaGroup[] { const envelope = value as { data?: { data?: AgendaGroup[] } | AgendaGroup[] }; const body = envelope.data; return Array.isArray(body) ? body : body?.data ?? []; }
+export function buildTimelineBookings(groups: AgendaGroup[]): TimelineBooking[] { return groups.flatMap((group) => group.people.map((entry) => { const start = minutes(entry.startTime ?? group.slot.startTime); const duration = entry.durationMinutes ?? 15; return { ...entry, startMinutes: start, durationMinutes: duration, endMinutes: start + duration, scheduleSlotId: entry.scheduleSlotId ?? group.slot.scheduleSlotId ?? group.slot.id, groupId: group.slot.id }; })); }
+export function groupTimelineBookings(bookings: TimelineBooking[]): Array<{ key: string; professional: TimelineBooking['professional']; bookings: TimelineBooking[] }> { const rows = new Map<string, { key: string; professional: TimelineBooking['professional']; bookings: TimelineBooking[] }>(); bookings.forEach((booking) => { const key = booking.professional?.id || 'unknown'; const row = rows.get(key) ?? { key, professional: booking.professional, bookings: [] }; row.bookings.push(booking); rows.set(key, row); }); return [...rows.values()].map((row) => ({ ...row, bookings: [...row.bookings].sort((a, b) => a.startMinutes - b.startMinutes || a.endMinutes - b.endMinutes) })); }
+export function overlapLevels(bookings: TimelineBooking[]): Map<TimelineBooking, number> { const levels = new Map<TimelineBooking, number>(); bookings.forEach((booking) => { const occupied = [...levels.entries()].filter(([other]) => other.startMinutes < booking.endMinutes && booking.startMinutes < other.endMinutes).map(([, level]) => level); let level = 0; while (occupied.includes(level)) level += 1; levels.set(booking, level); }); return levels; }
+function localDate(): string { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()); const values = Object.fromEntries(parts.map((part) => [part.type, part.value])); return `${values.year}-${values.month}-${values.day}`; }
+function mutationOptions(csrfToken: string): RequestInit { return { credentials: 'include', headers: { 'x-csrf-token': csrfToken } }; }
+function personName(person: PersonOption): string { return `${person.firstName} ${person.lastName}`; }
 
-function localDate(): string {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
-}
+function BookingModal({ booking, date, pending, onAction, onClose }: { booking: TimelineBooking; date: string; pending: boolean; onAction: (status: Exclude<OccurrenceStatus, 'RESERVED'>) => void; onClose: () => void }): React.JSX.Element { const terminal = booking.status !== 'RESERVED'; return <div className="fixed inset-0 z-40 grid place-items-center bg-black/40 p-4" role="presentation"><div className="w-full max-w-md rounded-md bg-white p-6 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="agenda-booking-title"><div className="flex items-start justify-between gap-4"><div><p className="text-sm text-muted-foreground">Detalle del turno</p><h2 id="agenda-booking-title" className="text-xl font-semibold">{personName(booking.person)}</h2></div><button type="button" aria-label="Cerrar detalle" className="rounded-md p-1 hover:bg-slate-100" onClick={onClose}><X size={18} /></button></div><dl className="mt-5 grid grid-cols-2 gap-4 text-sm"><div><dt className="text-muted-foreground">Servicio</dt><dd className="font-medium">{booking.service?.name ?? 'Servicio no informado'}</dd></div><div><dt className="text-muted-foreground">Fecha</dt><dd className="font-medium">{date}</dd></div><div><dt className="text-muted-foreground">Horario</dt><dd className="font-medium">{time(booking.startMinutes)}–{time(booking.endMinutes)}</dd></div><div><dt className="text-muted-foreground">Duración</dt><dd className="font-medium">{booking.durationMinutes} min</dd></div><div><dt className="text-muted-foreground">Tipo</dt><dd className="font-medium">{originLabels[booking.origin]}</dd></div><div><dt className="text-muted-foreground">Estado</dt><dd><span className={cn('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium', statusClasses[booking.status])}>{statusIcons[booking.status]}{statusLabels[booking.status]}</span></dd></div></dl><div className="mt-6 flex flex-wrap justify-end gap-2"><Button type="button" variant="secondary" onClick={onClose}>Cerrar</Button>{!terminal ? <><Button type="button" variant="secondary" disabled={pending} onClick={() => onAction('ATTENDED')}>Asistió</Button><Button type="button" variant="secondary" disabled={pending} onClick={() => onAction('ABSENT')}>Ausente</Button><Button type="button" variant="secondary" disabled={pending} onClick={() => onAction('CANCELLED')}>Cancelar turno</Button></> : null}</div></div></div>; }
 
-const timeLabel = formatOperationalTime;
-
-function mutationOptions(csrfToken: string): RequestInit {
-  return { credentials: 'include', headers: { 'x-csrf-token': csrfToken } };
-}
+function SpontaneousModal({ date, groups, people, personId, slotId, pending, onPersonChange, onSlotChange, onSubmit, onClose }: { date: string; groups: AgendaGroup[]; people: PersonOption[]; personId: string; slotId: string; pending: boolean; onPersonChange: (value: string) => void; onSlotChange: (value: string) => void; onSubmit: () => void; onClose: () => void }): React.JSX.Element { const enabled = date === localDate(); return <div className="fixed inset-0 z-40 grid place-items-center bg-black/40 p-4" role="presentation"><div className="w-full max-w-lg rounded-md bg-white p-6 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="spontaneous-title"><h2 id="spontaneous-title" className="text-xl font-semibold">Incorporación espontánea</h2><p className="mt-1 text-sm text-muted-foreground">La fecha seleccionada es {date}.</p><div className="mt-5 grid gap-4"><label className="grid gap-1 text-sm font-medium">Persona<select aria-label="Persona espontánea" className="h-10 rounded-md border bg-white px-3" value={personId} onChange={(event) => onPersonChange(event.target.value)} disabled={!enabled}><option value="">Seleccionar Persona</option>{people.map((person) => <option key={person.id} value={person.id}>{person.lastName}, {person.firstName} · {person.dni}</option>)}</select></label><label className="grid gap-1 text-sm font-medium">Horario<select aria-label="Horario espontáneo" className="h-10 rounded-md border bg-white px-3" value={slotId} onChange={(event) => onSlotChange(event.target.value)} disabled={!enabled}><option value="">Seleccionar horario</option>{groups.filter((group) => !group.isClosed && group.available > 0).map((group) => <option key={group.slot.id} value={group.slot.scheduleSlotId ?? group.slot.id}>{formatOperationalTime(group.slot.startTime)}</option>)}</select></label></div><div className="mt-6 flex justify-end gap-2"><Button type="button" variant="secondary" onClick={onClose} disabled={pending}>Cancelar</Button><Button type="button" disabled={!enabled || !personId || !slotId || pending} onClick={onSubmit}>{pending ? 'Incorporando…' : 'Incorporar'}</Button></div></div></div>; }
 
 export function AgendaPanel({ date, onDateChange, csrfToken, people }: { date: string; onDateChange: (date: string) => void; csrfToken: string; people: PersonOption[] }): React.JSX.Element {
-  const queryClient = useQueryClient();
-  const [spontaneousPersonId, setSpontaneousPersonId] = useState('');
-  const [spontaneousSlotId, setSpontaneousSlotId] = useState('');
-  const [message, setMessage] = useState<string | null>(null);
-  const [openSlots, setOpenSlots] = useState<Set<string>>(new Set());
-  const agenda = useQuery({ queryKey: ['sala', 'agenda', date], queryFn: async () => unwrapAgenda(await getSalaAgenda({ date }, { credentials: 'include' })) });
-
-  const refresh = async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: ['sala', 'agenda', date] }), queryClient.invalidateQueries({ queryKey: ['sala', 'availability', date] })]); };
-  const update = useMutation({
-    mutationFn: async ({ personId, scheduleSlotId, status }: { personId: string; scheduleSlotId: string; status: Exclude<OccurrenceStatus, 'RESERVED'> }) => {
-      const reference = { personId, scheduleSlotId, date };
-      const options = mutationOptions(csrfToken);
-      const response = status === 'ATTENDED' ? await markSalaOccurrenceAttended(reference, options) : status === 'ABSENT' ? await markSalaOccurrenceAbsent(reference, options) : await cancelSalaOccurrence(reference, options);
-      if (response.status >= 400) throw new Error('No se pudo actualizar la asistencia.');
-    },
-    onSuccess: async () => { setMessage(null); await refresh(); },
-    onError: () => setMessage('No se pudo actualizar la asistencia.'),
-  });
-  const spontaneous = useMutation({
-    mutationFn: async () => {
-      const response = await createSpontaneousSalaOccurrence({ personId: spontaneousPersonId, scheduleSlotId: spontaneousSlotId, date }, mutationOptions(csrfToken));
-      if (response.status >= 400) throw new Error('No se pudo incorporar a la Persona.');
-    },
-    onSuccess: async () => { setMessage(null); setSpontaneousPersonId(''); await refresh(); },
-    onError: () => setMessage('La Persona ya posee una presencia o no tiene una participación activa.'),
-  });
-
-  const groups = agenda.data ?? [];
-  return (
-    <section aria-labelledby="daily-agenda-heading" className="mt-5 rounded-md border bg-white p-5 shadow-sm">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div><h2 id="daily-agenda-heading" className="text-lg font-semibold">Agenda y asistencia</h2><p className="text-sm text-muted-foreground">Estado operativo por horario. Las ausencias se registran únicamente de forma manual.</p></div>
-        <label className="grid gap-1 text-sm font-medium">Fecha<input aria-label="Fecha de agenda" className="h-10 rounded-md border px-3" type="date" value={date} onChange={(event) => onDateChange(event.target.value)} /></label>
-      </div>
-      {agenda.isLoading ? <p role="status" className="mt-5 text-sm text-muted-foreground">Cargando agenda…</p> : null}
-      {agenda.isError ? <p role="alert" className="mt-5 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">No se pudo cargar la agenda.</p> : null}
-      {!agenda.isLoading && !agenda.isError && groups.length === 0 ? <p className="mt-5 rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No hay horarios configurados para esta fecha.</p> : null}
-      <div className="mt-5 max-h-[30rem] overflow-y-auto rounded-md border bg-white">
-        {groups.map((group) => (
-          <article key={group.slot.id} className="border-b last:border-b-0">
-            <button type="button" className="grid w-full grid-cols-[4rem_1fr_auto] items-center gap-3 px-4 py-2 text-left hover:bg-surface-muted" aria-expanded={openSlots.has(group.slot.id)} onClick={() => setOpenSlots((current) => { const next = new Set(current); if (next.has(group.slot.id)) next.delete(group.slot.id); else next.add(group.slot.id); return next; })}>
-              <div><h3 className="font-semibold">{timeLabel(group.slot.startTime)}</h3><p className="text-xs text-muted-foreground">Capacidad {group.capacity} · Reservados {group.reserved} · Disponibles {group.available}</p></div>
-              <span className={cn('rounded-full px-2.5 py-1 text-xs font-medium', group.isClosed ? 'bg-slate-200 text-slate-800' : group.isOverbooked ? 'bg-red-50 text-red-800' : group.available === 0 ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-800')}>{group.isClosed ? 'Cerrado' : group.isOverbooked ? 'Sobrecupo' : group.available === 0 ? 'Completo' : 'Disponible'}</span>
-              <span aria-hidden="true" className="text-lg leading-none">{openSlots.has(group.slot.id) ? '▴' : '▾'}</span>
-            </button>
-            {openSlots.has(group.slot.id) && group.people.length > 0 ? <ul className="divide-y border-t bg-slate-50/40">{group.people.map((entry) => (
-              <li key={entry.personId} className="flex flex-col gap-2 px-4 py-2 lg:flex-row lg:items-center lg:justify-between">
-                <div><p className="font-medium">{entry.person.lastName}, {entry.person.firstName}</p><p className="text-xs text-muted-foreground">DNI {entry.person.dni} · {originLabels[entry.origin]}</p></div>
-                <div className="flex flex-wrap items-center gap-2"><span className={cn('rounded-full px-2.5 py-1 text-xs font-medium', statusClasses[entry.status])}>{statusLabels[entry.status]}</span><Button type="button" variant="secondary" disabled={update.isPending} onClick={() => update.mutate({ personId: entry.personId, scheduleSlotId: group.slot.scheduleSlotId ?? group.slot.id, status: 'ATTENDED' })}>Asistió</Button><Button type="button" variant="secondary" disabled={update.isPending} onClick={() => update.mutate({ personId: entry.personId, scheduleSlotId: group.slot.scheduleSlotId ?? group.slot.id, status: 'ABSENT' })}>Ausente</Button><Button type="button" variant="secondary" disabled={update.isPending} onClick={() => update.mutate({ personId: entry.personId, scheduleSlotId: group.slot.scheduleSlotId ?? group.slot.id, status: 'CANCELLED' })}>Cancelar</Button></div>
-              </li>
-            ))}</ul> : null}
-          </article>
-        ))}
-      </div>
-      <div className="mt-5 rounded-md border bg-slate-50 p-4"><h3 className="font-semibold">Incorporación espontánea actual</h3><p className="mb-3 text-xs text-muted-foreground">Disponible únicamente para la fecha operativa actual.</p><div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]"><select aria-label="Persona espontánea" className="h-10 rounded-md border bg-white px-3" value={spontaneousPersonId} onChange={(event) => setSpontaneousPersonId(event.target.value)} disabled={date !== localDate()}><option value="">Seleccionar Persona</option>{people.map((person) => <option key={person.id} value={person.id}>{person.lastName}, {person.firstName} · {person.dni}</option>)}</select><select aria-label="Horario espontáneo" className="h-10 rounded-md border bg-white px-3" value={spontaneousSlotId} onChange={(event) => setSpontaneousSlotId(event.target.value)} disabled={date !== localDate()}><option value="">Seleccionar horario</option>{groups.filter((group) => !group.isClosed).map((group) => <option key={group.slot.id} value={group.slot.scheduleSlotId ?? group.slot.id}>{timeLabel(group.slot.startTime)}</option>)}</select><Button type="button" disabled={date !== localDate() || !spontaneousPersonId || !spontaneousSlotId || spontaneous.isPending} onClick={() => spontaneous.mutate()}>Incorporar</Button></div></div>
-      {message ? <p role="alert" className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{message}</p> : null}
-    </section>
-  );
+  const queryClient = useQueryClient(); const [selected, setSelected] = useState<TimelineBooking | null>(null); const [spontaneousOpen, setSpontaneousOpen] = useState(false); const [spontaneousPersonId, setSpontaneousPersonId] = useState(''); const [spontaneousSlotId, setSpontaneousSlotId] = useState(''); const [message, setMessage] = useState<string | null>(null);
+  const agenda = useQuery({ queryKey: ['sala', 'agenda', date], queryFn: async () => unwrapAgenda(await getSalaAgenda({ date }, { credentials: 'include' })) }); const groups = agenda.data ?? []; const bookings = useMemo(() => buildTimelineBookings(groups), [groups]); const rows = useMemo(() => groupTimelineBookings(bookings), [bookings]); const gridStart = groups.length ? Math.min(...groups.map((group) => minutes(group.slot.startTime))) : 8 * 60; const gridEnd = groups.length ? Math.max(...groups.map((group) => minutes(group.slot.startTime) + 15)) : 20 * 60; const columnCount = Math.max(1, Math.ceil((gridEnd - gridStart) / 15));
+  const refresh = async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: ['sala', 'agenda', date] }), queryClient.invalidateQueries({ queryKey: ['sala', 'availability', date] })]); }; const update = useMutation({ mutationFn: async ({ booking, status }: { booking: TimelineBooking; status: Exclude<OccurrenceStatus, 'RESERVED'> }) => { const reference = { personId: booking.personId, scheduleSlotId: booking.scheduleSlotId, date }; const options = mutationOptions(csrfToken); const response = status === 'ATTENDED' ? await markSalaOccurrenceAttended(reference, options) : status === 'ABSENT' ? await markSalaOccurrenceAbsent(reference, options) : await cancelSalaOccurrence(reference, options); if (response.status >= 400) throw new Error('No se pudo actualizar la asistencia.'); }, onSuccess: async () => { setMessage(null); setSelected(null); await refresh(); }, onError: () => setMessage('No se pudo actualizar la asistencia.') }); const spontaneous = useMutation({ mutationFn: async () => { const response = await createSpontaneousSalaOccurrence({ personId: spontaneousPersonId, scheduleSlotId: spontaneousSlotId, date }, mutationOptions(csrfToken)); if (response.status >= 400) throw new Error('No se pudo incorporar a la Persona.'); }, onSuccess: async () => { setMessage(null); setSpontaneousOpen(false); setSpontaneousPersonId(''); setSpontaneousSlotId(''); await refresh(); }, onError: () => setMessage('La Persona ya posee una presencia o no tiene una participación activa.') });
+  return <section aria-labelledby="daily-agenda-heading" className="mt-5 rounded-md border bg-white p-5 shadow-sm"><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><h2 id="daily-agenda-heading" className="text-lg font-semibold">Agenda</h2><p className="text-sm text-muted-foreground">Disponibilidad, reservas, asistencia y ausencias.</p></div><div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-sm font-medium">Fecha<input aria-label="Fecha de agenda" className="h-10 rounded-md border px-3" type="date" value={date} onChange={(event) => onDateChange(event.target.value)} /></label><Button type="button" onClick={() => setSpontaneousOpen(true)}><CalendarPlus size={16} />Incorporación espontánea</Button></div></div>{agenda.isLoading ? <p role="status" className="mt-5 text-sm text-muted-foreground">Cargando agenda…</p> : null}{agenda.isError ? <p role="alert" className="mt-5 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">No se pudo cargar la agenda.</p> : null}{!agenda.isLoading && !agenda.isError && groups.length === 0 ? <p className="mt-5 rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No hay horarios configurados para esta fecha.</p> : null}{groups.length > 0 && !agenda.isLoading && !agenda.isError ? <div className="mt-5 overflow-x-auto rounded-md border" data-testid="agenda-timeline-scroll"><div className="min-w-max"><div className="grid border-b bg-slate-50" style={{ gridTemplateColumns: '12rem auto' }}><div className="sticky left-0 z-20 border-r bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Profesional</div><div className="relative grid" style={{ gridTemplateColumns: `repeat(${columnCount}, ${SLOT_WIDTH}px)` }}>{Array.from({ length: columnCount }, (_, index) => { const current = gridStart + index * 15; return <div key={current} className={cn('border-r px-1 py-3 text-center text-xs', current % 60 === 0 ? 'font-semibold text-foreground' : 'text-muted-foreground')}>{current % 60 === 0 ? time(current) : `:${String(current % 60).padStart(2, '0')}`}</div>; })}</div></div>{rows.map((row) => { const levels = overlapLevels(row.bookings); const visible = row.bookings.filter((booking) => (levels.get(booking) ?? 0) < 3); const hidden = row.bookings.length - visible.length; return <div key={row.key} className="grid border-b last:border-b-0" style={{ gridTemplateColumns: '12rem auto' }}><div className="sticky left-0 z-10 border-r bg-white px-4 py-3"><p className="font-medium">{row.professional ? `${row.professional.firstName} ${row.professional.lastName}` : 'Profesional no informado'}</p><p className="text-xs text-muted-foreground">Sala</p></div><div className="relative" style={{ width: columnCount * SLOT_WIDTH, height: ROW_HEIGHT }}>{Array.from({ length: columnCount }, (_, index) => { const current = gridStart + index * 15; return <button key={current} type="button" aria-label={`Espacio libre ${time(current)}`} className={cn('absolute inset-y-0 border-r border-slate-100', current % 60 === 0 ? 'bg-slate-50/40' : '')} style={{ left: index * SLOT_WIDTH, width: SLOT_WIDTH }} onClick={() => { setSpontaneousSlotId(row.bookings[0]?.scheduleSlotId ?? groups.find((group) => minutes(group.slot.startTime) === current)?.slot.scheduleSlotId ?? ''); setSpontaneousOpen(true); }} />; })}{visible.map((booking) => { const level = levels.get(booking) ?? 0; return <button key={`${booking.personId}-${booking.groupId}`} type="button" aria-label={`${personName(booking.person)} ${time(booking.startMinutes)} ${statusLabels[booking.status]}`} className={cn('absolute z-10 overflow-hidden rounded-md border p-2 text-left text-xs shadow-sm transition hover:z-30 hover:shadow-md', statusClasses[booking.status], booking.status === 'CANCELLED' && 'line-through opacity-70')} style={{ left: (booking.startMinutes - gridStart) / 15 * SLOT_WIDTH + level * 4, top: 8 + level * 16, width: Math.max(SLOT_WIDTH, booking.durationMinutes / 15 * SLOT_WIDTH - 4) }} onClick={() => setSelected(booking)}><span className="block truncate font-semibold">{personName(booking.person)}</span><span className="block truncate">{booking.service?.name ?? 'Servicio'} · {booking.durationMinutes} min</span><span className="mt-1 inline-flex items-center gap-1 font-medium">{statusIcons[booking.status]}{statusLabels[booking.status]}</span></button>; })}{hidden > 0 ? <button type="button" className="absolute right-2 top-2 z-20 rounded-full border bg-white px-2 py-1 text-xs font-semibold shadow-sm" onClick={() => setSelected(row.bookings[3] ?? row.bookings[0] ?? null)}>+{hidden} personas</button> : null}</div></div>; })}</div></div> : null}<p className="mt-3 text-xs text-muted-foreground">Cada división representa 15 minutos. Las reservas se muestran con su duración proporcional y los solapamientos se apilan parcialmente.</p>{message ? <p role="alert" className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{message}</p> : null}{selected ? <BookingModal booking={selected} date={date} pending={update.isPending} onAction={(status) => update.mutate({ booking: selected, status })} onClose={() => setSelected(null)} /> : null}{spontaneousOpen ? <SpontaneousModal date={date} groups={groups} people={people} personId={spontaneousPersonId} slotId={spontaneousSlotId} pending={spontaneous.isPending} onPersonChange={setSpontaneousPersonId} onSlotChange={setSpontaneousSlotId} onSubmit={() => spontaneous.mutate()} onClose={() => setSpontaneousOpen(false)} /> : null}</section>;
 }
