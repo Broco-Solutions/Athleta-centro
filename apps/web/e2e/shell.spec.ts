@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 
-function fixture(kind: 'normal' | 'temporary' | 'inactive' | 'people' | 'team' | 'sala' | 'occurrence' | 'multislot' | 'clinic' | 'service' | 'portal-reset' | 'portal-fixed-edit'): void { execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/e2e-fixture.ts', kind], { cwd: '../..', stdio: 'inherit' }); }
+function fixture(kind: 'normal' | 'temporary' | 'inactive' | 'people' | 'team' | 'sala' | 'occurrence' | 'multislot' | 'clinic' | 'service' | 'portal-reset' | 'portal-fixed-edit' | 'physical-evaluation'): void { execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/e2e-fixture.ts', kind], { cwd: '../..', stdio: 'inherit' }); }
 async function login(page: import('@playwright/test').Page, email: string, password = 'ValidPass1!'): Promise<void> { await page.goto('/login'); await page.getByLabel('Email').fill(email); await page.getByLabel('Contraseña').fill(password); await page.getByRole('button', { name: /Ingresar/ }).click(); }
 
 test('redirects unauthenticated visitors to login through the Next-to-API rewrite', async ({ page }) => { await page.goto('/'); await expect(page).toHaveURL(/\/login$/); });
@@ -162,6 +162,14 @@ test('retires a Sala service and removes it from new-booking selectors', async (
 test('creates a physical test from Sala configuration and keeps it after reload', async ({ page }) => {
   fixture('service'); await login(page, 'e2e.service@athleta.test'); await page.getByRole('link', { name: 'Sala' }).click(); await page.getByRole('link', { name: 'Configuración', exact: true }).click(); await page.getByText('Tests físicos', { exact: true }).click(); await page.getByRole('button', { name: 'Nuevo test' }).click();
   const dialog = page.getByRole('dialog', { name: 'Nuevo test físico' }); const name = `Test físico E2E ${Date.now()}`; await dialog.getByLabel('Nombre del test físico').fill(name); await dialog.getByLabel('Tipo del test físico').fill('distancia'); await dialog.getByLabel('Descripción del test físico').fill('Dato de prueba'); const responsePromise = page.waitForResponse((response) => response.url().endsWith('/api/sala/physical-test-definitions') && response.request().method() === 'POST'); await dialog.getByRole('button', { name: 'Guardar' }).click(); expect((await responsePromise).status()).toBe(201); await expect(page.getByText(name)).toBeVisible(); await page.reload(); await page.getByText('Tests físicos', { exact: true }).click(); await expect(page.getByText(name)).toBeVisible();
+});
+test('registers a physical evaluation for Homer and keeps it after reload', async ({ page }) => {
+  fixture('physical-evaluation'); await login(page, 'e2e.physical-evaluation@athleta.test'); await page.getByRole('link', { name: 'Sala' }).click();
+  await page.getByLabel('Alumno').selectOption({ label: 'Homer Simpson · 45000001' }); await page.getByLabel('Participación').selectOption({ index: 1 });
+  await expect(page.getByRole('heading', { name: 'Evaluaciones físicas' })).toBeVisible(); await page.getByRole('button', { name: 'Nueva evaluación física' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Nueva evaluación física' }); await expect(dialog).toBeVisible(); await dialog.getByLabel('Test físico').selectOption({ label: 'Evaluación física E2E' }); await dialog.getByLabel('Resultado').fill('42');
+  const responsePromise = page.waitForResponse((response) => response.url().endsWith('/api/sala/physical-evaluations') && response.request().method() === 'POST'); await dialog.getByRole('button', { name: 'Guardar' }).click(); expect((await responsePromise).status()).toBe(201);
+  await expect(page.getByText(/Evaluación física E2E: 42/)).toBeVisible(); await page.reload(); await page.getByLabel('Alumno').selectOption({ label: 'Homer Simpson · 45000001' }); await page.getByLabel('Participación').selectOption({ index: 1 }); await expect(page.getByText(/Evaluación física E2E: 42/)).toBeVisible();
 });
 
 test('navigates from People to a real Person workspace and clinical entry flows', async ({ page }) => {

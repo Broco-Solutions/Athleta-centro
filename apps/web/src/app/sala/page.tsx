@@ -76,7 +76,7 @@ export default function SalaPage(): React.JSX.Element {
       </section>
       <AgendaPanel date={date} onDateChange={setDate} csrfToken={csrfToken} people={peopleRows} />
       {personId && participationId ? <RoutinePanel personId={personId} participationId={participationId} csrfToken={csrfToken} api={routineApi} /> : null}
-      {personId && participationId && session.data?.user?.id ? <PhysicalEvaluationPanel personId={personId} participationId={participationId} professorId={session.data.user.id} csrfToken={csrfToken} /> : null}
+      {personId && participationId && session.data?.user?.id ? <PhysicalEvaluationPanel personId={personId} participationId={participationId} professorId={session.data.user.id} csrfToken={csrfToken} canManage={session.data.permissions.includes('SALA_PHYSICAL_EVALUATION_MANAGE')} /> : null}
       {personId ? <PaymentPanel personId={personId} csrfToken={csrfToken} /> : null}
     </WorkspaceShell>
   );
