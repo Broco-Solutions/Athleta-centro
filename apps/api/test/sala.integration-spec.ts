@@ -157,4 +157,22 @@ describe('Sala configuration API', () => {
   it('separates operation idempotency from month uniqueness under concurrency', async () => {
     const dni = uniqueDni(); const person = await prisma.person.create({ data: { firstName: 'Race', lastName: 'Payment', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1991-01-01T00:00:00Z') } }); const actor = await users.create({ firstName: 'Race', lastName: 'Actor', email: `race-${dni}@sala.test`, roles: [Role.PROFESSOR] }); const method = await prisma.paymentMethod.create({ data: { name: `RaceMethod-${dni}` } }); const base = { personId: person.id, year: 2026, month: 9, paidAt: '2026-08-27', amount: '1000', paymentMethodId: method.id }; const op = crypto.randomUUID(); const first = await sala.createPayment({ ...base, operationId: op }, actor.id); const retry = await sala.createPayment({ ...base, operationId: op }, actor.id); expect(retry.id).toBe(first.id); await prisma.salaPayment.delete({ where: { id: first.id } }); const results = await Promise.allSettled([sala.createPayment({ ...base, operationId: crypto.randomUUID() }, actor.id), sala.createPayment({ ...base, operationId: crypto.randomUUID() }, actor.id)]); expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1); expect(await prisma.salaPayment.count({ where: { personId: person.id, year: 2026, month: 9 } })).toBe(1); await prisma.salaPayment.deleteMany({ where: { personId: person.id } });
   });
+  it('keeps fixed-booking edit availability consistent with the update validation', async () => {
+    const plan = await prisma.salaPlan.create({ data: { name: 'Fixed edit consistency', monthlyAmount: 1000 } });
+    const window = await sala.createSlot({ weekday: 'MONDAY', startTime: '08:00', durationMinutes: 240, specificCapacity: 1 });
+    const service = await sala.createServiceType({ name: 'Evaluación fixed edit', durationMinutes: 45 });
+    const professor = await users.create({ firstName: 'Prof', lastName: 'Fixed edit', email: `fixed-edit-${uniqueDni()}@sala.test`, roles: [Role.PROFESSOR] });
+    const dni = uniqueDni();
+    const person = await prisma.person.create({ data: { firstName: 'Fixed', lastName: 'Edit', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1991-01-01T00:00:00Z') } });
+    const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' });
+    const fixed = await sala.createFixed({ personId: person.id, salaParticipationId: participation.id, scheduleSlotId: window.id, serviceTypeId: service.id, startTime: '10:00', startDate: '2026-08-31' });
+    const offeredWithoutSelf = (await sala.availability('2026-08-31', prisma, fixed.id)).filter((slot) => ['09:30', '09:45', '10:00'].includes(slot.startTime));
+    expect({ serviceId: service.id, weekday: 'MONDAY', startTime: '09:30', fixedBookingId: fixed.id, participationId: participation.id, requiredSlots: service.durationMinutes / 15 }).toEqual({ serviceId: service.id, weekday: 'MONDAY', startTime: '09:30', fixedBookingId: fixed.id, participationId: participation.id, requiredSlots: 3 });
+    expect(offeredWithoutSelf).toHaveLength(3);
+    expect(offeredWithoutSelf.every((slot) => slot.available === 1)).toBe(true);
+    const changed = await sala.changeFixed({ id: fixed.id, personId: person.id, salaParticipationId: participation.id, scheduleSlotId: window.id, serviceTypeId: service.id, startTime: '09:30', startDate: '2026-08-31' });
+    expect(changed.startTime?.toISOString().slice(11, 16)).toBe('09:30');
+    const persisted = await prisma.fixedSalaBooking.findFirstOrThrow({ where: { id: changed.id } });
+    expect({ startTime: persisted.startTime?.toISOString().slice(11, 16), serviceDurationMinutes: persisted.serviceDurationMinutes, scheduleSlotId: persisted.scheduleSlotId }).toEqual({ startTime: '09:30', serviceDurationMinutes: 45, scheduleSlotId: window.id });
+  });
 });

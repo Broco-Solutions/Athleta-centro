@@ -13,7 +13,7 @@ export class PortalController {
   @Get('me') async me(@Req() req: Request) { return { data: await this.portal.me(this.cookie(req)) }; }
   @Get('sala') async sala(@Req() req: Request) { return { data: await this.portal.sala(this.cookie(req)) }; }
   @Get('sala/services') async salaServices(@Req() req: Request) { return { data: await this.portal.salaServices(this.cookie(req)) }; }
-  @Get('sala/availability') async availability(@Req() req: Request) { return { data: await this.portal.salaAvailability(this.cookie(req), String((req.query as { date?: string }).date ?? '')) }; }
+  @Get('sala/availability') async availability(@Req() req: Request) { const query = req.query as { date?: string; excludeFixedBookingId?: string }; return { data: await this.portal.salaAvailability(this.cookie(req), String(query.date ?? ''), query.excludeFixedBookingId) }; }
   @Post('sala/reservations') @HttpCode(201) async reserve(@Req() req: Request, @Body() body: { date: string; scheduleSlotId: string; serviceTypeId?: string; startTime?: string; csrfToken?: string }) { await this.portal.assertCsrf(this.cookie(req), req.header('x-csrf-token') ?? body.csrfToken); return { data: await this.portal.reserve(this.cookie(req), body) }; }
   @Post('sala/reservations/:id/cancel') @ApiParam({ name: 'id', type: String }) @HttpCode(200) async cancelReservation(@Req() req: Request, @Param('id') id: string) { await this.portal.assertCsrf(this.cookie(req), req.header('x-csrf-token')); return { data: await this.portal.cancelReservation(this.cookie(req), id) }; }
   @Get('sala/fixed-bookings') async fixed(@Req() req: Request) { return { data: await this.portal.fixedBookings(this.cookie(req)) }; }
