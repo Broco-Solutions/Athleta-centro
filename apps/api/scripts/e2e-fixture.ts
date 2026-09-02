@@ -48,6 +48,7 @@ if (!['normal', 'temporary', 'inactive', 'people', 'team', 'sala', 'occurrence',
   await prisma.session.deleteMany({ where: { internalUser: { normalizedEmail: email } } });
   await prisma.internalCredential.deleteMany({ where: { internalUser: { normalizedEmail: email } } });
   await prisma.internalUserRole.deleteMany({ where: { internalUser: { normalizedEmail: email } } });
+  await prisma.physicalEvaluation.deleteMany({ where: { creator: { normalizedEmail: email } } });
   await prisma.internalUser.deleteMany({ where: { normalizedEmail: email } });
   const user = await prisma.internalUser.create({ data: { firstName: 'E2E', lastName: kind ?? 'User', email, normalizedEmail: email, status: kind === 'inactive' ? 'INACTIVE' : 'ACTIVE', roles: { create: { role: kind === 'clinic' || kind === 'service' || kind === 'physical-evaluation' ? Role.GENERAL_ADMIN : kind === 'team' || kind === 'sala' || kind === 'occurrence' || kind === 'multislot' ? Role.ADMINISTRATIVE : Role.PROFESSOR } } } });
   await prisma.internalCredential.create({ data: { internalUserId: user.id, passwordHash: await argon2.hash(password, { type: argon2.argon2id }), mustChangePassword: kind === 'temporary' } });
