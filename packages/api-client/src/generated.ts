@@ -184,6 +184,11 @@ export interface TeamRoleDto {
   role: TeamRoleDtoRole;
 }
 
+export interface TeamCredentialResetDto {
+  /** Returned once; never persisted in plaintext. */
+  temporaryPassword: string;
+}
+
 export interface JoinSalaDto {
   personId: string;
   mainProfessorId: string;
@@ -366,7 +371,7 @@ export interface SpontaneousOccurrenceDto {
   personId: string;
   scheduleSlotId: string;
   date: string;
-  /** @pattern ^([01]d|2[0-3]):(00|15|30|45)$ */
+  /** @pattern ^([01]\d|2[0-3]):(00|15|30|45)$ */
   startTime: string;
 }
 
@@ -461,6 +466,13 @@ export interface PhysicalEvaluationDto {
   results: PhysicalTestResultDto[];
 }
 
+export interface SalaPaymentAllocationDto {
+  chargeId: string;
+  /** @pattern ^\d+$ */
+  amount: string;
+  operationId: string;
+}
+
 export interface SalaPaymentDto {
   personId: string;
   year: number;
@@ -470,23 +482,42 @@ export interface SalaPaymentDto {
    */
   month: number;
   paidAt: string;
+  /** @pattern ^\d+$ */
   amount: string;
   paymentMethodId: string;
   operationId: string;
   adjustmentReason?: string;
+  allocations?: SalaPaymentAllocationDto[];
 }
 
-export interface CorrectSalaPaymentDto {
-  year: number;
-  /**
-   * @minimum 1
-   * @maximum 12
-   */
-  month: number;
-  paidAt: string;
+export interface FinancialReasonDto {
+  /** @maxLength 500 */
+  reason: string;
+  operationId: string;
+}
+
+export interface SalaOpeningBalanceDto {
+  /** @maxLength 500 */
+  reason: string;
+  operationId: string;
+  personId: string;
+  chargeDate: string;
+  /** @pattern ^\d+$ */
   amount: string;
-  paymentMethodId: string;
-  adjustmentReason?: string;
+  /** @maxLength 200 */
+  concept?: string;
+}
+
+export interface SalaChargeAdjustmentDto {
+  /** @maxLength 500 */
+  reason: string;
+  operationId: string;
+  /** @pattern ^-?\d+$ */
+  amount: string;
+}
+
+export interface ActivateSalaBillingDto {
+  cutoverDate: string;
 }
 
 export interface UpdateSalaConfigurationDto {
@@ -563,6 +594,208 @@ export interface PaymentMethodInput { [key: string]: unknown }
 export interface ExpenseInput { [key: string]: unknown }
 
 export interface IncomeInput { [key: string]: unknown }
+
+export interface PatientDto {
+  personId: string;
+}
+
+export interface AppointmentDto {
+  personId: string;
+  serviceId: string;
+  professionalId: string;
+  startAt: string;
+  /** @maxLength 500 */
+  operationalNote?: string;
+}
+
+export interface DirectAttentionDto {
+  personId: string;
+  professionalId: string;
+  serviceId: string;
+  occurredAt: string;
+  /** @pattern ^(0|[1-9]\d*)$ */
+  patientAmountArs?: string;
+  /** @pattern ^(0|[1-9]\d*)$ */
+  socialWorkAmountArs?: string;
+  /** @nullable */
+  socialWorkOrderId?: string | null;
+  /** @nullable */
+  socialWorkId?: string | null;
+  /**
+   * Required only when the attention is exempt from billing.
+   * @maxLength 500
+   */
+  exemptReason?: string;
+}
+
+export interface RescheduleAppointmentDto {
+  professionalId: string;
+  startAt: string;
+  /** @maxLength 500 */
+  operationalNote?: string;
+}
+
+export type CorrectAppointmentDtoStatus = typeof CorrectAppointmentDtoStatus[keyof typeof CorrectAppointmentDtoStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const CorrectAppointmentDtoStatus = {
+  SCHEDULED: 'SCHEDULED',
+  ATTENDED: 'ATTENDED',
+  CANCELLED: 'CANCELLED',
+  ABSENT: 'ABSENT',
+} as const;
+
+export interface CorrectAppointmentDto {
+  status: CorrectAppointmentDtoStatus;
+}
+
+export interface AttendAppointmentDto {
+  /** @pattern ^(0|[1-9]\d*)$ */
+  patientAmountArs: string;
+  /** @pattern ^(0|[1-9]\d*)$ */
+  socialWorkAmountArs: string;
+  /** @nullable */
+  socialWorkOrderId?: string | null;
+  /** @nullable */
+  socialWorkId?: string | null;
+}
+
+export interface TreatmentDto {
+  personId: string;
+  responsibleProfessionalId: string;
+  consultationReason: string;
+  bodyAreaOrInjury: string;
+  objective?: string;
+  interventionPlan?: string;
+  currentStage?: string;
+  startDate: string;
+}
+
+export type FinalizeTreatmentDtoFinishReason = typeof FinalizeTreatmentDtoFinishReason[keyof typeof FinalizeTreatmentDtoFinishReason];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const FinalizeTreatmentDtoFinishReason = {
+  DISCHARGE: 'DISCHARGE',
+  INTERRUPTION: 'INTERRUPTION',
+  REFERRAL: 'REFERRAL',
+  OTHER: 'OTHER',
+} as const;
+
+export interface FinalizeTreatmentDto {
+  finishDate: string;
+  finishReason?: FinalizeTreatmentDtoFinishReason;
+  conclusion?: string;
+}
+
+export interface EvolutionDto {
+  evolutionText?: string;
+  practicesOrManeuvers?: string;
+  indicationsOrNextSteps?: string;
+}
+
+export interface ClinicalStudyDto {
+  personId: string;
+  studyDate: string;
+  studyType: string;
+  /** @nullable */
+  treatmentId?: string | null;
+  /** @nullable */
+  description?: string | null;
+}
+
+export interface UpdateClinicalStudyDto {
+  studyDate?: string;
+  studyType?: string;
+  /** @nullable */
+  treatmentId?: string | null;
+  /** @nullable */
+  description?: string | null;
+}
+
+export type ClinicalTestDefinitionDtoResponseType = typeof ClinicalTestDefinitionDtoResponseType[keyof typeof ClinicalTestDefinitionDtoResponseType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ClinicalTestDefinitionDtoResponseType = {
+  CATEGORICAL: 'CATEGORICAL',
+  NUMERIC: 'NUMERIC',
+  SCALE: 'SCALE',
+  OPTIONS: 'OPTIONS',
+  TEXT: 'TEXT',
+} as const;
+
+export interface ClinicalTestDefinitionDto {
+  name: string;
+  responseType: ClinicalTestDefinitionDtoResponseType;
+  unit?: string;
+  options?: string[];
+  scaleMin?: string;
+  scaleMax?: string;
+}
+
+export type ClinicalTestResultDtoSide = typeof ClinicalTestResultDtoSide[keyof typeof ClinicalTestResultDtoSide];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ClinicalTestResultDtoSide = {
+  LEFT: 'LEFT',
+  RIGHT: 'RIGHT',
+} as const;
+
+export interface ClinicalTestResultDto {
+  testDefinitionId?: string;
+  inlineDefinition?: ClinicalTestDefinitionDto;
+  measurementMethodId?: string;
+  side?: ClinicalTestResultDtoSide;
+  observation?: string;
+  /** Value interpreted according to the selected test definition. */
+  value: string;
+}
+
+export interface ClinicalEvaluationDto {
+  bodyAreaOrType: string;
+  protocolId?: string;
+  conclusion?: string;
+  results: ClinicalTestResultDto[];
+}
+
+export interface CatalogNameDto {
+  name: string;
+}
+
+export interface MeasurementMethodDto {
+  name: string;
+  description?: string;
+}
+
+export interface SocialWorkOrderDto {
+  personId: string;
+  socialWorkId: string;
+  reference: string;
+  issueDate?: string;
+  expirationDate?: string;
+}
+
+export type SalaClinicalIndicationDtoTrainingCondition = typeof SalaClinicalIndicationDtoTrainingCondition[keyof typeof SalaClinicalIndicationDtoTrainingCondition];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SalaClinicalIndicationDtoTrainingCondition = {
+  NO_RESTRICTIONS: 'NO_RESTRICTIONS',
+  RESTRICTED: 'RESTRICTED',
+  DO_NOT_TRAIN: 'DO_NOT_TRAIN',
+} as const;
+
+export interface SalaClinicalIndicationDto {
+  personId: string;
+  treatmentId?: string;
+  trainingCondition: SalaClinicalIndicationDtoTrainingCondition;
+  affectedArea?: string;
+  instructions?: string;
+  responsibleProfessionalId?: string;
+}
 
 export interface ReservationsProfessionalDto {
   id: string;
@@ -716,6 +949,32 @@ export type ListSalaPlans200DataItem = { [key: string]: unknown };
 
 export type ListSalaPlans200 = {
   data?: ListSalaPlans200DataItem[];
+};
+
+export type ListClinicalAppointmentsParams = {
+personId?: string;
+to?: string;
+from?: string;
+};
+
+export type ListClinicalAttentionsParams = {
+personId?: string;
+};
+
+export type ListClinicalTreatmentsParams = {
+personId?: string;
+};
+
+export type ListClinicalStudiesParams = {
+personId?: string;
+};
+
+export type ListSocialWorkOrdersParams = {
+personId: string;
+};
+
+export type ListSalaClinicalIndicationsParams = {
+personId: string;
 };
 
 export type GetReservationsTimelineParams = {
@@ -1481,6 +1740,45 @@ export const reactivateTeamUser = async (id: string, options?: RequestInit): Pro
 
   const data: reactivateTeamUserResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as reactivateTeamUserResponse
+}
+
+
+
+export type resetTeamUserCredentialResponse200 = {
+  data: TeamCredentialResetDto
+  status: 200
+}
+
+export type resetTeamUserCredentialResponseSuccess = (resetTeamUserCredentialResponse200) & {
+  headers: Headers;
+};
+;
+
+export type resetTeamUserCredentialResponse = (resetTeamUserCredentialResponseSuccess)
+
+export const getResetTeamUserCredentialUrl = (id: string,) => {
+
+
+
+
+  return `/api/team/users/${id}/reset-credential`
+}
+
+export const resetTeamUserCredential = async (id: string, options?: RequestInit): Promise<resetTeamUserCredentialResponse> => {
+
+  const res = await fetch(getResetTeamUserCredentialUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: resetTeamUserCredentialResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as resetTeamUserCredentialResponse
 }
 
 
@@ -2850,73 +3148,73 @@ export const createSalaPayment = async (salaPaymentDto: SalaPaymentDto, options?
 
 
 
-export type correctSalaPaymentResponse200 = {
-  data: void
-  status: 200
-}
-
-export type correctSalaPaymentResponseSuccess = (correctSalaPaymentResponse200) & {
-  headers: Headers;
-};
-;
-
-export type correctSalaPaymentResponse = (correctSalaPaymentResponseSuccess)
-
-export const getCorrectSalaPaymentUrl = (id: string,) => {
-
-
-
-
-  return `/api/sala/payments/${id}`
-}
-
-export const correctSalaPayment = async (id: string,
-    correctSalaPaymentDto: CorrectSalaPaymentDto, options?: RequestInit): Promise<correctSalaPaymentResponse> => {
-
-  const res = await fetch(getCorrectSalaPaymentUrl(id),
-  {
-    ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      correctSalaPaymentDto,)
-  }
-)
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: correctSalaPaymentResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as correctSalaPaymentResponse
-}
-
-
-
-export type deleteSalaPaymentResponse201 = {
+export type reverseSalaPaymentResponse201 = {
   data: void
   status: 201
 }
 
-export type deleteSalaPaymentResponseSuccess = (deleteSalaPaymentResponse201) & {
+export type reverseSalaPaymentResponseSuccess = (reverseSalaPaymentResponse201) & {
   headers: Headers;
 };
 ;
 
-export type deleteSalaPaymentResponse = (deleteSalaPaymentResponseSuccess)
+export type reverseSalaPaymentResponse = (reverseSalaPaymentResponseSuccess)
 
-export const getDeleteSalaPaymentUrl = (id: string,) => {
-
-
+export const getReverseSalaPaymentUrl = (id: string,) => {
 
 
-  return `/api/sala/payments/${id}/delete`
+
+
+  return `/api/sala/payments/${id}/reverse`
 }
 
-export const deleteSalaPayment = async (id: string, options?: RequestInit): Promise<deleteSalaPaymentResponse> => {
+export const reverseSalaPayment = async (id: string,
+    financialReasonDto: FinancialReasonDto, options?: RequestInit): Promise<reverseSalaPaymentResponse> => {
 
-  const res = await fetch(getDeleteSalaPaymentUrl(id),
+  const res = await fetch(getReverseSalaPaymentUrl(id),
   {
     ...options,
-    method: 'POST'
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      financialReasonDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: reverseSalaPaymentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as reverseSalaPaymentResponse
+}
+
+
+
+export type getSalaAccountResponse200 = {
+  data: void
+  status: 200
+}
+
+export type getSalaAccountResponseSuccess = (getSalaAccountResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getSalaAccountResponse = (getSalaAccountResponseSuccess)
+
+export const getGetSalaAccountUrl = (personId: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/account`
+}
+
+export const getSalaAccount = async (personId: string, options?: RequestInit): Promise<getSalaAccountResponse> => {
+
+  const res = await fetch(getGetSalaAccountUrl(personId),
+  {
+    ...options,
+    method: 'GET'
 
 
   }
@@ -2924,8 +3222,170 @@ export const deleteSalaPayment = async (id: string, options?: RequestInit): Prom
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: deleteSalaPaymentResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as deleteSalaPaymentResponse
+  const data: getSalaAccountResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSalaAccountResponse
+}
+
+
+
+export type createSalaOpeningBalanceResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createSalaOpeningBalanceResponseSuccess = (createSalaOpeningBalanceResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSalaOpeningBalanceResponse = (createSalaOpeningBalanceResponseSuccess)
+
+export const getCreateSalaOpeningBalanceUrl = () => {
+
+
+
+
+  return `/api/sala/opening-balances`
+}
+
+export const createSalaOpeningBalance = async (salaOpeningBalanceDto: SalaOpeningBalanceDto, options?: RequestInit): Promise<createSalaOpeningBalanceResponse> => {
+
+  const res = await fetch(getCreateSalaOpeningBalanceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      salaOpeningBalanceDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSalaOpeningBalanceResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSalaOpeningBalanceResponse
+}
+
+
+
+export type adjustSalaChargeResponse201 = {
+  data: void
+  status: 201
+}
+
+export type adjustSalaChargeResponseSuccess = (adjustSalaChargeResponse201) & {
+  headers: Headers;
+};
+;
+
+export type adjustSalaChargeResponse = (adjustSalaChargeResponseSuccess)
+
+export const getAdjustSalaChargeUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/charges/${id}/adjust`
+}
+
+export const adjustSalaCharge = async (id: string,
+    salaChargeAdjustmentDto: SalaChargeAdjustmentDto, options?: RequestInit): Promise<adjustSalaChargeResponse> => {
+
+  const res = await fetch(getAdjustSalaChargeUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      salaChargeAdjustmentDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: adjustSalaChargeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as adjustSalaChargeResponse
+}
+
+
+
+export type reverseSalaChargeResponse201 = {
+  data: void
+  status: 201
+}
+
+export type reverseSalaChargeResponseSuccess = (reverseSalaChargeResponse201) & {
+  headers: Headers;
+};
+;
+
+export type reverseSalaChargeResponse = (reverseSalaChargeResponseSuccess)
+
+export const getReverseSalaChargeUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/charges/${id}/reverse`
+}
+
+export const reverseSalaCharge = async (id: string,
+    financialReasonDto: FinancialReasonDto, options?: RequestInit): Promise<reverseSalaChargeResponse> => {
+
+  const res = await fetch(getReverseSalaChargeUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      financialReasonDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: reverseSalaChargeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as reverseSalaChargeResponse
+}
+
+
+
+export type activateSalaBillingResponse201 = {
+  data: void
+  status: 201
+}
+
+export type activateSalaBillingResponseSuccess = (activateSalaBillingResponse201) & {
+  headers: Headers;
+};
+;
+
+export type activateSalaBillingResponse = (activateSalaBillingResponseSuccess)
+
+export const getActivateSalaBillingUrl = () => {
+
+
+
+
+  return `/api/sala/billing/activate`
+}
+
+export const activateSalaBilling = async (activateSalaBillingDto: ActivateSalaBillingDto, options?: RequestInit): Promise<activateSalaBillingResponse> => {
+
+  const res = await fetch(getActivateSalaBillingUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      activateSalaBillingDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: activateSalaBillingResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as activateSalaBillingResponse
 }
 
 
@@ -4405,14 +4865,15 @@ export const getRegisterClinicalPatientUrl = () => {
   return `/api/clinic/patients`
 }
 
-export const registerClinicalPatient = async ( options?: RequestInit): Promise<registerClinicalPatientResponse> => {
+export const registerClinicalPatient = async (patientDto: PatientDto, options?: RequestInit): Promise<registerClinicalPatientResponse> => {
 
   const res = await fetch(getRegisterClinicalPatientUrl(),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      patientDto,)
   }
 )
 
@@ -4522,14 +4983,15 @@ export const getCreateClinicalAppointmentUrl = () => {
   return `/api/clinic/appointments`
 }
 
-export const createClinicalAppointment = async ( options?: RequestInit): Promise<createClinicalAppointmentResponse> => {
+export const createClinicalAppointment = async (appointmentDto: AppointmentDto, options?: RequestInit): Promise<createClinicalAppointmentResponse> => {
 
   const res = await fetch(getCreateClinicalAppointmentUrl(),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      appointmentDto,)
   }
 )
 
@@ -4553,17 +5015,24 @@ export type listClinicalAppointmentsResponseSuccess = (listClinicalAppointmentsR
 
 export type listClinicalAppointmentsResponse = (listClinicalAppointmentsResponseSuccess)
 
-export const getListClinicalAppointmentsUrl = () => {
+export const getListClinicalAppointmentsUrl = (params?: ListClinicalAppointmentsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/clinic/appointments`
+  return stringifiedParams.length > 0 ? `/api/clinic/appointments?${stringifiedParams}` : `/api/clinic/appointments`
 }
 
-export const listClinicalAppointments = async ( options?: RequestInit): Promise<listClinicalAppointmentsResponse> => {
+export const listClinicalAppointments = async (params?: ListClinicalAppointmentsParams, options?: RequestInit): Promise<listClinicalAppointmentsResponse> => {
 
-  const res = await fetch(getListClinicalAppointmentsUrl(),
+  const res = await fetch(getListClinicalAppointmentsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -4600,14 +5069,15 @@ export const getRegisterDirectClinicalAttentionUrl = () => {
   return `/api/clinic/attentions`
 }
 
-export const registerDirectClinicalAttention = async ( options?: RequestInit): Promise<registerDirectClinicalAttentionResponse> => {
+export const registerDirectClinicalAttention = async (directAttentionDto: DirectAttentionDto, options?: RequestInit): Promise<registerDirectClinicalAttentionResponse> => {
 
   const res = await fetch(getRegisterDirectClinicalAttentionUrl(),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      directAttentionDto,)
   }
 )
 
@@ -4631,17 +5101,24 @@ export type listClinicalAttentionsResponseSuccess = (listClinicalAttentionsRespo
 
 export type listClinicalAttentionsResponse = (listClinicalAttentionsResponseSuccess)
 
-export const getListClinicalAttentionsUrl = () => {
+export const getListClinicalAttentionsUrl = (params?: ListClinicalAttentionsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/clinic/attentions`
+  return stringifiedParams.length > 0 ? `/api/clinic/attentions?${stringifiedParams}` : `/api/clinic/attentions`
 }
 
-export const listClinicalAttentions = async ( options?: RequestInit): Promise<listClinicalAttentionsResponse> => {
+export const listClinicalAttentions = async (params?: ListClinicalAttentionsParams, options?: RequestInit): Promise<listClinicalAttentionsResponse> => {
 
-  const res = await fetch(getListClinicalAttentionsUrl(),
+  const res = await fetch(getListClinicalAttentionsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -4658,19 +5135,19 @@ export const listClinicalAttentions = async ( options?: RequestInit): Promise<li
 
 
 
-export type clinicControllerDetailResponse200 = {
+export type getClinicalAppointmentResponse200 = {
   data: void
   status: 200
 }
 
-export type clinicControllerDetailResponseSuccess = (clinicControllerDetailResponse200) & {
+export type getClinicalAppointmentResponseSuccess = (getClinicalAppointmentResponse200) & {
   headers: Headers;
 };
 ;
 
-export type clinicControllerDetailResponse = (clinicControllerDetailResponseSuccess)
+export type getClinicalAppointmentResponse = (getClinicalAppointmentResponseSuccess)
 
-export const getClinicControllerDetailUrl = (id: string,) => {
+export const getGetClinicalAppointmentUrl = (id: string,) => {
 
 
 
@@ -4678,9 +5155,9 @@ export const getClinicControllerDetailUrl = (id: string,) => {
   return `/api/clinic/appointments/${id}`
 }
 
-export const clinicControllerDetail = async (id: string, options?: RequestInit): Promise<clinicControllerDetailResponse> => {
+export const getClinicalAppointment = async (id: string, options?: RequestInit): Promise<getClinicalAppointmentResponse> => {
 
-  const res = await fetch(getClinicControllerDetailUrl(id),
+  const res = await fetch(getGetClinicalAppointmentUrl(id),
   {
     ...options,
     method: 'GET'
@@ -4691,25 +5168,25 @@ export const clinicControllerDetail = async (id: string, options?: RequestInit):
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: clinicControllerDetailResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as clinicControllerDetailResponse
+  const data: getClinicalAppointmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getClinicalAppointmentResponse
 }
 
 
 
-export type clinicControllerRescheduleResponse201 = {
+export type rescheduleClinicalAppointmentResponse201 = {
   data: void
   status: 201
 }
 
-export type clinicControllerRescheduleResponseSuccess = (clinicControllerRescheduleResponse201) & {
+export type rescheduleClinicalAppointmentResponseSuccess = (rescheduleClinicalAppointmentResponse201) & {
   headers: Headers;
 };
 ;
 
-export type clinicControllerRescheduleResponse = (clinicControllerRescheduleResponseSuccess)
+export type rescheduleClinicalAppointmentResponse = (rescheduleClinicalAppointmentResponseSuccess)
 
-export const getClinicControllerRescheduleUrl = (id: string,) => {
+export const getRescheduleClinicalAppointmentUrl = (id: string,) => {
 
 
 
@@ -4717,38 +5194,40 @@ export const getClinicControllerRescheduleUrl = (id: string,) => {
   return `/api/clinic/appointments/${id}/reschedule`
 }
 
-export const clinicControllerReschedule = async (id: string, options?: RequestInit): Promise<clinicControllerRescheduleResponse> => {
+export const rescheduleClinicalAppointment = async (id: string,
+    rescheduleAppointmentDto: RescheduleAppointmentDto, options?: RequestInit): Promise<rescheduleClinicalAppointmentResponse> => {
 
-  const res = await fetch(getClinicControllerRescheduleUrl(id),
+  const res = await fetch(getRescheduleClinicalAppointmentUrl(id),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      rescheduleAppointmentDto,)
   }
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: clinicControllerRescheduleResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as clinicControllerRescheduleResponse
+  const data: rescheduleClinicalAppointmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as rescheduleClinicalAppointmentResponse
 }
 
 
 
-export type clinicControllerCorrectResponse201 = {
+export type correctClinicalAppointmentResponse201 = {
   data: void
   status: 201
 }
 
-export type clinicControllerCorrectResponseSuccess = (clinicControllerCorrectResponse201) & {
+export type correctClinicalAppointmentResponseSuccess = (correctClinicalAppointmentResponse201) & {
   headers: Headers;
 };
 ;
 
-export type clinicControllerCorrectResponse = (clinicControllerCorrectResponseSuccess)
+export type correctClinicalAppointmentResponse = (correctClinicalAppointmentResponseSuccess)
 
-export const getClinicControllerCorrectUrl = (id: string,) => {
+export const getCorrectClinicalAppointmentUrl = (id: string,) => {
 
 
 
@@ -4756,38 +5235,40 @@ export const getClinicControllerCorrectUrl = (id: string,) => {
   return `/api/clinic/appointments/${id}/correct`
 }
 
-export const clinicControllerCorrect = async (id: string, options?: RequestInit): Promise<clinicControllerCorrectResponse> => {
+export const correctClinicalAppointment = async (id: string,
+    correctAppointmentDto: CorrectAppointmentDto, options?: RequestInit): Promise<correctClinicalAppointmentResponse> => {
 
-  const res = await fetch(getClinicControllerCorrectUrl(id),
+  const res = await fetch(getCorrectClinicalAppointmentUrl(id),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      correctAppointmentDto,)
   }
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: clinicControllerCorrectResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as clinicControllerCorrectResponse
+  const data: correctClinicalAppointmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as correctClinicalAppointmentResponse
 }
 
 
 
-export type clinicControllerAttendResponse201 = {
+export type attendClinicalAppointmentResponse201 = {
   data: void
   status: 201
 }
 
-export type clinicControllerAttendResponseSuccess = (clinicControllerAttendResponse201) & {
+export type attendClinicalAppointmentResponseSuccess = (attendClinicalAppointmentResponse201) & {
   headers: Headers;
 };
 ;
 
-export type clinicControllerAttendResponse = (clinicControllerAttendResponseSuccess)
+export type attendClinicalAppointmentResponse = (attendClinicalAppointmentResponseSuccess)
 
-export const getClinicControllerAttendUrl = (id: string,) => {
+export const getAttendClinicalAppointmentUrl = (id: string,) => {
 
 
 
@@ -4795,38 +5276,40 @@ export const getClinicControllerAttendUrl = (id: string,) => {
   return `/api/clinic/appointments/${id}/attend`
 }
 
-export const clinicControllerAttend = async (id: string, options?: RequestInit): Promise<clinicControllerAttendResponse> => {
+export const attendClinicalAppointment = async (id: string,
+    attendAppointmentDto: AttendAppointmentDto, options?: RequestInit): Promise<attendClinicalAppointmentResponse> => {
 
-  const res = await fetch(getClinicControllerAttendUrl(id),
+  const res = await fetch(getAttendClinicalAppointmentUrl(id),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      attendAppointmentDto,)
   }
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: clinicControllerAttendResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as clinicControllerAttendResponse
+  const data: attendClinicalAppointmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as attendClinicalAppointmentResponse
 }
 
 
 
-export type clinicControllerCancelResponse201 = {
+export type cancelClinicalAppointmentResponse201 = {
   data: void
   status: 201
 }
 
-export type clinicControllerCancelResponseSuccess = (clinicControllerCancelResponse201) & {
+export type cancelClinicalAppointmentResponseSuccess = (cancelClinicalAppointmentResponse201) & {
   headers: Headers;
 };
 ;
 
-export type clinicControllerCancelResponse = (clinicControllerCancelResponseSuccess)
+export type cancelClinicalAppointmentResponse = (cancelClinicalAppointmentResponseSuccess)
 
-export const getClinicControllerCancelUrl = (id: string,) => {
+export const getCancelClinicalAppointmentUrl = (id: string,) => {
 
 
 
@@ -4834,9 +5317,9 @@ export const getClinicControllerCancelUrl = (id: string,) => {
   return `/api/clinic/appointments/${id}/cancel`
 }
 
-export const clinicControllerCancel = async (id: string, options?: RequestInit): Promise<clinicControllerCancelResponse> => {
+export const cancelClinicalAppointment = async (id: string, options?: RequestInit): Promise<cancelClinicalAppointmentResponse> => {
 
-  const res = await fetch(getClinicControllerCancelUrl(id),
+  const res = await fetch(getCancelClinicalAppointmentUrl(id),
   {
     ...options,
     method: 'POST'
@@ -4847,25 +5330,25 @@ export const clinicControllerCancel = async (id: string, options?: RequestInit):
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: clinicControllerCancelResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as clinicControllerCancelResponse
+  const data: cancelClinicalAppointmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as cancelClinicalAppointmentResponse
 }
 
 
 
-export type clinicControllerAbsentResponse201 = {
+export type markClinicalAppointmentAbsentResponse201 = {
   data: void
   status: 201
 }
 
-export type clinicControllerAbsentResponseSuccess = (clinicControllerAbsentResponse201) & {
+export type markClinicalAppointmentAbsentResponseSuccess = (markClinicalAppointmentAbsentResponse201) & {
   headers: Headers;
 };
 ;
 
-export type clinicControllerAbsentResponse = (clinicControllerAbsentResponseSuccess)
+export type markClinicalAppointmentAbsentResponse = (markClinicalAppointmentAbsentResponseSuccess)
 
-export const getClinicControllerAbsentUrl = (id: string,) => {
+export const getMarkClinicalAppointmentAbsentUrl = (id: string,) => {
 
 
 
@@ -4873,9 +5356,9 @@ export const getClinicControllerAbsentUrl = (id: string,) => {
   return `/api/clinic/appointments/${id}/absent`
 }
 
-export const clinicControllerAbsent = async (id: string, options?: RequestInit): Promise<clinicControllerAbsentResponse> => {
+export const markClinicalAppointmentAbsent = async (id: string, options?: RequestInit): Promise<markClinicalAppointmentAbsentResponse> => {
 
-  const res = await fetch(getClinicControllerAbsentUrl(id),
+  const res = await fetch(getMarkClinicalAppointmentAbsentUrl(id),
   {
     ...options,
     method: 'POST'
@@ -4886,25 +5369,25 @@ export const clinicControllerAbsent = async (id: string, options?: RequestInit):
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: clinicControllerAbsentResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as clinicControllerAbsentResponse
+  const data: markClinicalAppointmentAbsentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as markClinicalAppointmentAbsentResponse
 }
 
 
 
-export type treatmentControllerCreateResponse201 = {
+export type createClinicalTreatmentResponse201 = {
   data: void
   status: 201
 }
 
-export type treatmentControllerCreateResponseSuccess = (treatmentControllerCreateResponse201) & {
+export type createClinicalTreatmentResponseSuccess = (createClinicalTreatmentResponse201) & {
   headers: Headers;
 };
 ;
 
-export type treatmentControllerCreateResponse = (treatmentControllerCreateResponseSuccess)
+export type createClinicalTreatmentResponse = (createClinicalTreatmentResponseSuccess)
 
-export const getTreatmentControllerCreateUrl = () => {
+export const getCreateClinicalTreatmentUrl = () => {
 
 
 
@@ -4912,48 +5395,56 @@ export const getTreatmentControllerCreateUrl = () => {
   return `/api/clinic/treatments`
 }
 
-export const treatmentControllerCreate = async ( options?: RequestInit): Promise<treatmentControllerCreateResponse> => {
+export const createClinicalTreatment = async (treatmentDto: TreatmentDto, options?: RequestInit): Promise<createClinicalTreatmentResponse> => {
 
-  const res = await fetch(getTreatmentControllerCreateUrl(),
+  const res = await fetch(getCreateClinicalTreatmentUrl(),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      treatmentDto,)
   }
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: treatmentControllerCreateResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as treatmentControllerCreateResponse
+  const data: createClinicalTreatmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createClinicalTreatmentResponse
 }
 
 
 
-export type treatmentControllerListResponse200 = {
+export type listClinicalTreatmentsResponse200 = {
   data: void
   status: 200
 }
 
-export type treatmentControllerListResponseSuccess = (treatmentControllerListResponse200) & {
+export type listClinicalTreatmentsResponseSuccess = (listClinicalTreatmentsResponse200) & {
   headers: Headers;
 };
 ;
 
-export type treatmentControllerListResponse = (treatmentControllerListResponseSuccess)
+export type listClinicalTreatmentsResponse = (listClinicalTreatmentsResponseSuccess)
 
-export const getTreatmentControllerListUrl = () => {
+export const getListClinicalTreatmentsUrl = (params?: ListClinicalTreatmentsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/clinic/treatments`
+  return stringifiedParams.length > 0 ? `/api/clinic/treatments?${stringifiedParams}` : `/api/clinic/treatments`
 }
 
-export const treatmentControllerList = async ( options?: RequestInit): Promise<treatmentControllerListResponse> => {
+export const listClinicalTreatments = async (params?: ListClinicalTreatmentsParams, options?: RequestInit): Promise<listClinicalTreatmentsResponse> => {
 
-  const res = await fetch(getTreatmentControllerListUrl(),
+  const res = await fetch(getListClinicalTreatmentsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -4964,25 +5455,25 @@ export const treatmentControllerList = async ( options?: RequestInit): Promise<t
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: treatmentControllerListResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as treatmentControllerListResponse
+  const data: listClinicalTreatmentsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listClinicalTreatmentsResponse
 }
 
 
 
-export type treatmentControllerFinalizeResponse201 = {
+export type finalizeClinicalTreatmentResponse201 = {
   data: void
   status: 201
 }
 
-export type treatmentControllerFinalizeResponseSuccess = (treatmentControllerFinalizeResponse201) & {
+export type finalizeClinicalTreatmentResponseSuccess = (finalizeClinicalTreatmentResponse201) & {
   headers: Headers;
 };
 ;
 
-export type treatmentControllerFinalizeResponse = (treatmentControllerFinalizeResponseSuccess)
+export type finalizeClinicalTreatmentResponse = (finalizeClinicalTreatmentResponseSuccess)
 
-export const getTreatmentControllerFinalizeUrl = (id: string,) => {
+export const getFinalizeClinicalTreatmentUrl = (id: string,) => {
 
 
 
@@ -4990,38 +5481,40 @@ export const getTreatmentControllerFinalizeUrl = (id: string,) => {
   return `/api/clinic/treatments/${id}/finalize`
 }
 
-export const treatmentControllerFinalize = async (id: string, options?: RequestInit): Promise<treatmentControllerFinalizeResponse> => {
+export const finalizeClinicalTreatment = async (id: string,
+    finalizeTreatmentDto: FinalizeTreatmentDto, options?: RequestInit): Promise<finalizeClinicalTreatmentResponse> => {
 
-  const res = await fetch(getTreatmentControllerFinalizeUrl(id),
+  const res = await fetch(getFinalizeClinicalTreatmentUrl(id),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      finalizeTreatmentDto,)
   }
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: treatmentControllerFinalizeResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as treatmentControllerFinalizeResponse
+  const data: finalizeClinicalTreatmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as finalizeClinicalTreatmentResponse
 }
 
 
 
-export type treatmentControllerReopenResponse201 = {
+export type reopenClinicalTreatmentResponse201 = {
   data: void
   status: 201
 }
 
-export type treatmentControllerReopenResponseSuccess = (treatmentControllerReopenResponse201) & {
+export type reopenClinicalTreatmentResponseSuccess = (reopenClinicalTreatmentResponse201) & {
   headers: Headers;
 };
 ;
 
-export type treatmentControllerReopenResponse = (treatmentControllerReopenResponseSuccess)
+export type reopenClinicalTreatmentResponse = (reopenClinicalTreatmentResponseSuccess)
 
-export const getTreatmentControllerReopenUrl = (id: string,) => {
+export const getReopenClinicalTreatmentUrl = (id: string,) => {
 
 
 
@@ -5029,9 +5522,9 @@ export const getTreatmentControllerReopenUrl = (id: string,) => {
   return `/api/clinic/treatments/${id}/reopen`
 }
 
-export const treatmentControllerReopen = async (id: string, options?: RequestInit): Promise<treatmentControllerReopenResponse> => {
+export const reopenClinicalTreatment = async (id: string, options?: RequestInit): Promise<reopenClinicalTreatmentResponse> => {
 
-  const res = await fetch(getTreatmentControllerReopenUrl(id),
+  const res = await fetch(getReopenClinicalTreatmentUrl(id),
   {
     ...options,
     method: 'POST'
@@ -5042,25 +5535,25 @@ export const treatmentControllerReopen = async (id: string, options?: RequestIni
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: treatmentControllerReopenResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as treatmentControllerReopenResponse
+  const data: reopenClinicalTreatmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as reopenClinicalTreatmentResponse
 }
 
 
 
-export type evolutionControllerCreateResponse201 = {
+export type createClinicalEvolutionResponse201 = {
   data: void
   status: 201
 }
 
-export type evolutionControllerCreateResponseSuccess = (evolutionControllerCreateResponse201) & {
+export type createClinicalEvolutionResponseSuccess = (createClinicalEvolutionResponse201) & {
   headers: Headers;
 };
 ;
 
-export type evolutionControllerCreateResponse = (evolutionControllerCreateResponseSuccess)
+export type createClinicalEvolutionResponse = (createClinicalEvolutionResponseSuccess)
 
-export const getEvolutionControllerCreateUrl = (attentionId: string,) => {
+export const getCreateClinicalEvolutionUrl = (attentionId: string,) => {
 
 
 
@@ -5068,38 +5561,40 @@ export const getEvolutionControllerCreateUrl = (attentionId: string,) => {
   return `/api/clinic/attentions/${attentionId}/evolution`
 }
 
-export const evolutionControllerCreate = async (attentionId: string, options?: RequestInit): Promise<evolutionControllerCreateResponse> => {
+export const createClinicalEvolution = async (attentionId: string,
+    evolutionDto: EvolutionDto, options?: RequestInit): Promise<createClinicalEvolutionResponse> => {
 
-  const res = await fetch(getEvolutionControllerCreateUrl(attentionId),
+  const res = await fetch(getCreateClinicalEvolutionUrl(attentionId),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      evolutionDto,)
   }
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: evolutionControllerCreateResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as evolutionControllerCreateResponse
+  const data: createClinicalEvolutionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createClinicalEvolutionResponse
 }
 
 
 
-export type evolutionControllerGetResponse200 = {
+export type getClinicalEvolutionForAttentionResponse200 = {
   data: void
   status: 200
 }
 
-export type evolutionControllerGetResponseSuccess = (evolutionControllerGetResponse200) & {
+export type getClinicalEvolutionForAttentionResponseSuccess = (getClinicalEvolutionForAttentionResponse200) & {
   headers: Headers;
 };
 ;
 
-export type evolutionControllerGetResponse = (evolutionControllerGetResponseSuccess)
+export type getClinicalEvolutionForAttentionResponse = (getClinicalEvolutionForAttentionResponseSuccess)
 
-export const getEvolutionControllerGetUrl = (attentionId: string,) => {
+export const getGetClinicalEvolutionForAttentionUrl = (attentionId: string,) => {
 
 
 
@@ -5107,9 +5602,9 @@ export const getEvolutionControllerGetUrl = (attentionId: string,) => {
   return `/api/clinic/attentions/${attentionId}/evolution`
 }
 
-export const evolutionControllerGet = async (attentionId: string, options?: RequestInit): Promise<evolutionControllerGetResponse> => {
+export const getClinicalEvolutionForAttention = async (attentionId: string, options?: RequestInit): Promise<getClinicalEvolutionForAttentionResponse> => {
 
-  const res = await fetch(getEvolutionControllerGetUrl(attentionId),
+  const res = await fetch(getGetClinicalEvolutionForAttentionUrl(attentionId),
   {
     ...options,
     method: 'GET'
@@ -5120,25 +5615,25 @@ export const evolutionControllerGet = async (attentionId: string, options?: Requ
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: evolutionControllerGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as evolutionControllerGetResponse
+  const data: getClinicalEvolutionForAttentionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getClinicalEvolutionForAttentionResponse
 }
 
 
 
-export type evolutionControllerUpdateResponse200 = {
+export type correctClinicalEvolutionResponse200 = {
   data: void
   status: 200
 }
 
-export type evolutionControllerUpdateResponseSuccess = (evolutionControllerUpdateResponse200) & {
+export type correctClinicalEvolutionResponseSuccess = (correctClinicalEvolutionResponse200) & {
   headers: Headers;
 };
 ;
 
-export type evolutionControllerUpdateResponse = (evolutionControllerUpdateResponseSuccess)
+export type correctClinicalEvolutionResponse = (correctClinicalEvolutionResponseSuccess)
 
-export const getEvolutionControllerUpdateUrl = (id: string,) => {
+export const getCorrectClinicalEvolutionUrl = (id: string,) => {
 
 
 
@@ -5146,21 +5641,23 @@ export const getEvolutionControllerUpdateUrl = (id: string,) => {
   return `/api/clinic/evolutions/${id}`
 }
 
-export const evolutionControllerUpdate = async (id: string, options?: RequestInit): Promise<evolutionControllerUpdateResponse> => {
+export const correctClinicalEvolution = async (id: string,
+    evolutionDto: EvolutionDto, options?: RequestInit): Promise<correctClinicalEvolutionResponse> => {
 
-  const res = await fetch(getEvolutionControllerUpdateUrl(id),
+  const res = await fetch(getCorrectClinicalEvolutionUrl(id),
   {
     ...options,
-    method: 'PATCH'
-
-
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      evolutionDto,)
   }
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: evolutionControllerUpdateResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as evolutionControllerUpdateResponse
+  const data: correctClinicalEvolutionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as correctClinicalEvolutionResponse
 }
 
 
@@ -5185,14 +5682,15 @@ export const getCreateClinicalStudyUrl = () => {
   return `/api/clinic/studies`
 }
 
-export const createClinicalStudy = async ( options?: RequestInit): Promise<createClinicalStudyResponse> => {
+export const createClinicalStudy = async (clinicalStudyDto: ClinicalStudyDto, options?: RequestInit): Promise<createClinicalStudyResponse> => {
 
   const res = await fetch(getCreateClinicalStudyUrl(),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      clinicalStudyDto,)
   }
 )
 
@@ -5216,17 +5714,24 @@ export type listClinicalStudiesResponseSuccess = (listClinicalStudiesResponse200
 
 export type listClinicalStudiesResponse = (listClinicalStudiesResponseSuccess)
 
-export const getListClinicalStudiesUrl = () => {
+export const getListClinicalStudiesUrl = (params?: ListClinicalStudiesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/clinic/studies`
+  return stringifiedParams.length > 0 ? `/api/clinic/studies?${stringifiedParams}` : `/api/clinic/studies`
 }
 
-export const listClinicalStudies = async ( options?: RequestInit): Promise<listClinicalStudiesResponse> => {
+export const listClinicalStudies = async (params?: ListClinicalStudiesParams, options?: RequestInit): Promise<listClinicalStudiesResponse> => {
 
-  const res = await fetch(getListClinicalStudiesUrl(),
+  const res = await fetch(getListClinicalStudiesUrl(params),
   {
     ...options,
     method: 'GET'
@@ -5302,14 +5807,16 @@ export const getUpdateClinicalStudyUrl = (id: string,) => {
   return `/api/clinic/studies/${id}`
 }
 
-export const updateClinicalStudy = async (id: string, options?: RequestInit): Promise<updateClinicalStudyResponse> => {
+export const updateClinicalStudy = async (id: string,
+    updateClinicalStudyDto: UpdateClinicalStudyDto, options?: RequestInit): Promise<updateClinicalStudyResponse> => {
 
   const res = await fetch(getUpdateClinicalStudyUrl(id),
   {
     ...options,
-    method: 'PATCH'
-
-
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateClinicalStudyDto,)
   }
 )
 
@@ -5497,14 +6004,16 @@ export const getCreateClinicalEvaluationUrl = (attentionId: string,) => {
   return `/api/clinic/attentions/${attentionId}/evaluations`
 }
 
-export const createClinicalEvaluation = async (attentionId: string, options?: RequestInit): Promise<createClinicalEvaluationResponse> => {
+export const createClinicalEvaluation = async (attentionId: string,
+    clinicalEvaluationDto: ClinicalEvaluationDto, options?: RequestInit): Promise<createClinicalEvaluationResponse> => {
 
   const res = await fetch(getCreateClinicalEvaluationUrl(attentionId),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      clinicalEvaluationDto,)
   }
 )
 
@@ -5614,14 +6123,16 @@ export const getCorrectClinicalEvaluationUrl = (id: string,) => {
   return `/api/clinic/evaluations/${id}`
 }
 
-export const correctClinicalEvaluation = async (id: string, options?: RequestInit): Promise<correctClinicalEvaluationResponse> => {
+export const correctClinicalEvaluation = async (id: string,
+    clinicalEvaluationDto: ClinicalEvaluationDto, options?: RequestInit): Promise<correctClinicalEvaluationResponse> => {
 
   const res = await fetch(getCorrectClinicalEvaluationUrl(id),
   {
     ...options,
-    method: 'PATCH'
-
-
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      clinicalEvaluationDto,)
   }
 )
 
@@ -5633,19 +6144,19 @@ export const correctClinicalEvaluation = async (id: string, options?: RequestIni
 
 
 
-export type evaluationControllerProtocolsResponse200 = {
+export type listClinicalProtocolsResponse200 = {
   data: void
   status: 200
 }
 
-export type evaluationControllerProtocolsResponseSuccess = (evaluationControllerProtocolsResponse200) & {
+export type listClinicalProtocolsResponseSuccess = (listClinicalProtocolsResponse200) & {
   headers: Headers;
 };
 ;
 
-export type evaluationControllerProtocolsResponse = (evaluationControllerProtocolsResponseSuccess)
+export type listClinicalProtocolsResponse = (listClinicalProtocolsResponseSuccess)
 
-export const getEvaluationControllerProtocolsUrl = () => {
+export const getListClinicalProtocolsUrl = () => {
 
 
 
@@ -5653,9 +6164,9 @@ export const getEvaluationControllerProtocolsUrl = () => {
   return `/api/clinic/protocols`
 }
 
-export const evaluationControllerProtocols = async ( options?: RequestInit): Promise<evaluationControllerProtocolsResponse> => {
+export const listClinicalProtocols = async ( options?: RequestInit): Promise<listClinicalProtocolsResponse> => {
 
-  const res = await fetch(getEvaluationControllerProtocolsUrl(),
+  const res = await fetch(getListClinicalProtocolsUrl(),
   {
     ...options,
     method: 'GET'
@@ -5666,25 +6177,25 @@ export const evaluationControllerProtocols = async ( options?: RequestInit): Pro
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: evaluationControllerProtocolsResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as evaluationControllerProtocolsResponse
+  const data: listClinicalProtocolsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listClinicalProtocolsResponse
 }
 
 
 
-export type evaluationControllerCreateProtocolResponse201 = {
+export type createClinicalProtocolResponse201 = {
   data: void
   status: 201
 }
 
-export type evaluationControllerCreateProtocolResponseSuccess = (evaluationControllerCreateProtocolResponse201) & {
+export type createClinicalProtocolResponseSuccess = (createClinicalProtocolResponse201) & {
   headers: Headers;
 };
 ;
 
-export type evaluationControllerCreateProtocolResponse = (evaluationControllerCreateProtocolResponseSuccess)
+export type createClinicalProtocolResponse = (createClinicalProtocolResponseSuccess)
 
-export const getEvaluationControllerCreateProtocolUrl = () => {
+export const getCreateClinicalProtocolUrl = () => {
 
 
 
@@ -5692,38 +6203,39 @@ export const getEvaluationControllerCreateProtocolUrl = () => {
   return `/api/clinic/protocols`
 }
 
-export const evaluationControllerCreateProtocol = async ( options?: RequestInit): Promise<evaluationControllerCreateProtocolResponse> => {
+export const createClinicalProtocol = async (catalogNameDto: CatalogNameDto, options?: RequestInit): Promise<createClinicalProtocolResponse> => {
 
-  const res = await fetch(getEvaluationControllerCreateProtocolUrl(),
+  const res = await fetch(getCreateClinicalProtocolUrl(),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      catalogNameDto,)
   }
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: evaluationControllerCreateProtocolResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as evaluationControllerCreateProtocolResponse
+  const data: createClinicalProtocolResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createClinicalProtocolResponse
 }
 
 
 
-export type evaluationControllerRetireProtocolResponse200 = {
+export type retireClinicalProtocolResponse200 = {
   data: void
   status: 200
 }
 
-export type evaluationControllerRetireProtocolResponseSuccess = (evaluationControllerRetireProtocolResponse200) & {
+export type retireClinicalProtocolResponseSuccess = (retireClinicalProtocolResponse200) & {
   headers: Headers;
 };
 ;
 
-export type evaluationControllerRetireProtocolResponse = (evaluationControllerRetireProtocolResponseSuccess)
+export type retireClinicalProtocolResponse = (retireClinicalProtocolResponseSuccess)
 
-export const getEvaluationControllerRetireProtocolUrl = (id: string,) => {
+export const getRetireClinicalProtocolUrl = (id: string,) => {
 
 
 
@@ -5731,9 +6243,9 @@ export const getEvaluationControllerRetireProtocolUrl = (id: string,) => {
   return `/api/clinic/protocols/${id}/retire`
 }
 
-export const evaluationControllerRetireProtocol = async (id: string, options?: RequestInit): Promise<evaluationControllerRetireProtocolResponse> => {
+export const retireClinicalProtocol = async (id: string, options?: RequestInit): Promise<retireClinicalProtocolResponse> => {
 
-  const res = await fetch(getEvaluationControllerRetireProtocolUrl(id),
+  const res = await fetch(getRetireClinicalProtocolUrl(id),
   {
     ...options,
     method: 'PATCH'
@@ -5744,25 +6256,25 @@ export const evaluationControllerRetireProtocol = async (id: string, options?: R
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: evaluationControllerRetireProtocolResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as evaluationControllerRetireProtocolResponse
+  const data: retireClinicalProtocolResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as retireClinicalProtocolResponse
 }
 
 
 
-export type evaluationControllerTestsResponse200 = {
+export type listClinicalTestDefinitionsResponse200 = {
   data: void
   status: 200
 }
 
-export type evaluationControllerTestsResponseSuccess = (evaluationControllerTestsResponse200) & {
+export type listClinicalTestDefinitionsResponseSuccess = (listClinicalTestDefinitionsResponse200) & {
   headers: Headers;
 };
 ;
 
-export type evaluationControllerTestsResponse = (evaluationControllerTestsResponseSuccess)
+export type listClinicalTestDefinitionsResponse = (listClinicalTestDefinitionsResponseSuccess)
 
-export const getEvaluationControllerTestsUrl = () => {
+export const getListClinicalTestDefinitionsUrl = () => {
 
 
 
@@ -5770,9 +6282,9 @@ export const getEvaluationControllerTestsUrl = () => {
   return `/api/clinic/test-definitions`
 }
 
-export const evaluationControllerTests = async ( options?: RequestInit): Promise<evaluationControllerTestsResponse> => {
+export const listClinicalTestDefinitions = async ( options?: RequestInit): Promise<listClinicalTestDefinitionsResponse> => {
 
-  const res = await fetch(getEvaluationControllerTestsUrl(),
+  const res = await fetch(getListClinicalTestDefinitionsUrl(),
   {
     ...options,
     method: 'GET'
@@ -5783,25 +6295,25 @@ export const evaluationControllerTests = async ( options?: RequestInit): Promise
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: evaluationControllerTestsResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as evaluationControllerTestsResponse
+  const data: listClinicalTestDefinitionsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listClinicalTestDefinitionsResponse
 }
 
 
 
-export type evaluationControllerCreateTestResponse201 = {
+export type createClinicalTestDefinitionResponse201 = {
   data: void
   status: 201
 }
 
-export type evaluationControllerCreateTestResponseSuccess = (evaluationControllerCreateTestResponse201) & {
+export type createClinicalTestDefinitionResponseSuccess = (createClinicalTestDefinitionResponse201) & {
   headers: Headers;
 };
 ;
 
-export type evaluationControllerCreateTestResponse = (evaluationControllerCreateTestResponseSuccess)
+export type createClinicalTestDefinitionResponse = (createClinicalTestDefinitionResponseSuccess)
 
-export const getEvaluationControllerCreateTestUrl = () => {
+export const getCreateClinicalTestDefinitionUrl = () => {
 
 
 
@@ -5809,38 +6321,39 @@ export const getEvaluationControllerCreateTestUrl = () => {
   return `/api/clinic/test-definitions`
 }
 
-export const evaluationControllerCreateTest = async ( options?: RequestInit): Promise<evaluationControllerCreateTestResponse> => {
+export const createClinicalTestDefinition = async (clinicalTestDefinitionDto: ClinicalTestDefinitionDto, options?: RequestInit): Promise<createClinicalTestDefinitionResponse> => {
 
-  const res = await fetch(getEvaluationControllerCreateTestUrl(),
+  const res = await fetch(getCreateClinicalTestDefinitionUrl(),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      clinicalTestDefinitionDto,)
   }
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: evaluationControllerCreateTestResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as evaluationControllerCreateTestResponse
+  const data: createClinicalTestDefinitionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createClinicalTestDefinitionResponse
 }
 
 
 
-export type evaluationControllerRetireTestResponse200 = {
+export type retireClinicalTestDefinitionResponse200 = {
   data: void
   status: 200
 }
 
-export type evaluationControllerRetireTestResponseSuccess = (evaluationControllerRetireTestResponse200) & {
+export type retireClinicalTestDefinitionResponseSuccess = (retireClinicalTestDefinitionResponse200) & {
   headers: Headers;
 };
 ;
 
-export type evaluationControllerRetireTestResponse = (evaluationControllerRetireTestResponseSuccess)
+export type retireClinicalTestDefinitionResponse = (retireClinicalTestDefinitionResponseSuccess)
 
-export const getEvaluationControllerRetireTestUrl = (id: string,) => {
+export const getRetireClinicalTestDefinitionUrl = (id: string,) => {
 
 
 
@@ -5848,9 +6361,9 @@ export const getEvaluationControllerRetireTestUrl = (id: string,) => {
   return `/api/clinic/test-definitions/${id}/retire`
 }
 
-export const evaluationControllerRetireTest = async (id: string, options?: RequestInit): Promise<evaluationControllerRetireTestResponse> => {
+export const retireClinicalTestDefinition = async (id: string, options?: RequestInit): Promise<retireClinicalTestDefinitionResponse> => {
 
-  const res = await fetch(getEvaluationControllerRetireTestUrl(id),
+  const res = await fetch(getRetireClinicalTestDefinitionUrl(id),
   {
     ...options,
     method: 'PATCH'
@@ -5861,25 +6374,25 @@ export const evaluationControllerRetireTest = async (id: string, options?: Reque
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: evaluationControllerRetireTestResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as evaluationControllerRetireTestResponse
+  const data: retireClinicalTestDefinitionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as retireClinicalTestDefinitionResponse
 }
 
 
 
-export type evaluationControllerMethodsResponse200 = {
+export type listClinicalMeasurementMethodsResponse200 = {
   data: void
   status: 200
 }
 
-export type evaluationControllerMethodsResponseSuccess = (evaluationControllerMethodsResponse200) & {
+export type listClinicalMeasurementMethodsResponseSuccess = (listClinicalMeasurementMethodsResponse200) & {
   headers: Headers;
 };
 ;
 
-export type evaluationControllerMethodsResponse = (evaluationControllerMethodsResponseSuccess)
+export type listClinicalMeasurementMethodsResponse = (listClinicalMeasurementMethodsResponseSuccess)
 
-export const getEvaluationControllerMethodsUrl = () => {
+export const getListClinicalMeasurementMethodsUrl = () => {
 
 
 
@@ -5887,9 +6400,9 @@ export const getEvaluationControllerMethodsUrl = () => {
   return `/api/clinic/measurement-methods`
 }
 
-export const evaluationControllerMethods = async ( options?: RequestInit): Promise<evaluationControllerMethodsResponse> => {
+export const listClinicalMeasurementMethods = async ( options?: RequestInit): Promise<listClinicalMeasurementMethodsResponse> => {
 
-  const res = await fetch(getEvaluationControllerMethodsUrl(),
+  const res = await fetch(getListClinicalMeasurementMethodsUrl(),
   {
     ...options,
     method: 'GET'
@@ -5900,25 +6413,25 @@ export const evaluationControllerMethods = async ( options?: RequestInit): Promi
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: evaluationControllerMethodsResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as evaluationControllerMethodsResponse
+  const data: listClinicalMeasurementMethodsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listClinicalMeasurementMethodsResponse
 }
 
 
 
-export type evaluationControllerCreateMethodResponse201 = {
+export type createClinicalMeasurementMethodResponse201 = {
   data: void
   status: 201
 }
 
-export type evaluationControllerCreateMethodResponseSuccess = (evaluationControllerCreateMethodResponse201) & {
+export type createClinicalMeasurementMethodResponseSuccess = (createClinicalMeasurementMethodResponse201) & {
   headers: Headers;
 };
 ;
 
-export type evaluationControllerCreateMethodResponse = (evaluationControllerCreateMethodResponseSuccess)
+export type createClinicalMeasurementMethodResponse = (createClinicalMeasurementMethodResponseSuccess)
 
-export const getEvaluationControllerCreateMethodUrl = () => {
+export const getCreateClinicalMeasurementMethodUrl = () => {
 
 
 
@@ -5926,38 +6439,39 @@ export const getEvaluationControllerCreateMethodUrl = () => {
   return `/api/clinic/measurement-methods`
 }
 
-export const evaluationControllerCreateMethod = async ( options?: RequestInit): Promise<evaluationControllerCreateMethodResponse> => {
+export const createClinicalMeasurementMethod = async (measurementMethodDto: MeasurementMethodDto, options?: RequestInit): Promise<createClinicalMeasurementMethodResponse> => {
 
-  const res = await fetch(getEvaluationControllerCreateMethodUrl(),
+  const res = await fetch(getCreateClinicalMeasurementMethodUrl(),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      measurementMethodDto,)
   }
 )
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: evaluationControllerCreateMethodResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as evaluationControllerCreateMethodResponse
+  const data: createClinicalMeasurementMethodResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createClinicalMeasurementMethodResponse
 }
 
 
 
-export type evaluationControllerRetireMethodResponse200 = {
+export type retireClinicalMeasurementMethodResponse200 = {
   data: void
   status: 200
 }
 
-export type evaluationControllerRetireMethodResponseSuccess = (evaluationControllerRetireMethodResponse200) & {
+export type retireClinicalMeasurementMethodResponseSuccess = (retireClinicalMeasurementMethodResponse200) & {
   headers: Headers;
 };
 ;
 
-export type evaluationControllerRetireMethodResponse = (evaluationControllerRetireMethodResponseSuccess)
+export type retireClinicalMeasurementMethodResponse = (retireClinicalMeasurementMethodResponseSuccess)
 
-export const getEvaluationControllerRetireMethodUrl = (id: string,) => {
+export const getRetireClinicalMeasurementMethodUrl = (id: string,) => {
 
 
 
@@ -5965,9 +6479,9 @@ export const getEvaluationControllerRetireMethodUrl = (id: string,) => {
   return `/api/clinic/measurement-methods/${id}/retire`
 }
 
-export const evaluationControllerRetireMethod = async (id: string, options?: RequestInit): Promise<evaluationControllerRetireMethodResponse> => {
+export const retireClinicalMeasurementMethod = async (id: string, options?: RequestInit): Promise<retireClinicalMeasurementMethodResponse> => {
 
-  const res = await fetch(getEvaluationControllerRetireMethodUrl(id),
+  const res = await fetch(getRetireClinicalMeasurementMethodUrl(id),
   {
     ...options,
     method: 'PATCH'
@@ -5978,8 +6492,8 @@ export const evaluationControllerRetireMethod = async (id: string, options?: Req
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: evaluationControllerRetireMethodResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as evaluationControllerRetireMethodResponse
+  const data: retireClinicalMeasurementMethodResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as retireClinicalMeasurementMethodResponse
 }
 
 
@@ -6043,14 +6557,15 @@ export const getCreateSocialWorkUrl = () => {
   return `/api/clinic/social-works`
 }
 
-export const createSocialWork = async ( options?: RequestInit): Promise<createSocialWorkResponse> => {
+export const createSocialWork = async (catalogNameDto: CatalogNameDto, options?: RequestInit): Promise<createSocialWorkResponse> => {
 
   const res = await fetch(getCreateSocialWorkUrl(),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      catalogNameDto,)
   }
 )
 
@@ -6113,17 +6628,24 @@ export type listSocialWorkOrdersResponseSuccess = (listSocialWorkOrdersResponse2
 
 export type listSocialWorkOrdersResponse = (listSocialWorkOrdersResponseSuccess)
 
-export const getListSocialWorkOrdersUrl = () => {
+export const getListSocialWorkOrdersUrl = (params: ListSocialWorkOrdersParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/clinic/orders`
+  return stringifiedParams.length > 0 ? `/api/clinic/orders?${stringifiedParams}` : `/api/clinic/orders`
 }
 
-export const listSocialWorkOrders = async ( options?: RequestInit): Promise<listSocialWorkOrdersResponse> => {
+export const listSocialWorkOrders = async (params: ListSocialWorkOrdersParams, options?: RequestInit): Promise<listSocialWorkOrdersResponse> => {
 
-  const res = await fetch(getListSocialWorkOrdersUrl(),
+  const res = await fetch(getListSocialWorkOrdersUrl(params),
   {
     ...options,
     method: 'GET'
@@ -6160,14 +6682,15 @@ export const getCreateSocialWorkOrderUrl = () => {
   return `/api/clinic/orders`
 }
 
-export const createSocialWorkOrder = async ( options?: RequestInit): Promise<createSocialWorkOrderResponse> => {
+export const createSocialWorkOrder = async (socialWorkOrderDto: SocialWorkOrderDto, options?: RequestInit): Promise<createSocialWorkOrderResponse> => {
 
   const res = await fetch(getCreateSocialWorkOrderUrl(),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      socialWorkOrderDto,)
   }
 )
 
@@ -6199,14 +6722,15 @@ export const getCreateSalaClinicalIndicationUrl = () => {
   return `/api/clinic/indications`
 }
 
-export const createSalaClinicalIndication = async ( options?: RequestInit): Promise<createSalaClinicalIndicationResponse> => {
+export const createSalaClinicalIndication = async (salaClinicalIndicationDto: SalaClinicalIndicationDto, options?: RequestInit): Promise<createSalaClinicalIndicationResponse> => {
 
   const res = await fetch(getCreateSalaClinicalIndicationUrl(),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      salaClinicalIndicationDto,)
   }
 )
 
@@ -6230,17 +6754,24 @@ export type listSalaClinicalIndicationsResponseSuccess = (listSalaClinicalIndica
 
 export type listSalaClinicalIndicationsResponse = (listSalaClinicalIndicationsResponseSuccess)
 
-export const getListSalaClinicalIndicationsUrl = () => {
+export const getListSalaClinicalIndicationsUrl = (params: ListSalaClinicalIndicationsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/clinic/indications`
+  return stringifiedParams.length > 0 ? `/api/clinic/indications?${stringifiedParams}` : `/api/clinic/indications`
 }
 
-export const listSalaClinicalIndications = async ( options?: RequestInit): Promise<listSalaClinicalIndicationsResponse> => {
+export const listSalaClinicalIndications = async (params: ListSalaClinicalIndicationsParams, options?: RequestInit): Promise<listSalaClinicalIndicationsResponse> => {
 
-  const res = await fetch(getListSalaClinicalIndicationsUrl(),
+  const res = await fetch(getListSalaClinicalIndicationsUrl(params),
   {
     ...options,
     method: 'GET'

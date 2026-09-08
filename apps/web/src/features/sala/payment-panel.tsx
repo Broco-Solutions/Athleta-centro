@@ -1,19 +1,65 @@
 'use client';
+
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@athleta/ui';
-import { correctSalaPayment, createSalaPayment, deleteSalaPayment, listPaymentMethods, listSalaPayments } from '@athleta/api-client';
+import { createSalaPayment, listPaymentMethods, listSalaPayments } from '@athleta/api-client';
+
 type Payment = { id: string; year: number; month: number; paidAt: string; amount: string; paymentMethod?: { name: string } };
 type Method = { id: string; name: string; isSelectable: boolean };
-const unwrap = <T,>(v: unknown): T[] => { const b = (v as { data?: unknown }).data; if (Array.isArray(b)) return b as T[]; const n = (b as { data?: unknown } | undefined)?.data; return Array.isArray(n) ? n as T[] : []; };
-export function PaymentPanel({ personId, csrfToken }: { personId: string; csrfToken: string }): React.JSX.Element {
-  const qc = useQueryClient(); const [month, setMonth] = useState(String(new Date().getMonth() + 1)); const [amount, setAmount] = useState(''); const [method, setMethod] = useState('');
-  const payments = useQuery({ queryKey: ['sala','payments',personId], queryFn: async () => unwrap<Payment>(await listSalaPayments(personId, { credentials: 'include' })), initialData: [] });
-  const methods = useQuery({ queryKey: ['finance','payment-methods'], queryFn: async () => unwrap<Method>(await listPaymentMethods({ credentials: 'include' })), initialData: [] });
-  const create = useMutation({ mutationFn: () => createSalaPayment({ personId, year: new Date().getFullYear(), month: Number(month), paidAt: new Date().toISOString().slice(0,10), amount, paymentMethodId: method, operationId: crypto.randomUUID() }, { credentials: 'include', headers: { 'x-csrf-token': csrfToken } }), onSuccess: () => qc.invalidateQueries({ queryKey: ['sala','payments',personId] }) });
-  const remove = useMutation({ mutationFn: (id: string) => deleteSalaPayment(id, { credentials: 'include', headers: { 'x-csrf-token': csrfToken } }), onSuccess: () => qc.invalidateQueries({ queryKey: ['sala','payments',personId] }) });
-  const correct = useMutation({ mutationFn: (p: Payment) => correctSalaPayment(p.id, { year: p.year, month: p.month, paidAt: p.paidAt, amount: window.prompt('Nuevo importe', p.amount) ?? p.amount, paymentMethodId: methods.data.find((m) => m.name === p.paymentMethod?.name)?.id ?? method }, { credentials: 'include', headers: { 'x-csrf-token': csrfToken } }), onSuccess: () => qc.invalidateQueries({ queryKey: ['sala','payments',personId] }) });
-  const currentPayment = payments.data.find((payment) => payment.year === new Date().getFullYear() && payment.month === new Date().getMonth() + 1);
-  void correct;
-  return <section className="mt-5 rounded-md border bg-white p-5"><h2 className="mb-3 text-lg font-semibold">Pagos de Sala</h2><p className="mb-3 text-sm">{payments.data.length ? 'Pago registrado' : 'Pago pendiente'}</p><form className="grid gap-2 md:grid-cols-4" onSubmit={(e) => { e.preventDefault(); if (amount && method) create.mutate(); }}><select aria-label="Mes" value={month} onChange={(e) => setMonth(e.target.value)} className="h-10 rounded border px-2">{Array.from({ length: 12 }, (_, i) => <option key={i+1} value={i+1}>{i+1}</option>)}</select><input aria-label="Importe" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Importe" className="h-10 rounded border px-2" /><select aria-label="Medio de pago" value={method} onChange={(e) => setMethod(e.target.value)} className="h-10 rounded border px-2"><option value="">Medio de pago</option>{methods.data.filter((m) => m.isSelectable).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select><Button type="submit" disabled={create.isPending || !amount || !method}>Registrar pago</Button></form>{methods.data.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">No hay medios de pago configurados</p> : null}{create.isError ? <p role="alert" className="mt-2 text-sm text-red-700">No se pudo registrar el pago.</p> : null}<div className="mt-4 space-y-2">{payments.data.map((p) => <div key={p.id} className="flex justify-between border-b py-2 text-sm"><span>{p.month}/{p.year} · {p.amount} · {p.paymentMethod?.name ?? 'Medio retirado'}</span><Button type="button" variant="secondary" onClick={() => { if (window.confirm('¿Eliminar pago?')) remove.mutate(p.id); }}>Eliminar</Button></div>)}</div></section>;
+type ApiResponse = { status: number; data?: unknown };
+
+const unwrap = <T,>(value: unknown): T[] => {
+  const body = (value as { data?: unknown }).data;
+  if (Array.isArray(body)) return body as T[];
+  const nested = (body as { data?: unknown } | undefined)?.data;
+  return Array.isArray(nested) ? nested as T[] : [];
+};
+
+const assertSuccess = (response: ApiResponse): void => {
+  if (response.status < 200 || response.status >= 300) {
+    const message = (response.data as { message?: string } | undefined)?.message;
+    throw new Error(message || 'No pudimos guardar el pago.');
+  }
+};
+
+export function PaymentPanel({ personId, csrfToken, canManage }: { personId: string; csrfToken: string; canManage: boolean }): React.JSX.Element {
+  const queryClient = useQueryClient();
+  const [month, setMonth] = useState(String(new Date().getMonth() + 1));
+  const [amount, setAmount] = useState('');
+  const [method, setMethod] = useState('');
+  const [paymentToReverse, setPaymentToReverse] = useState<Payment | null>(null);
+  const payments = useQuery({ queryKey: ['sala', 'payments', personId], queryFn: async () => unwrap<Payment>(await listSalaPayments(personId, { credentials: 'include' })), initialData: [] });
+  const methods = useQuery({ queryKey: ['finance', 'payment-methods'], queryFn: async () => unwrap<Method>(await listPaymentMethods({ credentials: 'include' })), initialData: [] });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['sala', 'payments', personId] });
+  const create = useMutation({
+    mutationFn: async () => {
+      const response = await createSalaPayment({ personId, year: new Date().getFullYear(), month: Number(month), paidAt: new Date().toISOString().slice(0, 10), amount, paymentMethodId: method, operationId: crypto.randomUUID() }, { credentials: 'include', headers: { 'x-csrf-token': csrfToken } });
+      assertSuccess(response);
+    },
+    onSuccess: async () => { setAmount(''); setMethod(''); await invalidate(); },
+  });
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/sala/payments/${id}/reverse`, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken }, body: JSON.stringify({ reason: 'Corrección de pago', operationId: crypto.randomUUID() }) });
+      if (!response.ok) throw new Error('No pudimos revertir el pago.');
+    },
+    onSuccess: async () => { setPaymentToReverse(null); await invalidate(); },
+  });
+  const error = create.error ?? remove.error;
+
+  return <section className="mt-5 rounded-md border bg-white p-5">
+    <h2 className="mb-1 text-lg font-semibold">Pagos de Sala</h2>
+    <p className="mb-3 text-sm text-muted-foreground">{payments.data.length ? 'Pagos registrados para esta Persona.' : 'No hay pagos registrados todavía.'}</p>
+    {canManage ? <form className="grid gap-2 md:grid-cols-4" onSubmit={(event) => { event.preventDefault(); if (amount && method) create.mutate(); }}>
+      <label className="text-sm">Mes<select aria-label="Mes" value={month} onChange={(event) => setMonth(event.target.value)} className="mt-1 h-10 w-full rounded border px-2">{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select></label>
+      <label className="text-sm">Importe<input aria-label="Importe" required inputMode="numeric" pattern="[1-9][0-9]*" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Importe" className="mt-1 h-10 w-full rounded border px-2" /></label>
+      <label className="text-sm">Medio de pago<select aria-label="Medio de pago" required value={method} onChange={(event) => setMethod(event.target.value)} className="mt-1 h-10 w-full rounded border px-2"><option value="">Seleccionar</option>{methods.data.filter((item) => item.isSelectable).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <Button type="submit" className="self-end" disabled={create.isPending || !amount || !method}>{create.isPending ? 'Registrando…' : 'Registrar pago'}</Button>
+    </form> : <p className="text-sm text-muted-foreground">Tu rol permite consultar los pagos, sin registrar ni eliminar movimientos.</p>}
+    {methods.data.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">No hay medios de pago configurados.</p> : null}
+    {error ? <p role="alert" className="mt-2 text-sm text-red-700">{error.message || 'No se pudo actualizar el pago.'}</p> : null}
+    {paymentToReverse ? <div role="alertdialog" aria-modal="true" aria-labelledby="reverse-payment-title" className="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm"><p id="reverse-payment-title">¿Revertir el pago de {paymentToReverse.month}/{paymentToReverse.year} por {paymentToReverse.amount}?</p><div className="mt-3 flex gap-2"><Button type="button" variant="secondary" onClick={() => setPaymentToReverse(null)}>Cancelar</Button><Button type="button" disabled={remove.isPending} onClick={() => remove.mutate(paymentToReverse.id)}>{remove.isPending ? 'Revirtiendo…' : 'Revertir pago'}</Button></div></div> : null}
+    <div className="mt-4 space-y-2">{payments.data.map((payment) => <div key={payment.id} className="flex items-center justify-between gap-3 border-b py-2 text-sm"><span>{payment.month}/{payment.year} · {payment.amount} · {payment.paymentMethod?.name ?? 'Medio retirado'}</span>{canManage ? <Button type="button" variant="secondary" onClick={() => setPaymentToReverse(payment)}>Revertir</Button> : null}</div>)}</div>
+  </section>;
 }

@@ -3,7 +3,7 @@ import { ApiBody, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiParam, Api
 import type { Request } from 'express';
 import { AuthService } from '../auth/auth.service';
 import { PermissionsGuard, RequireAnyPermission, RequirePermissions } from '../auth/permissions.guard';
-import { CreateTeamUserDto, TeamRoleDto, TeamUserCreatedDto, TeamUserEnvelopeDto, TeamUserListEnvelopeDto, UpdateTeamUserDto } from './team.dto';
+import { CreateTeamUserDto, TeamCredentialResetDto, TeamRoleDto, TeamUserCreatedDto, TeamUserEnvelopeDto, TeamUserListEnvelopeDto, UpdateTeamUserDto } from './team.dto';
 import { TeamService } from './team.service';
 
 @ApiTags('Team') @Controller('team/users') @UseGuards(PermissionsGuard)
@@ -25,5 +25,7 @@ export class TeamController {
   async inactivate(@Param('id') id: string, @Req() request: Request) { const actor = await this.current(request); return { data: await this.team.inactivate(id, actor.permissions) }; }
   @Post(':id/reactivate') @HttpCode(200) @RequireAnyPermission('TEAM_STANDARD_USER_MANAGE', 'TEAM_GENERAL_ADMIN_MANAGE') @ApiOperation({ operationId: 'reactivateTeamUser' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) @ApiOkResponse({ type: TeamUserEnvelopeDto })
   async reactivate(@Param('id') id: string, @Req() request: Request) { const actor = await this.current(request); return { data: await this.team.reactivate(id, actor.permissions) }; }
+  @Post(':id/reset-credential') @HttpCode(200) @RequireAnyPermission('TEAM_STANDARD_CREDENTIAL_RESET', 'TEAM_GENERAL_ADMIN_CREDENTIAL_RESET') @ApiOperation({ operationId: 'resetTeamUserCredential' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) @ApiOkResponse({ type: TeamCredentialResetDto })
+  async resetCredential(@Param('id') id: string, @Req() request: Request) { const actor = await this.current(request); return this.team.resetCredential(id, actor.permissions); }
   private async current(request: Request) { return (await this.auth.current(request.cookies?.athleta_session)).session; }
 }

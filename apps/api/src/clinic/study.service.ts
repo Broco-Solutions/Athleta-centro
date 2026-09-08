@@ -4,19 +4,21 @@ import { PrivateStorageService } from '../files/private-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const publicFileSelect = { id: true, originalName: true, mimeType: true, size: true, createdAt: true } as const;
+type CreateStudyInput = { personId: string; studyType: string; studyDate: string; treatmentId?: string | null; description?: string | null };
+type UpdateStudyInput = { studyType?: string; studyDate?: string; treatmentId?: string | null; description?: string | null };
 
 @Injectable()
 export class StudyService {
   constructor(private readonly prisma: PrismaService, private readonly storage: PrivateStorageService) {}
 
-  async create(body: Record<string, unknown>) {
-    const personId = String(body.personId);
-    const studyType = String(body.studyType ?? '').trim();
-    const studyDate = this.date(String(body.studyDate));
+  async create(body: CreateStudyInput) {
+    const personId = body.personId;
+    const studyType = body.studyType.trim();
+    const studyDate = this.date(body.studyDate);
     if (!studyType) throw new BadRequestException({ code: 'STUDY_TYPE_REQUIRED', message: 'Study type required' });
-    const treatmentId = body.treatmentId ? String(body.treatmentId) : null;
+    const treatmentId = body.treatmentId ?? null;
     await this.validateTreatment(personId, treatmentId);
-    return this.prisma.clinicalStudy.create({ data: { personId, studyType, studyDate, treatmentId, description: body.description ? String(body.description).trim() : null } });
+    return this.prisma.clinicalStudy.create({ data: { personId, studyType, studyDate, treatmentId, description: body.description?.trim() || null } });
   }
 
   list(personId?: string) {
@@ -29,14 +31,14 @@ export class StudyService {
     return study;
   }
 
-  async update(id: string, body: Record<string, unknown>) {
+  async update(id: string, body: UpdateStudyInput) {
     const current = await this.prisma.clinicalStudy.findUnique({ where: { id } });
     if (!current) throw new NotFoundException({ code: 'STUDY_NOT_FOUND', message: 'Study not found' });
-    const treatmentId = body.treatmentId === null ? null : body.treatmentId ? String(body.treatmentId) : current.treatmentId;
+    const treatmentId = body.treatmentId === undefined ? current.treatmentId : body.treatmentId;
     await this.validateTreatment(current.personId, treatmentId);
-    const studyType = body.studyType === undefined ? current.studyType : String(body.studyType).trim();
+    const studyType = body.studyType === undefined ? current.studyType : body.studyType.trim();
     if (!studyType) throw new BadRequestException({ code: 'STUDY_TYPE_REQUIRED', message: 'Study type required' });
-    return this.prisma.clinicalStudy.update({ where: { id }, data: { studyType, treatmentId, studyDate: body.studyDate === undefined ? current.studyDate : this.date(String(body.studyDate)), description: body.description === undefined ? current.description : String(body.description).trim() || null } });
+    return this.prisma.clinicalStudy.update({ where: { id }, data: { studyType, treatmentId, studyDate: body.studyDate === undefined ? current.studyDate : this.date(body.studyDate), description: body.description === undefined ? current.description : body.description?.trim() || null } });
   }
 
   async attach(id: string, actorId: string, file: Express.Multer.File) {

@@ -7,3 +7,9 @@ export async function addTeamUser(input: CreateTeamUserDto, csrf: string): Promi
 export async function editTeamUser(id: string, input: UpdateTeamUserDto, csrf: string): Promise<TeamUserDto> { return unwrap(await updateTeamUser(id, input, options(csrf))).data; }
 export async function changeRole(id: string, role: TeamRoleDtoRole, add: boolean, csrf: string): Promise<TeamUserDto> { return unwrap(add ? await addTeamUserRole(id, { role }, options(csrf)) : await removeTeamUserRole(id, { role }, options(csrf))).data; }
 export async function changeTeamUserStatus(id: string, active: boolean, csrf: string): Promise<TeamUserDto> { return unwrap(active ? await reactivateTeamUser(id, options(csrf)) : await inactivateTeamUser(id, options(csrf))).data; }
+export async function resetTeamCredential(id: string, csrf: string): Promise<{ temporaryPassword: string }> {
+  const response = await fetch(`/api/team/users/${id}/reset-credential`, { method: 'POST', ...options(csrf) });
+  const body = await response.json() as { temporaryPassword?: string; message?: string };
+  if (!response.ok || !body.temporaryPassword) throw new Error(body.message ?? 'No se pudo resetear la credencial.');
+  return { temporaryPassword: body.temporaryPassword };
+}

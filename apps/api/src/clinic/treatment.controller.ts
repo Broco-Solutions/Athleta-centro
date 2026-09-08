@@ -1,2 +1,37 @@
-import {Body,Controller,Get,Param,Post,Query,UseGuards} from '@nestjs/common'; import {ApiParam,ApiTags} from '@nestjs/swagger'; import {PermissionsGuard,RequirePermissions} from '../auth/permissions.guard'; import {TreatmentService} from './treatment.service';
-@ApiTags('Clinic Treatments') @Controller('clinic/treatments') @UseGuards(PermissionsGuard) export class TreatmentController { constructor(private readonly s:TreatmentService){} @Post() @RequirePermissions('CLINIC_EVALUATION_MANAGE') async create(@Body() b:Record<string,unknown>){return {data:await this.s.create(b as never)}} @Get() @RequirePermissions('CLINICAL_HISTORY_READ') async list(@Query('personId') p?:string){return {data:await this.s.list(p)}} @Post(':id/finalize') @ApiParam({name:'id',type:String}) @RequirePermissions('CLINIC_EVALUATION_MANAGE') async finalize(@Param('id') id:string,@Body() b:Record<string,unknown>){return {data:await this.s.finalize(id,b as never)}} @Post(':id/reopen') @ApiParam({name:'id',type:String}) @RequirePermissions('CLINIC_EVALUATION_MANAGE') async reopen(@Param('id') id:string){return {data:await this.s.reopen(id)}} }
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { PermissionsGuard, RequirePermissions } from '../auth/permissions.guard';
+import { FinalizeTreatmentDto, TreatmentDto } from './clinic.dto';
+import { TreatmentService } from './treatment.service';
+
+@ApiTags('Clinic Treatments')
+@Controller('clinic/treatments')
+@UseGuards(PermissionsGuard)
+export class TreatmentController {
+  constructor(private readonly treatments: TreatmentService) {}
+
+  @Post()
+  @RequirePermissions('CLINIC_TREATMENT_MANAGE')
+  @ApiOperation({ operationId: 'createClinicalTreatment' })
+  @ApiBody({ type: TreatmentDto })
+  async create(@Body() body: TreatmentDto) { return { data: await this.treatments.create(body) }; }
+
+  @Get()
+  @RequirePermissions('CLINICAL_HISTORY_READ')
+  @ApiOperation({ operationId: 'listClinicalTreatments' })
+  @ApiQuery({ name: 'personId', required: false, type: String, format: 'uuid' })
+  async list(@Query('personId') personId?: string) { return { data: await this.treatments.list(personId) }; }
+
+  @Post(':id/finalize')
+  @RequirePermissions('CLINIC_TREATMENT_MANAGE')
+  @ApiOperation({ operationId: 'finalizeClinicalTreatment' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiBody({ type: FinalizeTreatmentDto })
+  async finalize(@Param('id') id: string, @Body() body: FinalizeTreatmentDto) { return { data: await this.treatments.finalize(id, body) }; }
+
+  @Post(':id/reopen')
+  @RequirePermissions('CLINIC_TREATMENT_MANAGE')
+  @ApiOperation({ operationId: 'reopenClinicalTreatment' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  async reopen(@Param('id') id: string) { return { data: await this.treatments.reopen(id) }; }
+}

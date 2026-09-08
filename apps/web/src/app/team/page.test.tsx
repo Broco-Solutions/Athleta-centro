@@ -13,3 +13,13 @@ beforeEach(() => { server.use(http.get('http://localhost:3000/api/auth/session',
 it('renders safe team data and available roles', async () => { renderPage(); expect(await screen.findByText('Sintética, Ada')).toBeInTheDocument(); expect(screen.getByText('Profesor')).toBeInTheDocument(); expect(screen.queryByText('Administrador general')).not.toBeInTheDocument(); });
 it('creates an account and displays its temporary password once', async () => { server.use(http.post('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: user, temporaryPassword: 'Generated1!Pass' }, { status: 201 }))); renderPage(); await screen.findByText('Sintética, Ada'); fireEvent.click(screen.getByRole('button', { name: /Nuevo integrante/ })); fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Nueva' } }); fireEvent.change(screen.getByLabelText('Apellido'), { target: { value: 'Persona' } }); fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'new@team.test' } }); fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); expect(await screen.findByTestId('temporary-password')).toHaveTextContent('Generated1!Pass'); });
 it('surfaces invalid lifecycle actions without hiding the account', async () => { server.use(http.post(`http://localhost:3000/api/team/users/${user.id}/inactivate`, () => HttpResponse.json({ code: 'RESPONSIBILITIES_PENDING' }, { status: 409 }))); renderPage(); fireEvent.click(await screen.findByText('Sintética, Ada')); fireEvent.click(screen.getByRole('button', { name: 'Inactivar acceso' })); await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('La operación no es válida')); expect(screen.getByText('Editar integrante')).toBeInTheDocument(); });
+it('resets a standard credential and displays the returned password once', async () => {
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: [...session.permissions, 'TEAM_STANDARD_CREDENTIAL_RESET'] } })),
+    http.post(`http://localhost:3000/api/team/users/${user.id}/reset-credential`, () => HttpResponse.json({ temporaryPassword: 'ResetPass1!Synthetic' })),
+  );
+  renderPage();
+  fireEvent.click(await screen.findByText('Sintética, Ada'));
+  fireEvent.click(screen.getByRole('button', { name: 'Resetear credencial' }));
+  expect(await screen.findByTestId('temporary-password')).toHaveTextContent('ResetPass1!Synthetic');
+});

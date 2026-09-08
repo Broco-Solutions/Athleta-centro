@@ -1,4 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsDateString } from 'class-validator';
+
+export class ReservationDateQueryDto {
+  @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) date!: string;
+}
 
 export class ReservationsPersonDto {
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;

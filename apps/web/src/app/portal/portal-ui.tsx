@@ -2,6 +2,7 @@
 import React from 'react';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { formatOperationalTime } from '../../lib/operational-time';
 
@@ -22,10 +23,12 @@ export const formatTime = formatOperationalTime;
 export const today = (): string => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
 
 export function PortalNav(): React.JSX.Element {
+  const pathname = usePathname();
   const sala = useQuery({ queryKey: ['portal', 'sala'], queryFn: () => portalFetch<{ reservations?: unknown[]; fixed?: unknown[] }>('sala'), retry: false });
   const clinic = useQuery({ queryKey: ['portal', 'appointments'], queryFn: () => portalFetch<unknown[]>('clinic/appointments'), retry: false });
   const logout = async () => { await fetch('/api/portal/auth/logout', { method: 'POST', credentials: 'include' }); window.location.href = '/portal/login'; };
-  return <nav aria-label="Navegación del Portal" className="sticky bottom-0 z-10 border-t bg-white/95 p-3 backdrop-blur sm:static sm:border-0 sm:bg-transparent sm:p-0"><div className="mx-auto flex max-w-2xl items-center justify-between gap-2 text-sm"><Link href="/portal" className="rounded px-2 py-2 font-medium hover:bg-slate-100">Inicio</Link>{sala.data ? <Link href="/portal/sala" className="rounded px-2 py-2 font-medium hover:bg-slate-100">Sala</Link> : null}{clinic.data ? <Link href="/portal/clinic" className="rounded px-2 py-2 font-medium hover:bg-slate-100">Clínica</Link> : null}<Link href="/portal/profile" className="rounded px-2 py-2 font-medium hover:bg-slate-100">Mis datos</Link><button type="button" onClick={logout} className="rounded px-2 py-2 font-medium hover:bg-slate-100">Salir</button></div></nav>;
+  const linkClass = (href: string): string => `rounded px-2 py-2 font-medium hover:bg-slate-100 ${pathname === href ? 'bg-slate-100 text-black' : ''}`;
+  return <nav aria-label="Navegación del Portal" className="sticky bottom-0 z-10 border-t bg-white/95 p-3 backdrop-blur sm:static sm:border-0 sm:bg-transparent sm:p-0"><div className="mx-auto flex max-w-2xl items-center justify-between gap-2 text-sm"><Link href="/portal" className={linkClass('/portal')} aria-current={pathname === '/portal' ? 'page' : undefined}>Inicio</Link>{sala.data ? <Link href="/portal/sala" className={linkClass('/portal/sala')} aria-current={pathname === '/portal/sala' ? 'page' : undefined}>Sala</Link> : null}{clinic.data ? <Link href="/portal/clinic" className={linkClass('/portal/clinic')} aria-current={pathname === '/portal/clinic' ? 'page' : undefined}>Clínica</Link> : null}<Link href="/portal/profile" className={linkClass('/portal/profile')} aria-current={pathname === '/portal/profile' ? 'page' : undefined}>Mis datos</Link><button type="button" onClick={logout} className="rounded px-2 py-2 font-medium hover:bg-slate-100">Salir</button></div></nav>;
 }
 
 export function PortalFrame({ title, children }: { title: string; children: React.ReactNode }): React.JSX.Element { return <main className="min-h-screen bg-slate-50 p-4 pb-24 sm:pb-6"><div className="mx-auto max-w-2xl space-y-5"><header><p className="text-sm font-medium text-muted-foreground">Portal Athleta</p><h1 className="text-2xl font-semibold">{title}</h1></header>{children}<PortalNav /></div></main>; }

@@ -31,6 +31,20 @@ export class TeamService {
   async removeRole(id: string, role: Role, permissions: readonly string[]) { const target = await this.users.find(id); this.authorizeRoles(target.roles.map((entry) => entry.role), [role], permissions); await this.assertNoResponsibilities(id, role); return this.safe(await this.users.removeRole(id, role)); }
   async inactivate(id: string, permissions: readonly string[]) { const target = await this.users.find(id); this.authorizeRoles(target.roles.map((entry) => entry.role), [], permissions); for (const role of target.roles.map((entry) => entry.role)) await this.assertNoResponsibilities(id, role); return this.safe(await this.users.inactivate(id)); }
   async reactivate(id: string, permissions: readonly string[]) { const target = await this.users.find(id); this.authorizeRoles(target.roles.map((entry) => entry.role), [], permissions); return this.safe(await this.users.reactivate(id)); }
+  async resetCredential(id: string, permissions: readonly string[]) {
+    const target = await this.users.find(id);
+    const roles = target.roles.map((entry) => entry.role);
+    if (roles.includes(Role.BROCO_SUPPORT)) throw new ForbiddenException({ code: 'SUPPORT_ACCOUNT_NOT_MANAGEABLE', message: 'Support accounts cannot be managed here' });
+    const required: Permission = roles.includes(Role.GENERAL_ADMIN) ? 'TEAM_GENERAL_ADMIN_CREDENTIAL_RESET' : 'TEAM_STANDARD_CREDENTIAL_RESET';
+    if (!permissions.includes(required)) throw new ForbiddenException({ code: 'PERMISSION_DENIED', message: 'Permission denied' });
+    const temporaryPassword = this.temporaryPassword();
+    const passwordHash = await this.auth.hashPassword(temporaryPassword);
+    await this.prisma.$transaction([
+      this.prisma.internalCredential.upsert({ where: { internalUserId: id }, create: { internalUserId: id, passwordHash, mustChangePassword: true }, update: { passwordHash, mustChangePassword: true, credentialsUpdatedAt: new Date() } }),
+      this.prisma.session.updateMany({ where: { internalUserId: id, revokedAt: null }, data: { revokedAt: new Date() } }),
+    ]);
+    return { temporaryPassword };
+  }
   private authorizeRoles(current: Role[], changed: Role[], permissions: readonly string[]): void { const involved = new Set([...current, ...changed]); if (involved.has(Role.BROCO_SUPPORT)) throw new ForbiddenException({ code: 'SUPPORT_ACCOUNT_NOT_MANAGEABLE', message: 'Support accounts cannot be managed here' }); const required: Permission = involved.has(Role.GENERAL_ADMIN) ? 'TEAM_GENERAL_ADMIN_MANAGE' : 'TEAM_STANDARD_USER_MANAGE'; if (!permissions.includes(required)) throw new ForbiddenException({ code: 'PERMISSION_DENIED', message: 'Permission denied' }); }
   private async assertNoResponsibilities(id: string, role: Role): Promise<void> {
     if (role === Role.PROFESSOR && await this.prisma.salaParticipation.count({ where: { mainProfessorId: id, endDate: null } })) throw new ConflictException({ code: 'USER_HAS_SALA_RESPONSIBILITIES', message: 'No se puede quitar el rol porque tiene Personas asignadas en Sala.' });

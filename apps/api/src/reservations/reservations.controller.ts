@@ -1,7 +1,7 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { PermissionsGuard, RequirePermissions } from '../auth/permissions.guard';
-import { ReservationsResponseDto } from './reservations.dto';
+import { PermissionsGuard, RequireAnyPermission } from '../auth/permissions.guard';
+import { ReservationDateQueryDto, ReservationsResponseDto } from './reservations.dto';
 import { ReservationsService } from './reservations.service';
 
 @ApiTags('Reservations')
@@ -11,9 +11,12 @@ export class ReservationsController {
   constructor(private readonly reservations: ReservationsService) {}
 
   @Get()
-  @RequirePermissions('SALA_RELATION_READ', 'CLINIC_OPERATIONAL_READ')
+  @RequireAnyPermission('SALA_RELATION_READ', 'CLINIC_OPERATIONAL_READ')
   @ApiOperation({ operationId: 'getReservationsTimeline' })
   @ApiQuery({ name: 'date', required: true, type: String, format: 'date' })
   @ApiResponse({ type: ReservationsResponseDto })
-  async list(@Query('date') date: string): Promise<{ data: ReservationsResponseDto }> { return { data: await this.reservations.list(date) }; }
+  async list(@Query() query: ReservationDateQueryDto, @Req() request: { athletaUserId?: string }): Promise<{ data: ReservationsResponseDto }> {
+    if (!request.athletaUserId) throw new Error('Authenticated actor missing');
+    return { data: await this.reservations.list(query.date, request.athletaUserId) };
+  }
 }

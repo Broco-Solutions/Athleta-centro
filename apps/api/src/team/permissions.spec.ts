@@ -27,4 +27,14 @@ describe('effectivePermissions', () => {
     expect(permissions.has('SALA_CLINICAL_INDICATION_READ')).toBe(true);
     expect(permissions.has('CLINIC_INDICATION_CONTENT_MANAGE')).toBe(false);
   });
+  it('keeps operational and clinical write permissions separate', () => {
+    const administrative = effectivePermissions(InternalUserStatus.ACTIVE, [Role.ADMINISTRATIVE]);
+    expect(administrative.has('CLINIC_ATTENTION_REGISTER')).toBe(true);
+    expect(administrative.has('CLINICAL_HISTORY_WRITE')).toBe(false);
+    expect(administrative.has('CLINIC_TREATMENT_MANAGE')).toBe(false);
+    const clinical = effectivePermissions(InternalUserStatus.ACTIVE, [Role.KINESIOLOGIST]);
+    expect(clinical.has('CLINICAL_HISTORY_WRITE')).toBe(true);
+    expect(clinical.has('CLINIC_EVOLUTION_MANAGE')).toBe(true);
+    expect(clinical.has('CLINIC_TREATMENT_MANAGE')).toBe(true);
+  });
 });
