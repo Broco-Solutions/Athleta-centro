@@ -11,6 +11,10 @@ export class TeamController {
   constructor(private readonly team: TeamService, private readonly auth: AuthService) {}
   @Get() @RequirePermissions('TEAM_READ') @ApiOperation({ operationId: 'listTeamUsers' }) @ApiOkResponse({ type: TeamUserListEnvelopeDto })
   async list() { return { data: await this.team.list() }; }
+  @Get('me') @ApiOperation({ operationId: 'getOwnTeamUser' }) @ApiOkResponse({ type: TeamUserEnvelopeDto })
+  async me(@Req() request: Request) { const actor = await this.current(request); return { data: await this.team.me(actor.user.id, actor.roles) }; }
+  @Patch('me') @ApiOperation({ operationId: 'updateOwnTeamUser' }) @ApiBody({ type: UpdateTeamUserDto }) @ApiOkResponse({ type: TeamUserEnvelopeDto })
+  async updateMe(@Body() body: UpdateTeamUserDto, @Req() request: Request) { const actor = await this.current(request); return { data: await this.team.updateMe(actor.user.id, actor.roles, body) }; }
   @Get(':id') @RequirePermissions('TEAM_READ') @ApiOperation({ operationId: 'getTeamUser' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) @ApiOkResponse({ type: TeamUserEnvelopeDto })
   async get(@Param('id') id: string) { return { data: await this.team.get(id) }; }
   @Post() @RequireAnyPermission('TEAM_STANDARD_USER_MANAGE', 'TEAM_GENERAL_ADMIN_MANAGE') @ApiOperation({ operationId: 'createTeamUser' }) @ApiBody({ type: CreateTeamUserDto }) @ApiCreatedResponse({ type: TeamUserCreatedDto })

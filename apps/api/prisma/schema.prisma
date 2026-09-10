@@ -27,6 +27,12 @@ model InternalUser {
   lastName                       String                     @map("last_name")
   email                          String
   normalizedEmail                String                     @unique @map("normalized_email")
+  phone                          String?
+  dni                            String?
+  address                        String?
+  birthDate                      DateTime?                  @map("birth_date") @db.Date
+  profession                     String?
+  athletaStartDate               DateTime?                  @map("athleta_start_date") @db.Date
   status                         InternalUserStatus         @default(ACTIVE)
   createdAt                      DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                      DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
