@@ -23,3 +23,13 @@ it('resets a standard credential and displays the returned password once', async
   fireEvent.click(screen.getByRole('button', { name: 'Resetear credencial' }));
   expect(await screen.findByTestId('temporary-password')).toHaveTextContent('ResetPass1!Synthetic');
 });
+it('keeps a general administrator profile read-only for an Administrative user', async () => {
+  const generalAdmin = { ...user, id: '10000000-0000-4000-8000-000000000003', roles: ['GENERAL_ADMIN'] };
+  server.use(http.get('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: [generalAdmin] })));
+  renderPage();
+  fireEvent.click(await screen.findByText('Sintética, Ada'));
+  expect(await screen.findByText('Ficha de integrante')).toBeInTheDocument();
+  expect(screen.getByText('Esta cuenta está protegida y no puede modificarse con tus permisos.')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Inactivar acceso' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Guardar' })).not.toBeInTheDocument();
+});

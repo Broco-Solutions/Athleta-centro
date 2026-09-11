@@ -123,6 +123,18 @@ export interface TeamUserDto {
   firstName: string;
   lastName: string;
   email: string;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  dni?: string | null;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  birthDate?: string | null;
+  /** @nullable */
+  profession?: string | null;
+  /** @nullable */
+  athletaStartDate?: string | null;
   status: TeamUserDtoStatus;
   roles: TeamUserDtoRolesItem[];
 }
@@ -133,6 +145,36 @@ export interface TeamUserListEnvelopeDto {
 
 export interface TeamUserEnvelopeDto {
   data: TeamUserDto;
+}
+
+export interface UpdateTeamUserDto {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  /**
+   * @maxLength 50
+   * @nullable
+   */
+  phone?: string | null;
+  /**
+   * @maxLength 30
+   * @nullable
+   */
+  dni?: string | null;
+  /**
+   * @maxLength 250
+   * @nullable
+   */
+  address?: string | null;
+  /** @nullable */
+  birthDate?: string | null;
+  /**
+   * @maxLength 120
+   * @nullable
+   */
+  profession?: string | null;
+  /** @nullable */
+  athletaStartDate?: string | null;
 }
 
 export type CreateTeamUserDtoRolesItem = typeof CreateTeamUserDtoRolesItem[keyof typeof CreateTeamUserDtoRolesItem];
@@ -152,6 +194,30 @@ export interface CreateTeamUserDto {
   firstName: string;
   lastName: string;
   email: string;
+  /**
+   * @maxLength 50
+   * @nullable
+   */
+  phone?: string | null;
+  /**
+   * @maxLength 30
+   * @nullable
+   */
+  dni?: string | null;
+  /**
+   * @maxLength 250
+   * @nullable
+   */
+  address?: string | null;
+  /** @nullable */
+  birthDate?: string | null;
+  /**
+   * @maxLength 120
+   * @nullable
+   */
+  profession?: string | null;
+  /** @nullable */
+  athletaStartDate?: string | null;
   roles: CreateTeamUserDtoRolesItem[];
 }
 
@@ -159,12 +225,6 @@ export interface TeamUserCreatedDto {
   data: TeamUserDto;
   /** Returned once; never persisted in plaintext. */
   temporaryPassword: string;
-}
-
-export interface UpdateTeamUserDto {
-  firstName?: string;
-  lastName?: string;
-  email?: string;
 }
 
 export type TeamRoleDtoRole = typeof TeamRoleDtoRole[keyof typeof TeamRoleDtoRole];
@@ -1500,6 +1560,85 @@ export const createTeamUser = async (createTeamUserDto: CreateTeamUserDto, optio
 
   const data: createTeamUserResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createTeamUserResponse
+}
+
+
+
+export type getOwnTeamUserResponse200 = {
+  data: TeamUserEnvelopeDto
+  status: 200
+}
+
+export type getOwnTeamUserResponseSuccess = (getOwnTeamUserResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getOwnTeamUserResponse = (getOwnTeamUserResponseSuccess)
+
+export const getGetOwnTeamUserUrl = () => {
+
+
+
+
+  return `/api/team/users/me`
+}
+
+export const getOwnTeamUser = async ( options?: RequestInit): Promise<getOwnTeamUserResponse> => {
+
+  const res = await fetch(getGetOwnTeamUserUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getOwnTeamUserResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getOwnTeamUserResponse
+}
+
+
+
+export type updateOwnTeamUserResponse200 = {
+  data: TeamUserEnvelopeDto
+  status: 200
+}
+
+export type updateOwnTeamUserResponseSuccess = (updateOwnTeamUserResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateOwnTeamUserResponse = (updateOwnTeamUserResponseSuccess)
+
+export const getUpdateOwnTeamUserUrl = () => {
+
+
+
+
+  return `/api/team/users/me`
+}
+
+export const updateOwnTeamUser = async (updateTeamUserDto: UpdateTeamUserDto, options?: RequestInit): Promise<updateOwnTeamUserResponse> => {
+
+  const res = await fetch(getUpdateOwnTeamUserUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateTeamUserDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateOwnTeamUserResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateOwnTeamUserResponse
 }
 
 
