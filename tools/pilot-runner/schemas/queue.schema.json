@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://athleta.local/schemas/pilot-runner/queue.schema.json",
+  "title": "Athleta Pilot Runner explicit queue",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "tasks"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "tasks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/task" }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "stringList": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nonEmptyString" }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "id",
+        "title",
+        "objective",
+        "dependencies",
+        "sourceHints",
+        "scopeHints",
+        "acceptanceHints",
+        "authority"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "id": { "type": "string", "pattern": "^ATH-[0-9]+$" },
+        "title": { "$ref": "#/$defs/nonEmptyString" },
+        "objective": { "$ref": "#/$defs/nonEmptyString" },
+        "dependencies": { "$ref": "#/$defs/stringList" },
+        "sourceHints": { "$ref": "#/$defs/stringList" },
+        "scopeHints": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["included", "excluded"],
+          "properties": {
+            "included": { "$ref": "#/$defs/stringList" },
+            "excluded": { "$ref": "#/$defs/stringList" }
+          }
+        },
+        "acceptanceHints": { "$ref": "#/$defs/stringList" },
+        "authority": { "const": "technical-only" }
+      }
+    }
+  }
+}

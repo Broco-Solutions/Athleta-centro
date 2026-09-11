@@ -4,6 +4,8 @@
   "packageManager": "pnpm@11.4.0",
   "engines": { "node": "24.13.0", "pnpm": "11.4.0" },
   "scripts": {
+    "pipeline": "node tools/pilot-runner/cli.mjs",
+    "test:pipeline": "node --test tools/pilot-runner/test/*.test.mjs",
     "dev": "turbo dev",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
