@@ -5,7 +5,7 @@ import { access, chmod, mkdir, open, readFile, realpath, unlink } from 'node:fs/
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { runProcess } from './lib/process.mjs';
+import { runTechnicalOperation, TECHNICAL_OPERATIONS } from './lib/process.mjs';
 
 const runnerRoot = dirname(fileURLToPath(import.meta.url));
 const configPath = join(runnerRoot, 'config', 'pilot-v1.json');
@@ -20,9 +20,9 @@ async function loadConfig() {
   return value;
 }
 
-async function runTool(executable, args = ['--version']) {
+async function runTool(operation, parameters = {}) {
   try {
-    return await runProcess(executable, args, { timeoutMs: 10_000 });
+    return await runTechnicalOperation(operation, parameters, { timeoutMs: 10_000 });
   } catch (error) {
     return { code: null, timedOut: false, stdout: '', stderr: error.message };
   }
@@ -71,10 +71,10 @@ async function preflight() {
   );
 
   const [pnpm, git, codex, gh] = await Promise.all([
-    runTool('pnpm'),
-    runTool('git'),
-    runTool(config.tools.codexExecutable),
-    runTool('gh'),
+    runTool(TECHNICAL_OPERATIONS.PNPM_VERSION),
+    runTool(TECHNICAL_OPERATIONS.GIT_VERSION),
+    runTool(TECHNICAL_OPERATIONS.CODEX_VERSION),
+    runTool(TECHNICAL_OPERATIONS.GH_VERSION),
   ]);
   const pnpmVersion = pnpm.stdout.trim();
   checks.push(
@@ -101,10 +101,13 @@ async function preflight() {
 
   if (expectedRepo) {
     const [origin, mainSha, originMainSha, status] = await Promise.all([
-      runTool('git', ['-C', expectedRepo, 'config', '--get', 'remote.origin.url']),
-      runTool('git', ['-C', expectedRepo, 'rev-parse', 'main']),
-      runTool('git', ['-C', expectedRepo, 'rev-parse', 'origin/main']),
-      runTool('git', ['-C', expectedRepo, 'status', '--porcelain=v1', '--branch']),
+      runTool(TECHNICAL_OPERATIONS.GIT_ORIGIN, { repoPath: expectedRepo }),
+      runTool(TECHNICAL_OPERATIONS.GIT_REV_PARSE, { repoPath: expectedRepo, ref: 'main' }),
+      runTool(TECHNICAL_OPERATIONS.GIT_REV_PARSE, {
+        repoPath: expectedRepo,
+        ref: 'origin/main',
+      }),
+      runTool(TECHNICAL_OPERATIONS.GIT_STATUS, { repoPath: expectedRepo, withBranch: true }),
     ]);
     checks.push(
       origin.code === 0 && origin.stdout.trim() === config.repository.origin
@@ -157,7 +160,7 @@ async function preflight() {
     }
   }
 
-  const store = await runTool('pnpm', ['store', 'path']);
+  const store = await runTool(TECHNICAL_OPERATIONS.PNPM_STORE_PATH);
   if (store.code === 0 && store.stdout.trim()) {
     try {
       await access(store.stdout.trim(), fsConstants.R_OK);

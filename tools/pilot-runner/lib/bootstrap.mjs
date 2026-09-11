@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
-import { readFile, realpath, stat } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { DEFAULT_ENV_ALLOWLIST, runProcess } from './process.mjs';
+import { revalidateApprovedWorktreeContext } from './git.mjs';
+import {
+  BOOTSTRAP_OPERATIONS,
+  runBootstrapOperation,
+  verifyBootstrapIsolationCapability,
+} from './process.mjs';
 
 export const REQUIRED_NODE_VERSION = '24.13.0';
 export const REQUIRED_PNPM_VERSION = '11.4.0';
@@ -36,11 +41,29 @@ function normalizeVersion(text) {
   return text.trim().replace(/^v/, '');
 }
 
-async function runCheckedVersion(executable, processRunner) {
-  const result = await processRunner(executable, ['--version'], { timeoutMs: 10_000 });
+function blockedFromProcess(error) {
+  if (error?.reasonCode === 'PLATFORM_UNSUPPORTED') {
+    return new BootstrapBlockedError(error.message, 'NETWORK_ISOLATION_CAPABILITY_MISSING');
+  }
+  return new BootstrapBlockedError('A required Bootstrap process could not start', 'TOOL_UNAVAILABLE', {
+    reasonCode: error?.reasonCode,
+    message: error?.message,
+  });
+}
+
+async function runBootstrap(operation, options = {}) {
+  try {
+    return await runBootstrapOperation(operation, {}, options);
+  } catch (error) {
+    throw blockedFromProcess(error);
+  }
+}
+
+async function runCheckedVersion(operation, name) {
+  const result = await runBootstrap(operation, { timeoutMs: 10_000 });
   if (result.timedOut || result.code !== 0) {
-    throw new BootstrapBlockedError(`${executable} is unavailable`, 'TOOL_UNAVAILABLE', {
-      executable,
+    throw new BootstrapBlockedError(`${name} is unavailable in the Bootstrap sandbox`, 'TOOL_UNAVAILABLE', {
+      tool: name,
       stderr: result.stderr,
     });
   }
@@ -48,32 +71,31 @@ async function runCheckedVersion(executable, processRunner) {
 }
 
 export async function verifyRuntimeVersions({
-  nodeExecutable = 'node',
-  pnpmExecutable = 'pnpm',
   nodeVersion = REQUIRED_NODE_VERSION,
   pnpmVersion = REQUIRED_PNPM_VERSION,
-  processRunner = runProcess,
 } = {}) {
   const [actualNode, actualPnpm] = await Promise.all([
-    runCheckedVersion(nodeExecutable, processRunner),
-    runCheckedVersion(pnpmExecutable, processRunner),
+    runCheckedVersion(BOOTSTRAP_OPERATIONS.NODE_VERSION, 'node'),
+    runCheckedVersion(BOOTSTRAP_OPERATIONS.PNPM_VERSION, 'pnpm'),
   ]);
   if (actualNode !== nodeVersion) {
-    throw new BootstrapBlockedError('Node version does not match the pinned runtime', 'NODE_VERSION_MISMATCH', {
-      expected: nodeVersion,
-      actual: actualNode,
-    });
+    throw new BootstrapBlockedError(
+      'Node version does not match the pinned runtime',
+      'NODE_VERSION_MISMATCH',
+      { expected: nodeVersion, actual: actualNode },
+    );
   }
   if (actualPnpm !== pnpmVersion) {
-    throw new BootstrapBlockedError('pnpm version does not match the pinned runtime', 'PNPM_VERSION_MISMATCH', {
-      expected: pnpmVersion,
-      actual: actualPnpm,
-    });
+    throw new BootstrapBlockedError(
+      'pnpm version does not match the pinned runtime',
+      'PNPM_VERSION_MISMATCH',
+      { expected: pnpmVersion, actual: actualPnpm },
+    );
   }
   return { node: actualNode, pnpm: actualPnpm };
 }
 
-function installFailure(result) {
+export function installFailure(result) {
   const output = `${result.stdout}\n${result.stderr}`;
   if (CACHE_MISS_PATTERN.test(output)) {
     return new BootstrapBlockedError(
@@ -118,16 +140,35 @@ export async function verifyVirtualStoreLock(worktreePath) {
   return { workspaceLock, virtualStoreLock };
 }
 
-export async function runPrismaGenerate({
-  worktreePath,
-  pnpmExecutable = 'pnpm',
-  processRunner = runProcess,
-} = {}) {
-  const result = await processRunner(pnpmExecutable, [...PRISMA_GENERATE_ARGUMENTS], {
-    cwd: worktreePath,
+async function assertNetworkIsolationCapability() {
+  let result;
+  try {
+    result = await verifyBootstrapIsolationCapability();
+  } catch (error) {
+    throw new BootstrapBlockedError(
+      'Linux user/network namespace isolation is unavailable',
+      'NETWORK_ISOLATION_CAPABILITY_MISSING',
+      { reasonCode: error?.reasonCode, message: error?.message },
+    );
+  }
+  if (result.timedOut || result.code !== 0) {
+    throw new BootstrapBlockedError(
+      'Linux user/network namespace isolation is unavailable',
+      'NETWORK_ISOLATION_CAPABILITY_MISSING',
+      { stderr: result.stderr },
+    );
+  }
+}
+
+export async function runPrismaGenerate({ worktreeContext } = {}) {
+  const context = await revalidateApprovedWorktreeContext(worktreeContext).catch((error) => {
+    throw new BootstrapBlockedError('Prisma target is not an approved worktree', error.reasonCode, {
+      message: error.message,
+    });
+  });
+  const result = await runBootstrap(BOOTSTRAP_OPERATIONS.PNPM_PRISMA_GENERATE, {
+    cwd: context.worktreePath,
     timeoutMs: 120_000,
-    allowedEnv: [...DEFAULT_ENV_ALLOWLIST, 'DATABASE_URL'],
-    env: { DATABASE_URL: SYNTHETIC_PRISMA_DATABASE_URL },
   });
   if (result.timedOut || result.code !== 0) {
     const output = `${result.stdout}\n${result.stderr}`;
@@ -135,7 +176,7 @@ export async function runPrismaGenerate({
       throw new BootstrapBlockedError(
         'Prisma generate requires an artifact absent from the offline cache',
         'DEPENDENCY_CACHE_MISS',
-        { remediation: 'Populate the required Prisma artifacts in an authorized online step, then retry.' },
+        { remediation: 'Populate required Prisma artifacts in an authorized online step, then retry.' },
       );
     }
     throw new BootstrapBlockedError('Prisma client generation failed', 'PRISMA_GENERATE_FAILED', {
@@ -147,36 +188,29 @@ export async function runPrismaGenerate({
   return result;
 }
 
-export async function bootstrapWorktree({
-  worktreePath,
-  nodeExecutable = 'node',
-  pnpmExecutable = 'pnpm',
-  processRunner = runProcess,
-  generatePrisma = true,
-} = {}) {
-  const realWorktree = await realpath(worktreePath).catch(() => {
-    throw new BootstrapBlockedError('Worktree path does not exist', 'WORKTREE_MISSING');
+export async function bootstrapWorktree({ worktreeContext, generatePrisma = true } = {}) {
+  const context = await revalidateApprovedWorktreeContext(worktreeContext).catch((error) => {
+    throw new BootstrapBlockedError('Bootstrap requires an approved worktree context', error.reasonCode, {
+      message: error.message,
+    });
   });
-  const pathStat = await stat(realWorktree);
-  if (!pathStat.isDirectory()) {
-    throw new BootstrapBlockedError('Worktree path is not a directory', 'WORKTREE_MISSING');
-  }
 
-  const versions = await verifyRuntimeVersions({
-    nodeExecutable,
-    pnpmExecutable,
-    processRunner,
-  });
-  const install = await processRunner(pnpmExecutable, [...PNPM_INSTALL_ARGUMENTS], {
-    cwd: realWorktree,
+  await assertNetworkIsolationCapability();
+  const versions = await verifyRuntimeVersions();
+  const install = await runBootstrap(BOOTSTRAP_OPERATIONS.PNPM_INSTALL, {
+    cwd: context.worktreePath,
     timeoutMs: 300_000,
   });
   if (install.timedOut || install.code !== 0) throw installFailure(install);
 
-  const locks = await verifyVirtualStoreLock(realWorktree);
-  const prisma = generatePrisma
-    ? await runPrismaGenerate({ worktreePath: realWorktree, pnpmExecutable, processRunner })
-    : null;
-
-  return { status: 'PASS', worktreePath: realWorktree, versions, locks, prisma };
+  const locks = await verifyVirtualStoreLock(context.worktreePath);
+  const prisma = generatePrisma ? await runPrismaGenerate({ worktreeContext: context }) : null;
+  return {
+    status: 'PASS',
+    worktreePath: context.worktreePath,
+    versions,
+    locks,
+    prisma,
+    network: 'DENIED_BY_LINUX_NETWORK_NAMESPACE',
+  };
 }

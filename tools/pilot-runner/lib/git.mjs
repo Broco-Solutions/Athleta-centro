@@ -1,17 +1,24 @@
 import { lstat, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
-import { runProcess } from './process.mjs';
+import { runTechnicalOperation, TECHNICAL_OPERATIONS } from './process.mjs';
 
+export const EXPECTED_REPOSITORY_ORIGIN =
+  'https://github.com/Broco-Solutions/Athleta-001.git';
 export const TASK_BRANCH_PATTERN = /^athleta-pilot\/ATH-[0-9]+-[a-z0-9-]+$/;
 export const ALLOWED_GIT_OPERATIONS = Object.freeze([
   'branch --show-current',
   'cat-file -e',
+  'config --get remote.origin.url',
   'rev-parse HEAD',
+  'rev-parse --show-toplevel',
   'show-ref --verify',
   'status --porcelain=v1',
   'worktree add',
   'worktree list',
 ]);
+
+const approvedGitContexts = new WeakSet();
+const approvedWorktreeContexts = new WeakSet();
 
 export class GitSafetyError extends Error {
   constructor(message, reasonCode, details = {}) {
@@ -46,7 +53,12 @@ export function assertExplicitBaseSha(baseSha) {
 
 function isWithin(root, candidate) {
   const pathFromRoot = relative(root, candidate);
-  return pathFromRoot !== '' && pathFromRoot !== '..' && !pathFromRoot.startsWith(`..${sep}`) && !isAbsolute(pathFromRoot);
+  return (
+    pathFromRoot !== '' &&
+    pathFromRoot !== '..' &&
+    !pathFromRoot.startsWith(`..${sep}`) &&
+    !isAbsolute(pathFromRoot)
+  );
 }
 
 export async function resolveSafeWorktreePath(worktreeRoot, requestedPath) {
@@ -77,15 +89,13 @@ export async function resolveSafeWorktreePath(worktreeRoot, requestedPath) {
   return realCandidate;
 }
 
-async function runGit(repoPath, args, processRunner, timeoutMs = 30_000) {
-  return processRunner('git', ['-C', repoPath, ...args], { timeoutMs });
+async function runGit(operation, parameters, timeoutMs = 30_000) {
+  return runTechnicalOperation(operation, parameters, { timeoutMs });
 }
 
-async function checkedGit(repoPath, args, processRunner) {
-  const result = await runGit(repoPath, args, processRunner);
-  if (result.timedOut) {
-    throw new GitSafetyError('Git command timed out', 'GIT_TIMEOUT');
-  }
+async function checkedGit(operation, parameters, timeoutMs) {
+  const result = await runGit(operation, parameters, timeoutMs);
+  if (result.timedOut) throw new GitSafetyError('Git command timed out', 'GIT_TIMEOUT');
   if (result.code !== 0) {
     throw new GitSafetyError('Git command failed', 'GIT_COMMAND_FAILED', {
       stderr: result.stderr,
@@ -95,14 +105,119 @@ async function checkedGit(repoPath, args, processRunner) {
   return result.stdout.trim();
 }
 
-export async function getCheckoutSnapshot(repoPath, { processRunner = runProcess } = {}) {
-  const root = await realpath(repoPath);
-  const [head, branch, status] = await Promise.all([
-    checkedGit(root, ['rev-parse', 'HEAD'], processRunner),
-    checkedGit(root, ['branch', '--show-current'], processRunner),
-    checkedGit(root, ['status', '--porcelain=v1'], processRunner),
+function assertApprovedGitContext(context) {
+  if (!context || !approvedGitContexts.has(context) || !Object.isFrozen(context)) {
+    throw new GitSafetyError('Approved Git context is required', 'INVALID_GIT_CONTEXT');
+  }
+  return context;
+}
+
+function assertApprovedWorktreeContext(context) {
+  if (!context || !approvedWorktreeContexts.has(context) || !Object.isFrozen(context)) {
+    throw new GitSafetyError('Approved worktree context is required', 'INVALID_WORKTREE_CONTEXT');
+  }
+  return context;
+}
+
+export function assertApprovedBaseSha(context, requestedBaseSha) {
+  const approved = assertApprovedGitContext(context);
+  assertExplicitBaseSha(requestedBaseSha);
+  if (requestedBaseSha !== approved.approvedBaseSha) {
+    throw new GitSafetyError('Requested base differs from the approved run base', 'UNAPPROVED_BASE_SHA', {
+      approvedBaseSha: approved.approvedBaseSha,
+      requestedBaseSha,
+    });
+  }
+  return requestedBaseSha;
+}
+
+export async function createApprovedGitContext({
+  approvedRepositoryRoot,
+  repositoryPath = approvedRepositoryRoot,
+  worktreeRoot,
+  approvedBaseSha,
+  branchName,
+  expectedOrigin = EXPECTED_REPOSITORY_ORIGIN,
+}) {
+  assertAllowedTaskBranch(branchName);
+  assertExplicitBaseSha(approvedBaseSha);
+  if (expectedOrigin !== EXPECTED_REPOSITORY_ORIGIN) {
+    throw new GitSafetyError('Repository identity is not approved for this pilot', 'REMOTE_MISMATCH');
+  }
+  if (
+    ![approvedRepositoryRoot, repositoryPath, worktreeRoot].every(
+      (path) => typeof path === 'string' && isAbsolute(path),
+    )
+  ) {
+    throw new GitSafetyError('Approved Git paths must be absolute', 'INVALID_GIT_CONTEXT');
+  }
+
+  const [approvedRoot, actualRoot, realWorktreeRoot] = await Promise.all([
+    realpath(approvedRepositoryRoot).catch(() => null),
+    realpath(repositoryPath).catch(() => null),
+    realpath(worktreeRoot).catch(() => null),
   ]);
-  return { root, head, branch, status };
+  if (!approvedRoot || !actualRoot || actualRoot !== approvedRoot) {
+    throw new GitSafetyError('Repository path differs from the approved root', 'WRONG_REPOSITORY');
+  }
+  if (!realWorktreeRoot) {
+    throw new GitSafetyError('Worktree root must already exist', 'WORKTREE_ROOT_MISSING');
+  }
+  if (realWorktreeRoot === approvedRoot || isWithin(realWorktreeRoot, approvedRoot)) {
+    throw new GitSafetyError('Primary checkout cannot be inside the worktree root', 'UNSAFE_WORKTREE_ROOT');
+  }
+
+  const topLevel = await checkedGit(TECHNICAL_OPERATIONS.GIT_REV_PARSE, {
+    repoPath: actualRoot,
+    ref: '--show-toplevel',
+  }).catch(() => null);
+  const realTopLevel = topLevel ? await realpath(topLevel).catch(() => null) : null;
+  if (realTopLevel !== approvedRoot) {
+    throw new GitSafetyError('Repository path is not the approved Git top-level', 'WRONG_REPOSITORY');
+  }
+
+  const origin = await checkedGit(TECHNICAL_OPERATIONS.GIT_ORIGIN, { repoPath: actualRoot }).catch(
+    () => null,
+  );
+  if (origin !== EXPECTED_REPOSITORY_ORIGIN) {
+    throw new GitSafetyError('Origin does not identify the approved repository', 'REMOTE_MISMATCH', {
+      origin,
+    });
+  }
+  const commit = await runGit(TECHNICAL_OPERATIONS.GIT_COMMIT_EXISTS, {
+    repoPath: actualRoot,
+    sha: approvedBaseSha,
+  });
+  if (commit.code !== 0) {
+    throw new GitSafetyError('Approved base commit does not exist', 'BASE_SHA_NOT_FOUND', {
+      approvedBaseSha,
+    });
+  }
+
+  const context = Object.freeze({
+    repositoryRoot: approvedRoot,
+    origin: EXPECTED_REPOSITORY_ORIGIN,
+    worktreeRoot: realWorktreeRoot,
+    approvedBaseSha,
+    branchName,
+  });
+  approvedGitContexts.add(context);
+  return context;
+}
+
+export async function getCheckoutSnapshot(context) {
+  const approved = assertApprovedGitContext(context);
+  const [head, branch, status] = await Promise.all([
+    checkedGit(TECHNICAL_OPERATIONS.GIT_REV_PARSE, {
+      repoPath: approved.repositoryRoot,
+      ref: 'HEAD',
+    }),
+    checkedGit(TECHNICAL_OPERATIONS.GIT_BRANCH_CURRENT, {
+      repoPath: approved.repositoryRoot,
+    }),
+    checkedGit(TECHNICAL_OPERATIONS.GIT_STATUS, { repoPath: approved.repositoryRoot }),
+  ]);
+  return { root: approved.repositoryRoot, head, branch, status };
 }
 
 export function assertCheckoutUnchanged(before, after) {
@@ -112,10 +227,11 @@ export function assertCheckoutUnchanged(before, after) {
     before.branch !== after.branch ||
     before.status !== after.status
   ) {
-    throw new GitSafetyError('Primary checkout changed during worktree creation', 'PRIMARY_CHECKOUT_CHANGED', {
-      before,
-      after,
-    });
+    throw new GitSafetyError(
+      'Primary checkout changed during worktree creation',
+      'PRIMARY_CHECKOUT_CHANGED',
+      { before, after },
+    );
   }
 }
 
@@ -126,18 +242,121 @@ function parseWorktreePaths(porcelain) {
     .map((line) => line.slice('worktree '.length));
 }
 
-export async function createIsolatedWorktree({
-  repoPath,
-  worktreeRoot,
-  targetPath,
+async function assertRegisteredWorktree(gitContext, worktreePath) {
+  const listed = await checkedGit(TECHNICAL_OPERATIONS.GIT_WORKTREE_LIST, {
+    repoPath: gitContext.repositoryRoot,
+  });
+  const existingPaths = await Promise.all(
+    parseWorktreePaths(listed).map((path) => realpath(path).catch(() => resolve(path))),
+  );
+  if (!existingPaths.includes(worktreePath)) {
+    throw new GitSafetyError('Worktree is not registered in the approved repository', 'WORKTREE_NOT_REGISTERED');
+  }
+}
+
+async function inspectApprovedWorktree(gitContext, worktreePath) {
+  const approved = assertApprovedGitContext(gitContext);
+  if (typeof worktreePath !== 'string' || !isAbsolute(worktreePath)) {
+    throw new GitSafetyError('Worktree path must be absolute', 'INVALID_WORKTREE_PATH');
+  }
+  const realWorktree = await realpath(worktreePath).catch(() => {
+    throw new GitSafetyError('Worktree path does not exist', 'WORKTREE_MISSING');
+  });
+  if (realWorktree === approved.repositoryRoot) {
+    throw new GitSafetyError('Primary checkout cannot be bootstrapped', 'PRIMARY_CHECKOUT_FORBIDDEN');
+  }
+  if (!isWithin(approved.worktreeRoot, realWorktree)) {
+    throw new GitSafetyError('Worktree path is outside the approved root', 'WORKTREE_PATH_OUTSIDE_ROOT');
+  }
+  await assertRegisteredWorktree(approved, realWorktree);
+
+  const [topLevel, origin, branch, head, status] = await Promise.all([
+    checkedGit(TECHNICAL_OPERATIONS.GIT_REV_PARSE, {
+      repoPath: realWorktree,
+      ref: '--show-toplevel',
+    }),
+    checkedGit(TECHNICAL_OPERATIONS.GIT_ORIGIN, { repoPath: realWorktree }),
+    checkedGit(TECHNICAL_OPERATIONS.GIT_BRANCH_CURRENT, { repoPath: realWorktree }),
+    checkedGit(TECHNICAL_OPERATIONS.GIT_REV_PARSE, { repoPath: realWorktree, ref: 'HEAD' }),
+    checkedGit(TECHNICAL_OPERATIONS.GIT_STATUS, { repoPath: realWorktree }),
+  ]);
+  const realTopLevel = await realpath(topLevel).catch(() => null);
+  if (realTopLevel !== realWorktree) {
+    throw new GitSafetyError('Registered path is not its Git top-level', 'WRONG_REPOSITORY');
+  }
+  if (origin !== approved.origin) {
+    throw new GitSafetyError('Worktree origin does not match approved identity', 'REMOTE_MISMATCH');
+  }
+  if (branch !== approved.branchName) {
+    throw new GitSafetyError('Worktree branch differs from approved branch', 'BRANCH_MISMATCH', {
+      expected: approved.branchName,
+      actual: branch,
+    });
+  }
+  if (head !== approved.approvedBaseSha) {
+    throw new GitSafetyError('Worktree HEAD differs from approved base', 'UNAPPROVED_BASE_SHA', {
+      approvedBaseSha: approved.approvedBaseSha,
+      actual: head,
+    });
+  }
+  if (status !== '') {
+    throw new GitSafetyError('Worktree has an unexpected unsafe condition', 'WORKTREE_NOT_CLEAN');
+  }
+  return realWorktree;
+}
+
+export async function approveExistingWorktree({
+  gitContext,
+  worktreePath,
   branchName,
   baseSha,
-  processRunner = runProcess,
 }) {
-  assertAllowedTaskBranch(branchName);
-  assertExplicitBaseSha(baseSha);
-  const realRepo = await realpath(repoPath);
-  const safeTarget = await resolveSafeWorktreePath(worktreeRoot, targetPath);
+  const approved = assertApprovedGitContext(gitContext);
+  if (branchName !== approved.branchName) {
+    throw new GitSafetyError('Requested branch differs from approved context', 'BRANCH_MISMATCH');
+  }
+  assertApprovedBaseSha(approved, baseSha);
+  const realWorktree = await inspectApprovedWorktree(approved, worktreePath);
+  const context = Object.freeze({
+    repositoryRoot: approved.repositoryRoot,
+    origin: approved.origin,
+    worktreeRoot: approved.worktreeRoot,
+    worktreePath: realWorktree,
+    branchName: approved.branchName,
+    approvedBaseSha: approved.approvedBaseSha,
+    gitContext: approved,
+  });
+  approvedWorktreeContexts.add(context);
+  return context;
+}
+
+export async function revalidateApprovedWorktreeContext(context) {
+  const approved = assertApprovedWorktreeContext(context);
+  if (
+    approved.repositoryRoot !== approved.gitContext.repositoryRoot ||
+    approved.origin !== approved.gitContext.origin ||
+    approved.worktreeRoot !== approved.gitContext.worktreeRoot ||
+    approved.branchName !== approved.gitContext.branchName ||
+    approved.approvedBaseSha !== approved.gitContext.approvedBaseSha
+  ) {
+    throw new GitSafetyError('Worktree context was altered', 'INVALID_WORKTREE_CONTEXT');
+  }
+  await inspectApprovedWorktree(approved.gitContext, approved.worktreePath);
+  return approved;
+}
+
+export async function createIsolatedWorktree({
+  context,
+  targetPath,
+  branchName = context?.branchName,
+  baseSha = context?.approvedBaseSha,
+}) {
+  const approved = assertApprovedGitContext(context);
+  if (branchName !== approved.branchName) {
+    throw new GitSafetyError('Requested branch differs from approved context', 'BRANCH_MISMATCH');
+  }
+  assertApprovedBaseSha(approved, baseSha);
+  const safeTarget = await resolveSafeWorktreePath(approved.worktreeRoot, targetPath);
 
   try {
     await lstat(safeTarget);
@@ -149,19 +368,15 @@ export async function createIsolatedWorktree({
     if (error?.code !== 'ENOENT') throw error;
   }
 
-  const before = await getCheckoutSnapshot(realRepo, { processRunner });
-  const commitCheck = await runGit(realRepo, ['cat-file', '-e', `${baseSha}^{commit}`], processRunner);
-  if (commitCheck.code !== 0) {
-    throw new GitSafetyError('Base commit does not exist', 'BASE_SHA_NOT_FOUND', { baseSha });
-  }
-
-  const branchCheck = await runGit(
-    realRepo,
-    ['show-ref', '--verify', '--quiet', `refs/heads/${branchName}`],
-    processRunner,
-  );
+  const before = await getCheckoutSnapshot(approved);
+  const branchCheck = await runGit(TECHNICAL_OPERATIONS.GIT_BRANCH_EXISTS, {
+    repoPath: approved.repositoryRoot,
+    branchName: approved.branchName,
+  });
   if (branchCheck.code === 0) {
-    throw new GitSafetyError('Worktree branch already exists', 'BRANCH_COLLISION', { branchName });
+    throw new GitSafetyError('Worktree branch already exists', 'BRANCH_COLLISION', {
+      branchName: approved.branchName,
+    });
   }
   if (branchCheck.code !== 1) {
     throw new GitSafetyError('Could not inspect branch collision', 'GIT_COMMAND_FAILED', {
@@ -169,7 +384,9 @@ export async function createIsolatedWorktree({
     });
   }
 
-  const listed = await checkedGit(realRepo, ['worktree', 'list', '--porcelain'], processRunner);
+  const listed = await checkedGit(TECHNICAL_OPERATIONS.GIT_WORKTREE_LIST, {
+    repoPath: approved.repositoryRoot,
+  });
   const existingPaths = await Promise.all(
     parseWorktreePaths(listed).map((path) => realpath(path).catch(() => resolve(path))),
   );
@@ -180,9 +397,13 @@ export async function createIsolatedWorktree({
   }
 
   const created = await runGit(
-    realRepo,
-    ['worktree', 'add', '-b', branchName, safeTarget, baseSha],
-    processRunner,
+    TECHNICAL_OPERATIONS.GIT_WORKTREE_ADD,
+    {
+      repoPath: approved.repositoryRoot,
+      branchName: approved.branchName,
+      targetPath: safeTarget,
+      baseSha: approved.approvedBaseSha,
+    },
     60_000,
   );
   if (created.timedOut || created.code !== 0) {
@@ -192,7 +413,12 @@ export async function createIsolatedWorktree({
     });
   }
 
-  const after = await getCheckoutSnapshot(realRepo, { processRunner });
+  const after = await getCheckoutSnapshot(approved);
   assertCheckoutUnchanged(before, after);
-  return { path: safeTarget, branchName, baseSha, primaryCheckout: after };
+  return approveExistingWorktree({
+    gitContext: approved,
+    worktreePath: safeTarget,
+    branchName: approved.branchName,
+    baseSha: approved.approvedBaseSha,
+  });
 }

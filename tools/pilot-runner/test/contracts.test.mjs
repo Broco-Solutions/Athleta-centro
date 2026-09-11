@@ -61,6 +61,13 @@ test('rejects unknown fields', () => {
   rejectsQueue(queue([{ ...task('ATH-101'), state: 'BUILD' }]), 'unknown field "state"');
 });
 
+test('task data cannot select executables, shells, or structural process flags', () => {
+  for (const field of ['executable', 'shell', 'args', 'flags']) {
+    rejectsQueue(queue([{ ...task('ATH-101'), [field]: field === 'shell' ? true : '/bin/sh' }]),
+      `unknown field "${field}"`);
+  }
+});
+
 test('rejects path traversal embedded in an id', () => {
   rejectsQueue(queue([task('ATH-../../etc')]), 'must match');
 });
