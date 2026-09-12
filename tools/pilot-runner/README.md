@@ -1,27 +1,68 @@
 # Pilot Runner v1 safety boundaries
 
-Build 1 exposes only named technical operations. Callers cannot select an executable, shell,
-argument vector, or structural command flag from task/model data. Executables are resolved to
-canonical, executable, non-group/world-writable files and child processes receive a minimal
-environment with a runner-controlled `PATH`.
+Pilot v1 has a fixed authority in `config/pilot-v1.json`. The runner loads that file from its own
+directory and validates a closed shape. Repository root, exact origin, approved base SHA, state
+root, worktree root, runtime versions, and tool locations cannot be supplied through task data or
+through the public Git/Bootstrap APIs.
 
-Each operation starts in its own process group. A timeout sends `SIGTERM` to that group, waits
-briefly, then sends `SIGKILL` to the same group. This prevents descendants from surviving into a
-resume without targeting processes outside the runner-owned group.
+The only public Git context input is `{ taskId, slug }`. `taskId` must match `ATH-[0-9]+` and
+`slug` must be safe kebab-case. The runner derives both values below and does not accept overrides:
 
-Bootstrap is Linux/WSL-only in Pilot v1. Every Bootstrap command runs in a fresh user and network
-namespace created by `/usr/bin/unshare --user --map-current-user --net`. The namespace has no host
-or external network interface. If namespaces or `unshare` are unavailable, Bootstrap reports
-`NETWORK_ISOLATION_CAPABILITY_MISSING`; it never falls back to network-enabled execution. Populating
-the pnpm store and required engines remains a separate human-controlled operation.
+```text
+branch        athleta-pilot/<taskId>-<slug>
+worktree path <configuredWorktreeRoot>/<taskId>-<slug>
+```
 
-Git mutation requires an immutable approved context binding repository root, Athleta origin,
-worktree root, approved base SHA, and task branch. Bootstrap accepts only the opaque worktree
-context produced by that boundary and revalidates the registered worktree, identity, branch, HEAD,
-location, and cleanliness immediately before running pnpm.
+Worktree creation and reopening accept only opaque contexts created by the runner. Immediately
+before each mutation and before Bootstrap, the runner revalidates repository realpath/top-level,
+origin, configured base, derived branch and path, worktree registration, canonical containment,
+and checkout cleanliness. There is one internal `git worktree add` path and no generic public Git
+executor.
 
-For run state, `state.json` is the durable authority and `journal.ndjson` is a recoverable audit
-projection. Every mutation requires the owning run-lock token. A partial journal tail is truncated
-durably before append; a snapshot event missing from the journal is restored from the authoritative
-snapshot. A non-idempotent operation left `planned` at resume becomes `outcome_unknown` and requires
-external reconciliation before any future retry.
+The process supervisor is package-internal. Public modules expose fixed tool probes, not operation
+enums, executables, argv, shells, `cwd`, repository paths, or root selectors. Executables are
+canonical non-group/world-writable files, `shell` is always false, child environments are
+allowlisted with a runner-controlled `PATH`, and every child owns a process group. Timeout sends
+`SIGTERM` and then `SIGKILL` to that group so descendants cannot survive. Process-tree scripts live
+only under `test/fixtures`.
+
+Bootstrap accepts one approved worktree context and always performs both `pnpm install` and Prisma
+Generate in one Linux/WSL namespace. There is no public direct-Prisma operation and no option to
+skip either stage. The namespace is created with:
+
+```text
+unshare --user --map-root-user --mount --net
+```
+
+For each run, the runner creates `stateRoot/bootstrap-store/run-<id>/` with private pnpm and Prisma
+overlay directories plus a temporary home. It resolves the versioned pnpm 11.4.0 store, bind-mounts
+that lower directory onto itself, remounts it read-only, and mounts its overlay at `merged/v11`.
+The base `merged` path is passed as `--store-dir` because pnpm 11.4.0 resolves it internally to the
+versioned `v11` child. The global store remains immutable while SQLite `index.db` and any other
+writes copy up only as needed.
+
+Prisma Generate resolves the engine cache from the runner UID's operating-system home, never from
+an inherited `HOME`, and uses it as a second read-only lower with an ephemeral overlay at the
+temporary home's `XDG_CACHE_HOME/prisma`. No other host cache is exposed. Prisma can reuse already
+authorized engine artifacts and write cache metadata without changing the global engine cache.
+
+Both pnpm stages run through `/usr/bin/setpriv` with `no_new_privs` and empty inheritable,
+permitted/effective, bounding, and ambient capability sets. The install is fixed to offline,
+frozen-lockfile, store-integrity verification, copy import, the ephemeral `--store-dir`, and
+`--trust-lockfile` (the lockfile belongs to the revalidated approved base and this prevents
+supply-chain policy metadata checks from attempting registry access). The namespace has no host or
+external network interface.
+
+Preflight exercises the real boundary: user/mount/network namespaces, read-only pnpm and Prisma
+lowers, writable overlays, a transactional open/rollback of the overlaid pnpm SQLite index, and
+the capability drop. If `unshare`, mount, overlayfs, `setpriv`, capability removal, or SQLite
+copy-up is unavailable, Bootstrap returns `BLOCKED` and has no weaker fallback.
+
+Missing dependencies or Prisma artifacts are reported as `DEPENDENCY_CACHE_MISS`. Bootstrap never
+retries online. Populating the store is a separate, explicitly authorized operation. Namespace
+exit removes the mounts; the runner then validates and deletes only its exact ephemeral run root.
+A cleanup failure is itself reported and never hidden.
+
+For durable run state, `state.json` remains authoritative and `journal.ndjson` remains a
+recoverable audit projection. Mutations require the owning lock token; partial journal tails are
+recovered, and non-idempotent planned operations become `outcome_unknown` after a crash.
