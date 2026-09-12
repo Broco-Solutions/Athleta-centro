@@ -4,11 +4,15 @@ import {
   IsDateString,
   IsDefined,
   IsEnum,
+  IsIn,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
   MaxLength,
+  Max,
+  Min,
   MinLength,
   ValidateNested,
 } from 'class-validator';
@@ -24,6 +28,38 @@ const ARS_PATTERN = /^(0|[1-9]\d*)$/;
 
 export class PatientDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string;
+}
+
+export class ListClinicalPatientsOverviewQueryDto {
+  @ApiPropertyOptional({ enum: ['YES', 'NO'], description: 'Filters by the existence of at least one Treatment En curso.' })
+  @IsOptional() @IsIn(['YES', 'NO']) treatmentInProgress?: 'YES' | 'NO';
+  @ApiPropertyOptional({ enum: [30, 60, 90], description: 'Minimum complete days without attention for at least one Treatment En curso.' })
+  @IsOptional() @Type(() => Number) @IsInt() @IsIn([30, 60, 90]) withoutRecentAttentionDays?: 30 | 60 | 90;
+  @ApiPropertyOptional({ type: Number, default: 1 })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page = 1;
+  @ApiPropertyOptional({ type: Number, default: 25, maximum: 100 })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) pageSize = 25;
+}
+
+export class ClinicalPatientOverviewDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String }) firstName!: string;
+  @ApiProperty({ type: String }) lastName!: string;
+  @ApiProperty({ type: String }) dni!: string;
+  @ApiProperty({ enum: ['ACTIVE', 'INACTIVE'] }) status!: 'ACTIVE' | 'INACTIVE';
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true, description: 'Most recent attention of the patient, regardless of Treatment association.' }) lastAttentionAt!: string | null;
+}
+
+export class ClinicalPatientOverviewMetaDto {
+  @ApiProperty({ type: Number }) page!: number;
+  @ApiProperty({ type: Number }) pageSize!: number;
+  @ApiProperty({ type: Number }) total!: number;
+  @ApiProperty({ type: Number }) totalPages!: number;
+}
+
+export class ClinicalPatientOverviewListEnvelopeDto {
+  @ApiProperty({ type: () => [ClinicalPatientOverviewDto] }) data!: ClinicalPatientOverviewDto[];
+  @ApiProperty({ type: () => ClinicalPatientOverviewMetaDto }) meta!: ClinicalPatientOverviewMetaDto;
 }
 
 export class ClinicalChargeSplitDto {

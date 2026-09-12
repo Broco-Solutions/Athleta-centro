@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { currentSession } from '../../features/auth/auth';
 import { WorkspaceShell } from '../../features/auth/workspace-shell';
+import { PatientList } from '../../features/clinic/patient-list';
 
 type Patient = { id: string; firstName: string; lastName: string; dni: string };
 type Attention = { id: string; occurredAt: string; appointmentId?: string | null; professional?: { firstName: string; lastName: string } };
@@ -17,7 +18,7 @@ type Indication = { id: string; status: string; trainingCondition: string; affec
 type Evaluation = { id: string; createdAt: string; results?: unknown[] };
 type Row = { id: string };
 
-const tabs = ['Agenda', 'Paciente', 'Tratamientos', 'Atenciones', 'Evaluaciones', 'Estudios', 'Obra social', 'Indicaciones'] as const;
+const tabs = ['Agenda', 'Pacientes', 'Paciente', 'Tratamientos', 'Atenciones', 'Evaluaciones', 'Estudios', 'Obra social', 'Indicaciones'] as const;
 type Tab = typeof tabs[number];
 const isTab = (value: string | null): value is Tab => tabs.some((tab) => tab === value);
 const get = async <T,>(path: string): Promise<T> => {
@@ -71,7 +72,9 @@ function ClinicWorkspace(): React.JSX.Element {
   };
 
   let body: React.ReactNode;
-  if (!patient && !personId && tab === 'Agenda') {
+  if (!patient && !personId && tab === 'Pacientes') {
+    body = <PatientList />;
+  } else if (!patient && !personId && tab === 'Agenda') {
     body = <section className="rounded border bg-white p-5"><h2 className="text-lg font-semibold">Agenda</h2><AgendaDate value={agendaDate} onChange={setAgendaDate} />{list.isError ? <p role="alert">No se pudo cargar la agenda.</p> : list.isLoading ? <p>Cargando…</p> : list.data?.length ? <p>{list.data.length} turno(s)</p> : <p>No hay turnos para esta fecha.</p>}</section>;
   } else if (!patient && !personId && tab === 'Obra social') {
     body = <section className="rounded border bg-white p-5"><h2 className="text-lg font-semibold">Obras sociales y órdenes</h2><p>{list.data?.length || 0} obras sociales configuradas</p></section>;

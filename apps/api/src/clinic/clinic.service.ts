@@ -1,7 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { ClinicalAppointmentStatus, InternalUserStatus, Prisma, Role } from '@prisma/client';
+import { ClinicalAppointmentStatus, InternalUserStatus, Prisma, Role, TreatmentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AppointmentDto, AttendAppointmentDto, DirectAttentionDto, RescheduleAppointmentDto } from './clinic.dto';
+import { AppointmentDto, AttendAppointmentDto, DirectAttentionDto, ListClinicalPatientsOverviewQueryDto, RescheduleAppointmentDto } from './clinic.dto';
+import { hasTreatmentWithoutRecentAttention } from './treatment-recent-attention';
 
 const appointmentInclude = {
   person: { select: { id: true, firstName: true, lastName: true, dni: true } },
@@ -25,6 +26,53 @@ export class ClinicService {
       orderBy: { person: { lastName: 'asc' } },
     });
     return rows.map((row) => row.person);
+  }
+
+  async listPatientOverview(query: ListClinicalPatientsOverviewQueryDto, now = new Date()) {
+    const rows = await this.prisma.clinicalPatient.findMany({
+      orderBy: { person: { lastName: 'asc' } },
+      include: {
+        person: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            dni: true,
+            salaParticipations: { where: { endDate: null }, select: { id: true }, take: 1 },
+            clinicalAppointments: { where: { status: ClinicalAppointmentStatus.SCHEDULED, startAt: { gt: now } }, select: { id: true }, take: 1 },
+            clinicalAttentions: { orderBy: { occurredAt: 'desc' }, select: { occurredAt: true }, take: 1 },
+            treatments: {
+              where: { status: TreatmentStatus.IN_PROGRESS },
+              select: {
+                startDate: true,
+                attentions: { orderBy: { occurredAt: 'desc' }, select: { occurredAt: true }, take: 1 },
+              },
+            },
+          },
+        },
+      },
+    });
+    const filtered = rows.filter(({ person }) => {
+      const hasTreatmentInProgress = person.treatments.length > 0;
+      if (query.treatmentInProgress === 'YES' && !hasTreatmentInProgress) return false;
+      if (query.treatmentInProgress === 'NO' && hasTreatmentInProgress) return false;
+      return !query.withoutRecentAttentionDays || person.treatments.some((treatment) =>
+        hasTreatmentWithoutRecentAttention(treatment, query.withoutRecentAttentionDays!, now),
+      );
+    });
+    const total = filtered.length;
+    const pageRows = filtered.slice((query.page - 1) * query.pageSize, query.page * query.pageSize);
+    return {
+      data: pageRows.map(({ person }) => ({
+        id: person.id,
+        firstName: person.firstName,
+        lastName: person.lastName,
+        dni: person.dni,
+        status: person.salaParticipations.length > 0 || person.treatments.length > 0 || person.clinicalAppointments.length > 0 ? 'ACTIVE' as const : 'INACTIVE' as const,
+        lastAttentionAt: person.clinicalAttentions[0]?.occurredAt.toISOString() ?? null,
+      })),
+      meta: { page: query.page, pageSize: query.pageSize, total, totalPages: Math.ceil(total / query.pageSize) },
+    };
   }
 
   async registerDirectAttention(input: DirectAttentionDto) {

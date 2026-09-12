@@ -1,11 +1,13 @@
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { PermissionsGuard, RequirePermissions } from '../auth/permissions.guard';
 import {
   AppointmentDto,
   AttendAppointmentDto,
   CorrectAppointmentDto,
   DirectAttentionDto,
+  ClinicalPatientOverviewListEnvelopeDto,
+  ListClinicalPatientsOverviewQueryDto,
   PatientDto,
   RescheduleAppointmentDto,
 } from './clinic.dto';
@@ -29,6 +31,18 @@ export class ClinicController {
   @RequirePermissions('CLINIC_APPOINTMENT_MANAGE')
   @ApiOperation({ operationId: 'listClinicalPatients' })
   async patients() { return { data: await this.clinic.listPatients() }; }
+
+  @Get('patients/overview')
+  @RequirePermissions('CLINIC_OPERATIONAL_READ')
+  @ApiOperation({ operationId: 'listClinicalPatientsOverview' })
+  @ApiQuery({ name: 'treatmentInProgress', required: false, enum: ['YES', 'NO'] })
+  @ApiQuery({ name: 'withoutRecentAttentionDays', required: false, enum: [30, 60, 90] })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'pageSize', required: false, type: Number })
+  @ApiOkResponse({ type: ClinicalPatientOverviewListEnvelopeDto })
+  async patientOverview(@Query() query: ListClinicalPatientsOverviewQueryDto) {
+    return await this.clinic.listPatientOverview(query);
+  }
 
   @Get('services')
   @RequirePermissions('CLINIC_APPOINTMENT_MANAGE')

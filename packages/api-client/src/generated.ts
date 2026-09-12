@@ -659,6 +659,40 @@ export interface PatientDto {
   personId: string;
 }
 
+export type ClinicalPatientOverviewDtoStatus = typeof ClinicalPatientOverviewDtoStatus[keyof typeof ClinicalPatientOverviewDtoStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ClinicalPatientOverviewDtoStatus = {
+  ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
+} as const;
+
+export interface ClinicalPatientOverviewDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dni: string;
+  status: ClinicalPatientOverviewDtoStatus;
+  /**
+   * Most recent attention of the patient, regardless of Treatment association.
+   * @nullable
+   */
+  lastAttentionAt?: string | null;
+}
+
+export interface ClinicalPatientOverviewMetaDto {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface ClinicalPatientOverviewListEnvelopeDto {
+  data: ClinicalPatientOverviewDto[];
+  meta: ClinicalPatientOverviewMetaDto;
+}
+
 export interface AppointmentDto {
   personId: string;
   serviceId: string;
@@ -1010,6 +1044,32 @@ export type ListSalaPlans200DataItem = { [key: string]: unknown };
 export type ListSalaPlans200 = {
   data?: ListSalaPlans200DataItem[];
 };
+
+export type ListClinicalPatientsOverviewParams = {
+pageSize?: number;
+page?: number;
+withoutRecentAttentionDays?: ListClinicalPatientsOverviewWithoutRecentAttentionDays;
+treatmentInProgress?: ListClinicalPatientsOverviewTreatmentInProgress;
+};
+
+export type ListClinicalPatientsOverviewWithoutRecentAttentionDays = typeof ListClinicalPatientsOverviewWithoutRecentAttentionDays[keyof typeof ListClinicalPatientsOverviewWithoutRecentAttentionDays];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ListClinicalPatientsOverviewWithoutRecentAttentionDays = {
+  NUMBER_30: 30,
+  NUMBER_60: 60,
+  NUMBER_90: 90,
+} as const;
+
+export type ListClinicalPatientsOverviewTreatmentInProgress = typeof ListClinicalPatientsOverviewTreatmentInProgress[keyof typeof ListClinicalPatientsOverviewTreatmentInProgress];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ListClinicalPatientsOverviewTreatmentInProgress = {
+  YES: 'YES',
+  NO: 'NO',
+} as const;
 
 export type ListClinicalAppointmentsParams = {
 personId?: string;
@@ -5059,6 +5119,52 @@ export const listClinicalPatients = async ( options?: RequestInit): Promise<list
 
   const data: listClinicalPatientsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listClinicalPatientsResponse
+}
+
+
+
+export type listClinicalPatientsOverviewResponse200 = {
+  data: ClinicalPatientOverviewListEnvelopeDto
+  status: 200
+}
+
+export type listClinicalPatientsOverviewResponseSuccess = (listClinicalPatientsOverviewResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listClinicalPatientsOverviewResponse = (listClinicalPatientsOverviewResponseSuccess)
+
+export const getListClinicalPatientsOverviewUrl = (params?: ListClinicalPatientsOverviewParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/clinic/patients/overview?${stringifiedParams}` : `/api/clinic/patients/overview`
+}
+
+export const listClinicalPatientsOverview = async (params?: ListClinicalPatientsOverviewParams, options?: RequestInit): Promise<listClinicalPatientsOverviewResponse> => {
+
+  const res = await fetch(getListClinicalPatientsOverviewUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listClinicalPatientsOverviewResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listClinicalPatientsOverviewResponse
 }
 
 

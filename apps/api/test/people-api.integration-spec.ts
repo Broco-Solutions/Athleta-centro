@@ -12,7 +12,7 @@ import { InternalUserService } from '../src/team/internal-user.service';
 describe('People API', () => {
   let app: INestApplication; let prisma: PrismaService; let users: InternalUserService; let auth: AuthService;
   beforeAll(async () => { app = (await Test.createTestingModule({ imports: [AppModule] }).compile()).createNestApplication(); app.use(cookieParser()); app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })); app.setGlobalPrefix('api'); await app.init(); prisma = app.get(PrismaService); users = app.get(InternalUserService); auth = app.get(AuthService); });
-  afterEach(async () => { await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.person.deleteMany(); await prisma.authAttemptBucket.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); });
+  afterEach(async () => { await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.clinicalPatient.deleteMany(); await prisma.person.deleteMany(); await prisma.authAttemptBucket.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); });
   afterAll(() => app.close());
   async function session(role: Role) { const user = await users.create({ firstName: 'API', lastName: 'User', email: `${role.toLowerCase()}@people.test`, roles: [role] }); await auth.provisionCredential(user.id, 'ValidPass1!'); await prisma.internalCredential.update({ where: { internalUserId: user.id }, data: { mustChangePassword: false } }); const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200); return { cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string }; }
   const payload = { firstName: 'Ana', lastName: 'Sintética', dni: '20.123.456', phone: '3515550102', birthDate: '1992-03-10' };
@@ -54,5 +54,18 @@ describe('People API', () => {
     const support = await session(Role.BROCO_SUPPORT);
     await request(app.getHttpServer()).get('/api/people').set('Cookie', support.cookie).expect(403);
     await request(app.getHttpServer()).post('/api/people').set('Cookie', support.cookie).set('x-csrf-token', support.csrf).send(payload).expect(403);
+  });
+
+  it('allows Administrative to read the operational patient overview without clinical-history fields', async () => {
+    const administrative = await session(Role.ADMINISTRATIVE);
+    const created = await request(app.getHttpServer()).post('/api/people').set('Cookie', administrative.cookie).set('x-csrf-token', administrative.csrf).send(payload).expect(201);
+    await request(app.getHttpServer()).post('/api/clinic/patients').set('Cookie', administrative.cookie).set('x-csrf-token', administrative.csrf).send({ personId: created.body.data.id }).expect(201);
+
+    const overview = await request(app.getHttpServer()).get('/api/clinic/patients/overview?treatmentInProgress=NO&page=1&pageSize=10').set('Cookie', administrative.cookie).expect(200);
+    expect(overview.body).toMatchObject({ data: [expect.objectContaining({ id: created.body.data.id, status: 'INACTIVE', lastAttentionAt: null })], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } });
+    expect(JSON.stringify(overview.body)).not.toMatch(/consultationReason|bodyAreaOrInjury|evolution|evaluation|interventionPlan/i);
+
+    const professor = await session(Role.PROFESSOR);
+    await request(app.getHttpServer()).get('/api/clinic/patients/overview').set('Cookie', professor.cookie).expect(403);
   });
 });
