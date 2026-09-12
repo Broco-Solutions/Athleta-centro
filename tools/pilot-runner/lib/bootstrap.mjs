@@ -15,6 +15,7 @@ const SYNTHETIC_PRISMA_DATABASE_URL =
   'postgresql://pilot_runner:synthetic@127.0.0.1:1/pilot_generate?schema=public';
 
 const NAMESPACE_DRIVER = join(dirname(fileURLToPath(import.meta.url)), 'internal', 'bootstrap-namespace.mjs');
+const CONTAINMENT_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'internal', 'bootstrap-containment.bash');
 const CACHE_MISS_PATTERN = /(?:ERR_PNPM_NO_OFFLINE|ERR_PNPM_META_FETCH_FAIL|ERR_PNPM_TARBALL_INTEGRITY|not found in (?:the )?store|missing from the store|offline mode|cache miss|could not resolve.*offline|failed to download|querying npm registry)/i;
 const ENGINE_MISS_PATTERN = /(?:failed to download|download.*engine|engine.*not found|querying binaries|binaries\.prisma\.sh)/i;
 
@@ -182,7 +183,7 @@ async function restoreOwnedDirectoryTraversal(root, directory) {
 
 async function namespaceSession(mode, worktreePath, prepared, lower, prismaLower, timeoutMs) {
   const config = await loadPilotConfig();
-  for (const executable of ['/usr/bin/unshare', '/usr/bin/mount', '/usr/bin/setpriv']) {
+  for (const executable of ['/usr/bin/bash', '/usr/bin/unshare', '/usr/bin/mount', '/usr/bin/setpriv']) {
     try {
       await access(executable, fsConstants.X_OK);
     } catch {
@@ -197,13 +198,28 @@ async function namespaceSession(mode, worktreePath, prepared, lower, prismaLower
   try {
     return await executeTrustedCommand(
       {
-        executablePath: '/usr/bin/unshare',
+        executablePath: '/usr/bin/setpriv',
         args: [
+          '--pdeathsig',
+          'SIGKILL',
+          '--',
+          '/usr/bin/bash',
+          CONTAINMENT_SCRIPT,
+          'launch',
+          String(process.pid),
+          '/usr/bin/unshare',
           '--user',
           '--map-root-user',
           '--mount',
           '--net',
+          '--pid',
+          '--fork',
+          '--kill-child=SIGKILL',
+          '--mount-proc',
           '--',
+          '/usr/bin/bash',
+          CONTAINMENT_SCRIPT,
+          'init',
           node,
           NAMESPACE_DRIVER,
           mode,
@@ -287,7 +303,7 @@ function bootstrapFailure(result) {
       stderr: result.stderr,
     });
   }
-  if (/\[PILOT_ISOLATION\]/.test(output)) {
+  if (/\[PILOT_ISOLATION\]|(?:^|\n)(?:\/usr\/bin\/)?(?:unshare|setpriv):/m.test(output)) {
     return new BootstrapBlockedError('Required namespace, mount, overlay, SQLite, or capability isolation failed', 'BOOTSTRAP_ISOLATION_CAPABILITY_MISSING', { stderr: result.stderr });
   }
   const stage = /\[PILOT_STAGE:prisma\]/.test(output) ? 'PRISMA_GENERATE_FAILED' : 'BOOTSTRAP_INSTALL_FAILED';

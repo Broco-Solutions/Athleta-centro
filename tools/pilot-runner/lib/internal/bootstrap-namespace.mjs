@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { lstatSync, mkdirSync, realpathSync, statSync } from 'node:fs';
+import { lstatSync, mkdirSync, readlinkSync, realpathSync, statSync } from 'node:fs';
 import { basename, isAbsolute, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -33,6 +33,9 @@ function directory(path, label) {
 }
 
 if (!['probe', 'bootstrap'].includes(mode) || process.argv.length !== 14) fail('invalid closed session arguments');
+if (process.ppid !== 1) fail('Bootstrap driver is not a direct child of PID 1');
+if (realpathSync('/proc/self') !== `/proc/${process.pid}`) fail('Bootstrap /proc does not expose namespace-local PIDs');
+if (readlinkSync('/proc/self/ns/pid') !== readlinkSync('/proc/1/ns/pid')) fail('Bootstrap /proc belongs to another PID namespace');
 const canonical = {
   worktree: directory(worktreePath, 'worktree'),
   lower: directory(lower, 'lower'),
@@ -110,6 +113,12 @@ const capabilityAndStoreProbe = String.raw`
     if (!new RegExp('^' + name + ':\\s+0+$', 'm').test(status)) process.exit(80);
   }
   if (!/^NoNewPrivs:\s+1$/m.test(status)) process.exit(81);
+  const nestedNamespace = require('node:child_process').spawnSync(
+    '/usr/bin/unshare',
+    ['--user', '--map-root-user', '--', process.execPath, '-e', ''],
+    { stdio: 'ignore' },
+  );
+  if (nestedNamespace.error || nestedNamespace.status === 0) process.exit(83);
   let lowerWritable = false;
   try { const fd = openSync(lower + '/index.db', 'a'); closeSync(fd); lowerWritable = true; } catch (error) {
     if (!['EROFS', 'EACCES', 'EPERM'].includes(error.code)) throw error;

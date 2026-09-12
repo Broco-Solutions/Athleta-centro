@@ -23,16 +23,28 @@ The process supervisor is package-internal. Public modules expose fixed tool pro
 enums, executables, argv, shells, `cwd`, repository paths, or root selectors. Executables are
 canonical non-group/world-writable files, `shell` is always false, child environments are
 allowlisted with a runner-controlled `PATH`, and every child owns a process group. Timeout sends
-`SIGTERM` and then `SIGKILL` to that group so descendants cannot survive. Process-tree scripts live
-only under `test/fixtures`.
+`SIGTERM` and then `SIGKILL` to that group. Bootstrap adds a PID namespace boundary described
+below; generic process probes rely only on their process group. Process-tree scripts live only
+under `test/fixtures`.
 
 Bootstrap accepts one approved worktree context and always performs both `pnpm install` and Prisma
 Generate in one Linux/WSL namespace. There is no public direct-Prisma operation and no option to
 skip either stage. The namespace is created with:
 
 ```text
-unshare --user --map-root-user --mount --net
+setpriv --pdeathsig SIGKILL -- \
+  unshare --user --map-root-user --mount --net \
+          --pid --fork --kill-child=SIGKILL --mount-proc
 ```
+
+The fixed launcher verifies that its parent is still the expected supervisor before entering
+`unshare`, closing the startup window before `pdeathsig` is armed. Inside the PID namespace a fixed
+Bash 5.2+ init runs as PID 1, launches the Node namespace driver as its direct child, reaps adopted
+orphans, forwards `SIGTERM`, and preserves the driver's exit status. When the driver finishes, PID
+1 exits and the kernel kills every remaining namespace member. Descendants therefore cannot escape
+Bootstrap by using `setsid`, a detached process group, reparenting, or multiple process levels. The
+outer supervisor still provides its existing graceful timeout; `pdeathsig` and `--kill-child`
+contain unexpected supervisor/launcher death.
 
 For each run, the runner creates `stateRoot/bootstrap-store/run-<id>/` with private pnpm and Prisma
 overlay directories plus a temporary home. It resolves the versioned pnpm 11.4.0 store, bind-mounts
@@ -53,10 +65,13 @@ frozen-lockfile, store-integrity verification, copy import, the ephemeral `--sto
 supply-chain policy metadata checks from attempting registry access). The namespace has no host or
 external network interface.
 
-Preflight exercises the real boundary: user/mount/network namespaces, read-only pnpm and Prisma
+Preflight exercises the real boundary: user/mount/network/PID namespaces with a private `/proc`,
+the PID 1 reaper, read-only pnpm and Prisma
 lowers, writable overlays, a transactional open/rollback of the overlaid pnpm SQLite index, and
-the capability drop. If `unshare`, mount, overlayfs, `setpriv`, capability removal, or SQLite
-copy-up is unavailable, Bootstrap returns `BLOCKED` and has no weaker fallback.
+the capability drop. It also verifies that the dropped process cannot create a nested namespace.
+If Bash 5.2+, `unshare`, PID or mount namespace support, private `/proc`, mount, overlayfs,
+`setpriv`, capability removal, or SQLite copy-up is unavailable, Bootstrap returns `BLOCKED` and
+has no weaker fallback.
 
 Missing dependencies or Prisma artifacts are reported as `DEPENDENCY_CACHE_MISS`. Bootstrap never
 retries online. Populating the store is a separate, explicitly authorized operation. Namespace
