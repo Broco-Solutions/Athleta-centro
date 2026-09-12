@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "tasks": [
+    {
+      "schemaVersion": 1,
+      "id": "ATH-101",
+      "title": "Título concreto",
+      "objective": "Resultado esperado",
+      "dependencies": [],
+      "sourceHints": [],
+      "scopeHints": {
+        "included": [],
+        "excluded": []
+      },
+      "acceptanceHints": [],
+      "authority": "technical-only"
+    }
+  ]
+}

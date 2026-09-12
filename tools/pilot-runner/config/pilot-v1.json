@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "repository": {
+    "root": "/home/rcoirini/proyectos-bs/athleta",
+    "origin": "https://github.com/Broco-Solutions/Athleta-001.git",
+    "approvedBaseSha": "454b331cf74454cdc7b464ef4c1b163721a58453"
+  },
+  "runtime": {
+    "node": "24.13.0",
+    "pnpm": "11.4.0"
+  },
+  "tools": {
+    "codexExecutable": "/home/rcoirini/.nvm/versions/node/v22.23.0/bin/codex"
+  },
+  "paths": {
+    "stateRoot": "/home/rcoirini/proyectos-bs/athleta-pipeline-state",
+    "worktreeRoot": "/home/rcoirini/proyectos-bs/athleta-agent-worktrees",
+    "productPdf": "docs/product/Athleta Manager - Descripción de Sistema.pdf",
+    "pipelinePdf": "docs/engineering/Athleta Manager - Autonomous Software Delivery Pipeline con Human Product Gate.pdf"
+  }
+}
