@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { PermissionsGuard, RequirePermissions } from '../auth/permissions.guard';
-import { FinalizeTreatmentDto, TreatmentDto } from './clinic.dto';
+import { ClinicalTreatmentAssociationListEnvelopeDto, FinalizeTreatmentDto, TreatmentDto } from './clinic.dto';
 import { TreatmentService } from './treatment.service';
 
 @ApiTags('Clinic Treatments')
@@ -20,6 +20,7 @@ export class TreatmentController {
   @RequirePermissions('CLINICAL_HISTORY_READ')
   @ApiOperation({ operationId: 'listClinicalTreatments' })
   @ApiQuery({ name: 'personId', required: false, type: String, format: 'uuid' })
+  @ApiOkResponse({ type: ClinicalTreatmentAssociationListEnvelopeDto })
   async list(@Query('personId') personId?: string) { return { data: await this.treatments.list(personId) }; }
 
   @Post(':id/finalize')

@@ -22,6 +22,7 @@ import {
   ClinicalTestResponseType,
   TrainingCondition,
   TreatmentFinishReason,
+  TreatmentStatus,
 } from '@prisma/client';
 
 export class PatientDto {
@@ -69,6 +70,21 @@ export class DirectAttentionDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() professionalId!: string;
   @ApiProperty({ type: String, format: 'date-time' }) @IsDateString() occurredAt!: string;
   @ApiProperty({ enum: ClinicalCoverage, type: String }) @IsEnum(ClinicalCoverage) coverage!: ClinicalCoverage;
+}
+
+export class UpdateClinicalAttentionDto {
+  @ApiProperty({ type: String, format: 'date-time' }) @IsDateString() occurredAt!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() professionalId!: string;
+  @ApiProperty({ enum: ClinicalCoverage, type: String }) @IsEnum(ClinicalCoverage) coverage!: ClinicalCoverage;
+}
+
+export class SetClinicalAttentionTreatmentDto {
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true }) @IsOptional() @IsUUID() treatmentId?: string | null;
+}
+
+export class ListClinicalProfessionalsQueryDto {
+  @ApiPropertyOptional({ type: String, format: 'date-time', description: 'Includes inactive clinical professionals only when the attention date is before the current Buenos Aires operational day.' })
+  @IsOptional() @IsDateString() occurredAt?: string;
 }
 
 export class AppointmentDto {
@@ -153,6 +169,7 @@ export class ClinicalAttentionOperationalDto {
   @ApiProperty({ type: String, format: 'date-time' }) occurredAt!: string;
   @ApiProperty({ enum: ClinicalCoverage, nullable: true }) coverage!: ClinicalCoverage | null;
   @ApiProperty({ enum: ['APPOINTMENT', 'DIRECT'] }) origin!: 'APPOINTMENT' | 'DIRECT';
+  @ApiProperty({ type: () => ClinicalPersonSummaryDto }) person!: ClinicalPersonSummaryDto;
   @ApiProperty({ type: () => ClinicalProfessionalSummaryDto }) professional!: ClinicalProfessionalSummaryDto;
 }
 
@@ -168,6 +185,33 @@ export class EvolutionDto {
   @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() evolutionText?: string;
   @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() practicesOrManeuvers?: string;
   @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() indicationsOrNextSteps?: string;
+}
+
+export class ClinicalEvolutionDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) attentionId!: string;
+  @ApiPropertyOptional({ type: String, nullable: true }) evolutionText!: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) practicesOrManeuvers!: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) indicationsOrNextSteps!: string | null;
+  @ApiProperty({ type: String, format: 'uuid' }) authorId!: string;
+  @ApiProperty({ type: String, format: 'date-time' }) createdAt!: Date;
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true }) lastModifiedById!: string | null;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) lastModifiedAt!: Date | null;
+}
+
+export class ClinicalEvolutionEnvelopeDto {
+  @ApiProperty({ type: () => ClinicalEvolutionDto, nullable: true }) data!: ClinicalEvolutionDto | null;
+}
+
+export class ClinicalTreatmentAssociationDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) personId!: string;
+  @ApiProperty({ enum: TreatmentStatus }) status!: TreatmentStatus;
+  @ApiProperty({ type: String, format: 'date' }) startDate!: Date;
+}
+
+export class ClinicalTreatmentAssociationListEnvelopeDto {
+  @ApiProperty({ type: () => [ClinicalTreatmentAssociationDto] }) data!: ClinicalTreatmentAssociationDto[];
 }
 
 export class ClinicalTestDefinitionDto {

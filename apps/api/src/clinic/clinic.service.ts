@@ -13,9 +13,12 @@ import {
   AttendAppointmentDto,
   CorrectAppointmentDto,
   DirectAttentionDto,
+  ListClinicalProfessionalsQueryDto,
   ListClinicalAppointmentsQueryDto,
   ListClinicalPatientsOverviewQueryDto,
   RescheduleAppointmentDto,
+  SetClinicalAttentionTreatmentDto,
+  UpdateClinicalAttentionDto,
 } from './clinic.dto';
 import { hasTreatmentWithoutRecentAttention } from './treatment-recent-attention';
 
@@ -58,7 +61,18 @@ const attentionSelect = {
   professionalId: true,
   occurredAt: true,
   coverage: true,
+  treatmentId: true,
+  person: { select: { id: true, firstName: true, lastName: true, dni: true } },
   professional: { select: professionalSelect },
+} as const;
+
+const attentionDependencySelect = {
+  id: true,
+  appointmentId: true,
+  treatmentId: true,
+  evolution: { select: { id: true } },
+  charge: { select: { id: true } },
+  _count: { select: { evaluations: true, clinicalIncomes: true } },
 } as const;
 
 type AppointmentRow = Prisma.ClinicalAppointmentGetPayload<{ select: typeof appointmentSelect }>;
@@ -82,10 +96,15 @@ export class ClinicService {
     return rows.map((row) => row.person);
   }
 
-  async listProfessionals() {
+  async listProfessionals(query: ListClinicalProfessionalsQueryDto = {}) {
+    const occurredAt = query.occurredAt ? this.date(query.occurredAt, 'CLINIC_ATTENTION_DATE_INVALID') : null;
+    if (occurredAt && occurredAt > new Date()) {
+      throw new BadRequestException({ code: 'CLINIC_ATTENTION_FUTURE_NOT_ALLOWED', message: 'An attention cannot occur in the future' });
+    }
+    const includeInactive = occurredAt ? this.isHistoricalAttention(occurredAt) : false;
     const rows = await this.prisma.internalUser.findMany({
       where: {
-        status: InternalUserStatus.ACTIVE,
+        ...(includeInactive ? {} : { status: InternalUserStatus.ACTIVE }),
         roles: { some: { role: { in: [...clinicalRoles] } } },
       },
       select: professionalSelect,
@@ -148,7 +167,7 @@ export class ClinicService {
     }
     const [patient] = await Promise.all([
       this.prisma.clinicalPatient.findUnique({ where: { personId: input.personId } }),
-      this.validateProfessional(input.professionalId),
+      this.validateProfessionalForAttention(input.professionalId, occurredAt),
     ]);
     if (!patient) throw new BadRequestException({ code: 'CLINIC_PATIENT_REQUIRED', message: 'Patient registration required' });
     const attention = await this.prisma.clinicalAttention.create({
@@ -170,6 +189,57 @@ export class ClinicService {
       select: attentionSelect,
     });
     return rows.map((row) => this.mapAttention(row));
+  }
+
+  async updateAttention(id: string, input: UpdateClinicalAttentionDto) {
+    const occurredAt = this.date(input.occurredAt, 'CLINIC_ATTENTION_DATE_INVALID');
+    if (occurredAt > new Date()) {
+      throw new BadRequestException({ code: 'CLINIC_ATTENTION_FUTURE_NOT_ALLOWED', message: 'An attention cannot occur in the future' });
+    }
+    await this.validateProfessionalForAttention(input.professionalId, occurredAt);
+    const current = await this.prisma.clinicalAttention.findUnique({ where: { id }, select: { id: true } });
+    if (!current) throw new NotFoundException({ code: 'CLINIC_ATTENTION_NOT_FOUND', message: 'Attention not found' });
+    const attention = await this.prisma.clinicalAttention.update({
+      where: { id },
+      data: { occurredAt, professionalId: input.professionalId, coverage: input.coverage },
+      select: attentionSelect,
+    });
+    return this.mapAttention(attention);
+  }
+
+  async deleteEmptyAttention(id: string) {
+    try {
+      await this.prisma.$transaction(async (transaction) => {
+        const attention = await transaction.clinicalAttention.findUnique({ where: { id }, select: attentionDependencySelect });
+        if (!attention) throw new NotFoundException({ code: 'CLINIC_ATTENTION_NOT_FOUND', message: 'Attention not found' });
+        if (attention.appointmentId) {
+          throw new ConflictException({ code: 'ATTENTION_APPOINTMENT_ORIGIN_DELETE_FORBIDDEN', message: 'An attention created from an appointment must be removed by correcting the appointment' });
+        }
+        if (this.attentionHasDependencies(attention)) {
+          throw new ConflictException({ code: 'ATTENTION_HAS_DEPENDENCIES', message: 'Attention has clinical or economic dependencies' });
+        }
+        await transaction.clinicalAttention.delete({ where: { id } });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2003', 'P2034'].includes(error.code)) {
+        throw new ConflictException({ code: 'ATTENTION_HAS_DEPENDENCIES', message: 'Attention has clinical or economic dependencies' });
+      }
+      throw error;
+    }
+  }
+
+  async setAttentionTreatment(id: string, input: SetClinicalAttentionTreatmentDto) {
+    const attention = await this.prisma.clinicalAttention.findUnique({ where: { id }, select: { id: true, personId: true } });
+    if (!attention) throw new NotFoundException({ code: 'CLINIC_ATTENTION_NOT_FOUND', message: 'Attention not found' });
+    const treatmentId = input.treatmentId ?? null;
+    if (treatmentId) {
+      const treatment = await this.prisma.treatment.findUnique({ where: { id: treatmentId }, select: { id: true, personId: true } });
+      if (!treatment || treatment.personId !== attention.personId) {
+        throw new BadRequestException({ code: 'ATTENTION_TREATMENT_PERSON_MISMATCH', message: 'Treatment does not belong to the attention person' });
+      }
+    }
+    const result = await this.prisma.clinicalAttention.update({ where: { id }, data: { treatmentId }, select: attentionSelect });
+    return this.mapAttention(result);
   }
 
   async create(input: AppointmentDto) {
@@ -353,6 +423,30 @@ export class ClinicService {
     }
   }
 
+  private async validateProfessionalForAttention(id: string, occurredAt: Date) {
+    const user = await this.prisma.internalUser.findUnique({ where: { id }, include: { roles: true } });
+    const isClinicalProfessional = user?.roles.some((entry) => clinicalRoles.includes(entry.role));
+    if (!user || !isClinicalProfessional || (!this.isHistoricalAttention(occurredAt) && user.status !== InternalUserStatus.ACTIVE)) {
+      throw new BadRequestException({ code: 'CLINIC_PROFESSIONAL_INVALID', message: 'Professional is not eligible for this attention date' });
+    }
+  }
+
+  private isHistoricalAttention(occurredAt: Date, now = new Date()) {
+    return this.operationalDate(occurredAt) < this.operationalDate(now);
+  }
+
+  private operationalDate(value: Date) {
+    const fields = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(value);
+    const part = (type: Intl.DateTimeFormatPartTypes) => fields.find((field) => field.type === type)?.value;
+    return `${part('year')}-${part('month')}-${part('day')}`;
+  }
+
+  private attentionHasDependencies(attention: Prisma.ClinicalAttentionGetPayload<{ select: typeof attentionDependencySelect }>) {
+    return Boolean(attention.treatmentId || attention.evolution || attention.charge || attention._count.evaluations || attention._count.clinicalIncomes);
+  }
+
   private mapAppointment(row: AppointmentRow, overlapCount = 0) {
     return {
       id: row.id,
@@ -379,6 +473,7 @@ export class ClinicService {
       occurredAt: row.occurredAt.toISOString(),
       coverage: row.coverage,
       origin: row.appointmentId ? 'APPOINTMENT' as const : 'DIRECT' as const,
+      person: row.person,
       professional: this.mapProfessional(row.professional),
     };
   }

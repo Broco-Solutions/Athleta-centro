@@ -826,6 +826,7 @@ export interface ClinicalAttentionOperationalDto {
   /** @nullable */
   coverage: ClinicalAttentionOperationalDtoCoverage;
   origin: ClinicalAttentionOperationalDtoOrigin;
+  person: ClinicalPersonSummaryDto;
   professional: ClinicalProfessionalSummaryDto;
 }
 
@@ -835,6 +836,26 @@ export interface ClinicalAttentionEnvelopeDto {
 
 export interface ClinicalAttentionListEnvelopeDto {
   data: ClinicalAttentionOperationalDto[];
+}
+
+export type UpdateClinicalAttentionDtoCoverage = typeof UpdateClinicalAttentionDtoCoverage[keyof typeof UpdateClinicalAttentionDtoCoverage];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const UpdateClinicalAttentionDtoCoverage = {
+  PRIVATE: 'PRIVATE',
+  SOCIAL_WORK: 'SOCIAL_WORK',
+} as const;
+
+export interface UpdateClinicalAttentionDto {
+  occurredAt: string;
+  professionalId: string;
+  coverage: UpdateClinicalAttentionDtoCoverage;
+}
+
+export interface SetClinicalAttentionTreatmentDto {
+  /** @nullable */
+  treatmentId?: string | null;
 }
 
 export interface ClinicalAppointmentListEnvelopeDto {
@@ -903,6 +924,26 @@ export interface TreatmentDto {
   startDate: string;
 }
 
+export type ClinicalTreatmentAssociationDtoStatus = typeof ClinicalTreatmentAssociationDtoStatus[keyof typeof ClinicalTreatmentAssociationDtoStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ClinicalTreatmentAssociationDtoStatus = {
+  IN_PROGRESS: 'IN_PROGRESS',
+  FINISHED: 'FINISHED',
+} as const;
+
+export interface ClinicalTreatmentAssociationDto {
+  id: string;
+  personId: string;
+  status: ClinicalTreatmentAssociationDtoStatus;
+  startDate: string;
+}
+
+export interface ClinicalTreatmentAssociationListEnvelopeDto {
+  data: ClinicalTreatmentAssociationDto[];
+}
+
 export type FinalizeTreatmentDtoFinishReason = typeof FinalizeTreatmentDtoFinishReason[keyof typeof FinalizeTreatmentDtoFinishReason];
 
 
@@ -924,6 +965,33 @@ export interface EvolutionDto {
   evolutionText?: string;
   practicesOrManeuvers?: string;
   indicationsOrNextSteps?: string;
+}
+
+export interface ClinicalEvolutionDto {
+  id: string;
+  attentionId: string;
+  /** @nullable */
+  evolutionText?: string | null;
+  /** @nullable */
+  practicesOrManeuvers?: string | null;
+  /** @nullable */
+  indicationsOrNextSteps?: string | null;
+  authorId: string;
+  createdAt: string;
+  /** @nullable */
+  lastModifiedById?: string | null;
+  /** @nullable */
+  lastModifiedAt?: string | null;
+}
+
+/**
+ * @nullable
+ */
+export type ClinicalEvolutionEnvelopeDtoData = ClinicalEvolutionDto | null;
+
+export interface ClinicalEvolutionEnvelopeDto {
+  /** @nullable */
+  data: ClinicalEvolutionEnvelopeDtoData;
 }
 
 export interface ClinicalStudyDto {
@@ -1207,6 +1275,10 @@ export const ListClinicalPatientsOverviewTreatmentInProgress = {
   YES: 'YES',
   NO: 'NO',
 } as const;
+
+export type ListClinicalProfessionalsParams = {
+occurredAt?: string;
+};
 
 export type ListClinicalAppointmentsParams = {
 pendingPastScheduled?: ListClinicalAppointmentsPendingPastScheduled;
@@ -5331,17 +5403,24 @@ export type listClinicalProfessionalsResponseSuccess = (listClinicalProfessional
 
 export type listClinicalProfessionalsResponse = (listClinicalProfessionalsResponseSuccess)
 
-export const getListClinicalProfessionalsUrl = () => {
+export const getListClinicalProfessionalsUrl = (params?: ListClinicalProfessionalsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/clinic/professionals`
+  return stringifiedParams.length > 0 ? `/api/clinic/professionals?${stringifiedParams}` : `/api/clinic/professionals`
 }
 
-export const listClinicalProfessionals = async ( options?: RequestInit): Promise<listClinicalProfessionalsResponse> => {
+export const listClinicalProfessionals = async (params?: ListClinicalProfessionalsParams, options?: RequestInit): Promise<listClinicalProfessionalsResponse> => {
 
-  const res = await fetch(getListClinicalProfessionalsUrl(),
+  const res = await fetch(getListClinicalProfessionalsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -5526,6 +5605,127 @@ export const listClinicalAttentions = async (params?: ListClinicalAttentionsPara
 
   const data: listClinicalAttentionsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listClinicalAttentionsResponse
+}
+
+
+
+export type updateClinicalAttentionOperationalResponse200 = {
+  data: ClinicalAttentionEnvelopeDto
+  status: 200
+}
+
+export type updateClinicalAttentionOperationalResponseSuccess = (updateClinicalAttentionOperationalResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateClinicalAttentionOperationalResponse = (updateClinicalAttentionOperationalResponseSuccess)
+
+export const getUpdateClinicalAttentionOperationalUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/attentions/${id}`
+}
+
+export const updateClinicalAttentionOperational = async (id: string,
+    updateClinicalAttentionDto: UpdateClinicalAttentionDto, options?: RequestInit): Promise<updateClinicalAttentionOperationalResponse> => {
+
+  const res = await fetch(getUpdateClinicalAttentionOperationalUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateClinicalAttentionDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateClinicalAttentionOperationalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateClinicalAttentionOperationalResponse
+}
+
+
+
+export type deleteEmptyClinicalAttentionResponse200 = {
+  data: void
+  status: 200
+}
+
+export type deleteEmptyClinicalAttentionResponseSuccess = (deleteEmptyClinicalAttentionResponse200) & {
+  headers: Headers;
+};
+;
+
+export type deleteEmptyClinicalAttentionResponse = (deleteEmptyClinicalAttentionResponseSuccess)
+
+export const getDeleteEmptyClinicalAttentionUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/attentions/${id}`
+}
+
+export const deleteEmptyClinicalAttention = async (id: string, options?: RequestInit): Promise<deleteEmptyClinicalAttentionResponse> => {
+
+  const res = await fetch(getDeleteEmptyClinicalAttentionUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteEmptyClinicalAttentionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as deleteEmptyClinicalAttentionResponse
+}
+
+
+
+export type setClinicalAttentionTreatmentResponse200 = {
+  data: ClinicalAttentionEnvelopeDto
+  status: 200
+}
+
+export type setClinicalAttentionTreatmentResponseSuccess = (setClinicalAttentionTreatmentResponse200) & {
+  headers: Headers;
+};
+;
+
+export type setClinicalAttentionTreatmentResponse = (setClinicalAttentionTreatmentResponseSuccess)
+
+export const getSetClinicalAttentionTreatmentUrl = (id: string,) => {
+
+
+
+
+  return `/api/clinic/attentions/${id}/treatment`
+}
+
+export const setClinicalAttentionTreatment = async (id: string,
+    setClinicalAttentionTreatmentDto: SetClinicalAttentionTreatmentDto, options?: RequestInit): Promise<setClinicalAttentionTreatmentResponse> => {
+
+  const res = await fetch(getSetClinicalAttentionTreatmentUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      setClinicalAttentionTreatmentDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setClinicalAttentionTreatmentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as setClinicalAttentionTreatmentResponse
 }
 
 
@@ -5811,7 +6011,7 @@ export const createClinicalTreatment = async (treatmentDto: TreatmentDto, option
 
 
 export type listClinicalTreatmentsResponse200 = {
-  data: void
+  data: ClinicalTreatmentAssociationListEnvelopeDto
   status: 200
 }
 
@@ -5937,7 +6137,7 @@ export const reopenClinicalTreatment = async (id: string, options?: RequestInit)
 
 
 export type createClinicalEvolutionResponse201 = {
-  data: void
+  data: ClinicalEvolutionEnvelopeDto
   status: 201
 }
 
@@ -5978,7 +6178,7 @@ export const createClinicalEvolution = async (attentionId: string,
 
 
 export type getClinicalEvolutionForAttentionResponse200 = {
-  data: void
+  data: ClinicalEvolutionEnvelopeDto
   status: 200
 }
 
@@ -6017,7 +6217,7 @@ export const getClinicalEvolutionForAttention = async (attentionId: string, opti
 
 
 export type correctClinicalEvolutionResponse200 = {
-  data: void
+  data: ClinicalEvolutionEnvelopeDto
   status: 200
 }
 

@@ -8,9 +8,10 @@ import { currentSession } from '../../features/auth/auth';
 import { WorkspaceShell } from '../../features/auth/workspace-shell';
 import { PatientList } from '../../features/clinic/patient-list';
 import { ClinicalAgenda } from '../../features/clinic/clinical-agenda';
+import { ClinicalAttentionPanel } from '../../features/clinic/clinical-attention-panel';
+import { fetchClinicalAttentions } from '../../features/clinic/clinic-api';
 
 type Patient = { id: string; firstName: string; lastName: string; dni: string };
-type Attention = { id: string; occurredAt: string; origin?: 'APPOINTMENT' | 'DIRECT'; professional?: { firstName: string; lastName: string } };
 type Treatment = { id: string; status: string; bodyAreaOrInjury: string; consultationReason: string; startDate: string; currentStage?: string | null };
 type Study = { id: string; studyDate: string; studyType: string; description?: string | null; fileAsset?: unknown | null };
 type Order = { id: string; reference: string; issueDate?: string | null; expirationDate?: string | null; isExpired?: boolean; socialWork?: { name: string } };
@@ -48,13 +49,15 @@ function ClinicWorkspace(): React.JSX.Element {
   const patient = patients.data?.find((item) => item.id === personId);
   const listPath = tab === 'Tratamientos' ? `clinic/treatments?personId=${personId}` : tab === 'Atenciones' ? `clinic/attentions?personId=${personId}` : tab === 'Estudios' ? `clinic/studies?personId=${personId}` : tab === 'Obra social' ? personId ? `clinic/orders?personId=${personId}` : 'clinic/social-works' : tab === 'Indicaciones' ? `clinic/indications?personId=${personId}` : '';
   const list = useQuery({ queryKey: ['clinic', tab, personId], queryFn: () => get<Row[]>(listPath), enabled: Boolean(listPath) && (!personId || Boolean(patient)) });
-  const attentions = useQuery({ queryKey: ['clinic', 'attentions', personId], queryFn: () => get<Attention[]>(`clinic/attentions?personId=${personId}`), enabled: Boolean(patient) });
-  const evaluations = useQuery({ queryKey: ['clinic', 'evaluations', attentionId], queryFn: () => get<Evaluation[]>(`clinic/attentions/${attentionId}/evaluations`), enabled: tab === 'Evaluaciones' && Boolean(attentionId) });
+  const attentions = useQuery({ queryKey: ['clinic', 'attentions', personId], queryFn: () => fetchClinicalAttentions(personId), enabled: Boolean(patient) });
+  const evaluations = useQuery({ queryKey: ['clinic', 'evaluations', attentionId], queryFn: () => get<Evaluation[]>(`clinic/attentions/${attentionId}/evaluations`), enabled: tab === 'Evaluaciones' && Boolean(attentionId) && permissions.includes('CLINICAL_HISTORY_READ') });
   const canManageAppointments = permissions.includes('CLINIC_APPOINTMENT_MANAGE');
   const canRegisterAttention = permissions.includes('CLINIC_ATTENTION_REGISTER') || canManageAppointments;
   const canManageTreatments = permissions.includes('CLINIC_TREATMENT_MANAGE');
   const canManageStudies = permissions.includes('CLINIC_STUDY_MANAGE');
   const canManageIncome = permissions.includes('CLINIC_INCOME_MANAGE');
+  const canReadClinicalHistory = permissions.includes('CLINICAL_HISTORY_READ');
+  const visibleTabs = canReadClinicalHistory ? tabs : ['Agenda', 'Pacientes', 'Paciente', 'Atenciones'] as const;
   const tabHref = (nextTab: Tab) => {
     const params = new URLSearchParams();
     params.set('tab', nextTab);
@@ -84,7 +87,7 @@ function ClinicWorkspace(): React.JSX.Element {
   } else if (tab === 'Agenda') {
     body = <ClinicalAgenda personId={patient.id} csrfToken={session.data?.csrfToken ?? ''} canManage={canManageAppointments} />;
   } else if (tab === 'Atenciones') {
-    body = <section className="rounded border bg-white p-5"><div className="flex justify-between"><h2 className="text-lg font-semibold">Atenciones</h2>{canRegisterAttention ? <Link href={`/clinic/attentions/new?personId=${patient.id}`} className="rounded bg-[#FCCC05] px-3 py-2 text-sm">Registrar atención</Link> : null}</div><List query={attentions} empty="No hay atenciones registradas.">{(attention) => <article className="rounded border p-3"><div className="font-medium">{displayDateTime(attention.occurredAt)} · {attention.origin === 'APPOINTMENT' ? 'Turno' : 'Atención directa'}</div><div className="text-sm">Profesional: {attention.professional ? `${attention.professional.firstName} ${attention.professional.lastName}` : '—'}</div><Link className="text-sm underline" href={`/clinic?tab=Evaluaciones&personId=${patient.id}&attentionId=${attention.id}`}>Abrir atención</Link></article>}</List></section>;
+    body = <section className="rounded border bg-white p-5"><div className="flex justify-between"><h2 className="text-lg font-semibold">Atenciones</h2>{canRegisterAttention ? <Link href={`/clinic/attentions/new?personId=${patient.id}`} className="rounded bg-[#FCCC05] px-3 py-2 text-sm">Registrar atención</Link> : null}</div><List query={attentions} empty="No hay atenciones registradas.">{(attention) => <ClinicalAttentionPanel attention={attention} csrfToken={session.data?.csrfToken ?? ''} canClinical={canReadClinicalHistory} />}</List></section>;
   } else if (tab === 'Evaluaciones') {
     body = <section className="rounded border bg-white p-5"><h2 className="text-lg font-semibold">Evaluaciones clínicas</h2>{attentionId ? <List query={evaluations} empty="No hay evaluaciones clínicas registradas.">{(evaluation) => <article className="rounded border p-3">{displayDateTime(evaluation.createdAt)} · Evaluación clínica · {evaluation.results?.length || 0} resultados</article>}</List> : <><p className="mt-3 text-sm">Seleccioná una Atención para ver sus evaluaciones.</p><List query={attentions} empty="No hay atenciones disponibles.">{(attention) => <Link className="block rounded border p-3" href={`/clinic?tab=Evaluaciones&personId=${patient.id}&attentionId=${attention.id}`}>{displayDateTime(attention.occurredAt)} · Abrir atención</Link>}</List></>}</section>;
   } else if (tab === 'Tratamientos') {
@@ -97,7 +100,7 @@ function ClinicWorkspace(): React.JSX.Element {
     body = <section className="rounded border bg-white p-5"><h2 className="text-lg font-semibold">Indicaciones</h2><List<Indication> query={list as typeof list & { data: Indication[] | undefined }} empty="No hay indicaciones registradas.">{(indication) => <article className="rounded border p-3"><div>{statusLabel(indication.status)} · {statusLabel(indication.trainingCondition)}</div><div className="text-sm">{indication.affectedArea || ''} {indication.instructions || ''}</div></article>}</List></section>;
   }
 
-  return <WorkspaceShell active="Clínica"><main className="mx-auto max-w-7xl space-y-5 p-4 md:p-6"><header><p className="text-sm text-muted-foreground">Workspace clínico</p><h1 className="text-2xl font-semibold">Clínica</h1>{patient ? <p>Paciente: <strong>{patient.firstName} {patient.lastName}</strong> · DNI {patient.dni}</p> : null}</header><nav aria-label="Secciones de Clínica" className="flex gap-1 overflow-x-auto border-b">{tabs.map((item) => <Link key={item} href={tabHref(item)} aria-current={tab === item ? 'page' : undefined} className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${tab === item ? 'border-[#FCCC05] font-medium text-foreground' : 'border-transparent text-muted-foreground'}`}>{item}</Link>)}</nav>{body}</main></WorkspaceShell>;
+  return <WorkspaceShell active="Clínica"><main className="mx-auto max-w-7xl space-y-5 p-4 md:p-6"><header><p className="text-sm text-muted-foreground">Workspace clínico</p><h1 className="text-2xl font-semibold">Clínica</h1>{patient ? <p>Paciente: <strong>{patient.firstName} {patient.lastName}</strong> · DNI {patient.dni}</p> : null}</header><nav aria-label="Secciones de Clínica" className="flex gap-1 overflow-x-auto border-b">{visibleTabs.map((item) => <Link key={item} href={tabHref(item)} aria-current={tab === item ? 'page' : undefined} className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${tab === item ? 'border-[#FCCC05] font-medium text-foreground' : 'border-transparent text-muted-foreground'}`}>{item}</Link>)}</nav>{body}</main></WorkspaceShell>;
 }
 
 export default function ClinicPage(): React.JSX.Element {

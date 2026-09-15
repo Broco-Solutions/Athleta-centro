@@ -13,7 +13,7 @@ import {
   addDirectAttention,
   ClinicApiError,
   fetchClinicalPatients,
-  fetchClinicalProfessionals,
+  fetchClinicalProfessionalsForAttention,
 } from '../../../../features/clinic/clinic-api';
 import { clinicLocalDateTimeToIso, toClinicDateTimeLocal } from '../../../../features/clinic/clinic-dates';
 
@@ -32,7 +32,6 @@ function DirectAttentionForm(): React.JSX.Element {
   const presetPersonId = search.get('personId') ?? '';
   const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false });
   const patients = useQuery({ queryKey: ['clinic', 'patients'], queryFn: fetchClinicalPatients });
-  const professionals = useQuery({ queryKey: ['clinic', 'professionals'], queryFn: fetchClinicalProfessionals });
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -40,6 +39,12 @@ function DirectAttentionForm(): React.JSX.Element {
       professionalId: '',
       occurredAt: toClinicDateTimeLocal(new Date().toISOString()),
     },
+  });
+  const occurredAt = form.watch('occurredAt');
+  const professionals = useQuery({
+    queryKey: ['clinic', 'professionals', occurredAt],
+    queryFn: () => fetchClinicalProfessionalsForAttention({ occurredAt: clinicLocalDateTimeToIso(occurredAt) }),
+    enabled: Boolean(occurredAt),
   });
   const mutation = useMutation({
     mutationFn: (values: FormValues) => addDirectAttention({

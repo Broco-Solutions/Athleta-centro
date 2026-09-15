@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBody, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { PermissionsGuard, RequirePermissions } from '../auth/permissions.guard';
 import {
@@ -14,9 +14,12 @@ import {
   ClinicalPatientOverviewListEnvelopeDto,
   ClinicalProfessionalListEnvelopeDto,
   ListClinicalAppointmentsQueryDto,
+  ListClinicalProfessionalsQueryDto,
   ListClinicalPatientsOverviewQueryDto,
   PatientDto,
   RescheduleAppointmentDto,
+  SetClinicalAttentionTreatmentDto,
+  UpdateClinicalAttentionDto,
 } from './clinic.dto';
 import { ClinicService } from './clinic.service';
 
@@ -55,8 +58,9 @@ export class ClinicController {
   @Get('professionals')
   @RequirePermissions('CLINIC_OPERATIONAL_READ')
   @ApiOperation({ operationId: 'listClinicalProfessionals', description: 'Returns the minimum active clinical-professional data needed by Clinic workflows without requiring Team access.' })
+  @ApiQuery({ name: 'occurredAt', required: false, type: String, format: 'date-time' })
   @ApiOkResponse({ type: ClinicalProfessionalListEnvelopeDto })
-  async professionals() { return { data: await this.clinic.listProfessionals() }; }
+  async professionals(@Query() query: ListClinicalProfessionalsQueryDto) { return { data: await this.clinic.listProfessionals(query) }; }
 
   @Post('appointments')
   @RequirePermissions('CLINIC_APPOINTMENT_MANAGE')
@@ -73,11 +77,40 @@ export class ClinicController {
   async directAttention(@Body() body: DirectAttentionDto) { return { data: await this.clinic.registerDirectAttention(body) }; }
 
   @Get('attentions')
-  @RequirePermissions('CLINICAL_HISTORY_READ')
+  @RequirePermissions('CLINIC_OPERATIONAL_READ')
   @ApiOperation({ operationId: 'listClinicalAttentions' })
   @ApiQuery({ name: 'personId', required: false, type: String, format: 'uuid' })
   @ApiOkResponse({ type: ClinicalAttentionListEnvelopeDto })
   async attentions(@Query('personId') personId?: string) { return { data: await this.clinic.listAttentions(personId) }; }
+
+  @Patch('attentions/:id')
+  @RequirePermissions('CLINIC_ATTENTION_REGISTER')
+  @ApiOperation({ operationId: 'updateClinicalAttentionOperational' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiBody({ type: UpdateClinicalAttentionDto })
+  @ApiOkResponse({ type: ClinicalAttentionEnvelopeDto })
+  async updateAttention(@Param('id') id: string, @Body() body: UpdateClinicalAttentionDto) {
+    return { data: await this.clinic.updateAttention(id, body) };
+  }
+
+  @Delete('attentions/:id')
+  @RequirePermissions('CLINIC_ATTENTION_DELETE_EMPTY')
+  @ApiOperation({ operationId: 'deleteEmptyClinicalAttention' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  async deleteAttention(@Param('id') id: string) {
+    await this.clinic.deleteEmptyAttention(id);
+    return { data: { id } };
+  }
+
+  @Post('attentions/:id/treatment')
+  @RequirePermissions('CLINIC_TREATMENT_MANAGE')
+  @ApiOperation({ operationId: 'setClinicalAttentionTreatment' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiBody({ type: SetClinicalAttentionTreatmentDto })
+  @ApiOkResponse({ type: ClinicalAttentionEnvelopeDto })
+  async setAttentionTreatment(@Param('id') id: string, @Body() body: SetClinicalAttentionTreatmentDto) {
+    return { data: await this.clinic.setAttentionTreatment(id, body) };
+  }
 
   @Get('appointments')
   @RequirePermissions('CLINIC_OPERATIONAL_READ')
