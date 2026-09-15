@@ -1,11 +1,109 @@
 'use client';
-import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { listTeamUsers } from '@athleta/api-client';
+
+import React, { Suspense } from 'react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
 import { WorkspaceShell } from '../../../../features/auth/workspace-shell';
 import { currentSession } from '../../../../features/auth/auth';
-type Person = { id: string; firstName: string; lastName: string; dni: string }; type Professional = { id: string; firstName: string; lastName: string; status: string; roles: string[] };
-const unwrap = <T,>(response: unknown): T[] => { const outer = response as { data?: { data?: T[] } | T[] }; return Array.isArray(outer.data) ? outer.data : outer.data?.data ?? []; };
-export default function NewDirectAttentionPage(): React.JSX.Element { const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false }); const people = useQuery({ queryKey: ['clinic', 'patients'], queryFn: async () => unwrap<Person>(await fetch('/api/clinic/patients', { credentials: 'include' }).then((response) => response.json())) }); const team = useQuery({ queryKey: ['team', 'clinical'], queryFn: async () => unwrap<Professional>(await listTeamUsers({ credentials: 'include' })) }); const preset = typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('personId') ?? ''; const [personId, setPersonId] = useState(preset); const [professionalId, setProfessionalId] = useState(''); const [occurredAt, setOccurredAt] = useState(() => new Date().toISOString().slice(0, 16)); const [error, setError] = useState(''); const [saving, setSaving] = useState(false); const professionals = (team.data ?? []).filter((user) => user.status === 'ACTIVE' && user.roles.some((role) => role === 'KINESIOLOGIST' || role === 'OSTEOPATH'));
- async function submit(event: React.FormEvent) { event.preventDefault(); setSaving(true); setError(''); const response = await fetch('/api/clinic/attentions', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json', 'x-csrf-token': session.data?.csrfToken ?? '' }, body: JSON.stringify({ personId, professionalId, occurredAt: new Date(occurredAt).toISOString() }) }); const body = await response.json().catch(() => ({})) as { data?: { id?: string }; code?: string }; setSaving(false); if (!response.ok || !body.data?.id) { const messages: Record<string, string> = { CLINIC_PATIENT_REQUIRED: 'La persona todavía no fue dada de alta como Paciente.', CLINIC_PROFESSIONAL_INVALID: 'Seleccioná un profesional clínico activo.', CLINIC_ATTENTION_DATE_INVALID: 'La fecha y hora de atención no es válida.', FORBIDDEN: 'No tenés permisos para registrar esta atención.' }; setError(messages[body.code ?? ''] ?? 'No pudimos registrar la atención. Revisá los datos.'); return; } window.location.assign(`/clinic?personId=${personId}&attentionId=${body.data.id}`); }
- return <WorkspaceShell active="Clínica"><div className="mx-auto max-w-2xl space-y-5"><nav className="text-sm text-muted-foreground"><a href={`/clinic?personId=${personId}`} className="underline">Clínica</a> / Registrar atención</nav><h1 className="text-2xl font-semibold">Registrar atención directa</h1><form className="grid gap-4 rounded-md border bg-white p-6" onSubmit={submit}><label className="text-sm">Paciente<select required value={personId} onChange={(event) => setPersonId(event.target.value)} className="mt-1 h-10 w-full rounded-md border px-3"><option value="">Seleccionar paciente</option>{(people.data ?? []).map((person) => <option key={person.id} value={person.id}>{person.lastName}, {person.firstName} · DNI {person.dni}</option>)}</select></label><label className="text-sm">Profesional clínico<select required value={professionalId} onChange={(event) => setProfessionalId(event.target.value)} className="mt-1 h-10 w-full rounded-md border px-3"><option value="">Seleccionar profesional</option>{professionals.map((professional) => <option key={professional.id} value={professional.id}>{professional.lastName}, {professional.firstName}</option>)}</select></label><label className="text-sm">Fecha y hora de atención<input required type="datetime-local" value={occurredAt} onChange={(event) => setOccurredAt(event.target.value)} className="mt-1 h-10 w-full rounded-md border px-3" /></label>{error && <p role="alert" className="text-sm text-red-700">{error}</p>}<button type="submit" disabled={saving || !personId || !professionalId} className="rounded-md bg-[#FCCC05] px-4 py-2 font-medium text-black">{saving ? 'Guardando…' : 'Registrar atención'}</button></form></div></WorkspaceShell>; }
+import {
+  addDirectAttention,
+  ClinicApiError,
+  fetchClinicalPatients,
+  fetchClinicalProfessionals,
+} from '../../../../features/clinic/clinic-api';
+import { clinicLocalDateTimeToIso, toClinicDateTimeLocal } from '../../../../features/clinic/clinic-dates';
+
+const formSchema = z.object({
+  personId: z.string().uuid('Seleccioná un Paciente.'),
+  professionalId: z.string().uuid('Seleccioná un profesional clínico.'),
+  occurredAt: z.string().min(1, 'Ingresá la fecha y hora.'),
+  coverage: z.enum(['PRIVATE', 'SOCIAL_WORK'], { message: 'Seleccioná Particular u Obra social.' }),
+});
+
+type FormValues = z.infer<typeof formSchema>;
+
+function DirectAttentionForm(): React.JSX.Element {
+  const router = useRouter();
+  const search = useSearchParams();
+  const presetPersonId = search.get('personId') ?? '';
+  const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false });
+  const patients = useQuery({ queryKey: ['clinic', 'patients'], queryFn: fetchClinicalPatients });
+  const professionals = useQuery({ queryKey: ['clinic', 'professionals'], queryFn: fetchClinicalProfessionals });
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      personId: presetPersonId,
+      professionalId: '',
+      occurredAt: toClinicDateTimeLocal(new Date().toISOString()),
+    },
+  });
+  const mutation = useMutation({
+    mutationFn: (values: FormValues) => addDirectAttention({
+      personId: values.personId,
+      professionalId: values.professionalId,
+      occurredAt: clinicLocalDateTimeToIso(values.occurredAt),
+      coverage: values.coverage,
+    }, session.data?.csrfToken ?? ''),
+    onSuccess: (attention) => router.push(`/clinic?tab=Atenciones&personId=${attention.personId}&attentionId=${attention.id}`),
+  });
+  const errorCode = mutation.error instanceof ClinicApiError ? mutation.error.code : '';
+  const errorMessage = ({
+    CLINIC_PATIENT_REQUIRED: 'La Persona todavía no fue dada de alta como Paciente.',
+    CLINIC_PROFESSIONAL_INVALID: 'Seleccioná un profesional clínico activo.',
+    CLINIC_ATTENTION_DATE_INVALID: 'La fecha y hora de Atención no es válida.',
+    CLINIC_ATTENTION_FUTURE_NOT_ALLOWED: 'La Atención directa no puede tener una fecha futura.',
+  } as Record<string, string>)[errorCode] ?? 'No pudimos registrar la Atención. Revisá los datos.';
+
+  return (
+    <WorkspaceShell active="Clínica">
+      <main className="mx-auto max-w-2xl space-y-5 p-4 md:p-6">
+        <nav aria-label="Breadcrumb" className="text-sm text-muted-foreground"><Link href={`/clinic?personId=${presetPersonId}`} className="underline">Clínica</Link> / Registrar Atención</nav>
+        <div>
+          <p className="text-sm text-muted-foreground">Consulta sin Turno previo</p>
+          <h1 className="text-2xl font-semibold">Registrar Atención directa</h1>
+        </div>
+        <form className="grid gap-4 rounded-md border bg-white p-5 shadow-sm md:p-6" onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
+          <label className="grid gap-1 text-sm font-medium">Paciente
+            <select className="h-10 rounded-md border px-3" {...form.register('personId')}>
+              <option value="">Seleccionar Paciente</option>
+              {(patients.data ?? []).map((person) => <option key={person.id} value={person.id}>{person.lastName}, {person.firstName} · DNI {person.dni}</option>)}
+            </select>
+            {form.formState.errors.personId ? <span className="text-xs text-red-700">{form.formState.errors.personId.message}</span> : null}
+          </label>
+          <label className="grid gap-1 text-sm font-medium">Profesional clínico
+            <select className="h-10 rounded-md border px-3" {...form.register('professionalId')}>
+              <option value="">Seleccionar profesional</option>
+              {(professionals.data ?? []).map((professional) => <option key={professional.id} value={professional.id}>{professional.lastName}, {professional.firstName}</option>)}
+            </select>
+            {form.formState.errors.professionalId ? <span className="text-xs text-red-700">{form.formState.errors.professionalId.message}</span> : null}
+          </label>
+          <label className="grid gap-1 text-sm font-medium">Fecha y hora de Atención
+            <input type="datetime-local" className="h-10 rounded-md border px-3" {...form.register('occurredAt')} />
+            {form.formState.errors.occurredAt ? <span className="text-xs text-red-700">{form.formState.errors.occurredAt.message}</span> : null}
+          </label>
+          <label className="grid gap-1 text-sm font-medium">Cobertura
+            <select className="h-10 rounded-md border px-3" {...form.register('coverage')}>
+              <option value="">Seleccionar cobertura</option>
+              <option value="PRIVATE">Particular</option>
+              <option value="SOCIAL_WORK">Obra social</option>
+            </select>
+            {form.formState.errors.coverage ? <span className="text-xs text-red-700">{form.formState.errors.coverage.message}</span> : null}
+          </label>
+          {patients.isError || professionals.isError ? <p role="alert" className="text-sm text-red-700">No pudimos cargar Pacientes o profesionales.</p> : null}
+          {mutation.isError ? <p role="alert" className="text-sm text-red-700">{errorMessage}</p> : null}
+          <button type="submit" disabled={mutation.isPending || patients.isLoading || professionals.isLoading} className="rounded-md bg-[#FCCC05] px-4 py-2.5 font-semibold text-black disabled:opacity-50">
+            {mutation.isPending ? 'Guardando…' : 'Registrar Atención'}
+          </button>
+        </form>
+      </main>
+    </WorkspaceShell>
+  );
+}
+
+export default function NewDirectAttentionPage(): React.JSX.Element {
+  return <Suspense fallback={<p className="p-6">Cargando formulario…</p>}><DirectAttentionForm /></Suspense>;
+}

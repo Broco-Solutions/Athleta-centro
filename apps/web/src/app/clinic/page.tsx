@@ -1,16 +1,16 @@
 'use client';
 
-import React, { Suspense, useState } from 'react';
+import React, { Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { currentSession } from '../../features/auth/auth';
 import { WorkspaceShell } from '../../features/auth/workspace-shell';
 import { PatientList } from '../../features/clinic/patient-list';
+import { ClinicalAgenda } from '../../features/clinic/clinical-agenda';
 
 type Patient = { id: string; firstName: string; lastName: string; dni: string };
-type Attention = { id: string; occurredAt: string; appointmentId?: string | null; professional?: { firstName: string; lastName: string } };
-type Appointment = { id: string; startAt: string; durationMinutes: number; status: string; serviceType?: { name: string }; professional?: { firstName: string; lastName: string } };
+type Attention = { id: string; occurredAt: string; origin?: 'APPOINTMENT' | 'DIRECT'; professional?: { firstName: string; lastName: string } };
 type Treatment = { id: string; status: string; bodyAreaOrInjury: string; consultationReason: string; startDate: string; currentStage?: string | null };
 type Study = { id: string; studyDate: string; studyType: string; description?: string | null; fileAsset?: unknown | null };
 type Order = { id: string; reference: string; issueDate?: string | null; expirationDate?: string | null; isExpired?: boolean; socialWork?: { name: string } };
@@ -29,12 +29,6 @@ const get = async <T,>(path: string): Promise<T> => {
 };
 const displayDateTime = (value: string) => new Intl.DateTimeFormat('es-AR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date(value));
 const statusLabel = (value: string) => ({ SCHEDULED: 'Programado', ATTENDED: 'Atendido', ABSENT: 'Ausente', CANCELLED: 'Cancelado', IN_PROGRESS: 'En curso', FINISHED: 'Finalizado', ACTIVE: 'Activa', CLOSED: 'Cerrada' } as Record<string, string>)[value] || value;
-const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
-const nextDay = (date: string) => {
-  const value = new Date(`${date}T00:00:00Z`);
-  value.setUTCDate(value.getUTCDate() + 1);
-  return value.toISOString().slice(0, 10);
-};
 
 function List<T extends Row>({ query, empty, children }: { query: { isLoading: boolean; isError: boolean; data: T[] | undefined }; empty: string; children: (item: T) => React.ReactNode }): React.JSX.Element {
   if (query.isLoading) return <p className="mt-4">Cargando…</p>;
@@ -48,14 +42,12 @@ function ClinicWorkspace(): React.JSX.Element {
   const personId = search?.get('personId') || '';
   const attentionId = search?.get('attentionId') || '';
   const tab: Tab = isTab(search?.get('tab') ?? null) ? search.get('tab') as Tab : 'Agenda';
-  const [agendaDate, setAgendaDate] = useState(today);
   const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false });
   const permissions = session.data?.permissions ?? [];
   const patients = useQuery({ queryKey: ['clinic', 'patients', personId], queryFn: () => get<Patient[]>('clinic/patients'), enabled: Boolean(personId) });
   const patient = patients.data?.find((item) => item.id === personId);
-  const appointmentPath = `clinic/appointments?${new URLSearchParams({ ...(personId ? { personId } : {}), from: agendaDate, to: nextDay(agendaDate) })}`;
-  const listPath = tab === 'Agenda' ? appointmentPath : tab === 'Tratamientos' ? `clinic/treatments?personId=${personId}` : tab === 'Atenciones' ? `clinic/attentions?personId=${personId}` : tab === 'Estudios' ? `clinic/studies?personId=${personId}` : tab === 'Obra social' ? personId ? `clinic/orders?personId=${personId}` : 'clinic/social-works' : tab === 'Indicaciones' ? `clinic/indications?personId=${personId}` : '';
-  const list = useQuery({ queryKey: ['clinic', tab, personId, agendaDate], queryFn: () => get<Row[]>(listPath), enabled: Boolean(listPath) && (!personId || Boolean(patient)) });
+  const listPath = tab === 'Tratamientos' ? `clinic/treatments?personId=${personId}` : tab === 'Atenciones' ? `clinic/attentions?personId=${personId}` : tab === 'Estudios' ? `clinic/studies?personId=${personId}` : tab === 'Obra social' ? personId ? `clinic/orders?personId=${personId}` : 'clinic/social-works' : tab === 'Indicaciones' ? `clinic/indications?personId=${personId}` : '';
+  const list = useQuery({ queryKey: ['clinic', tab, personId], queryFn: () => get<Row[]>(listPath), enabled: Boolean(listPath) && (!personId || Boolean(patient)) });
   const attentions = useQuery({ queryKey: ['clinic', 'attentions', personId], queryFn: () => get<Attention[]>(`clinic/attentions?personId=${personId}`), enabled: Boolean(patient) });
   const evaluations = useQuery({ queryKey: ['clinic', 'evaluations', attentionId], queryFn: () => get<Evaluation[]>(`clinic/attentions/${attentionId}/evaluations`), enabled: tab === 'Evaluaciones' && Boolean(attentionId) });
   const canManageAppointments = permissions.includes('CLINIC_APPOINTMENT_MANAGE');
@@ -75,7 +67,7 @@ function ClinicWorkspace(): React.JSX.Element {
   if (!patient && !personId && tab === 'Pacientes') {
     body = <PatientList />;
   } else if (!patient && !personId && tab === 'Agenda') {
-    body = <section className="rounded border bg-white p-5"><h2 className="text-lg font-semibold">Agenda</h2><AgendaDate value={agendaDate} onChange={setAgendaDate} />{list.isError ? <p role="alert">No se pudo cargar la agenda.</p> : list.isLoading ? <p>Cargando…</p> : list.data?.length ? <p>{list.data.length} turno(s)</p> : <p>No hay turnos para esta fecha.</p>}</section>;
+    body = <ClinicalAgenda csrfToken={session.data?.csrfToken ?? ''} canManage={canManageAppointments} />;
   } else if (!patient && !personId && tab === 'Obra social') {
     body = <section className="rounded border bg-white p-5"><h2 className="text-lg font-semibold">Obras sociales y órdenes</h2><p>{list.data?.length || 0} obras sociales configuradas</p></section>;
   } else if (!patient) {
@@ -90,9 +82,9 @@ function ClinicWorkspace(): React.JSX.Element {
     ].filter((action): action is [string, string] => action !== null);
     body = <section className="rounded border bg-white p-5"><h2 className="text-xl font-semibold">{patient.firstName} {patient.lastName}</h2><p>DNI {patient.dni} · Paciente registrado</p>{actions.length ? <div className="mt-4 flex flex-wrap gap-2">{actions.map(([label, href]) => <Link key={label} href={href} className="rounded border bg-[#FCCC05] px-3 py-2 text-sm text-black">{label}</Link>)}</div> : <p className="mt-4 text-sm text-muted-foreground">Tu rol permite consultar este contexto, sin acciones clínicas disponibles.</p>}</section>;
   } else if (tab === 'Agenda') {
-    body = <section className="rounded border bg-white p-5"><h2 className="text-lg font-semibold">Turnos del Paciente</h2><AgendaDate value={agendaDate} onChange={setAgendaDate} /><List<Appointment> query={list as typeof list & { data: Appointment[] | undefined }} empty="No hay turnos registrados para esta fecha.">{(appointment) => <article className="rounded border p-3"><div className="font-medium">{displayDateTime(appointment.startAt)} · {statusLabel(appointment.status)}</div><div className="text-sm">{appointment.serviceType?.name || 'Servicio'} · {appointment.durationMinutes} min · {appointment.professional ? `${appointment.professional.firstName} ${appointment.professional.lastName}` : '—'}</div></article>}</List></section>;
+    body = <ClinicalAgenda personId={patient.id} csrfToken={session.data?.csrfToken ?? ''} canManage={canManageAppointments} />;
   } else if (tab === 'Atenciones') {
-    body = <section className="rounded border bg-white p-5"><div className="flex justify-between"><h2 className="text-lg font-semibold">Atenciones</h2>{canRegisterAttention ? <Link href={`/clinic/attentions/new?personId=${patient.id}`} className="rounded bg-[#FCCC05] px-3 py-2 text-sm">Registrar atención</Link> : null}</div><List query={attentions} empty="No hay atenciones registradas.">{(attention) => <article className="rounded border p-3"><div className="font-medium">{displayDateTime(attention.occurredAt)} · {attention.appointmentId ? 'Turno' : 'Atención directa'}</div><div className="text-sm">Profesional: {attention.professional ? `${attention.professional.firstName} ${attention.professional.lastName}` : '—'}</div><Link className="text-sm underline" href={`/clinic?tab=Evaluaciones&personId=${patient.id}&attentionId=${attention.id}`}>Abrir atención</Link></article>}</List></section>;
+    body = <section className="rounded border bg-white p-5"><div className="flex justify-between"><h2 className="text-lg font-semibold">Atenciones</h2>{canRegisterAttention ? <Link href={`/clinic/attentions/new?personId=${patient.id}`} className="rounded bg-[#FCCC05] px-3 py-2 text-sm">Registrar atención</Link> : null}</div><List query={attentions} empty="No hay atenciones registradas.">{(attention) => <article className="rounded border p-3"><div className="font-medium">{displayDateTime(attention.occurredAt)} · {attention.origin === 'APPOINTMENT' ? 'Turno' : 'Atención directa'}</div><div className="text-sm">Profesional: {attention.professional ? `${attention.professional.firstName} ${attention.professional.lastName}` : '—'}</div><Link className="text-sm underline" href={`/clinic?tab=Evaluaciones&personId=${patient.id}&attentionId=${attention.id}`}>Abrir atención</Link></article>}</List></section>;
   } else if (tab === 'Evaluaciones') {
     body = <section className="rounded border bg-white p-5"><h2 className="text-lg font-semibold">Evaluaciones clínicas</h2>{attentionId ? <List query={evaluations} empty="No hay evaluaciones clínicas registradas.">{(evaluation) => <article className="rounded border p-3">{displayDateTime(evaluation.createdAt)} · Evaluación clínica · {evaluation.results?.length || 0} resultados</article>}</List> : <><p className="mt-3 text-sm">Seleccioná una Atención para ver sus evaluaciones.</p><List query={attentions} empty="No hay atenciones disponibles.">{(attention) => <Link className="block rounded border p-3" href={`/clinic?tab=Evaluaciones&personId=${patient.id}&attentionId=${attention.id}`}>{displayDateTime(attention.occurredAt)} · Abrir atención</Link>}</List></>}</section>;
   } else if (tab === 'Tratamientos') {
@@ -106,10 +98,6 @@ function ClinicWorkspace(): React.JSX.Element {
   }
 
   return <WorkspaceShell active="Clínica"><main className="mx-auto max-w-7xl space-y-5 p-4 md:p-6"><header><p className="text-sm text-muted-foreground">Workspace clínico</p><h1 className="text-2xl font-semibold">Clínica</h1>{patient ? <p>Paciente: <strong>{patient.firstName} {patient.lastName}</strong> · DNI {patient.dni}</p> : null}</header><nav aria-label="Secciones de Clínica" className="flex gap-1 overflow-x-auto border-b">{tabs.map((item) => <Link key={item} href={tabHref(item)} aria-current={tab === item ? 'page' : undefined} className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${tab === item ? 'border-[#FCCC05] font-medium text-foreground' : 'border-transparent text-muted-foreground'}`}>{item}</Link>)}</nav>{body}</main></WorkspaceShell>;
-}
-
-function AgendaDate({ value, onChange }: { value: string; onChange: (value: string) => void }): React.JSX.Element {
-  return <label className="mt-4 block text-sm">Fecha de agenda<input aria-label="Fecha de agenda" type="date" value={value} onChange={(event) => onChange(event.target.value)} className="ml-2 rounded border px-2" /></label>;
 }
 
 export default function ClinicPage(): React.JSX.Element {

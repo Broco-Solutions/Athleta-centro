@@ -1,14 +1,68 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { ClinicalAppointmentStatus, InternalUserStatus, Prisma, Role, TreatmentStatus } from '@prisma/client';
+import {
+  ClinicalAppointmentStatus,
+  ClinicalCoverage,
+  InternalUserStatus,
+  Prisma,
+  Role,
+  TreatmentStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AppointmentDto, AttendAppointmentDto, DirectAttentionDto, ListClinicalPatientsOverviewQueryDto, RescheduleAppointmentDto } from './clinic.dto';
+import {
+  AppointmentDto,
+  AttendAppointmentDto,
+  CorrectAppointmentDto,
+  DirectAttentionDto,
+  ListClinicalAppointmentsQueryDto,
+  ListClinicalPatientsOverviewQueryDto,
+  RescheduleAppointmentDto,
+} from './clinic.dto';
 import { hasTreatmentWithoutRecentAttention } from './treatment-recent-attention';
 
-const appointmentInclude = {
-  person: { select: { id: true, firstName: true, lastName: true, dni: true } },
-  professional: { select: { id: true, firstName: true, lastName: true } },
-  service: { select: { id: true, name: true, discipline: true, durationMinutes: true, feeArs: true } },
+type ClinicalProfessionalRole = 'KINESIOLOGIST' | 'OSTEOPATH';
+const clinicalRoles: Role[] = [Role.KINESIOLOGIST, Role.OSTEOPATH];
+
+const professionalSelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  roles: { select: { role: true } },
 } as const;
+
+const appointmentSelect = {
+  id: true,
+  personId: true,
+  professionalId: true,
+  startAt: true,
+  durationMinutes: true,
+  status: true,
+  operationalNote: true,
+  person: { select: { id: true, firstName: true, lastName: true, dni: true } },
+  professional: { select: professionalSelect },
+  attention: {
+    select: {
+      id: true,
+      coverage: true,
+      treatmentId: true,
+      evolution: { select: { id: true } },
+      charge: { select: { id: true } },
+      _count: { select: { evaluations: true, clinicalIncomes: true } },
+    },
+  },
+} as const;
+
+const attentionSelect = {
+  id: true,
+  appointmentId: true,
+  personId: true,
+  professionalId: true,
+  occurredAt: true,
+  coverage: true,
+  professional: { select: professionalSelect },
+} as const;
+
+type AppointmentRow = Prisma.ClinicalAppointmentGetPayload<{ select: typeof appointmentSelect }>;
+type AttentionRow = Prisma.ClinicalAttentionGetPayload<{ select: typeof attentionSelect }>;
 
 @Injectable()
 export class ClinicService {
@@ -22,10 +76,22 @@ export class ClinicService {
 
   async listPatients() {
     const rows = await this.prisma.clinicalPatient.findMany({
-      include: { person: { select: { id: true, firstName: true, lastName: true, dni: true } } },
+      select: { person: { select: { id: true, firstName: true, lastName: true, dni: true } } },
       orderBy: { person: { lastName: 'asc' } },
     });
     return rows.map((row) => row.person);
+  }
+
+  async listProfessionals() {
+    const rows = await this.prisma.internalUser.findMany({
+      where: {
+        status: InternalUserStatus.ACTIVE,
+        roles: { some: { role: { in: [...clinicalRoles] } } },
+      },
+      select: professionalSelect,
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+    return rows.map((row) => this.mapProfessional(row));
   }
 
   async listPatientOverview(query: ListClinicalPatientsOverviewQueryDto, now = new Date()) {
@@ -77,87 +143,58 @@ export class ClinicService {
 
   async registerDirectAttention(input: DirectAttentionDto) {
     const occurredAt = this.date(input.occurredAt, 'CLINIC_ATTENTION_DATE_INVALID');
-    if (occurredAt > new Date()) throw new BadRequestException({ code: 'CLINIC_ATTENTION_FUTURE_NOT_ALLOWED', message: 'A direct attention cannot occur in the future' });
-    const [patient, service] = await Promise.all([
+    if (occurredAt > new Date()) {
+      throw new BadRequestException({ code: 'CLINIC_ATTENTION_FUTURE_NOT_ALLOWED', message: 'A direct attention cannot occur in the future' });
+    }
+    const [patient] = await Promise.all([
       this.prisma.clinicalPatient.findUnique({ where: { personId: input.personId } }),
-      this.prisma.clinicalService.findFirst({ where: { id: input.serviceId, isAvailable: true } }),
       this.validateProfessional(input.professionalId),
     ]);
     if (!patient) throw new BadRequestException({ code: 'CLINIC_PATIENT_REQUIRED', message: 'Patient registration required' });
-    if (!service) throw new BadRequestException({ code: 'CLINIC_SERVICE_NOT_AVAILABLE', message: 'Selected service is not available' });
-    const split = this.directChargeSplit(input, service.feeArs);
-    await this.validateSocialWork(input.socialWorkId, input.socialWorkOrderId, input.personId);
-
-    return this.prisma.$transaction(async (transaction) => {
-      const attention = await transaction.clinicalAttention.create({
-        data: { personId: input.personId, professionalId: input.professionalId, serviceId: service.id, occurredAt },
-      });
-      if (split) {
-        await transaction.clinicalCharge.create({
-          data: {
-            attentionId: attention.id,
-            personId: input.personId,
-            serviceId: service.id,
-            concept: service.name,
-            totalAmount: service.feeArs,
-            patientAmount: split.patientAmount,
-            socialWorkAmount: split.socialWorkAmount,
-            socialWorkId: input.socialWorkId ?? null,
-            socialWorkOrderId: input.socialWorkOrderId ?? null,
-          },
-        });
-      }
-      return transaction.clinicalAttention.findUniqueOrThrow({
-        where: { id: attention.id },
-        include: { service: true, charge: true, professional: { select: { id: true, firstName: true, lastName: true } } },
-      });
+    const attention = await this.prisma.clinicalAttention.create({
+      data: {
+        personId: input.personId,
+        professionalId: input.professionalId,
+        occurredAt,
+        coverage: input.coverage,
+      },
+      select: attentionSelect,
     });
+    return this.mapAttention(attention);
   }
 
-  listAttentions(personId?: string) {
-    return this.prisma.clinicalAttention.findMany({
+  async listAttentions(personId?: string) {
+    const rows = await this.prisma.clinicalAttention.findMany({
       where: personId ? { personId } : {},
       orderBy: { occurredAt: 'desc' },
-      include: {
-        professional: { select: { id: true, firstName: true, lastName: true } },
-        service: { select: { id: true, name: true, discipline: true, durationMinutes: true, feeArs: true } },
-        charge: true,
-      },
+      select: attentionSelect,
     });
-  }
-
-  async listServices() {
-    return this.prisma.clinicalService.findMany({
-      where: { isAvailable: true },
-      select: { id: true, name: true, discipline: true, durationMinutes: true, feeArs: true },
-      orderBy: { name: 'asc' },
-    });
+    return rows.map((row) => this.mapAttention(row));
   }
 
   async create(input: AppointmentDto) {
     const startAt = this.date(input.startAt, 'CLINIC_APPOINTMENT_DATE_INVALID');
-    if (startAt <= new Date()) throw new BadRequestException({ code: 'CLINIC_APPOINTMENT_NOT_FUTURE', message: 'Appointment must be future' });
-    const [patient, service] = await Promise.all([
+    if (startAt <= new Date()) {
+      throw new BadRequestException({ code: 'CLINIC_APPOINTMENT_NOT_FUTURE', message: 'Appointment must be future' });
+    }
+    const [patient] = await Promise.all([
       this.prisma.clinicalPatient.findUnique({ where: { personId: input.personId } }),
-      this.prisma.clinicalService.findFirst({ where: { id: input.serviceId, isAvailable: true } }),
       this.validateProfessional(input.professionalId),
     ]);
     if (!patient) throw new BadRequestException({ code: 'CLINIC_PATIENT_REQUIRED', message: 'Patient registration required' });
-    if (!service) throw new BadRequestException({ code: 'CLINIC_SERVICE_NOT_AVAILABLE', message: 'Selected service is not available' });
-    const overlapCount = await this.overlapCount(input.professionalId, startAt, service.durationMinutes);
+    const overlapCount = await this.overlapCount(input.professionalId, startAt, input.durationMinutes);
     try {
       const appointment = await this.prisma.clinicalAppointment.create({
         data: {
           personId: input.personId,
-          serviceId: service.id,
           professionalId: input.professionalId,
           startAt,
-          durationMinutes: service.durationMinutes,
+          durationMinutes: input.durationMinutes,
           operationalNote: input.operationalNote?.trim() || null,
         },
-        include: appointmentInclude,
+        select: appointmentSelect,
       });
-      return { ...appointment, overlapCount };
+      return this.mapAppointment(appointment, overlapCount);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
         throw new NotFoundException({ code: 'CLINIC_APPOINTMENT_REFERENCE_NOT_FOUND', message: 'Reference not found' });
@@ -166,181 +203,200 @@ export class ClinicService {
     }
   }
 
-  list(from?: string, to?: string, personId?: string) {
-    return this.prisma.clinicalAppointment.findMany({
+  async list(query: ListClinicalAppointmentsQueryDto, now = new Date()) {
+    const from = query.from ? this.date(query.from, 'CLINIC_DATE_RANGE_INVALID') : undefined;
+    const to = query.to ? this.date(query.to, 'CLINIC_DATE_RANGE_INVALID') : undefined;
+    if (from && to && from >= to) {
+      throw new BadRequestException({ code: 'CLINIC_DATE_RANGE_INVALID', message: 'The date range must have a positive duration' });
+    }
+    const rows = await this.prisma.clinicalAppointment.findMany({
       where: {
-        ...(personId ? { personId } : {}),
-        ...(from || to ? { startAt: { ...(from ? { gte: this.date(from, 'CLINIC_DATE_RANGE_INVALID') } : {}), ...(to ? { lt: this.date(to, 'CLINIC_DATE_RANGE_INVALID') } : {}) } } : {}),
+        ...(query.personId ? { personId: query.personId } : {}),
+        ...(query.pendingPastScheduled === 'YES'
+          ? { status: ClinicalAppointmentStatus.SCHEDULED, startAt: { lt: now } }
+          : from || to
+            ? { startAt: { ...(from ? { gte: from } : {}), ...(to ? { lt: to } : {}) } }
+            : {}),
       },
       orderBy: { startAt: 'asc' },
-      include: appointmentInclude,
+      select: appointmentSelect,
     });
+    return rows.map((row) => this.mapAppointment(row));
   }
 
   async detail(id: string) {
-    const appointment = await this.prisma.clinicalAppointment.findUnique({ where: { id }, include: appointmentInclude });
+    const appointment = await this.prisma.clinicalAppointment.findUnique({ where: { id }, select: appointmentSelect });
     if (!appointment) throw new NotFoundException({ code: 'CLINIC_APPOINTMENT_NOT_FOUND', message: 'Appointment not found' });
-    return appointment;
+    return this.mapAppointment(appointment);
   }
 
   async reschedule(id: string, input: RescheduleAppointmentDto) {
     const startAt = this.date(input.startAt, 'CLINIC_APPOINTMENT_DATE_INVALID');
-    if (startAt <= new Date()) throw new BadRequestException({ code: 'CLINIC_APPOINTMENT_NOT_FUTURE', message: 'Appointment must be future' });
+    if (startAt <= new Date()) {
+      throw new BadRequestException({ code: 'CLINIC_APPOINTMENT_NOT_FUTURE', message: 'Appointment must be future' });
+    }
     await this.validateProfessional(input.professionalId);
     const current = await this.prisma.clinicalAppointment.findUnique({ where: { id } });
     if (!current) throw new NotFoundException({ code: 'CLINIC_APPOINTMENT_NOT_FOUND', message: 'Appointment not found' });
-    if (current.status !== ClinicalAppointmentStatus.SCHEDULED) this.invalidTransition(current.status, ClinicalAppointmentStatus.SCHEDULED);
-    const overlapCount = await this.overlapCount(input.professionalId, startAt, current.durationMinutes, id);
+    if (current.status !== ClinicalAppointmentStatus.SCHEDULED) {
+      this.invalidTransition(current.status, ClinicalAppointmentStatus.SCHEDULED);
+    }
+    const overlapCount = await this.overlapCount(input.professionalId, startAt, input.durationMinutes, id);
     const appointment = await this.prisma.clinicalAppointment.update({
       where: { id },
-      data: { startAt, professionalId: input.professionalId, operationalNote: input.operationalNote?.trim() || null },
-      include: appointmentInclude,
+      data: {
+        startAt,
+        professionalId: input.professionalId,
+        durationMinutes: input.durationMinutes,
+        operationalNote: input.operationalNote?.trim() || null,
+      },
+      select: appointmentSelect,
     });
-    return { ...appointment, overlapCount };
+    return this.mapAppointment(appointment, overlapCount);
   }
 
-  async transition(id: string, status: 'CANCELLED' | 'ABSENT') {
-    const changed = await this.prisma.clinicalAppointment.updateMany({ where: { id, status: ClinicalAppointmentStatus.SCHEDULED }, data: { status } });
-    if (changed.count === 0) {
-      const current = await this.prisma.clinicalAppointment.findUnique({ where: { id } });
-      if (!current) throw new NotFoundException({ code: 'CLINIC_APPOINTMENT_NOT_FOUND', message: 'Appointment not found' });
-      if (current.status !== status) this.invalidTransition(current.status, status);
+  transition(id: string, status: 'CANCELLED' | 'ABSENT') {
+    return this.correct(id, { status });
+  }
+
+  async correct(id: string, input: CorrectAppointmentDto) {
+    if (input.status === ClinicalAppointmentStatus.ATTENDED && !input.coverage) {
+      throw new BadRequestException({ code: 'CLINIC_ATTENTION_COVERAGE_REQUIRED', message: 'Coverage is required when marking an appointment attended' });
     }
-    return this.prisma.clinicalAppointment.findUniqueOrThrow({ where: { id }, include: appointmentInclude });
-  }
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
+        const appointment = await transaction.clinicalAppointment.findUnique({ where: { id }, select: appointmentSelect });
+        if (!appointment) throw new NotFoundException({ code: 'CLINIC_APPOINTMENT_NOT_FOUND', message: 'Appointment not found' });
+        if (appointment.status === input.status) {
+          if (input.status === ClinicalAppointmentStatus.ATTENDED && !appointment.attention) {
+            throw new ConflictException({ code: 'CLINIC_ATTENDED_WITHOUT_ATTENTION', message: 'Attended appointment has no attention' });
+          }
+          return this.mapAppointment(appointment);
+        }
 
-  async correct(id: string, status: ClinicalAppointmentStatus) {
-    return this.prisma.$transaction(async (transaction) => {
-      const appointment = await transaction.clinicalAppointment.findUnique({
-        where: { id },
-        include: {
-          attention: {
-            select: {
-              id: true,
-              treatmentId: true,
-              evolution: { select: { id: true } },
-              charge: { select: { id: true } },
-              _count: { select: { evaluations: true, clinicalIncomes: true } },
+        if (appointment.status === ClinicalAppointmentStatus.ATTENDED) {
+          const attention = appointment.attention;
+          if (!attention) {
+            throw new ConflictException({ code: 'CLINIC_ATTENDED_WITHOUT_ATTENTION', message: 'Attended appointment has no attention' });
+          }
+          const hasDependencies = Boolean(
+            attention.treatmentId
+            || attention.evolution
+            || attention.charge
+            || attention._count.evaluations
+            || attention._count.clinicalIncomes,
+          );
+          if (hasDependencies) {
+            throw new ConflictException({ code: 'ATTENTION_HAS_DEPENDENCIES', message: 'Attention has clinical or economic dependencies' });
+          }
+          await transaction.clinicalAttention.delete({ where: { id: attention.id } });
+        }
+
+        const changed = await transaction.clinicalAppointment.updateMany({
+          where: { id, status: appointment.status },
+          data: { status: input.status },
+        });
+        if (changed.count !== 1) {
+          throw new ConflictException({ code: 'CONCURRENT_MODIFICATION', message: 'Appointment was modified concurrently' });
+        }
+
+        if (input.status === ClinicalAppointmentStatus.ATTENDED) {
+          if (appointment.attention) {
+            throw new ConflictException({ code: 'CLINIC_APPOINTMENT_ATTENTION_CONFLICT', message: 'Appointment already has an attention' });
+          }
+          await transaction.clinicalAttention.create({
+            data: {
+              appointmentId: id,
+              personId: appointment.personId,
+              professionalId: appointment.professionalId,
+              occurredAt: appointment.startAt,
+              coverage: input.coverage as ClinicalCoverage,
             },
-          },
-        },
-      });
-      if (!appointment) throw new NotFoundException({ code: 'CLINIC_APPOINTMENT_NOT_FOUND', message: 'Appointment not found' });
-      if (appointment.status === status) return appointment;
-      if (appointment.status !== ClinicalAppointmentStatus.ATTENDED || status === ClinicalAppointmentStatus.ATTENDED) {
-        this.invalidTransition(appointment.status, status);
+          });
+        }
+
+        const result = await transaction.clinicalAppointment.findUniqueOrThrow({ where: { id }, select: appointmentSelect });
+        return this.mapAppointment(result);
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2034'].includes(error.code)) {
+        throw new ConflictException({ code: 'CONCURRENT_MODIFICATION', message: 'Appointment was modified concurrently' });
       }
-      const attention = appointment.attention;
-      if (!attention) throw new ConflictException({ code: 'CLINIC_ATTENDED_WITHOUT_ATTENTION', message: 'Attended appointment has no attention' });
-      const hasDependencies = Boolean(attention.treatmentId || attention.evolution || attention.charge || attention._count.evaluations || attention._count.clinicalIncomes);
-      if (hasDependencies) throw new ConflictException({ code: 'ATTENTION_HAS_DEPENDENCIES', message: 'Attention has clinical or economic dependencies' });
-      await transaction.clinicalAttention.delete({ where: { id: attention.id } });
-      return transaction.clinicalAppointment.update({ where: { id }, data: { status }, include: appointmentInclude });
-    });
+      throw error;
+    }
   }
 
-  async attend(id: string, splitInput: AttendAppointmentDto, actorId: string) {
-    return this.prisma.$transaction(async (transaction) => {
-      const appointment = await transaction.clinicalAppointment.findUnique({
-        where: { id },
-        include: { service: true },
-      });
-      if (!appointment) throw new NotFoundException({ code: 'CLINIC_APPOINTMENT_NOT_FOUND', message: 'Appointment not found' });
-      if (appointment.status !== ClinicalAppointmentStatus.SCHEDULED) this.invalidTransition(appointment.status, ClinicalAppointmentStatus.ATTENDED);
-      if (!appointment.service) throw new ConflictException({ code: 'CLINIC_APPOINTMENT_SERVICE_REQUIRED', message: 'Appointment has no billable clinical service' });
-      const split = this.chargeSplit(splitInput, appointment.service.feeArs);
-      await this.validateSocialWork(splitInput.socialWorkId, splitInput.socialWorkOrderId, appointment.personId, transaction);
-      const changed = await transaction.clinicalAppointment.updateMany({
-        where: { id, status: ClinicalAppointmentStatus.SCHEDULED },
-        data: { status: ClinicalAppointmentStatus.ATTENDED },
-      });
-      if (changed.count !== 1) throw new ConflictException({ code: 'CONCURRENT_MODIFICATION', message: 'Appointment was modified concurrently' });
-      const attention = await transaction.clinicalAttention.create({
-        data: {
-          appointmentId: id,
-          personId: appointment.personId,
-          professionalId: appointment.professionalId,
-          serviceId: appointment.service.id,
-          occurredAt: appointment.startAt,
-        },
-      });
-      await transaction.clinicalCharge.create({
-        data: {
-          attentionId: attention.id,
-          personId: appointment.personId,
-          serviceId: appointment.service.id,
-          concept: appointment.service.name,
-          totalAmount: appointment.service.feeArs,
-          patientAmount: split.patientAmount,
-          socialWorkAmount: split.socialWorkAmount,
-          socialWorkId: splitInput.socialWorkId ?? null,
-          socialWorkOrderId: splitInput.socialWorkOrderId ?? null,
-          createdById: actorId,
-        },
-      });
-      return transaction.clinicalAppointment.findUniqueOrThrow({ where: { id }, include: appointmentInclude });
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  attend(id: string, input: AttendAppointmentDto) {
+    return this.correct(id, { status: ClinicalAppointmentStatus.ATTENDED, coverage: input.coverage });
   }
 
   private async overlapCount(professionalId: string, startAt: Date, durationMinutes: number, excludeId?: string) {
     const endAt = new Date(startAt.getTime() + durationMinutes * 60_000);
     const candidates = await this.prisma.clinicalAppointment.findMany({
-      where: { professionalId, status: ClinicalAppointmentStatus.SCHEDULED, ...(excludeId ? { id: { not: excludeId } } : {}) },
+      where: {
+        professionalId,
+        status: ClinicalAppointmentStatus.SCHEDULED,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
       select: { startAt: true, durationMinutes: true },
     });
-    return candidates.filter((candidate) => candidate.startAt < endAt && new Date(candidate.startAt.getTime() + candidate.durationMinutes * 60_000) > startAt).length;
+    return candidates.filter((candidate) =>
+      candidate.startAt < endAt
+      && new Date(candidate.startAt.getTime() + candidate.durationMinutes * 60_000) > startAt,
+    ).length;
   }
 
   private async validateProfessional(id: string) {
     const user = await this.prisma.internalUser.findUnique({ where: { id }, include: { roles: true } });
-    if (!user || user.status !== InternalUserStatus.ACTIVE || !user.roles.some((entry) => entry.role === Role.KINESIOLOGIST || entry.role === Role.OSTEOPATH)) {
+    if (!user || user.status !== InternalUserStatus.ACTIVE || !user.roles.some((entry) => clinicalRoles.includes(entry.role))) {
       throw new BadRequestException({ code: 'CLINIC_PROFESSIONAL_INVALID', message: 'Professional is not eligible' });
     }
   }
 
-  private async validateSocialWork(
-    socialWorkId: string | null | undefined,
-    orderId: string | null | undefined,
-    personId: string,
-    transaction: Prisma.TransactionClient | PrismaService = this.prisma,
-  ) {
-    if (!socialWorkId && !orderId) return;
-    if (!socialWorkId) throw new BadRequestException({ code: 'CLINIC_SOCIAL_WORK_REQUIRED', message: 'Social work is required for a social work charge' });
-    const socialWork = await transaction.socialWork.findUnique({ where: { id: socialWorkId }, select: { id: true } });
-    const order = orderId ? await transaction.socialWorkOrder.findUnique({ where: { id: orderId } }) : null;
-    if (!socialWork || (orderId && (!order || order.personId !== personId || order.socialWorkId !== socialWorkId))) {
-      throw new BadRequestException({ code: 'CLINIC_SOCIAL_WORK_ORDER_INVALID', message: 'Social work order does not belong to the patient and social work' });
-    }
+  private mapAppointment(row: AppointmentRow, overlapCount = 0) {
+    return {
+      id: row.id,
+      personId: row.personId,
+      professionalId: row.professionalId,
+      startAt: row.startAt.toISOString(),
+      durationMinutes: row.durationMinutes,
+      status: row.status,
+      operationalNote: row.operationalNote,
+      person: row.person,
+      professional: this.mapProfessional(row.professional),
+      hasAttention: Boolean(row.attention),
+      hasEvolution: Boolean(row.attention?.evolution),
+      coverage: row.attention?.coverage ?? null,
+      overlapCount,
+    };
   }
 
-  private directChargeSplit(input: DirectAttentionDto, fee: Prisma.Decimal) {
-    const exemptReason = input.exemptReason?.trim();
-    if (exemptReason) {
-      const patient = input.patientAmountArs ? this.money(input.patientAmountArs) : new Prisma.Decimal(0);
-      const socialWork = input.socialWorkAmountArs ? this.money(input.socialWorkAmountArs) : new Prisma.Decimal(0);
-      if (!patient.isZero() || !socialWork.isZero() || input.socialWorkOrderId || input.socialWorkId) {
-        throw new BadRequestException({ code: 'CLINIC_EXEMPT_ATTENTION_HAS_CHARGE_SPLIT', message: 'An exempt attention cannot have billing amounts or an order' });
-      }
-      return null;
-    }
-    if (input.patientAmountArs === undefined || input.socialWorkAmountArs === undefined) {
-      throw new BadRequestException({ code: 'CLINIC_CHARGE_SPLIT_REQUIRED', message: 'Patient and social work amounts are required' });
-    }
-    return this.chargeSplit({ patientAmountArs: input.patientAmountArs, socialWorkAmountArs: input.socialWorkAmountArs }, fee);
+  private mapAttention(row: AttentionRow) {
+    return {
+      id: row.id,
+      personId: row.personId,
+      professionalId: row.professionalId,
+      occurredAt: row.occurredAt.toISOString(),
+      coverage: row.coverage,
+      origin: row.appointmentId ? 'APPOINTMENT' as const : 'DIRECT' as const,
+      professional: this.mapProfessional(row.professional),
+    };
   }
 
-  private chargeSplit(input: Pick<AttendAppointmentDto, 'patientAmountArs' | 'socialWorkAmountArs'>, fee: Prisma.Decimal) {
-    const patientAmount = this.money(input.patientAmountArs);
-    const socialWorkAmount = this.money(input.socialWorkAmountArs);
-    if (!patientAmount.plus(socialWorkAmount).equals(fee)) {
-      throw new BadRequestException({ code: 'CLINIC_CHARGE_SPLIT_TOTAL_MISMATCH', message: 'Charge split must equal the service fee' });
-    }
-    return { patientAmount, socialWorkAmount };
-  }
-
-  private money(value: string) {
-    if (!/^(0|[1-9]\d*)$/.test(value)) throw new BadRequestException({ code: 'CLINIC_MONEY_INVALID', message: 'ARS amounts must be non-negative whole numbers' });
-    return new Prisma.Decimal(value);
+  private mapProfessional(row: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    roles: Array<{ role: Role }>;
+  }) {
+    return {
+      id: row.id,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      roles: row.roles.map((entry) => entry.role).filter(
+        (role): role is ClinicalProfessionalRole => role === Role.KINESIOLOGIST || role === Role.OSTEOPATH,
+      ),
+    };
   }
 
   private date(value: string, code: string) {

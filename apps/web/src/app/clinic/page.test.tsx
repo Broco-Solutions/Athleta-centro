@@ -31,10 +31,10 @@ function renderPage() {
 
 it('renders the daily agenda, uses its date in the query, and exposes deep-link tabs', async () => {
   renderPage();
-  expect(await screen.findByText('No hay turnos para esta fecha.')).toBeInTheDocument();
+  expect(await screen.findByText('No hay Turnos para este día.')).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Fecha de agenda'), { target: { value: '2026-09-15' } });
-  await waitFor(() => expect(appointmentSearch).toContain('from=2026-09-15'));
-  expect(appointmentSearch).toContain('to=2026-09-16');
+  await waitFor(() => expect(decodeURIComponent(appointmentSearch)).toContain('from=2026-09-15T03:00:00.000Z'));
+  expect(decodeURIComponent(appointmentSearch)).toContain('to=2026-09-16T03:00:00.000Z');
   expect(screen.getByRole('link', { name: 'Agenda' })).toHaveAttribute('aria-current', 'page');
   expect(screen.getByRole('link', { name: 'Estudios' })).toHaveAttribute('href', '/clinic?tab=Estudios');
   expect(screen.getByRole('link', { name: 'Obra social' })).toHaveAttribute('href', '/clinic?tab=Obra+social');

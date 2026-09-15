@@ -118,6 +118,11 @@ enum ClinicalAppointmentStatus {
   ABSENT
 }
 
+enum ClinicalCoverage {
+  PRIVATE
+  SOCIAL_WORK
+}
+
 enum ExpenseArea {
   SALA
   CLINIC
@@ -277,6 +282,7 @@ model ClinicalAttention {
   professionalId  String               @map("professional_id") @db.Uuid
   serviceId       String?              @map("service_id") @db.Uuid
   occurredAt      DateTime             @map("occurred_at") @db.Timestamptz(6)
+  coverage        ClinicalCoverage?
   createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   appointment     ClinicalAppointment? @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
   person          Person               @relation(fields: [personId], references: [id], onDelete: Restrict)

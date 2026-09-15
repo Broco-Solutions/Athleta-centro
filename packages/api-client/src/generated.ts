@@ -659,6 +659,17 @@ export interface PatientDto {
   personId: string;
 }
 
+export interface ClinicalPersonSummaryDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dni: string;
+}
+
+export interface ClinicalPatientListEnvelopeDto {
+  data: ClinicalPersonSummaryDto[];
+}
+
 export type ClinicalPatientOverviewDtoStatus = typeof ClinicalPatientOverviewDtoStatus[keyof typeof ClinicalPatientOverviewDtoStatus];
 
 
@@ -693,38 +704,148 @@ export interface ClinicalPatientOverviewListEnvelopeDto {
   meta: ClinicalPatientOverviewMetaDto;
 }
 
+export type ClinicalProfessionalSummaryDtoRolesItem = typeof ClinicalProfessionalSummaryDtoRolesItem[keyof typeof ClinicalProfessionalSummaryDtoRolesItem];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ClinicalProfessionalSummaryDtoRolesItem = {
+  KINESIOLOGIST: 'KINESIOLOGIST',
+  OSTEOPATH: 'OSTEOPATH',
+} as const;
+
+export interface ClinicalProfessionalSummaryDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+  roles: ClinicalProfessionalSummaryDtoRolesItem[];
+}
+
+export interface ClinicalProfessionalListEnvelopeDto {
+  data: ClinicalProfessionalSummaryDto[];
+}
+
 export interface AppointmentDto {
   personId: string;
-  serviceId: string;
   professionalId: string;
   startAt: string;
+  /** @minimum 1 */
+  durationMinutes?: number;
   /** @maxLength 500 */
   operationalNote?: string;
 }
 
+export type ClinicalAppointmentOperationalDtoStatus = typeof ClinicalAppointmentOperationalDtoStatus[keyof typeof ClinicalAppointmentOperationalDtoStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ClinicalAppointmentOperationalDtoStatus = {
+  SCHEDULED: 'SCHEDULED',
+  ATTENDED: 'ATTENDED',
+  CANCELLED: 'CANCELLED',
+  ABSENT: 'ABSENT',
+} as const;
+
+/**
+ * @nullable
+ */
+export type ClinicalAppointmentOperationalDtoCoverage = typeof ClinicalAppointmentOperationalDtoCoverage[keyof typeof ClinicalAppointmentOperationalDtoCoverage] | null;
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ClinicalAppointmentOperationalDtoCoverage = {
+  PRIVATE: 'PRIVATE',
+  SOCIAL_WORK: 'SOCIAL_WORK',
+} as const;
+
+export interface ClinicalAppointmentOperationalDto {
+  id: string;
+  personId: string;
+  professionalId: string;
+  startAt: string;
+  /** @minimum 1 */
+  durationMinutes: number;
+  status: ClinicalAppointmentOperationalDtoStatus;
+  /** @nullable */
+  operationalNote: string | null;
+  person: ClinicalPersonSummaryDto;
+  professional: ClinicalProfessionalSummaryDto;
+  hasAttention: boolean;
+  hasEvolution: boolean;
+  /** @nullable */
+  coverage: ClinicalAppointmentOperationalDtoCoverage;
+  /** @minimum 0 */
+  overlapCount: number;
+}
+
+export interface ClinicalAppointmentEnvelopeDto {
+  data: ClinicalAppointmentOperationalDto;
+}
+
+export type DirectAttentionDtoCoverage = typeof DirectAttentionDtoCoverage[keyof typeof DirectAttentionDtoCoverage];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const DirectAttentionDtoCoverage = {
+  PRIVATE: 'PRIVATE',
+  SOCIAL_WORK: 'SOCIAL_WORK',
+} as const;
+
 export interface DirectAttentionDto {
   personId: string;
   professionalId: string;
-  serviceId: string;
   occurredAt: string;
-  /** @pattern ^(0|[1-9]\d*)$ */
-  patientAmountArs?: string;
-  /** @pattern ^(0|[1-9]\d*)$ */
-  socialWorkAmountArs?: string;
+  coverage: DirectAttentionDtoCoverage;
+}
+
+/**
+ * @nullable
+ */
+export type ClinicalAttentionOperationalDtoCoverage = typeof ClinicalAttentionOperationalDtoCoverage[keyof typeof ClinicalAttentionOperationalDtoCoverage] | null;
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ClinicalAttentionOperationalDtoCoverage = {
+  PRIVATE: 'PRIVATE',
+  SOCIAL_WORK: 'SOCIAL_WORK',
+} as const;
+
+export type ClinicalAttentionOperationalDtoOrigin = typeof ClinicalAttentionOperationalDtoOrigin[keyof typeof ClinicalAttentionOperationalDtoOrigin];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ClinicalAttentionOperationalDtoOrigin = {
+  APPOINTMENT: 'APPOINTMENT',
+  DIRECT: 'DIRECT',
+} as const;
+
+export interface ClinicalAttentionOperationalDto {
+  id: string;
+  personId: string;
+  professionalId: string;
+  occurredAt: string;
   /** @nullable */
-  socialWorkOrderId?: string | null;
-  /** @nullable */
-  socialWorkId?: string | null;
-  /**
-   * Required only when the attention is exempt from billing.
-   * @maxLength 500
-   */
-  exemptReason?: string;
+  coverage: ClinicalAttentionOperationalDtoCoverage;
+  origin: ClinicalAttentionOperationalDtoOrigin;
+  professional: ClinicalProfessionalSummaryDto;
+}
+
+export interface ClinicalAttentionEnvelopeDto {
+  data: ClinicalAttentionOperationalDto;
+}
+
+export interface ClinicalAttentionListEnvelopeDto {
+  data: ClinicalAttentionOperationalDto[];
+}
+
+export interface ClinicalAppointmentListEnvelopeDto {
+  data: ClinicalAppointmentOperationalDto[];
 }
 
 export interface RescheduleAppointmentDto {
   professionalId: string;
   startAt: string;
+  /** @minimum 1 */
+  durationMinutes: number;
   /** @maxLength 500 */
   operationalNote?: string;
 }
@@ -740,19 +861,35 @@ export const CorrectAppointmentDtoStatus = {
   ABSENT: 'ABSENT',
 } as const;
 
+/**
+ * Required when correcting the appointment to ATTENDED.
+ */
+export type CorrectAppointmentDtoCoverage = typeof CorrectAppointmentDtoCoverage[keyof typeof CorrectAppointmentDtoCoverage];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const CorrectAppointmentDtoCoverage = {
+  PRIVATE: 'PRIVATE',
+  SOCIAL_WORK: 'SOCIAL_WORK',
+} as const;
+
 export interface CorrectAppointmentDto {
   status: CorrectAppointmentDtoStatus;
+  /** Required when correcting the appointment to ATTENDED. */
+  coverage?: CorrectAppointmentDtoCoverage;
 }
 
+export type AttendAppointmentDtoCoverage = typeof AttendAppointmentDtoCoverage[keyof typeof AttendAppointmentDtoCoverage];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AttendAppointmentDtoCoverage = {
+  PRIVATE: 'PRIVATE',
+  SOCIAL_WORK: 'SOCIAL_WORK',
+} as const;
+
 export interface AttendAppointmentDto {
-  /** @pattern ^(0|[1-9]\d*)$ */
-  patientAmountArs: string;
-  /** @pattern ^(0|[1-9]\d*)$ */
-  socialWorkAmountArs: string;
-  /** @nullable */
-  socialWorkOrderId?: string | null;
-  /** @nullable */
-  socialWorkId?: string | null;
+  coverage: AttendAppointmentDtoCoverage;
 }
 
 export interface TreatmentDto {
@@ -1072,10 +1209,20 @@ export const ListClinicalPatientsOverviewTreatmentInProgress = {
 } as const;
 
 export type ListClinicalAppointmentsParams = {
+pendingPastScheduled?: ListClinicalAppointmentsPendingPastScheduled;
 personId?: string;
 to?: string;
 from?: string;
 };
+
+export type ListClinicalAppointmentsPendingPastScheduled = typeof ListClinicalAppointmentsPendingPastScheduled[keyof typeof ListClinicalAppointmentsPendingPastScheduled];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ListClinicalAppointmentsPendingPastScheduled = {
+  YES: 'YES',
+  NO: 'NO',
+} as const;
 
 export type ListClinicalAttentionsParams = {
 personId?: string;
@@ -5085,7 +5232,7 @@ export const registerClinicalPatient = async (patientDto: PatientDto, options?: 
 
 
 export type listClinicalPatientsResponse200 = {
-  data: void
+  data: ClinicalPatientListEnvelopeDto
   status: 200
 }
 
@@ -5169,29 +5316,32 @@ export const listClinicalPatientsOverview = async (params?: ListClinicalPatients
 
 
 
-export type listClinicalAppointmentServicesResponse200 = {
-  data: void
+/**
+ * Returns the minimum active clinical-professional data needed by Clinic workflows without requiring Team access.
+ */
+export type listClinicalProfessionalsResponse200 = {
+  data: ClinicalProfessionalListEnvelopeDto
   status: 200
 }
 
-export type listClinicalAppointmentServicesResponseSuccess = (listClinicalAppointmentServicesResponse200) & {
+export type listClinicalProfessionalsResponseSuccess = (listClinicalProfessionalsResponse200) & {
   headers: Headers;
 };
 ;
 
-export type listClinicalAppointmentServicesResponse = (listClinicalAppointmentServicesResponseSuccess)
+export type listClinicalProfessionalsResponse = (listClinicalProfessionalsResponseSuccess)
 
-export const getListClinicalAppointmentServicesUrl = () => {
-
-
+export const getListClinicalProfessionalsUrl = () => {
 
 
-  return `/api/clinic/services`
+
+
+  return `/api/clinic/professionals`
 }
 
-export const listClinicalAppointmentServices = async ( options?: RequestInit): Promise<listClinicalAppointmentServicesResponse> => {
+export const listClinicalProfessionals = async ( options?: RequestInit): Promise<listClinicalProfessionalsResponse> => {
 
-  const res = await fetch(getListClinicalAppointmentServicesUrl(),
+  const res = await fetch(getListClinicalProfessionalsUrl(),
   {
     ...options,
     method: 'GET'
@@ -5202,14 +5352,14 @@ export const listClinicalAppointmentServices = async ( options?: RequestInit): P
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: listClinicalAppointmentServicesResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listClinicalAppointmentServicesResponse
+  const data: listClinicalProfessionalsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listClinicalProfessionalsResponse
 }
 
 
 
 export type createClinicalAppointmentResponse201 = {
-  data: void
+  data: ClinicalAppointmentEnvelopeDto
   status: 201
 }
 
@@ -5249,7 +5399,7 @@ export const createClinicalAppointment = async (appointmentDto: AppointmentDto, 
 
 
 export type listClinicalAppointmentsResponse200 = {
-  data: void
+  data: ClinicalAppointmentListEnvelopeDto
   status: 200
 }
 
@@ -5295,7 +5445,7 @@ export const listClinicalAppointments = async (params?: ListClinicalAppointments
 
 
 export type registerDirectClinicalAttentionResponse201 = {
-  data: void
+  data: ClinicalAttentionEnvelopeDto
   status: 201
 }
 
@@ -5335,7 +5485,7 @@ export const registerDirectClinicalAttention = async (directAttentionDto: Direct
 
 
 export type listClinicalAttentionsResponse200 = {
-  data: void
+  data: ClinicalAttentionListEnvelopeDto
   status: 200
 }
 
@@ -5381,7 +5531,7 @@ export const listClinicalAttentions = async (params?: ListClinicalAttentionsPara
 
 
 export type getClinicalAppointmentResponse200 = {
-  data: void
+  data: ClinicalAppointmentEnvelopeDto
   status: 200
 }
 
@@ -5420,7 +5570,7 @@ export const getClinicalAppointment = async (id: string, options?: RequestInit):
 
 
 export type rescheduleClinicalAppointmentResponse201 = {
-  data: void
+  data: ClinicalAppointmentEnvelopeDto
   status: 201
 }
 
@@ -5461,7 +5611,7 @@ export const rescheduleClinicalAppointment = async (id: string,
 
 
 export type correctClinicalAppointmentResponse201 = {
-  data: void
+  data: ClinicalAppointmentEnvelopeDto
   status: 201
 }
 
@@ -5502,7 +5652,7 @@ export const correctClinicalAppointment = async (id: string,
 
 
 export type attendClinicalAppointmentResponse201 = {
-  data: void
+  data: ClinicalAppointmentEnvelopeDto
   status: 201
 }
 
@@ -5543,7 +5693,7 @@ export const attendClinicalAppointment = async (id: string,
 
 
 export type cancelClinicalAppointmentResponse201 = {
-  data: void
+  data: ClinicalAppointmentEnvelopeDto
   status: 201
 }
 
@@ -5582,7 +5732,7 @@ export const cancelClinicalAppointment = async (id: string, options?: RequestIni
 
 
 export type markClinicalAppointmentAbsentResponse201 = {
-  data: void
+  data: ClinicalAppointmentEnvelopeDto
   status: 201
 }
 

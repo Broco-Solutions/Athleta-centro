@@ -9,7 +9,6 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  Matches,
   MaxLength,
   Max,
   Min,
@@ -18,13 +17,12 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ClinicalCoverage,
   ClinicalAppointmentStatus,
   ClinicalTestResponseType,
   TrainingCondition,
   TreatmentFinishReason,
 } from '@prisma/client';
-
-const ARS_PATTERN = /^(0|[1-9]\d*)$/;
 
 export class PatientDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string;
@@ -62,43 +60,108 @@ export class ClinicalPatientOverviewListEnvelopeDto {
   @ApiProperty({ type: () => ClinicalPatientOverviewMetaDto }) meta!: ClinicalPatientOverviewMetaDto;
 }
 
-export class ClinicalChargeSplitDto {
-  @ApiProperty({ type: String, pattern: ARS_PATTERN.source, example: '12000' }) @Matches(ARS_PATTERN) patientAmountArs!: string;
-  @ApiProperty({ type: String, pattern: ARS_PATTERN.source, example: '0' }) @Matches(ARS_PATTERN) socialWorkAmountArs!: string;
-  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true }) @IsOptional() @IsUUID() socialWorkOrderId?: string | null;
-  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true }) @IsOptional() @IsUUID() socialWorkId?: string | null;
+export class AttendAppointmentDto {
+  @ApiProperty({ enum: ClinicalCoverage, type: String }) @IsEnum(ClinicalCoverage) coverage!: ClinicalCoverage;
 }
-
-export class AttendAppointmentDto extends ClinicalChargeSplitDto {}
 
 export class DirectAttentionDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string;
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() professionalId!: string;
-  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() serviceId!: string;
   @ApiProperty({ type: String, format: 'date-time' }) @IsDateString() occurredAt!: string;
-  @ApiPropertyOptional({ type: String, pattern: ARS_PATTERN.source, example: '12000' }) @IsOptional() @Matches(ARS_PATTERN) patientAmountArs?: string;
-  @ApiPropertyOptional({ type: String, pattern: ARS_PATTERN.source, example: '0' }) @IsOptional() @Matches(ARS_PATTERN) socialWorkAmountArs?: string;
-  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true }) @IsOptional() @IsUUID() socialWorkOrderId?: string | null;
-  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true }) @IsOptional() @IsUUID() socialWorkId?: string | null;
-  @ApiPropertyOptional({ type: String, maxLength: 500, description: 'Required only when the attention is exempt from billing.' }) @IsOptional() @IsString() @MinLength(1) @MaxLength(500) exemptReason?: string;
+  @ApiProperty({ enum: ClinicalCoverage, type: String }) @IsEnum(ClinicalCoverage) coverage!: ClinicalCoverage;
 }
 
 export class AppointmentDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string;
-  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() serviceId!: string;
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() professionalId!: string;
   @ApiProperty({ type: String, format: 'date-time' }) @IsDateString() startAt!: string;
+  @ApiPropertyOptional({ type: Number, default: 60, minimum: 1 }) @IsOptional() @IsInt() @Min(1) durationMinutes = 60;
   @ApiPropertyOptional({ type: String, maxLength: 500 }) @IsOptional() @IsString() @MaxLength(500) operationalNote?: string;
 }
 
 export class RescheduleAppointmentDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() professionalId!: string;
   @ApiProperty({ type: String, format: 'date-time' }) @IsDateString() startAt!: string;
+  @ApiProperty({ type: Number, minimum: 1 }) @IsInt() @Min(1) durationMinutes!: number;
   @ApiPropertyOptional({ type: String, maxLength: 500 }) @IsOptional() @IsString() @MaxLength(500) operationalNote?: string;
 }
 
 export class CorrectAppointmentDto {
   @ApiProperty({ enum: ClinicalAppointmentStatus, type: String }) @IsEnum(ClinicalAppointmentStatus) status!: ClinicalAppointmentStatus;
+  @ApiPropertyOptional({ enum: ClinicalCoverage, type: String, description: 'Required when correcting the appointment to ATTENDED.' })
+  @IsOptional() @IsEnum(ClinicalCoverage) coverage?: ClinicalCoverage;
+}
+
+export class ListClinicalAppointmentsQueryDto {
+  @ApiPropertyOptional({ type: String, format: 'date-time' }) @IsOptional() @IsDateString() from?: string;
+  @ApiPropertyOptional({ type: String, format: 'date-time' }) @IsOptional() @IsDateString() to?: string;
+  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() personId?: string;
+  @ApiPropertyOptional({ enum: ['YES', 'NO'], description: 'When YES, returns past SCHEDULED appointments awaiting manual correction.' })
+  @IsOptional() @IsIn(['YES', 'NO']) pendingPastScheduled?: 'YES' | 'NO';
+}
+
+export class ClinicalPersonSummaryDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String }) firstName!: string;
+  @ApiProperty({ type: String }) lastName!: string;
+  @ApiProperty({ type: String }) dni!: string;
+}
+
+export class ClinicalProfessionalSummaryDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String }) firstName!: string;
+  @ApiProperty({ type: String }) lastName!: string;
+  @ApiProperty({ enum: ['KINESIOLOGIST', 'OSTEOPATH'], isArray: true }) roles!: Array<'KINESIOLOGIST' | 'OSTEOPATH'>;
+}
+
+export class ClinicalAppointmentOperationalDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) personId!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) professionalId!: string;
+  @ApiProperty({ type: String, format: 'date-time' }) startAt!: string;
+  @ApiProperty({ type: Number, minimum: 1 }) durationMinutes!: number;
+  @ApiProperty({ enum: ClinicalAppointmentStatus }) status!: ClinicalAppointmentStatus;
+  @ApiProperty({ type: String, nullable: true }) operationalNote!: string | null;
+  @ApiProperty({ type: () => ClinicalPersonSummaryDto }) person!: ClinicalPersonSummaryDto;
+  @ApiProperty({ type: () => ClinicalProfessionalSummaryDto }) professional!: ClinicalProfessionalSummaryDto;
+  @ApiProperty({ type: Boolean }) hasAttention!: boolean;
+  @ApiProperty({ type: Boolean }) hasEvolution!: boolean;
+  @ApiProperty({ enum: ClinicalCoverage, nullable: true }) coverage!: ClinicalCoverage | null;
+  @ApiProperty({ type: Number, minimum: 0 }) overlapCount!: number;
+}
+
+export class ClinicalAppointmentEnvelopeDto {
+  @ApiProperty({ type: () => ClinicalAppointmentOperationalDto }) data!: ClinicalAppointmentOperationalDto;
+}
+
+export class ClinicalAppointmentListEnvelopeDto {
+  @ApiProperty({ type: () => [ClinicalAppointmentOperationalDto] }) data!: ClinicalAppointmentOperationalDto[];
+}
+
+export class ClinicalProfessionalListEnvelopeDto {
+  @ApiProperty({ type: () => [ClinicalProfessionalSummaryDto] }) data!: ClinicalProfessionalSummaryDto[];
+}
+
+export class ClinicalPatientListEnvelopeDto {
+  @ApiProperty({ type: () => [ClinicalPersonSummaryDto] }) data!: ClinicalPersonSummaryDto[];
+}
+
+export class ClinicalAttentionOperationalDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) personId!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) professionalId!: string;
+  @ApiProperty({ type: String, format: 'date-time' }) occurredAt!: string;
+  @ApiProperty({ enum: ClinicalCoverage, nullable: true }) coverage!: ClinicalCoverage | null;
+  @ApiProperty({ enum: ['APPOINTMENT', 'DIRECT'] }) origin!: 'APPOINTMENT' | 'DIRECT';
+  @ApiProperty({ type: () => ClinicalProfessionalSummaryDto }) professional!: ClinicalProfessionalSummaryDto;
+}
+
+export class ClinicalAttentionEnvelopeDto {
+  @ApiProperty({ type: () => ClinicalAttentionOperationalDto }) data!: ClinicalAttentionOperationalDto;
+}
+
+export class ClinicalAttentionListEnvelopeDto {
+  @ApiProperty({ type: () => [ClinicalAttentionOperationalDto] }) data!: ClinicalAttentionOperationalDto[];
 }
 
 export class EvolutionDto {
