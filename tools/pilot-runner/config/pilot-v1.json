@@ -13,8 +13,8 @@
     "codexExecutable": "/home/rcoirini/.nvm/versions/node/v22.23.0/bin/codex"
   },
   "paths": {
-    "stateRoot": "/home/rcoirini/proyectos-bs/athleta-pipeline-state",
-    "worktreeRoot": "/home/rcoirini/proyectos-bs/athleta-agent-worktrees",
+    "stateRoot": "/home/rcoirini/.local/state/athleta/pilot-runner",
+    "worktreeRoot": "/home/rcoirini/.local/share/athleta/worktrees/agent",
     "productPdf": "docs/product/Athleta Manager - Descripción de Sistema.pdf",
     "pipelinePdf": "docs/engineering/Athleta Manager - Autonomous Software Delivery Pipeline con Human Product Gate.pdf"
   }

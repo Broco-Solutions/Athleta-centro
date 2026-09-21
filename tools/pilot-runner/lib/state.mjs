@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { sanitizeText } from './process.mjs';
 
-export const DEFAULT_STATE_ROOT = '/home/rcoirini/proyectos-bs/athleta-pipeline-state';
+export const DEFAULT_STATE_ROOT = '/home/rcoirini/.local/state/athleta/pilot-runner';
 export const STATE_DURABLE_AUTHORITY =
   'state.json is authoritative; journal.ndjson is a recoverable audit projection.';
 
