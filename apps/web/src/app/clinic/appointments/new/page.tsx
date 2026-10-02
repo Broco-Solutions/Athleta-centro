@@ -21,7 +21,7 @@ const formSchema = z.object({
   personId: z.string().uuid('Seleccioná un Paciente.'),
   professionalId: z.string().uuid('Seleccioná un profesional clínico.'),
   startAt: z.string().min(1, 'Ingresá la fecha y hora.'),
-  durationMinutes: z.coerce.number().int().positive('La duración debe ser mayor a cero.'),
+  durationMinutes: z.number().int().positive('La duración debe ser mayor a cero.'),
   operationalNote: z.string().max(500, 'La nota no puede superar 500 caracteres.'),
 });
 
