@@ -49,6 +49,48 @@ describe('People API', () => {
     await request(app.getHttpServer()).post('/api/people').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ ...payload, birthDate: 'not-a-date' }).expect(400);
   });
 
+  function operationalDates() {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    const today = `${values.year}-${values.month}-${values.day}`;
+    const tomorrow = new Date(`${today}T00:00:00.000Z`);
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    return { today, tomorrow: tomorrow.toISOString().slice(0, 10) };
+  }
+
+  it('rejects future birth dates on creation', async () => {
+    const authn = await session(Role.ADMINISTRATIVE);
+    const { tomorrow } = operationalDates();
+    const result = await request(app.getHttpServer()).post('/api/people').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ ...payload, birthDate: tomorrow }).expect(400);
+    expect(result.body.code).toBe('PERSON_BIRTH_DATE_FUTURE');
+    expect(await prisma.person.count()).toBe(0);
+    expect(await prisma.portalCredential.count()).toBe(0);
+  });
+
+  it('rejects future birth dates on update without changing the stored date', async () => {
+    const authn = await session(Role.ADMINISTRATIVE);
+    const created = await request(app.getHttpServer()).post('/api/people').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(payload).expect(201);
+    const id = created.body.data.id as string;
+    const { tomorrow } = operationalDates();
+    const result = await request(app.getHttpServer()).patch(`/api/people/${id}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ birthDate: tomorrow }).expect(400);
+    expect(result.body.code).toBe('PERSON_BIRTH_DATE_FUTURE');
+    const stored = await prisma.person.findUniqueOrThrow({ where: { id } });
+    expect(stored.birthDate.toISOString().slice(0, 10)).toBe(payload.birthDate);
+    const missing = await request(app.getHttpServer()).patch('/api/people/10000000-0000-4000-8000-000000000099').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ birthDate: tomorrow }).expect(404);
+    expect(missing.body.code).toBe('PERSON_NOT_FOUND');
+  });
+
+  it('accepts today in the operational timezone on creation and update', async () => {
+    const authn = await session(Role.ADMINISTRATIVE);
+    const { today } = operationalDates();
+    const created = await request(app.getHttpServer()).post('/api/people').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ ...payload, birthDate: today }).expect(201);
+    expect(created.body.data.birthDate).toBe(today);
+    const id = created.body.data.id as string;
+    await request(app.getHttpServer()).patch(`/api/people/${id}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ birthDate: payload.birthDate }).expect(200);
+    const updated = await request(app.getHttpServer()).patch(`/api/people/${id}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ birthDate: today }).expect(200);
+    expect(updated.body.data.birthDate).toBe(today);
+  });
+
   it('enforces read and mutation permissions at the backend boundary', async () => {
     await request(app.getHttpServer()).get('/api/people').expect(401);
     const support = await session(Role.BROCO_SUPPORT);

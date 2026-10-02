@@ -12,7 +12,12 @@ import { WorkspaceShell } from '../../features/auth/workspace-shell';
 import { currentSession } from '../../features/auth/auth';
 import { addPerson, editPerson, fetchPeople, resetPersonPortalPin } from '../../features/people/people-api';
 import { changeSalaPlan, changeSalaProfessor, joinSala, leaveSala, listPersonSalaParticipations, listSalaPlans, listTeamUsers } from '@athleta/api-client';
-const schema = z.object({ firstName: z.string().trim().min(1, 'Ingresá el nombre'), lastName: z.string().trim().min(1, 'Ingresá el apellido'), dni: z.string().min(1, 'Ingresá el DNI'), phone: z.string().min(1, 'Ingresá el teléfono'), birthDate: z.string().min(1, 'Ingresá la fecha'), email: z.union([z.literal(''), z.email('Email inválido')]).optional() });
+function todayOperational(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+const schema = z.object({ firstName: z.string().trim().min(1, 'Ingresá el nombre'), lastName: z.string().trim().min(1, 'Ingresá el apellido'), dni: z.string().min(1, 'Ingresá el DNI'), phone: z.string().min(1, 'Ingresá el teléfono'), birthDate: z.string().min(1, 'Ingresá la fecha').refine((value) => value <= todayOperational(), 'La fecha de nacimiento no puede ser futura'), email: z.union([z.literal(''), z.email('Email inválido')]).optional() });
 type Values = z.infer<typeof schema>; const fieldClass = 'h-10 w-full rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-ring';
 function PersonForm({ person, onClose }: { person?: PersonResponseDto; onClose: () => void }): React.JSX.Element {
   const client = useQueryClient(); const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false });

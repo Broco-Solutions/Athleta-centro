@@ -17,3 +17,46 @@ it('renders and searches the People list through HTTP', async () => { let search
 it('validates required creation fields locally', async () => { renderPage(); await screen.findByText('Sintética, Ana'); fireEvent.click(screen.getByRole('button', { name: /Nueva Persona/ })); fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); expect(await screen.findByText('Ingresá el nombre')).toBeInTheDocument(); });
 it('presents duplicate DNI safely', async () => { server.use(http.post('http://localhost:3000/api/people', () => HttpResponse.json({ statusCode: 409, code: 'PERSON_DNI_ALREADY_EXISTS', message: 'Conflict' }, { status: 409 }))); renderPage(); await screen.findByText('Sintética, Ana'); fireEvent.click(screen.getByRole('button', { name: /Nueva Persona/ })); fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Otra' } }); fireEvent.change(screen.getByLabelText('Apellido'), { target: { value: 'Persona' } }); fireEvent.change(screen.getByLabelText('DNI'), { target: { value: '20.123.456' } }); fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '3515550100' } }); fireEvent.change(screen.getByLabelText('Fecha de nacimiento'), { target: { value: '1990-01-01' } }); fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); expect(await screen.findByRole('alert')).toHaveTextContent('Ya existe una Persona con ese DNI.'); });
 it('edits general data and invalidates the People query', async () => { let updatedPhone = ''; server.use(http.patch(`http://localhost:3000/api/people/${person.id}`, async ({ request }) => { updatedPhone = String((await request.json() as { phone: string }).phone); return HttpResponse.json({ data: { ...person, phone: updatedPhone } }); })); renderPage(); fireEvent.click(await screen.findByText('Sintética, Ana')); fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '3515559999' } }); fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); await waitFor(() => expect(updatedPhone).toBe('3515559999')); });
+
+function operationalBirthDate(offset: number): string {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const date = new Date(`${values.year}-${values.month}-${values.day}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + offset);
+  return date.toISOString().slice(0, 10);
+}
+
+it('rejects a future birth date locally without posting a new Person', async () => {
+  let posts = 0;
+  server.use(http.post('http://localhost:3000/api/people', () => { posts += 1; return HttpResponse.json({ data: person }); }));
+  renderPage();
+  await screen.findByText('Sintética, Ana');
+  fireEvent.click(screen.getByRole('button', { name: /Nueva Persona/ }));
+  fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Otra' } });
+  fireEvent.change(screen.getByLabelText('Apellido'), { target: { value: 'Persona' } });
+  fireEvent.change(screen.getByLabelText('DNI'), { target: { value: '20123457' } });
+  fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '3515550100' } });
+  fireEvent.change(screen.getByLabelText('Fecha de nacimiento'), { target: { value: operationalBirthDate(1) } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByText('La fecha de nacimiento no puede ser futura')).toBeInTheDocument();
+  expect(posts).toBe(0);
+  fireEvent.change(screen.getByLabelText(/Fecha de nacimiento/), { target: { value: operationalBirthDate(0) } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(posts).toBe(1));
+});
+
+it('rejects a future birth date locally when editing an existing Person', async () => {
+  let patches = 0;
+  server.use(
+    http.patch(`http://localhost:3000/api/people/${person.id}`, () => { patches += 1; return HttpResponse.json({ data: person }); }),
+    http.get(`http://localhost:3000/api/sala/participations/person/${person.id}`, () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: [] })),
+  );
+  renderPage();
+  fireEvent.click(await screen.findByText('Sintética, Ana'));
+  fireEvent.change(screen.getByLabelText('Fecha de nacimiento'), { target: { value: operationalBirthDate(1) } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByText('La fecha de nacimiento no puede ser futura')).toBeInTheDocument();
+  expect(patches).toBe(0);
+});
