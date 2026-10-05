@@ -60,3 +60,66 @@ it('rejects a future birth date locally when editing an existing Person', async 
   expect(await screen.findByText('La fecha de nacimiento no puede ser futura')).toBeInTheDocument();
   expect(patches).toBe(0);
 });
+
+async function openCreation(dni = '20123457', phone = '3415551234'): Promise<void> {
+  renderPage();
+  await screen.findByText('Sintética, Ana');
+  fireEvent.click(screen.getByRole('button', { name: /Nueva Persona/ }));
+  for (const [label, value] of [['Nombre', 'Otra'], ['Apellido', 'Persona'], ['DNI', dni], ['Teléfono', phone], ['Fecha de nacimiento', '1990-01-01']] as const) {
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  }
+}
+
+it.each(['12345', '123456789', '20abc123456', ''])('rejects invalid DNI %s without POST', async (dni) => {
+  let posts = 0;
+  server.use(http.post('http://localhost:3000/api/people', () => { posts += 1; return HttpResponse.json({ data: person }); }));
+  await openCreation(dni);
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByText('El DNI debe tener entre 6 y 8 dígitos.')).toBeInTheDocument();
+  expect(posts).toBe(0);
+});
+
+it.each(['341555123', '34155512345', '+54 9 11 1234 5678', '0341555123', '341abc5551234', ''])('rejects invalid phone %s without POST', async (phone) => {
+  let posts = 0;
+  server.use(http.post('http://localhost:3000/api/people', () => { posts += 1; return HttpResponse.json({ data: person }); }));
+  await openCreation('20123457', phone);
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByText('El teléfono debe tener 10 dígitos.')).toBeInTheDocument();
+  expect(posts).toBe(0);
+});
+
+it.each([['(341) 555-1234', '3415551234'], ['11 1234-5678', '1112345678'], ['3411551234', '3411551234']])('sends canonical DNI and phone for %s without changing input while typing', async (phone, expected) => {
+  let posted: unknown;
+  server.use(http.post('http://localhost:3000/api/people', async ({ request }) => { posted = await request.json(); return HttpResponse.json({ data: person }); }));
+  await openCreation('20.123.456', phone);
+  expect(screen.getByLabelText('DNI')).toHaveValue('20.123.456');
+  expect(screen.getByLabelText('Teléfono')).toHaveValue(phone);
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(posted).toMatchObject({ dni: '20123456', phone: expected }));
+});
+
+it('shows the DNI and phone help, placeholders and input modes', async () => {
+  await openCreation();
+  expect(screen.getByText('Ingresá entre 6 y 8 dígitos. Podés escribirlo con puntos.')).toBeVisible();
+  expect(screen.getByText('Ingresá 10 dígitos con código de área, sin +54, 0 inicial ni 15. Ej: 3415551234 o 1112345678.')).toBeVisible();
+  expect(screen.getByLabelText('DNI')).toHaveAttribute('placeholder', '20123456');
+  expect(screen.getByLabelText('DNI')).toHaveAttribute('inputmode', 'numeric');
+  expect(screen.getByLabelText('Teléfono')).toHaveAttribute('placeholder', '3415551234');
+  expect(screen.getByLabelText('Teléfono')).toHaveAttribute('inputmode', 'tel');
+});
+
+it('normalizes DNI and phone before PATCH', async () => {
+  let patched: unknown;
+  server.use(
+    http.patch(`http://localhost:3000/api/people/${person.id}`, async ({ request }) => { patched = await request.json(); return HttpResponse.json({ data: person }); }),
+    http.get(`http://localhost:3000/api/sala/participations/person/${person.id}`, () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: [] })),
+  );
+  renderPage();
+  fireEvent.click(await screen.findByText('Sintética, Ana'));
+  fireEvent.change(screen.getByLabelText('DNI'), { target: { value: '1.234.567' } });
+  fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '(341) 555-1234' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(patched).toMatchObject({ dni: '1234567', phone: '3415551234' }));
+});

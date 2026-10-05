@@ -15,7 +15,8 @@ describe('People PostgreSQL persistence', () => {
   it('persists normalized identity, optional email and DATE without timezone drift', async () => {
     const created = await people.create(input());
     const stored = await prisma.person.findUniqueOrThrow({ where: { id: created.id } });
-    expect(stored).toMatchObject({ normalizedDni: '12345678', normalizedEmail: 'person@example.test' });
+    expect(stored).toMatchObject({ dni: '12345678', normalizedDni: '12345678', normalizedEmail: 'person@example.test' });
+    expect(created.dni).toBe('12345678');
     expect(created.birthDate).toBe('1991-07-15');
     expect(stored.birthDate.toISOString().slice(0, 10)).toBe('1991-07-15');
   });
