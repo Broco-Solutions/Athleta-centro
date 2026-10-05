@@ -70,6 +70,112 @@ async function openCreation(dni = '20123457', phone = '3415551234'): Promise<voi
   }
 }
 
+it('closes a successful creation, refreshes the list and keeps the PIN until acknowledged', async () => {
+  let posts = 0;
+  const created = { ...person, id: '10000000-0000-4000-8000-000000000002', firstName: 'Otra', lastName: 'Persona', dni: '20123457', phone: '3415551234', birthDate: '1990-01-01' };
+  server.use(
+    http.post('http://localhost:3000/api/people', () => { posts += 1; return HttpResponse.json({ data: { ...created, initialPin: '1234' } }); }),
+    http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: posts ? [person, created] : [person], meta: { page: 1, pageSize: 10, total: posts ? 2 : 1, totalPages: 1 } })),
+  );
+  await openCreation();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByText('Persona guardada correctamente.')).toBeVisible();
+  expect(posts).toBe(1);
+  expect(screen.queryByRole('heading', { name: 'Nueva Persona' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Nombre')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('DNI')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Guardar' })).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Personas' })).toBeVisible();
+  expect(screen.getByRole('table')).toBeVisible();
+  expect(screen.getByText('Persona, Otra')).toBeVisible();
+  expect(screen.getByText('1234')).toBeVisible();
+  expect(screen.getByText(/Este PIN se mostrará una sola vez\./)).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Entendido' }));
+  expect(screen.queryByText('1234')).not.toBeInTheDocument();
+  expect(screen.queryByText('Persona guardada correctamente.')).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Personas' })).toBeVisible();
+  expect(screen.getByRole('table')).toBeVisible();
+});
+
+it('copies the creation PIN and clears the notice when starting another creation', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  server.use(http.post('http://localhost:3000/api/people', () => HttpResponse.json({ data: { ...person, initialPin: '1234' } })));
+  await openCreation();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  await screen.findByText('Persona guardada correctamente.');
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar PIN' }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith('1234'));
+  expect(await screen.findByText('PIN copiado')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: /Nueva Persona/ }));
+  expect(screen.queryByText('1234')).not.toBeInTheDocument();
+  expect(screen.queryByText('PIN copiado')).not.toBeInTheDocument();
+  expect(screen.queryByText('Persona guardada correctamente.')).not.toBeInTheDocument();
+});
+
+it('keeps the entered creation data and form open on a server error', async () => {
+  server.use(http.post('http://localhost:3000/api/people', () => HttpResponse.json({ statusCode: 500, message: 'Error' }, { status: 500 })));
+  await openCreation();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos guardar los datos.');
+  expect(screen.getByRole('heading', { name: 'Nueva Persona' })).toBeVisible();
+  for (const [label, value] of [['Nombre', 'Otra'], ['Apellido', 'Persona'], ['DNI', '20123457'], ['Teléfono', '3415551234'], ['Fecha de nacimiento', '1990-01-01']] as const) {
+    expect(screen.getByLabelText(label)).toHaveValue(value);
+  }
+  expect(screen.queryByText('Persona guardada correctamente.')).not.toBeInTheDocument();
+});
+
+it('closes a successful edit, refreshes the list and clears its notice on the next edit', async () => {
+  let patched = false;
+  server.use(
+    http.patch(`http://localhost:3000/api/people/${person.id}`, () => { patched = true; return HttpResponse.json({ data: { ...person, phone: '3515559999' } }); }),
+    http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: [{ ...person, phone: patched ? '3515559999' : person.phone }], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } })),
+    http.get(`http://localhost:3000/api/sala/participations/person/${person.id}`, () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: [] })),
+  );
+  renderPage();
+  fireEvent.click(await screen.findByText('Sintética, Ana'));
+  fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '3515559999' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByText('Cambios guardados correctamente.')).toBeVisible();
+  expect(patched).toBe(true);
+  expect(screen.queryByRole('heading', { name: 'Editar Persona' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Teléfono')).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Personas' })).toBeVisible();
+  expect(screen.getByRole('table')).toBeVisible();
+  expect(screen.getByText('3515559999')).toBeVisible();
+  expect(screen.queryByText('Persona guardada correctamente.')).not.toBeInTheDocument();
+  expect(screen.queryByText('PIN temporal del Portal')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+  expect(screen.queryByText('Cambios guardados correctamente.')).not.toBeInTheDocument();
+});
+
+it('keeps the reset PIN dialog within the existing edit flow', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  server.use(
+    http.post(`http://localhost:3000/api/people/${person.id}/reset-portal-pin`, () => HttpResponse.json({ data: '5678' })),
+    http.get(`http://localhost:3000/api/sala/participations/person/${person.id}`, () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: [] })),
+  );
+  renderPage();
+  fireEvent.click(await screen.findByText('Sintética, Ana'));
+  fireEvent.click(screen.getByRole('button', { name: 'Resetear PIN del Portal' }));
+  expect(screen.getByRole('dialog', { name: 'Resetear PIN del Portal' })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Generar nuevo PIN' }));
+  expect(await screen.findByRole('dialog', { name: 'Nuevo PIN del Portal' })).toHaveTextContent('5678');
+  expect(screen.getByRole('heading', { name: 'Editar Persona' })).toBeInTheDocument();
+  expect(screen.queryByText('Persona guardada correctamente.')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar PIN' }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith('5678'));
+  expect(await screen.findByText('PIN copiado')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Entendido' }));
+  expect(screen.queryByText('5678')).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Editar Persona' })).toBeVisible();
+});
+
 it.each(['12345', '123456789', '20abc123456', ''])('rejects invalid DNI %s without POST', async (dni) => {
   let posts = 0;
   server.use(http.post('http://localhost:3000/api/people', () => { posts += 1; return HttpResponse.json({ data: person }); }));
