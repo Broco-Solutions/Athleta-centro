@@ -2,47 +2,33 @@
 
 ## 1. Objetivo y criterio de actualización
 
-Este documento actualiza las dudas funcionales originalmente relevadas para Athleta Manager tomando como fuente de verdad la versión actual de **“Athleta Manager — Descripción Integral del Sistema”**.
+Este documento actualiza las dudas funcionales originalmente relevadas para Athleta Manager tomando como base **“Athleta Manager — Descripción Integral del Sistema”** y las definiciones funcionales expresamente aprobadas. Desde el 2026-10-02 incorpora la consolidación de decisiones históricas ratificadas documentada en el [Registro de Decisiones Funcionales](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md). El código local de `ramiro`, incluidos los cambios sin commit, se utiliza como evidencia para verificar la alternativa adoptada en esas decisiones; no constituye por sí solo aprobación de decisiones nuevas. Las futuras definiciones requieren análisis y aprobación antes de incorporarse como reglas vigentes. El PDF de la Descripción Integral permanece sin modificar y su sincronización queda para una actualización posterior.
 
 Cada duda original queda clasificada como:
 
-- **RESUELTO**: la Descripción Integral define una regla suficientemente concreta.
+- **RESUELTO**: la Descripción Integral o una definición funcional expresamente aprobada define una regla suficientemente concreta.
 - **NO APLICA**: la nueva definición funcional elimina la premisa de la pregunta.
 - **A CRITERIO TÉCNICO**: el comportamiento funcional necesario ya está definido y la diferencia restante es de modelado/implementación.
-- **PENDIENTE**: la Descripción Integral no define la respuesta con precisión suficiente y no debe inferirse.
+- **PENDIENTE**: no existe una definición funcional aprobada con precisión suficiente; la respuesta no debe inferirse del código.
 
-Los ítems marcados **PENDIENTE** son los únicos que deben tratarse como bloqueos funcionales cuando una implementación dependa directamente de ellos.
+Los ítems marcados **PENDIENTE** bloquean la parte de la implementación que dependa directamente de ellos. Las contradicciones adicionales registradas requieren revisión y no autorizan a elegir silenciosamente una interpretación.
 
 ---
 
 # 2. Resumen de pendientes funcionales
 
-Los siguientes puntos continúan sin una definición explícita suficiente en la Descripción Integral:
+Los siguientes puntos continúan pendientes después de la consolidación histórica ratificada del 2026-10-02:
 
 | ID | Tema pendiente |
 |---|---|
-| PER-06 | Tratamiento funcional de Personas menores de edad. |
-| SAL-HOR-08 | Restricción numérica de capacidad y si capacidad 0 es válida. |
-| SAL-TUR-08 | Si una incorporación con origen específicamente “Espontáneo” puede cargarse retrospectivamente. |
-| CLI-TRA-07 | Si Motivo de finalización = Otro obliga a detallar una descripción. |
-| CLI-TRA-08 | Formato funcional exacto de “Etapa actual” del Tratamiento. |
-| CLI-TRA-13 | Presentación exacta en listados cuando una Persona posee más de un Tratamiento desactualizado. |
-| CLI-EVA-08 | Definición del rango permitido para Tests clínicos de tipo Escala. |
-| OS-03 | Si una Orden puede usar una Obra social distinta de la Obra social actual de la Persona. |
-| OS-05 | Semántica concreta del campo Referencia de una Orden. |
-| OS-07 | Si la Fecha de vencimiento puede ser anterior a la Fecha de emisión. |
-| CLI-ING-05 | Si, al vincular una Orden, la Obra social pagadora debe coincidir obligatoriamente con la de la Orden. |
-| FIN-01 | Restricción explícita de Importe > 0 para Gastos. |
-| FIN-08 | Cantidad de decimales funcionalmente esperada para la cotización USD. |
+| SAL-TUR-08 | Si una incorporación con origen específicamente “Espontáneo” puede cargarse retrospectivamente; existe una diferencia temporal entre frontend y backend. |
 | INI-03 | Presentación exacta de Cancelados/Ausentes en Sala: total combinado o valores separados. |
 | INI-04 | Criterio exacto de “Próximos horarios” de Sala. |
 | INI-06 | Label visible exacto de la tarjeta de Atendidos/Atenciones. |
 | INI-07 | Comportamiento visual de la tarjeta Atendidos al seleccionar Mañana. |
-| POR-SAL-05 | Interpretación exacta del límite inclusivo de la ventana móvil de 30 días. |
-| POR-DAT-02 | Presentación de campos opcionales no informados en “Mis datos”. |
-| CAT-04 | Si los catálogos permiten nombres duplicados. |
+| CAT-04 | Si los catálogos permiten nombres duplicados; los mecanismos actuales no son uniformes y no constituyen aprobación de una regla global. |
 
-Todo el resto de las dudas originales queda resuelto o deja de aplicar.
+El resto de las dudas originales figura resuelto, no aplica o queda a criterio técnico. Las desalineaciones adicionales detectadas se registran para revisión en el [Registro de Decisiones Funcionales](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md); no se resuelven automáticamente ni cambian el estado de otros ítems.
 
 ---
 
@@ -51,11 +37,11 @@ Todo el resto de las dudas originales queda resuelto o deja de aplicar.
 | ID | Estado | Definición resultante | Fuente |
 |---|---|---|---|
 | PER-01 | RESUELTO | Una Persona pasa a ser **Paciente únicamente mediante un alta explícita en Clínica**. Crear Turnos, Atenciones, Tratamientos u otros registros no reemplaza ese alta. Si la Persona ya existe por Sala, se reutiliza la misma ficha. | §2.4, §5.4, §7.2 |
-| PER-02 | RESUELTO | El alta de una Persona se realiza desde un contexto de ingreso **Sala o Clínica**. No se define un alta neutral/general independiente de esas áreas. | §5.2 |
+| PER-02 | RESUELTO | Una Persona puede darse de alta primero como identidad general del sistema, sin incorporarla inmediatamente a Sala ni registrarla como Paciente. Posteriormente puede vincularse a Sala, Clínica o ambas áreas reutilizando la misma Persona. | [Registro PER-02](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | PER-03 | RESUELTO | Un Turno clínico deja de considerarse futuro **al llegar su hora de inicio**. | §2.5, §5.7, §7.10 |
 | PER-04 | RESUELTO | No. Si la hora de inicio ya ocurrió, el Turno Agendado deja de sostener por sí solo el estado Activo aunque su estado todavía no haya sido corregido. | §2.5, §7.10 |
 | PER-05 | RESUELTO | Impiden eliminar la Persona: Turnos fijos de Sala; reservas puntuales o asistencias; rutinas; evaluaciones físicas; Pagos de Sala; Turnos clínicos; Atenciones; Evoluciones; Evaluaciones clínicas; Tratamientos; Estudios o archivos clínicos; antecedentes clínicos; Indicaciones para Sala; Órdenes de obra social; Ingresos clínicos; análisis de IA guardados. El alta inicial, PIN, datos generales, alta como Paciente e incorporación inicial a Sala por sí solos no bloquean. | §5.10 |
-| PER-06 | PENDIENTE | El sistema excluye cuentas de padres/tutores y flujo especial para menores, pero no define si existen restricciones de edad ni si un menor puede darse de alta con el circuito normal. | §16.1 |
+| PER-06 | RESUELTO | No existe edad mínima funcional para registrar una Persona. Una Persona menor de edad utiliza el mismo circuito general de alta. En el alcance actual no existen cuentas de padres/tutores ni un flujo especial para menores. La fecha de nacimiento no puede ser posterior a la fecha actual; esto no constituye una edad mínima. | [Registro PER-06](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | PER-07 | RESUELTO | Sí. La inactivación global actúa desde la confirmación hacia adelante. Actividades cuya hora de inicio ya ocurrió se preservan y pueden corregirse luego según sus reglas normales. | §5.8, §15.24 |
 | PER-08 | RESUELTO | No se genera un PIN nuevo por reactivación. La Persona reutiliza las mismas credenciales salvo que el PIN haya sido restablecido expresamente. | §10.2 |
 
@@ -87,7 +73,7 @@ Todo el resto de las dudas originales queda resuelto o deja de aplicar.
 | SAL-HOR-05 | RESUELTO | Sí. Reducir capacidad no cancela reservas ni Turnos fijos existentes; puede quedar sobrecupo. | §6.7–§6.8 |
 | SAL-HOR-06 | RESUELTO | La excepción por fecha definida en V1 permite **cerrar un horario** o **cambiar su capacidad** para esa ocurrencia. No se define creación excepcional de un horario inexistente. | §6.9 |
 | SAL-HOR-07 | RESUELTO | La excepción por fecha no modifica día/hora/duración: se limita a cierre o cambio de capacidad de esa ocurrencia. | §6.9 |
-| SAL-HOR-08 | RESUELTO | Toda capacidad general, específica o excepcional es un entero estrictamente positivo (`>= 1`). El valor 0 no es válido ni representa cierre; los cierres se modelan explícitamente. | §6.7, §6.9 |
+| SAL-HOR-08 | RESUELTO | Toda capacidad válida es un entero mayor o igual a 1. El valor 0 no representa cierre. Los cierres se registran explícitamente como excepciones de cierre. | [Registro SAL-HOR-08](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 
 ---
 
@@ -102,7 +88,7 @@ Todo el resto de las dudas originales queda resuelto o deja de aplicar.
 | SAL-TUR-05 | RESUELTO | El límite de 30 días aplica al Portal. Los usuarios internos no tienen un límite temporal futuro específico para reservas puntuales. | §6.12 |
 | SAL-TUR-06 | RESUELTO | Sí. Una Persona no puede estar registrada dos veces en la misma fecha y el mismo horario, independientemente del origen de la presencia. | §6.14 |
 | SAL-TUR-07 | RESUELTO | Sí. La incorporación espontánea se registra como presencia de origen espontáneo y se marca la asistencia; los indicadores la tratan como **Asistió**. | §6.16–§6.17 |
-| SAL-TUR-08 | PENDIENTE | Se permite corregir ocurrencias pasadas, pero no se define expresamente si el origen específico “Espontáneo” puede crearse retrospectivamente o si debe registrarse mediante la corrección de ocurrencia general. | §6.12, §6.17 |
+| SAL-TUR-08 | PENDIENTE | No existe decisión aprobada sobre el Espontáneo retrospectivo. El frontend habilita la incorporación solo para la fecha actual (`agenda-panel.tsx` — `SpontaneousModal`), mientras el backend puede procesar una fecha histórica si se cumplen las restantes precondiciones (`sala.service.ts` — `createSpontaneousOccurrence(...)`). Esta diferencia entre capas impide consolidar una regla única y requiere discusión funcional. | §6.12, §6.17 |
 | SAL-TUR-09 | RESUELTO | Sí. Los estados de las ocurrencias pueden corregirse posteriormente sin límite de tiempo por usuarios internos habilitados. | §6.15 |
 | SAL-TUR-10 | RESUELTO | Sí. Los estados Reservado, Asistió, Cancelado y Ausente son corregibles posteriormente; no existe una matriz rígida de transición. | §6.15 |
 | SAL-TUR-11 | RESUELTO | Sí. Ausente puede corregirse a Asistió y viceversa como parte de la corrección manual. | §6.15 |
@@ -120,7 +106,7 @@ Todo el resto de las dudas originales queda resuelto o deja de aplicar.
 | SAL-PAG-03 | RESUELTO | Sí. Los próximos Pagos proponen el **precio actual del Plan actual**; si el Plan cambió antes de registrar ese pago, se usa el nuevo Plan. | §6.31–§6.34 |
 | SAL-PAG-04 | RESUELTO | Sí. Un Pago ya registrado no cambia por cambiar el Plan; el nuevo Plan afecta propuestas de Pagos posteriores/no registrados. | §6.31 |
 | SAL-PAG-05 | RESUELTO | El Importe debe ser **mayor a cero**. | §6.33 |
-| SAL-PAG-06 | RESUELTO | No se admiten Pagos negativos y no existe lógica de devolución/reversión. | §6.33 |
+| SAL-PAG-06 | RESUELTO | No se admiten Pagos de Sala con importe negativo. Un Pago registrado incorrectamente puede revertirse. La reversión no elimina el Pago original: se registra de forma separada, con motivo y trazabilidad. Corresponde a una corrección administrativa del registro, no a una devolución de dinero al alumno. | [Registro SAL-PAG-06](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | SAL-PAG-07 | RESUELTO | La Fecha real de cobro debe ser hoy o anterior, nunca futura. | §6.34 |
 | SAL-PAG-08 | RESUELTO | Sí. El Mes/Año pagado puede ser pasado, actual o futuro. | §6.33–§6.34 |
 | SAL-PAG-09 | RESUELTO | Sí. El precio actual del Plan es el valor que se propone al iniciar nuevos Pagos; modificar el precio impacta futuras cargas no registradas. | §6.30–§6.34 |
@@ -235,13 +221,13 @@ Todo el resto de las dudas originales queda resuelto o deja de aplicar.
 | CLI-TRA-04 | RESUELTO | Se propone fecha actual y puede modificarse a una fecha pasada, respetando inicio y última Atención; nunca futura. | §7.21 |
 | CLI-TRA-05 | RESUELTO | No existe Fecha de reapertura independiente. El Tratamiento simplemente vuelve a En curso y se conserva la trazabilidad de la acción. | §7.22 |
 | CLI-TRA-06 | RESUELTO | No. Fecha de finalización no puede ser anterior a la última Atención asociada ni a la Fecha de inicio. | §7.21 |
-| CLI-TRA-07 | PENDIENTE | Motivo es opcional y admite Alta, Interrupción, Derivación u Otro, pero no se define si seleccionar Otro obliga a detallar texto adicional. | §7.21 |
-| CLI-TRA-08 | PENDIENTE | “Etapa actual” es opcional, pero el documento no define si es texto libre ni un conjunto cerrado de valores. | §7.19 |
+| CLI-TRA-07 | RESUELTO | Seleccionar Motivo de finalización = Otro no obliga a cargar una explicación adicional. La conclusión del Tratamiento continúa siendo opcional. El Motivo de finalización también es opcional y admite Alta, Interrupción, Derivación u Otro. | [Registro CLI-TRA-07](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
+| CLI-TRA-08 | RESUELTO | Etapa actual es un texto libre opcional. | [Registro CLI-TRA-08](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | CLI-TRA-09 | RESUELTO | Sí. El responsable puede cambiarse. Los Turnos no están asociados al Tratamiento y conservan su propio profesional. | §7.20 |
 | CLI-TRA-10 | RESUELTO | Los Turnos futuros mantienen su profesional original; cambiar el responsable del Tratamiento no modifica Turnos. | §7.20 |
 | CLI-TRA-11 | RESUELTO | El cálculo de inactividad de un Tratamiento se basa en la **última Atención de ese Tratamiento**; si nunca tuvo Atenciones, desde su Fecha de inicio. | §7.23 |
 | CLI-TRA-12 | RESUELTO | Se consideran días completos; por lo tanto entra al filtro de 30 días al cumplirse 30 días completos desde última Atención o Fecha de inicio. | §7.23 |
-| CLI-TRA-13 | PENDIENTE | Se define qué Tratamientos entran al filtro, pero no se define la representación exacta si una misma Persona tiene varios Tratamientos simultáneamente alcanzados por el criterio. | §5.11, §7.23 |
+| CLI-TRA-13 | RESUELTO | El listado muestra una única fila por Persona. Una Persona entra al filtro sin atención reciente cuando al menos uno de sus Tratamientos En curso cumple el criterio seleccionado, aunque tenga varios Tratamientos alcanzados. | [Registro CLI-TRA-13](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | CLI-TRA-14 | RESUELTO | Sí. Un Tratamiento puede finalizarse y reabrirse tantas veces como la situación real lo requiera. | §7.22 |
 | CLI-TRA-15 | RESUELTO | Sí. Reabrir es también el mecanismo para corregir una finalización hecha por error. | §7.22 |
 
@@ -258,7 +244,7 @@ Todo el resto de las dudas originales queda resuelto o deja de aplicar.
 | CLI-EVA-05 | RESUELTO | Sí. El profesional puede agregar Tests existentes o crear un Test nuevo durante la misma carga. | §7.29 |
 | CLI-EVA-06 | RESUELTO | Los Tests creados durante una Evaluación quedan disponibles en el catálogo reutilizable. | §7.29 |
 | CLI-EVA-07 | RESUELTO | Sí. Un mismo Test puede aparecer más de una vez, por ejemplo para distintos lados corporales. | §7.29 |
-| CLI-EVA-08 | PENDIENTE | Se admite formato Escala, pero no se define si cada Test debe configurar explícitamente mínimo/máximo ni cómo se representa ese rango. | §7.29 |
+| CLI-EVA-08 | RESUELTO | Los Tests de tipo Escala pueden definir opcionalmente un valor mínimo, un valor máximo o ambos. Si ambos están informados, el mínimo no puede superar al máximo. Cuando existe un límite configurado, el resultado debe respetarlo. Si ninguno está informado, la Escala no tiene límites configurados. No existe un rango universal obligatorio para todas las Escalas. | [Registro CLI-EVA-08](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | CLI-EVA-09 | RESUELTO | Sí. Los Tests de tipo Opciones definen previamente sus opciones. | §7.29 |
 | CLI-EVA-10 | RESUELTO | La Unidad de un Test numérico se define en el propio Test y se aplica consistentemente a sus resultados. | §7.29, §7.34 |
 | CLI-EVA-11 | RESUELTO | Sí. El lado corporal se registra opcionalmente por Resultado. | §7.29, §7.34 |
@@ -288,11 +274,11 @@ Todo el resto de las dudas originales queda resuelto o deja de aplicar.
 |---|---|---|---|
 | OS-01 | RESUELTO | La Persona conserva una única Obra social **actual** y un número de afiliado actual. | §5.2, §7.42 |
 | OS-02 | RESUELTO | No se conserva historial específico de cambios de Obra social de la Persona; solo el valor actual. Los registros históricos que la referencian conservan su contexto. | §7.42 |
-| OS-03 | PENDIENTE | La Orden registra una Obra social propia, pero no se aclara expresamente si puede diferir de la Obra social actual de la Persona. | §7.43 |
+| OS-03 | RESUELTO | Una Orden puede registrar una Obra social distinta de la Obra social que figure actualmente en la ficha de la Persona. La Orden conserva su propia referencia a Obra social. La Obra social elegida debe existir y estar disponible para selección. | [Registro OS-03](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | OS-04 | RESUELTO | Sí. Una Obra social retirada sigue mostrándose en Personas/registros que ya la referenciaban hasta que esos datos se modifiquen. | §7.42 |
-| OS-05 | PENDIENTE | Referencia es opcional, pero no se especifica si representa número de autorización, número de orden u otro dato concreto. | §7.43 |
+| OS-05 | RESUELTO | Referencia es un texto libre obligatorio utilizado para identificar la Orden. No puede quedar vacío. El sistema no diferencia estructuralmente si corresponde a número de orden, autorización u otra referencia administrativa. | [Registro OS-05](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | OS-06 | RESUELTO | La fecha de la Orden es la **Fecha de emisión**. | §7.43 |
-| OS-07 | PENDIENTE | No se define una restricción entre Fecha de emisión y Fecha de vencimiento. | §7.43–§7.44 |
+| OS-07 | RESUELTO | No existe una restricción funcional entre Fecha de emisión y Fecha de vencimiento. El sistema no bloquea una Fecha de vencimiento anterior a la Fecha de emisión. | [Registro OS-07](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | OS-08 | RESUELTO | Cantidad autorizada es informativa y la Orden puede modificarse; no controla consumo de sesiones ni liquidaciones. | §7.43–§7.45 |
 | OS-09 | RESUELTO | Sí. Una Persona puede tener varias Órdenes de la misma Obra social simultáneamente; no existe una única Orden vigente ni prioridad automática. | §7.43 |
 
@@ -306,7 +292,7 @@ Todo el resto de las dudas originales queda resuelto o deja de aplicar.
 | CLI-ING-02 | RESUELTO | No existen ingresos negativos ni lógica de devolución/reversión dentro del alcance. | §7.47, §7.53 |
 | CLI-ING-03 | RESUELTO | Fecha de cobro puede ser actual o pasada, nunca futura. | §7.47 |
 | CLI-ING-04 | RESUELTO | Sí. Si Pagador = Obra social puede elegirse cualquier Obra social disponible, aunque no coincida con la actual de la Persona. | §7.48 |
-| CLI-ING-05 | PENDIENTE | El documento permite relacionar Ingreso con una Orden del Paciente, pero no define expresamente si la Obra social pagadora debe coincidir con la Obra social de esa Orden. | §7.48–§7.49 |
+| CLI-ING-05 | RESUELTO | Cuando un Ingreso clínico se vincula a una Orden, el Pagador debe ser Obra social y la Obra social pagadora debe coincidir exactamente con la Obra social registrada en esa Orden. | [Registro CLI-ING-05](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | CLI-ING-06 | RESUELTO | Sí. La asociación a Orden es contextual y opcional; no se restringe por Pagador Paciente. | §7.49 |
 | CLI-ING-07 | RESUELTO | Sí. La Orden y Atención opcionales referenciadas por el Ingreso deben ser del Paciente al que pertenece ese Ingreso. | §7.49 |
 | CLI-ING-08 | RESUELTO | Sí. El Pagador puede corregirse entre Paciente y Obra social como modificación normal. | §7.48 |
@@ -317,14 +303,14 @@ Todo el resto de las dudas originales queda resuelto o deja de aplicar.
 
 | ID | Estado | Definición resultante | Fuente |
 |---|---|---|---|
-| FIN-01 | PENDIENTE | El Gasto representa un egreso y posee Importe obligatorio, pero no se explicita una validación funcional `Importe > 0` como sí ocurre en Pagos e Ingresos. | §8.4 |
+| FIN-01 | RESUELTO | Todo Gasto debe tener un Importe en ARS entero y estrictamente mayor a cero. | [Registro FIN-01](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | FIN-02 | RESUELTO | No existe lógica general de devolución/reversión; los movimientos cargados por error se corrigen o eliminan según permisos. | §8.3, §16.1 |
 | FIN-03 | RESUELTO | La Fecha de Gasto debe ser hoy o anterior, nunca futura. | §8.4 |
 | FIN-04 | RESUELTO | Categoría, Medio de pago y Área forman parte obligatoria del Gasto; solo Descripción es expresamente opcional. | §8.4 |
 | FIN-05 | RESUELTO | Accesos rápidos: **Mes actual, Mes anterior, Año actual y Rango personalizado**. | §8.7 |
 | FIN-06 | RESUELTO | Sí. Gastos: Sala, Clínica o General. Ingresos: origen Sala o Clínica. El dashboard permite filtrar por Área cuando aporta valor. | §8.1, §8.4, §8.7 |
 | FIN-07 | RESUELTO | Sí. La cotización mensual puede corregirse en cualquier momento; consultas posteriores usan el valor nuevo y no se guarda historial anterior. | §8.9 |
-| FIN-08 | PENDIENTE | No se define cantidad de decimales para la cotización USD desde el punto de vista funcional. | §8.9 |
+| FIN-08 | RESUELTO | La cotización USD debe ser positiva y admite como máximo 2 decimales. | [Registro FIN-08](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | FIN-09 | RESUELTO | Exportación de Gastos: Fecha, Importe, Categoría, Medio de pago, Área, Descripción, Usuario que registró. Ingresos: Fecha de cobro, Área, Tipo de ingreso, Persona, Importe, Medio de pago, Usuario; además Mes/Año y Motivo de ajuste para Sala; Pagador, Obra social y Observación para Clínica. | §8.10 |
 
 ---
@@ -352,7 +338,7 @@ Todo el resto de las dudas originales queda resuelto o deja de aplicar.
 | POR-SAL-02 | A CRITERIO TÉCNICO | Funcionalmente, cambiar un Turno fijo es una única acción que afecta hacia adelante desde la nueva Fecha de inicio y nunca reescribe ocurrencias pasadas. Si internamente se modela como reemplazo de registro o cambio de vigencia es una decisión técnica siempre que se preserve ese comportamiento. | §10.6 |
 | POR-SAL-03 | RESUELTO | La Fecha de inicio propuesta es la próxima ocurrencia del horario y puede modificarse solo hacia adelante. Una ocurrencia del mismo día todavía futura puede ser la próxima ocurrencia. | §6.10, §10.6 |
 | POR-SAL-04 | RESUELTO | Sí. Puede reservar más de un horario de una misma fecha si son horarios distintos y hay capacidad. | §10.7 |
-| POR-SAL-05 | PENDIENTE | Se define una ventana móvil de próximos 30 días, pero no se formaliza el borde exacto inclusivo/exclusivo del día 30. | §6.12, §10.7 |
+| POR-SAL-05 | RESUELTO | La ventana de reservas del Portal incluye desde el día actual hasta el día actual + 30 días, ambos inclusive. | [Registro POR-SAL-05](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | POR-SAL-06 | RESUELTO | Si cancela una reserva y el horario continúa sin capacidad disponible, no puede volver a reservar. Solo puede hacerlo si en ese momento existe lugar. | §10.7 |
 | POR-SAL-07 | RESUELTO | Los compromisos futuros Cancelados permanecen visibles e identificados hasta que pasa su fecha/hora. Después dejan de mostrarse; no existe historial de asistencias/cancelaciones pasadas en Portal. | §10.5 |
 
@@ -365,7 +351,7 @@ Todo el resto de las dudas originales queda resuelto o deja de aplicar.
 | POR-CLI-01 | RESUELTO | Un Turno clínico futuro Cancelado permanece visible, sin acciones, hasta que pasa su fecha/hora. | §10.11 |
 | POR-CLI-02 | RESUELTO | Portal muestra Turnos clínicos futuros **Agendados y Cancelados**. Atendidos y Ausentes no se muestran como compromisos futuros. | §10.11 |
 | POR-DAT-01 | RESUELTO | “Mis datos” muestra la información general disponible de la Persona. Esto abarca los datos generales definidos para Persona: Nombre, Apellido, DNI, Teléfono, Fecha de nacimiento y, cuando existan, Email, contacto de emergencia, Obra social y número de afiliado. | §5.2, §10.12 |
-| POR-DAT-02 | PENDIENTE | No se define si un campo opcional vacío debe omitirse o mostrarse como “Sin informar”. | §10.12, §12.16 |
+| POR-DAT-02 | RESUELTO | Los datos opcionales no informados se omiten de la sección Mis datos. No se muestran filas vacías ni el texto Sin informar. | [Registro POR-DAT-02](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | POR-DAT-03 | RESUELTO | Sí. “Mis datos” es una sección general de la Persona y no se divide por Sala/Clínica. | §10.12 |
 
 ---
@@ -377,7 +363,7 @@ Todo el resto de las dudas originales queda resuelto o deja de aplicar.
 | CAT-01 | RESUELTO | Solo Protocolos clínicos y Biblioteca Clínica usan Activo/Inactivo y pueden reactivarse. En el resto, un valor retirado no se reactiva: si vuelve a necesitarse se crea uno nuevo. | §14.1 |
 | CAT-02 | RESUELTO | La regla general es que **editar un valor actualiza el mismo concepto** y las referencias existentes muestran su definición actual. | §13.8, §14.1 |
 | CAT-03 | RESUELTO | No existe preservación histórica general de la definición editada. La excepción deliberada son las Evaluaciones clínicas, que preservan definición de Protocolo/Tests utilizada. | §13.6, §13.8, §14.1 |
-| CAT-04 | PENDIENTE | No se define si deben impedirse nombres duplicados en Medios de pago, Categorías, Obras sociales, Ejercicios, Tests u otros catálogos. | §14.1 |
+| CAT-04 | PENDIENTE | No existe una regla global aprobada sobre nombres duplicados de catálogos. La implementación combina nombres normalizados únicos, validación normalizada de Planes, unicidad del nombre en Ejercicios/Tests físicos y lógica propia de Medios de pago. Esa diversidad requiere análisis funcional; no permite inferir una regla uniforme. | §14.1 |
 | CAT-05 | RESUELTO | En catálogos sin Activo/Inactivo, si un valor retirado vuelve a necesitarse se crea uno nuevo. Protocolos/Biblioteca sí pueden reactivarse. | §14.1 |
 
 ---
@@ -432,9 +418,11 @@ Al trabajar con este documento:
 
 # 27. Fuente funcional
 
-Fuente utilizada para esta actualización:
+Fuentes utilizadas para esta actualización:
 
 **Athleta Manager — Descripción Integral del Sistema**  
 Definición funcional del producto objetivo, versión entregada para desarrollo.
 
 Las referencias `§x.y` de este documento corresponden a las secciones numeradas de esa Descripción Integral.
+
+La consolidación histórica ratificada del **2026-10-02** se documenta en [ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md). Sus reglas aprobadas complementan o sustituyen la respuesta anterior de los ítems allí identificados. Las referencias `§x.y` conservan su significado original y no implican que el PDF ya haya sido sincronizado.
