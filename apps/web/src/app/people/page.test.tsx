@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
@@ -79,7 +79,12 @@ it('closes a successful creation, refreshes the list and keeps the PIN until ack
   );
   await openCreation();
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
-  expect(await screen.findByText('Persona guardada correctamente.')).toBeVisible();
+  const dialog = await screen.findByRole('dialog', { name: 'Persona guardada correctamente' });
+  expect(dialog).toBeVisible();
+  expect(dialog).toHaveAttribute('aria-modal', 'true');
+  expect(within(dialog).getByRole('heading', { name: 'Persona guardada correctamente' })).toBeVisible();
+  expect(within(dialog).getByText('Otra Persona')).toBeVisible();
+  expect(within(dialog).getByText('PIN temporal del Portal')).toBeVisible();
   expect(posts).toBe(1);
   expect(screen.queryByRole('heading', { name: 'Nueva Persona' })).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Nombre')).not.toBeInTheDocument();
@@ -88,29 +93,33 @@ it('closes a successful creation, refreshes the list and keeps the PIN until ack
   expect(screen.getByRole('heading', { name: 'Personas' })).toBeVisible();
   expect(screen.getByRole('table')).toBeVisible();
   expect(screen.getByText('Persona, Otra')).toBeVisible();
-  expect(screen.getByText('1234')).toBeVisible();
-  expect(screen.getByText(/Este PIN se mostrará una sola vez\./)).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: 'Entendido' }));
+  expect(within(dialog).getByText('1234')).toBeVisible();
+  expect(within(dialog).getByText('Este PIN se mostrará una sola vez. Compartilo de forma segura con la Persona.')).toBeVisible();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Entendido' }));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(screen.queryByText('1234')).not.toBeInTheDocument();
-  expect(screen.queryByText('Persona guardada correctamente.')).not.toBeInTheDocument();
+  expect(screen.queryByText('Persona guardada correctamente')).not.toBeInTheDocument();
+  expect(screen.queryByRole('dialog', { name: 'Persona guardada correctamente' })).not.toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Personas' })).toBeVisible();
   expect(screen.getByRole('table')).toBeVisible();
 });
 
-it('copies the creation PIN and clears the notice when starting another creation', async () => {
+it('copies the creation PIN and clears the copied state when acknowledged', async () => {
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
   server.use(http.post('http://localhost:3000/api/people', () => HttpResponse.json({ data: { ...person, initialPin: '1234' } })));
   await openCreation();
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
-  await screen.findByText('Persona guardada correctamente.');
-  fireEvent.click(screen.getByRole('button', { name: 'Copiar PIN' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Persona guardada correctamente' });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Copiar PIN' }));
   await waitFor(() => expect(writeText).toHaveBeenCalledWith('1234'));
-  expect(await screen.findByText('PIN copiado')).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: /Nueva Persona/ }));
+  expect(await within(dialog).findByText('PIN copiado')).toBeVisible();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Entendido' }));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(screen.queryByText('1234')).not.toBeInTheDocument();
   expect(screen.queryByText('PIN copiado')).not.toBeInTheDocument();
-  expect(screen.queryByText('Persona guardada correctamente.')).not.toBeInTheDocument();
+  expect(screen.queryByText('Persona guardada correctamente')).not.toBeInTheDocument();
+  expect(screen.queryByRole('dialog', { name: 'Persona guardada correctamente' })).not.toBeInTheDocument();
 });
 
 it('keeps the entered creation data and form open on a server error', async () => {
@@ -122,7 +131,8 @@ it('keeps the entered creation data and form open on a server error', async () =
   for (const [label, value] of [['Nombre', 'Otra'], ['Apellido', 'Persona'], ['DNI', '20123457'], ['Teléfono', '3415551234'], ['Fecha de nacimiento', '1990-01-01']] as const) {
     expect(screen.getByLabelText(label)).toHaveValue(value);
   }
-  expect(screen.queryByText('Persona guardada correctamente.')).not.toBeInTheDocument();
+  expect(screen.queryByText('Persona guardada correctamente')).not.toBeInTheDocument();
+  expect(screen.queryByRole('dialog', { name: 'Persona guardada correctamente' })).not.toBeInTheDocument();
 });
 
 it('closes a successful edit, refreshes the list and clears its notice on the next edit', async () => {
@@ -145,7 +155,8 @@ it('closes a successful edit, refreshes the list and clears its notice on the ne
   expect(screen.getByRole('heading', { name: 'Personas' })).toBeVisible();
   expect(screen.getByRole('table')).toBeVisible();
   expect(screen.getByText('3515559999')).toBeVisible();
-  expect(screen.queryByText('Persona guardada correctamente.')).not.toBeInTheDocument();
+  expect(screen.queryByText('Persona guardada correctamente')).not.toBeInTheDocument();
+  expect(screen.queryByRole('dialog', { name: 'Persona guardada correctamente' })).not.toBeInTheDocument();
   expect(screen.queryByText('PIN temporal del Portal')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
   expect(screen.queryByText('Cambios guardados correctamente.')).not.toBeInTheDocument();
@@ -167,7 +178,8 @@ it('keeps the reset PIN dialog within the existing edit flow', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Generar nuevo PIN' }));
   expect(await screen.findByRole('dialog', { name: 'Nuevo PIN del Portal' })).toHaveTextContent('5678');
   expect(screen.getByRole('heading', { name: 'Editar Persona' })).toBeInTheDocument();
-  expect(screen.queryByText('Persona guardada correctamente.')).not.toBeInTheDocument();
+  expect(screen.queryByText('Persona guardada correctamente')).not.toBeInTheDocument();
+  expect(screen.queryByRole('dialog', { name: 'Persona guardada correctamente' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Copiar PIN' }));
   await waitFor(() => expect(writeText).toHaveBeenCalledWith('5678'));
   expect(await screen.findByText('PIN copiado')).toBeVisible();
