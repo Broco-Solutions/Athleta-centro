@@ -12,22 +12,24 @@ export class PeopleService {
   constructor(private readonly prisma: PrismaService, private readonly activity: PersonActivityService) {}
 
   async create(input: CreatePersonDto) {
+    const { personId, initialPin } = await this.prisma.$transaction((tx) => this.createWithinTransaction(input, tx));
+    return { ...(await this.get(personId)), initialPin };
+  }
+
+  async createWithinTransaction(input: CreatePersonDto, tx: Prisma.TransactionClient) {
     const normalizedDni = this.validateDni(input.dni);
     const phone = this.validatePhone(input.phone);
     const emergencyContactPhone = this.emergencyPhone(input.emergencyContactPhone);
-    const existing = await this.prisma.person.findUnique({ where: { normalizedDni }, select: { id: true } });
+    const existing = await tx.person.findUnique({ where: { normalizedDni }, select: { id: true } });
     if (existing) this.duplicateDni();
     this.validateBirthDate(input.birthDate);
-    if (input.socialWorkId) await this.validateSelectableSocialWork(input.socialWorkId);
+    if (input.socialWorkId) await this.validateSelectableSocialWork(input.socialWorkId, tx);
     try {
-      const pin = this.generatePin();
-      const pinHash = await argon2.hash(pin, { type: argon2.argon2id });
-      const person = await this.prisma.$transaction(async (tx) => {
-        const created = await tx.person.create({ data: this.createData(input, normalizedDni, phone, emergencyContactPhone) });
-        await tx.portalCredential.create({ data: { personId: created.id, pinHash, mustChangePin: true } });
-        return created;
-      });
-      return { ...(await this.serialize(person)), initialPin: pin };
+      const initialPin = this.generatePin();
+      const pinHash = await argon2.hash(initialPin, { type: argon2.argon2id });
+      const person = await tx.person.create({ data: this.createData(input, normalizedDni, phone, emergencyContactPhone) });
+      await tx.portalCredential.create({ data: { personId: person.id, pinHash, mustChangePin: true } });
+      return { personId: person.id, initialPin };
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') this.duplicateDni();
       throw error;
@@ -125,8 +127,8 @@ export class PeopleService {
   private createData(input: CreatePersonDto, normalizedDni: string, phone: string, emergencyContactPhone: string | null): Prisma.PersonUncheckedCreateInput {
     return { firstName: input.firstName.trim(), lastName: input.lastName.trim(), dni: normalizedDni, normalizedDni, phone, birthDate: this.date(input.birthDate), email: input.email?.trim() || null, normalizedEmail: normalizeEmail(input.email), emergencyContactName: input.emergencyContactName?.trim() || null, emergencyContactPhone, socialWorkId: input.socialWorkId ?? null, affiliateNumber: input.socialWorkId ? input.affiliateNumber?.trim() || null : null };
   }
-  private async validateSelectableSocialWork(id: string): Promise<void> {
-    const socialWork = await this.prisma.socialWork.findUnique({ where: { id }, select: { isSelectable: true } });
+  private async validateSelectableSocialWork(id: string, tx: Prisma.TransactionClient = this.prisma): Promise<void> {
+    const socialWork = await tx.socialWork.findUnique({ where: { id }, select: { isSelectable: true } });
     if (!socialWork?.isSelectable) throw new BadRequestException({ code: 'SOCIAL_WORK_NOT_SELECTABLE', message: 'Social work is not selectable' });
   }
   private validateDni(value: string): string {

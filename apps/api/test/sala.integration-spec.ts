@@ -11,7 +11,7 @@ import { SalaService } from '../src/sala/sala.service';
 
 describe('Sala configuration API', () => {
   let app: INestApplication; let prisma: PrismaService; let users: InternalUserService; let auth: AuthService; let sala: SalaService;
-  async function cleanSalaFixtures() { await prisma.clinicalPatient.deleteMany(); await prisma.physicalTestResult.deleteMany(); await prisma.physicalEvaluation.deleteMany(); await prisma.physicalTestDefinition.deleteMany(); await prisma.routineExercise.deleteMany(); await prisma.routineDay.deleteMany(); await prisma.routine.deleteMany(); await prisma.exerciseDefinition.deleteMany(); await prisma.salaOccurrence.deleteMany(); await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaServiceType.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.salaScheduleException.deleteMany(); await prisma.salaScheduleSlot.deleteMany(); await prisma.salaPlan.deleteMany(); await prisma.salaConfiguration.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); await prisma.portalCredential.deleteMany(); await prisma.person.deleteMany(); }
+  async function cleanSalaFixtures() { await prisma.clinicalPatient.deleteMany(); await prisma.physicalTestResult.deleteMany(); await prisma.physicalEvaluation.deleteMany(); await prisma.physicalTestDefinition.deleteMany(); await prisma.routineExercise.deleteMany(); await prisma.routineDay.deleteMany(); await prisma.routine.deleteMany(); await prisma.exerciseDefinition.deleteMany(); await prisma.salaOccurrence.deleteMany(); await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaServiceType.deleteMany(); await prisma.salaCharge.deleteMany(); await prisma.salaBillingConfiguration.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.salaScheduleException.deleteMany(); await prisma.salaScheduleSlot.deleteMany(); await prisma.salaPlan.deleteMany(); await prisma.salaConfiguration.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); await prisma.portalCredential.deleteMany(); await prisma.person.deleteMany(); }
   beforeAll(async () => { app = (await Test.createTestingModule({ imports: [AppModule] }).compile()).createNestApplication(); app.use(cookieParser()); app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })); app.setGlobalPrefix('api'); await app.init(); prisma = app.get(PrismaService); users = app.get(InternalUserService); auth = app.get(AuthService); sala = app.get(SalaService); await cleanSalaFixtures(); });
   afterEach(cleanSalaFixtures);
   afterAll(() => app.close());
@@ -52,7 +52,105 @@ describe('Sala configuration API', () => {
   });
   it('enforces catalog permissions independently from schedule permissions', async () => {
     const authn = await session(Role.PROFESSOR);
+    const plan = await prisma.salaPlan.create({ data: { name: 'Disponible', monthlyAmount: 1000 } });
+    await request(app.getHttpServer()).get('/api/sala/plans').set('Cookie', authn.cookie).expect(200);
+    await request(app.getHttpServer()).get('/api/team/users').set('Cookie', authn.cookie).expect(403);
     await request(app.getHttpServer()).post('/api/sala/plans').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ name: 'No', monthlyAmount: 1 }).expect(403);
+    await request(app.getHttpServer()).patch(`/api/sala/plans/${plan.id}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ name: 'No', monthlyAmount: 1 }).expect(403);
+    await request(app.getHttpServer()).post(`/api/sala/plans/${plan.id}/retire`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).expect(403);
+    expect(await prisma.salaPlan.findUnique({ where: { id: plan.id } })).toMatchObject({ name: 'Disponible', isSelectable: true });
+  });
+  it.each([Role.ADMINISTRATIVE, Role.GENERAL_ADMIN])('preserves plan reading and administration for %s', async (role) => {
+    const authn = await session(role);
+    const created = await request(app.getHttpServer()).post('/api/sala/plans').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ name: 'Mensual', monthlyAmount: 1000 }).expect(201);
+    await request(app.getHttpServer()).get('/api/sala/plans').set('Cookie', authn.cookie).expect(200);
+    await request(app.getHttpServer()).patch(`/api/sala/plans/${created.body.data.id}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ name: 'Actualizado', monthlyAmount: 2000 }).expect(200);
+    await request(app.getHttpServer()).post(`/api/sala/plans/${created.body.data.id}/retire`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).expect(201);
+  });
+  it('lists only eligible professors with the minimum Sala projection', async () => {
+    const authn = await session(Role.PROFESSOR);
+    const active = await users.create({ firstName: 'Ana', lastName: 'Alfa', email: 'active@sala.test', roles: [Role.PROFESSOR] });
+    const inactive = await users.create({ firstName: 'Ina', lastName: 'Inactiva', email: 'inactive@sala.test', roles: [Role.PROFESSOR] });
+    await prisma.internalUser.update({ where: { id: inactive.id }, data: { status: 'INACTIVE' } });
+    const admin = await users.create({ firstName: 'Admin', lastName: 'Administrativa', email: 'admin@sala.test', roles: [Role.ADMINISTRATIVE] });
+    const multi = await users.create({ firstName: 'Ana', lastName: 'Zeta', email: 'multi@sala.test', roles: [Role.PROFESSOR, Role.KINESIOLOGIST] });
+    const clinical = await session(Role.KINESIOLOGIST);
+    const response = await request(app.getHttpServer()).get('/api/sala/professors').set('Cookie', authn.cookie).expect(200);
+    expect(response.body.data).toEqual([{ id: active.id, firstName: 'Ana', lastName: 'Alfa' }, expect.objectContaining({ firstName: 'Sala', lastName: 'User' }), { id: multi.id, firstName: 'Ana', lastName: 'Zeta' }]);
+    for (const option of response.body.data) expect(Object.keys(option).sort()).toEqual(['firstName', 'id', 'lastName']);
+    for (const excluded of [inactive.id, admin.id]) expect(response.body.data.map((option: { id: string }) => option.id)).not.toContain(excluded);
+    expect(JSON.stringify(response.body)).not.toMatch(/email|phone|dni|address|credential|password|roles|status|birthDate|profession/);
+    await request(app.getHttpServer()).get('/api/sala/professors').set('Cookie', clinical.cookie).expect(403);
+  });
+  const studentPayload = { firstName: 'Ana', lastName: 'Sintética', dni: '30123456', phone: '(341) 555-1234', birthDate: '1990-01-01', emergencyContactName: 'Contacto', emergencyContactPhone: '11 1234-5678' };
+  const operationalToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  it.each([false, true])('creates a new Sala student atomically as Professor and returns the PIN only once (billing=%s)', async (billing) => {
+    const authn = await session(Role.PROFESSOR);
+    const professor = await prisma.internalUser.findFirstOrThrow({ where: { roles: { some: { role: Role.PROFESSOR } } } });
+    const plan = await prisma.salaPlan.create({ data: { name: 'Alta', monthlyAmount: 1000 } });
+    if (billing) await prisma.salaBillingConfiguration.create({ data: { id: 'default', cutoverDate: new Date(`${operationalToday()}T00:00:00Z`) } });
+    const result = await request(app.getHttpServer()).post('/api/sala/students').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ ...studentPayload, planId: plan.id, mainProfessorId: professor.id }).expect(201);
+    expect(result.body.data).toMatchObject({ dni: '30123456', phone: '3415551234', hasSalaParticipation: true, contexts: ['SALA'], status: 'ACTIVE' });
+    expect(result.body.data.initialPin).toMatch(/^\d{4}$/);
+    const id = result.body.data.id as string;
+    expect(await prisma.person.count({ where: { id } })).toBe(1);
+    expect(await prisma.portalCredential.count({ where: { personId: id } })).toBe(1);
+    const credential = await prisma.portalCredential.findUniqueOrThrow({ where: { personId: id } });
+    expect(credential.pinHash).not.toBe(result.body.data.initialPin);
+    expect(credential.mustChangePin).toBe(true);
+    const participations = await prisma.salaParticipation.findMany({ where: { personId: id, endDate: null }, include: { planAssignments: true } });
+    expect(participations).toHaveLength(1);
+    expect(participations[0]).toMatchObject({ mainProfessorId: professor.id, planId: plan.id, startDate: new Date(`${operationalToday()}T00:00:00Z`) });
+    expect(participations[0]?.planAssignments).toHaveLength(1);
+    expect(participations[0]?.planAssignments[0]).toMatchObject({ planId: plan.id, effectiveFrom: new Date(`${operationalToday()}T00:00:00Z`) });
+    const charges = await prisma.salaCharge.findMany({ where: { personId: id } });
+    expect(charges).toHaveLength(billing ? 1 : 0);
+    if (billing) expect(charges[0]).toMatchObject({ salaParticipationId: participations[0]?.id, planId: plan.id, kind: 'MONTHLY', planNameSnapshot: plan.name, chargeDate: new Date(`${operationalToday()}T00:00:00Z`) });
+    const read = await request(app.getHttpServer()).get(`/api/people/${id}`).set('Cookie', authn.cookie).expect(200);
+    expect(read.body.data.initialPin).toBeUndefined();
+  });
+  it.each(['professor', 'plan'])('rolls back Person, credential and participation on invalid %s', async (invalid) => {
+    const authn = await session(Role.PROFESSOR);
+    const professor = await prisma.internalUser.findFirstOrThrow({ where: { roles: { some: { role: Role.PROFESSOR } } } });
+    const plan = await prisma.salaPlan.create({ data: { name: 'Rollback alta', monthlyAmount: 1000, isSelectable: invalid !== 'plan' } });
+    const counts = { people: await prisma.person.count(), credentials: await prisma.portalCredential.count(), participations: await prisma.salaParticipation.count(), assignments: await prisma.salaPlanAssignment.count(), charges: await prisma.salaCharge.count() };
+    const result = await request(app.getHttpServer()).post('/api/sala/students').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ ...studentPayload, mainProfessorId: invalid === 'professor' ? crypto.randomUUID() : professor.id, planId: plan.id }).expect(400);
+    expect(result.body.code).toBe(invalid === 'professor' ? 'SALA_PROFESSOR_INVALID' : 'SALA_PLAN_INVALID');
+    expect(await prisma.person.findUnique({ where: { normalizedDni: studentPayload.dni } })).toBeNull();
+    expect(await prisma.person.count()).toBe(counts.people);
+    expect(await prisma.portalCredential.count()).toBe(counts.credentials);
+    expect(await prisma.salaParticipation.count()).toBe(counts.participations);
+    expect(await prisma.salaPlanAssignment.count()).toBe(counts.assignments);
+    expect(await prisma.salaCharge.count()).toBe(counts.charges);
+  });
+  it('rejects duplicate DNI without incorporating the existing Person', async () => {
+    const authn = await session(Role.PROFESSOR);
+    const professor = await prisma.internalUser.findFirstOrThrow({ where: { roles: { some: { role: Role.PROFESSOR } } } });
+    const plan = await prisma.salaPlan.create({ data: { name: 'Duplicado', monthlyAmount: 1000 } });
+    const existing = await request(app.getHttpServer()).post('/api/people').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(studentPayload).expect(201);
+    const result = await request(app.getHttpServer()).post('/api/sala/students').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ ...studentPayload, dni: '30.123.456', mainProfessorId: professor.id, planId: plan.id }).expect(409);
+    expect(result.body.code).toBe('PERSON_DNI_ALREADY_EXISTS');
+    expect(await prisma.person.count()).toBe(1);
+    expect(await prisma.portalCredential.count()).toBe(1);
+    expect(await prisma.salaParticipation.count({ where: { personId: existing.body.data.id } })).toBe(0);
+  });
+  it('incorporates an existing Person as Professor without replacing the Portal credential', async () => {
+    const authn = await session(Role.PROFESSOR);
+    const professor = await prisma.internalUser.findFirstOrThrow({ where: { roles: { some: { role: Role.PROFESSOR } } } });
+    const plan = await prisma.salaPlan.create({ data: { name: 'Existente', monthlyAmount: 1000 } });
+    const created = await request(app.getHttpServer()).post('/api/people').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(studentPayload).expect(201);
+    const id = created.body.data.id as string;
+    const credential = await prisma.portalCredential.findUniqueOrThrow({ where: { personId: id } });
+    const joined = await request(app.getHttpServer()).post('/api/sala/participations').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ personId: id, planId: plan.id, mainProfessorId: professor.id, startDate: operationalToday() }).expect(201);
+    expect(joined.body.data).toMatchObject({ personId: id, planId: plan.id, mainProfessorId: professor.id, endDate: null });
+    expect(joined.body.data.initialPin).toBeUndefined();
+    expect(await prisma.person.count()).toBe(1);
+    expect(await prisma.portalCredential.findUnique({ where: { personId: id } })).toEqual(credential);
+  });
+  it('rejects new students for a clinical actor without participation permission', async () => {
+    const authn = await session(Role.KINESIOLOGIST);
+    await request(app.getHttpServer()).post('/api/sala/students').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ ...studentPayload, mainProfessorId: crypto.randomUUID(), planId: crypto.randomUUID() }).expect(403);
+    expect(await prisma.person.count()).toBe(0);
   });
   it('retires services without deleting their historical catalog row', async () => {
     const authn = await session(Role.GENERAL_ADMIN);

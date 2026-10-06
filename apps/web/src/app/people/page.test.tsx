@@ -11,7 +11,7 @@ const session = { user: { id: 'u1', firstName: 'Test', lastName: 'User', email: 
 const person = { id: '10000000-0000-4000-8000-000000000001', firstName: 'Ana', lastName: 'Sintética', dni: '20.123.456', phone: '3515550101', birthDate: '1992-03-10', email: null, emergencyContactName: null, emergencyContactPhone: null, socialWorkId: null, affiliateNumber: null, status: 'INACTIVE', contexts: [], hasSalaParticipation: false, isClinicalPatient: false };
 function renderPage(): void { const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }); render(<QueryClientProvider client={client}><PeoplePage /></QueryClientProvider>); }
 beforeAll(() => { globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch; server.listen({ onUnhandledRequest: 'error' }); });
-beforeEach(() => { server.use(http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: [{ id: 'work-a', name: 'Cobertura A', isSelectable: true }, { id: 'work-retired', name: 'Cobertura histórica', isSelectable: false }, { id: 'other-retired', name: 'Otra retirada', isSelectable: false }] })),http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: session })), http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: [person], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } }))); });
+beforeEach(() => { server.use(http.get(`http://localhost:3000/api/sala/participations/person/${person.id}`, () => HttpResponse.json({ data: [] })),http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: [{ id: 'work-a', name: 'Cobertura A', isSelectable: true }, { id: 'work-retired', name: 'Cobertura histórica', isSelectable: false }, { id: 'other-retired', name: 'Otra retirada', isSelectable: false }] })),http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: session })), http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: [person], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } }))); });
 afterEach(() => server.resetHandlers()); afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 
 it('renders and searches the People list through HTTP', async () => { let search = ''; server.use(http.get('http://localhost:3000/api/people', ({ request }) => { search = new URL(request.url).searchParams.get('search') ?? ''; return HttpResponse.json({ data: [person], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } }); })); renderPage(); expect(await screen.findByText('Sintética, Ana')).toBeInTheDocument(); fireEvent.change(screen.getByLabelText('Buscar Personas'), { target: { value: '20.123' } }); await waitFor(() => expect(search).toBe('20.123')); });
@@ -52,7 +52,7 @@ it('rejects a future birth date locally when editing an existing Person', async 
     http.patch(`http://localhost:3000/api/people/${person.id}`, () => { patches += 1; return HttpResponse.json({ data: person }); }),
     http.get(`http://localhost:3000/api/sala/participations/person/${person.id}`, () => HttpResponse.json({ data: [] })),
     http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [] })),
-    http.get('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/professors', () => HttpResponse.json({ data: [] })),
   );
   renderPage();
   fireEvent.click(await screen.findByText('Sintética, Ana'));
@@ -143,7 +143,7 @@ it('closes a successful edit, refreshes the list and clears its notice on the ne
     http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: [{ ...person, phone: patched ? '3515559999' : person.phone }], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } })),
     http.get(`http://localhost:3000/api/sala/participations/person/${person.id}`, () => HttpResponse.json({ data: [] })),
     http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [] })),
-    http.get('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/professors', () => HttpResponse.json({ data: [] })),
   );
   renderPage();
   fireEvent.click(await screen.findByText('Sintética, Ana'));
@@ -170,7 +170,7 @@ it('keeps the reset PIN dialog within the existing edit flow', async () => {
     http.post(`http://localhost:3000/api/people/${person.id}/reset-portal-pin`, () => HttpResponse.json({ data: '5678' })),
     http.get(`http://localhost:3000/api/sala/participations/person/${person.id}`, () => HttpResponse.json({ data: [] })),
     http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [] })),
-    http.get('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/professors', () => HttpResponse.json({ data: [] })),
   );
   renderPage();
   fireEvent.click(await screen.findByText('Sintética, Ana'));
@@ -233,7 +233,7 @@ it('normalizes DNI and phone before PATCH', async () => {
     http.patch(`http://localhost:3000/api/people/${person.id}`, async ({ request }) => { patched = await request.json(); return HttpResponse.json({ data: person }); }),
     http.get(`http://localhost:3000/api/sala/participations/person/${person.id}`, () => HttpResponse.json({ data: [] })),
     http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [] })),
-    http.get('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/professors', () => HttpResponse.json({ data: [] })),
   );
   renderPage();
   fireEvent.click(await screen.findByText('Sintética, Ana'));
@@ -274,7 +274,7 @@ it('keeps the retired current coverage editable, excludes other retired works an
     http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: [covered], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } })),
     http.get(`http://localhost:3000/api/sala/participations/person/${person.id}`, () => HttpResponse.json({ data: [] })),
     http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [] })),
-    http.get('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/professors', () => HttpResponse.json({ data: [] })),
     http.patch(`http://localhost:3000/api/people/${person.id}`, async ({ request }) => { sent = await request.json() as Record<string, unknown>; return HttpResponse.json({ data: { ...covered, ...sent } }); }),
   );
   renderPage();
@@ -360,7 +360,7 @@ it('preloads emergency data on edit and includes both empty fields in PATCH when
     http.patch(`http://localhost:3000/api/people/${person.id}`, async ({ request }) => { patched = await request.json(); return HttpResponse.json({ data: person }); }),
     http.get(`http://localhost:3000/api/sala/participations/person/${person.id}`, () => HttpResponse.json({ data: [] })),
     http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [] })),
-    http.get('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/professors', () => HttpResponse.json({ data: [] })),
   );
   renderPage();
   await screen.findByText('Sintética, Ana');
@@ -372,4 +372,35 @@ it('preloads emergency data on edit and includes both empty fields in PATCH when
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
   expect(await screen.findByText('Cambios guardados correctamente.')).toBeVisible();
   expect(patched).toMatchObject({ emergencyContactName: '', emergencyContactPhone: '' });
+});
+
+it('lets a Professor incorporate to Sala through minimal selectors without Team or catalog administration permissions', async () => {
+  let joined: unknown;
+  let teamReads = 0;
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: [...session.permissions, 'SALA_RELATION_READ', 'SALA_PARTICIPATION_MANAGE'] } })),
+    http.get('http://localhost:3000/api/team/users', () => { teamReads++; return HttpResponse.json({ data: [] }); }),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'plan', name: 'Mensual', isSelectable: true }] })),
+    http.get('http://localhost:3000/api/sala/professors', () => HttpResponse.json({ data: [{ id: 'professor', firstName: 'Ana', lastName: 'Profesora' }] })),
+    http.post('http://localhost:3000/api/sala/participations', async ({ request }) => { joined = await request.json(); return HttpResponse.json({ data: { id: 'joined' } }, { status: 201 }); }),
+  );
+  renderPage(); fireEvent.click(await screen.findByText('Sintética, Ana'));
+  await screen.findByRole('option', { name: 'Mensual' }); await screen.findByRole('option', { name: 'Profesora, Ana' });
+  fireEvent.change(screen.getByLabelText('Plan'), { target: { value: 'plan' } });
+  fireEvent.change(screen.getByLabelText('Profesor principal'), { target: { value: 'professor' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Incorporar a Sala' }));
+  await waitFor(() => expect(joined).toMatchObject({ personId: person.id, planId: 'plan', mainProfessorId: 'professor' })); expect(teamReads).toBe(0);
+});
+it.each([true, false])('shows Sala relationship without management actions or catalog requests (active=%s)', async (active) => {
+  let catalogReads = 0;
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: [...session.permissions, 'SALA_RELATION_READ'] } })),
+    http.get(`http://localhost:3000/api/sala/participations/person/${person.id}`, () => HttpResponse.json({ data: active ? [{ id: 'participation', startDate: '2026-01-01', endDate: null, plan: { name: 'Mensual' }, mainProfessor: { firstName: 'Ana', lastName: 'Profesora' } }] : [] })),
+    http.get('http://localhost:3000/api/sala/plans', () => { catalogReads++; return HttpResponse.json({ data: [] }); }),
+    http.get('http://localhost:3000/api/sala/professors', () => { catalogReads++; return HttpResponse.json({ data: [] }); }),
+  );
+  renderPage(); fireEvent.click(await screen.findByText('Sintética, Ana'));
+  await screen.findByText(active ? 'Mensual' : 'Sin participación activa en Sala.');
+  for (const name of ['Incorporar a Sala', 'Dar de baja']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Cambiar Plan')).not.toBeInTheDocument(); expect(screen.queryByLabelText('Cambiar Profesor')).not.toBeInTheDocument(); expect(catalogReads).toBe(0);
 });

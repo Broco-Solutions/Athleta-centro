@@ -7,7 +7,7 @@ import SalaConfigurationPage from './page';
 
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
-const session = { user: { id: 'admin', firstName: 'Lisa', lastName: 'Simpson', email: 'lisa@example.test' }, roles: ['GENERAL_ADMIN'], permissions: ['SALA_SCHEDULE_MANAGE', 'SALA_PHYSICAL_EVALUATION_READ', 'SALA_PHYSICAL_TEST_CATALOG_MANAGE'], mustChangePassword: false, csrfToken: 'csrf' };
+const session = { user: { id: 'admin', firstName: 'Lisa', lastName: 'Simpson', email: 'lisa@example.test' }, roles: ['GENERAL_ADMIN'], permissions: ['SALA_PARTICIPATION_MANAGE', 'SALA_PLAN_CATALOG_MANAGE', 'SALA_SCHEDULE_MANAGE', 'SALA_PHYSICAL_EVALUATION_READ', 'SALA_PHYSICAL_TEST_CATALOG_MANAGE'], mustChangePassword: false, csrfToken: 'csrf' };
 const tests: Array<{ id: string; name: string; type: string; description: string | null; isActive: boolean }> = [];
 
 beforeAll(() => {
@@ -51,4 +51,22 @@ it('opens the real-field modal, creates a test and refreshes the listing', async
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Nuevo test físico' })).not.toBeInTheDocument());
   expect(await screen.findByText('Sentadilla')).toBeInTheDocument();
   expect(screen.getByText(/repeticiones · Cantidad en un minuto/)).toBeInTheDocument();
+});
+
+it.each([false, true])('shows plan administration only with its permission (manage=%s), while preserving schedules', async (manage) => {
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: [manage ? 'ADMINISTRATIVE' : 'PROFESSOR'], permissions: ['SALA_PARTICIPATION_MANAGE', 'SALA_SCHEDULE_MANAGE', ...(manage ? ['SALA_PLAN_CATALOG_MANAGE'] : [])] } })),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'plan', name: 'Mensual', monthlyAmount: '1000', isSelectable: true }] })),
+  );
+  renderPage(); fireEvent.click(await screen.findByText('Planes'));
+  const section = screen.getByText('Planes').closest('details')!;
+  await within(section).findByText(/Mensual/);
+  await waitFor(() => expect(within(screen.getByRole('navigation', { name: 'Navegación principal' })).getByRole('link', { name: 'Sala' })).toBeInTheDocument());
+  for (const name of ['Nuevo plan', 'Editar', 'Retirar']) {
+    if (manage) expect(within(section).getByRole('button', { name })).toBeInTheDocument();
+    else expect(within(section).queryByRole('button', { name })).not.toBeInTheDocument();
+  }
+  fireEvent.click(screen.getByText('Horarios semanales'));
+  expect(screen.getByRole('button', { name: 'Guardar horarios' })).toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: '+ Agregar franja' })).toHaveLength(7);
 });

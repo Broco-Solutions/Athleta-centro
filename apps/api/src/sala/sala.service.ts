@@ -1,14 +1,16 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
 import { FinancialAdjustmentKind, Prisma, Role, RoutineStatus, SalaChargeKind, SalaOccurrenceOrigin, SalaOccurrenceStatus, SalaScheduleExceptionType, InternalUserStatus, SalaWeekday } from '@prisma/client';
+import { PeopleService } from '../people/people.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceCatalogService } from '../finance/finance.service';
-import type { ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
+import type { CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
 const SALA_DEFAULT_DURATION_MINUTES = 60;
+const eligibleProfessorWhere = { status: InternalUserStatus.ACTIVE, roles: { some: { role: Role.PROFESSOR } } } satisfies Prisma.InternalUserWhereInput;
 @Injectable()
 export class SalaService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(SalaService.name);
   private billingTimer?: NodeJS.Timeout;
-  constructor(private readonly prisma: PrismaService, private readonly financeCatalog: FinanceCatalogService) {}
+  constructor(private readonly prisma: PrismaService, private readonly financeCatalog: FinanceCatalogService, private readonly people: PeopleService) {}
   async onApplicationBootstrap(): Promise<void> {
     await this.runScheduledBilling();
     this.billingTimer = setInterval(() => void this.runScheduledBilling(), 24 * 60 * 60 * 1000);
@@ -195,20 +197,39 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
   async replaceSlot(id: string, input: ReplaceScheduleSlotDto, failureAfterMutations = false) { const start = this.time(input.startTime); this.validateWindow(start, input.durationMinutes ?? 60); return this.prisma.$transaction(async (tx) => { const old = await tx.salaScheduleSlot.findUnique({ where: { id } }); if (!old || !old.isActive) throw new NotFoundException({ code: 'SALA_SCHEDULE_NOT_FOUND', message: 'Schedule slot not found' }); const effective = this.date(input.effectiveDate); await tx.fixedSalaBooking.updateMany({ where: { scheduleSlotId: id, OR: [{ endDate: null }, { endDate: { gte: effective } }] }, data: { endDate: new Date(effective.getTime() - 86400000) } }); await tx.oneOffReservation.updateMany({ where: { scheduleSlotId: id, date: { gte: effective }, cancelledAt: null }, data: { cancelledAt: new Date() } }); if (failureAfterMutations) throw new Error('SIMULATED_SCHEDULE_REPLACEMENT_FAILURE'); await tx.salaScheduleSlot.update({ where: { id }, data: { isActive: false, endedAt: effective } }); return tx.salaScheduleSlot.create({ data: { weekday: input.weekday, startTime: start, startsAt: effective, durationMinutes: input.durationMinutes ?? old.durationMinutes, specificCapacity: input.specificCapacity ?? null }, include: { exceptions: true } }); }); }
   async createSlot(input: ScheduleSlotDto) { const start = this.time(input.startTime); const duration = input.durationMinutes ?? 60; this.validateWindow(start, duration); const endMinutes = this.minutes(start) + duration; if (endMinutes > 24 * 60) throw new BadRequestException({ code: 'SALA_SCHEDULE_END_INVALID', message: 'Schedule must end before midnight' }); const existing = await this.prisma.salaScheduleSlot.findMany({ where: { weekday: input.weekday, isActive: true } }); if (existing.some((slot) => this.overlaps(this.minutes(slot.startTime), slot.durationMinutes, this.minutes(start), duration))) throw new ConflictException({ code: 'SALA_SCHEDULE_OVERLAP', message: 'Schedule windows cannot overlap' }); try { return await this.prisma.salaScheduleSlot.create({ data: { weekday: input.weekday, startTime: start, durationMinutes: duration, specificCapacity: input.specificCapacity ?? null } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_SCHEDULE_DUPLICATE', message: 'Schedule window already exists' }); throw error; } }
   async addException(slotId: string, input: ScheduleExceptionDto) { if (input.type === SalaScheduleExceptionType.CLOSURE && input.capacityOverride != null) throw new BadRequestException({ code: 'SALA_EXCEPTION_CAPACITY_INVALID', message: 'Closure cannot define capacity override' }); if (input.type === SalaScheduleExceptionType.CAPACITY_OVERRIDE && input.capacityOverride == null) throw new BadRequestException({ code: 'SALA_EXCEPTION_CAPACITY_REQUIRED', message: 'Capacity override is required' }); try { const capacityOverride = input.type === SalaScheduleExceptionType.CAPACITY_OVERRIDE ? (input.capacityOverride ?? null) : null; return await this.prisma.salaScheduleException.create({ data: { scheduleSlotId: slotId, date: this.date(input.date), type: input.type, capacityOverride } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_EXCEPTION_DUPLICATE', message: 'Exception already exists for this date' }); if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') throw new NotFoundException({ code: 'SALA_SCHEDULE_NOT_FOUND', message: 'Schedule slot not found' }); throw error; } }
+  async listProfessors() {
+    return this.prisma.internalUser.findMany({
+      where: eligibleProfessorWhere,
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+  }
+
+  async createStudent(input: CreateSalaStudentDto) {
+    const { personId, initialPin } = await this.prisma.$transaction(async (tx) => {
+      const created = await this.people.createWithinTransaction(input, tx);
+      await this.joinWithinTransaction(tx, { personId: created.personId, mainProfessorId: input.mainProfessorId, planId: input.planId, startDate: this.todayOperational() });
+      return created;
+    });
+    return { ...(await this.people.get(personId)), initialPin };
+  }
+
   async join(input: { personId: string; mainProfessorId: string; planId: string; startDate: string }) {
-    const [person, professor, plan] = await Promise.all([this.prisma.person.findUnique({ where: { id: input.personId }, select: { id: true } }), this.prisma.internalUser.findUnique({ where: { id: input.mainProfessorId }, include: { roles: true } }), this.prisma.salaPlan.findUnique({ where: { id: input.planId } })]);
+    return this.prisma.$transaction((tx) => this.joinWithinTransaction(tx, input));
+  }
+
+  private async joinWithinTransaction(tx: Prisma.TransactionClient, input: { personId: string; mainProfessorId: string; planId: string; startDate: string }) {
+    const [person, professor, plan] = await Promise.all([tx.person.findUnique({ where: { id: input.personId }, select: { id: true } }), tx.internalUser.findFirst({ where: { id: input.mainProfessorId, ...eligibleProfessorWhere }, select: { id: true } }), tx.salaPlan.findUnique({ where: { id: input.planId } })]);
     if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
-    if (!professor || professor.status !== InternalUserStatus.ACTIVE || !professor.roles.some((role) => role.role === Role.PROFESSOR)) throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Professor is not eligible' });
+    if (!professor) throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Professor is not eligible' });
     if (!plan || !plan.isSelectable) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'Plan is not selectable' });
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        const startDate = this.date(input.startDate);
-        const participation = await tx.salaParticipation.create({ data: { personId: input.personId, mainProfessorId: input.mainProfessorId, planId: input.planId, startDate, planAssignments: { create: { planId: input.planId, effectiveFrom: startDate } } }, include: { plan: true, mainProfessor: true } });
-        const billing = await tx.salaBillingConfiguration.findUnique({ where: { id: 'default' } });
-        const today = this.date(this.todayOperational());
-        if (billing && startDate <= today && startDate >= billing.cutoverDate) await tx.salaCharge.create({ data: { personId: input.personId, salaParticipationId: participation.id, planId: plan.id, kind: SalaChargeKind.MONTHLY, year: startDate.getUTCFullYear(), month: startDate.getUTCMonth() + 1, chargeDate: startDate, concept: `Plan de Sala ${plan.name} ${startDate.getUTCFullYear()}-${String(startDate.getUTCMonth() + 1).padStart(2, '0')}`, amount: plan.monthlyAmount, planNameSnapshot: plan.name } });
-        return participation;
-      });
+      const startDate = this.date(input.startDate);
+      const participation = await tx.salaParticipation.create({ data: { personId: input.personId, mainProfessorId: input.mainProfessorId, planId: input.planId, startDate, planAssignments: { create: { planId: input.planId, effectiveFrom: startDate } } }, include: { plan: true, mainProfessor: true } });
+      const billing = await tx.salaBillingConfiguration.findUnique({ where: { id: 'default' } });
+      const today = this.date(this.todayOperational());
+      if (billing && startDate <= today && startDate >= billing.cutoverDate) await tx.salaCharge.create({ data: { personId: input.personId, salaParticipationId: participation.id, planId: plan.id, kind: SalaChargeKind.MONTHLY, year: startDate.getUTCFullYear(), month: startDate.getUTCMonth() + 1, chargeDate: startDate, concept: `Plan de Sala ${plan.name} ${startDate.getUTCFullYear()}-${String(startDate.getUTCMonth() + 1).padStart(2, '0')}`, amount: plan.monthlyAmount, planNameSnapshot: plan.name } });
+      return participation;
     } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_ACTIVE_PARTICIPATION_EXISTS', message: 'Person already has an active Sala participation' }); throw error; }
   }
   async listParticipations(personId: string) { return this.prisma.salaParticipation.findMany({ where: { personId }, orderBy: { startDate: 'desc' }, include: { plan: true, mainProfessor: true } }); }

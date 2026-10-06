@@ -1,3 +1,4 @@
+import { CreatePersonDto } from '../people/person.dto';
 import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -63,3 +64,16 @@ export class FinancialReasonDto { @ApiProperty({ type: String, maxLength: 500 })
 export class SalaChargeAdjustmentDto extends FinancialReasonDto { @ApiProperty({ type: String, pattern: '^-?\\d+$' }) @IsString() @Matches(/^-?\d+$/) amount!: string; }
 export class SalaOpeningBalanceDto extends FinancialReasonDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) chargeDate!: string; @ApiProperty({ type: String, pattern: '^\\d+$' }) @IsString() @Matches(/^\d+$/) amount!: string; @ApiPropertyOptional({ type: String, maxLength: 200 }) @IsOptional() @IsString() @MaxLength(200) concept?: string; }
 export class ActivateSalaBillingDto { @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) cutoverDate!: string; }
+
+export class CreateSalaStudentDto extends CreatePersonDto {
+  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() mainProfessorId!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() planId!: string;
+}
+export class SalaProfessorOptionDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String }) firstName!: string;
+  @ApiProperty({ type: String }) lastName!: string;
+}
+export class SalaProfessorListEnvelopeDto {
+  @ApiProperty({ type: () => [SalaProfessorOptionDto] }) data!: SalaProfessorOptionDto[];
+}

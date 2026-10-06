@@ -262,6 +262,36 @@ export interface TeamCredentialResetDto {
   temporaryPassword: string;
 }
 
+export interface SalaProfessorOptionDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
+export interface SalaProfessorListEnvelopeDto {
+  data: SalaProfessorOptionDto[];
+}
+
+export interface CreateSalaStudentDto {
+  firstName: string;
+  lastName: string;
+  /** Required DNI with 6 to 8 digits; dots, spaces and hyphens are accepted and removed before persistence. */
+  dni: string;
+  /** Required Argentine national phone with 10 digits and no initial 0, +54 or old 15 prefix; spaces, parentheses, dots and hyphens are accepted. */
+  phone: string;
+  birthDate: string;
+  /** @nullable */
+  email?: string | null;
+  emergencyContactName?: string;
+  /** Optional emergency phone; when nonempty, the same national 10-digit phone rules apply. Empty values are stored as null. */
+  emergencyContactPhone?: string;
+  /** @nullable */
+  socialWorkId?: string | null;
+  affiliateNumber?: string;
+  mainProfessorId: string;
+  planId: string;
+}
+
 export interface JoinSalaDto {
   personId: string;
   mainProfessorId: string;
@@ -2249,6 +2279,85 @@ export const listPersonSalaParticipations = async (personId: string, options?: R
 
   const data: listPersonSalaParticipationsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listPersonSalaParticipationsResponse
+}
+
+
+
+export type listSalaProfessorsResponse200 = {
+  data: SalaProfessorListEnvelopeDto
+  status: 200
+}
+
+export type listSalaProfessorsResponseSuccess = (listSalaProfessorsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listSalaProfessorsResponse = (listSalaProfessorsResponseSuccess)
+
+export const getListSalaProfessorsUrl = () => {
+
+
+
+
+  return `/api/sala/professors`
+}
+
+export const listSalaProfessors = async ( options?: RequestInit): Promise<listSalaProfessorsResponse> => {
+
+  const res = await fetch(getListSalaProfessorsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSalaProfessorsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSalaProfessorsResponse
+}
+
+
+
+export type createSalaStudentResponse201 = {
+  data: PersonEnvelopeDto
+  status: 201
+}
+
+export type createSalaStudentResponseSuccess = (createSalaStudentResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSalaStudentResponse = (createSalaStudentResponseSuccess)
+
+export const getCreateSalaStudentUrl = () => {
+
+
+
+
+  return `/api/sala/students`
+}
+
+export const createSalaStudent = async (createSalaStudentDto: CreateSalaStudentDto, options?: RequestInit): Promise<createSalaStudentResponse> => {
+
+  const res = await fetch(getCreateSalaStudentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createSalaStudentDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSalaStudentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSalaStudentResponse
 }
 
 
