@@ -35,8 +35,29 @@ it.each([{}, { socialWorkId: uuid }])('omits absent optional rows and never fall
   server.use(http.get('http://localhost:3000/api/portal/me', () => HttpResponse.json({ data: { ...profile, ...extra } })));
   renderProfile();
   await screen.findByText('Ana Sintética');
+  expect(screen.queryByText('Contacto de emergencia')).not.toBeInTheDocument();
+  expect(screen.queryByText('Teléfono de emergencia')).not.toBeInTheDocument();
   expect(screen.queryByText('Obra social')).not.toBeInTheDocument();
   expect(screen.queryByText('Número de afiliado')).not.toBeInTheDocument();
   expect(screen.queryByText(uuid)).not.toBeInTheDocument();
   expect(screen.queryByText('Sin informar')).not.toBeInTheDocument();
+});
+
+it.each([
+  { emergencyContactName: 'María Pérez', emergencyContactPhone: '3415551234' },
+  { emergencyContactName: 'María Pérez' },
+  { emergencyContactPhone: '3415551234' },
+])('shows only existing emergency data as read-only rows: %j', async (extra) => {
+  server.use(http.get('http://localhost:3000/api/portal/me', () => HttpResponse.json({ data: { ...profile, ...extra } })));
+  renderProfile();
+  await screen.findByText('Ana Sintética');
+  if (extra.emergencyContactName) {
+    expect(screen.getByText('Contacto de emergencia')).toBeVisible();
+    expect(screen.getByText('María Pérez')).toBeVisible();
+  } else expect(screen.queryByText('Contacto de emergencia')).not.toBeInTheDocument();
+  if (extra.emergencyContactPhone) {
+    expect(screen.getByText('Teléfono de emergencia')).toBeVisible();
+    expect(screen.getByText('Teléfono de emergencia').nextElementSibling).toHaveTextContent('3415551234');
+  } else expect(screen.queryByText('Teléfono de emergencia')).not.toBeInTheDocument();
+  expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
 });

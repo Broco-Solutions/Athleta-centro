@@ -306,3 +306,70 @@ it.each([
   if (affiliateNumber) expect(screen.getByText(`Número de afiliado: ${affiliateNumber}`)).toBeInTheDocument();
   expect(screen.queryByText('work-retired')).not.toBeInTheDocument();
 });
+
+
+it('shows empty optional emergency fields and saves them without blocking creation', async () => {
+  let posted: unknown;
+  server.use(http.post('http://localhost:3000/api/people', async ({ request }) => { posted = await request.json(); return HttpResponse.json({ data: { ...person, initialPin: '1234' } }); }));
+  await openCreation();
+  expect(screen.getByLabelText('Contacto de emergencia (opcional)')).toHaveValue('');
+  expect(screen.getByLabelText('Contacto de emergencia (opcional)')).toHaveAttribute('maxlength', '150');
+  const phone = screen.getByLabelText('Teléfono de emergencia (opcional)');
+  expect(phone).toHaveValue('');
+  expect(phone).toHaveAttribute('type', 'text');
+  expect(phone).toHaveAttribute('inputmode', 'tel');
+  expect(phone).toHaveAttribute('placeholder', '3415551234');
+  expect(screen.getByText('Ingresá 10 dígitos con código de área, sin +54, 0 inicial ni 15.')).toBeVisible();
+  expect(screen.queryByText('El teléfono de emergencia debe tener 10 dígitos.')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByRole('dialog', { name: 'Persona guardada correctamente' })).toBeVisible();
+  expect(posted).toMatchObject({ emergencyContactName: '', emergencyContactPhone: '' });
+  expect(screen.queryByRole('heading', { name: 'Nueva Persona' })).not.toBeInTheDocument();
+});
+
+it.each([
+  ['  María Pérez  ', '(341) 555-1234', 'María Pérez', '3415551234'],
+  ['María Pérez', '', 'María Pérez', ''],
+  ['', '3411551234', '', '3411551234'],
+])('sends independent, trimmed and normalized emergency fields: %s / %s', async (name, phone, expectedName, expectedPhone) => {
+  let posted: unknown;
+  server.use(http.post('http://localhost:3000/api/people', async ({ request }) => { posted = await request.json(); return HttpResponse.json({ data: person }); }));
+  await openCreation();
+  fireEvent.change(screen.getByLabelText('Contacto de emergencia (opcional)'), { target: { value: name } });
+  fireEvent.change(screen.getByLabelText('Teléfono de emergencia (opcional)'), { target: { value: phone } });
+  expect(screen.getByLabelText('Teléfono de emergencia (opcional)')).toHaveValue(phone);
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(posted).toMatchObject({ emergencyContactName: expectedName, emergencyContactPhone: expectedPhone }));
+});
+
+it.each(['341123', '+54 3415551234', '03415551234', 'abc'])('rejects invalid emergency phone %s without POST', async (phone) => {
+  let posts = 0;
+  server.use(http.post('http://localhost:3000/api/people', () => { posts += 1; return HttpResponse.json({ data: person }); }));
+  await openCreation();
+  fireEvent.change(screen.getByLabelText('Teléfono de emergencia (opcional)'), { target: { value: phone } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByText('El teléfono de emergencia debe tener 10 dígitos.')).toBeVisible();
+  expect(posts).toBe(0);
+});
+
+it('preloads emergency data on edit and includes both empty fields in PATCH when cleared', async () => {
+  let patched: unknown;
+  const withEmergency = { ...person, emergencyContactName: 'María Pérez', emergencyContactPhone: '3415551234' };
+  server.use(
+    http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: [withEmergency], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } })),
+    http.patch(`http://localhost:3000/api/people/${person.id}`, async ({ request }) => { patched = await request.json(); return HttpResponse.json({ data: person }); }),
+    http.get(`http://localhost:3000/api/sala/participations/person/${person.id}`, () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: [] })),
+  );
+  renderPage();
+  await screen.findByText('Sintética, Ana');
+  fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+  expect(screen.getByLabelText('Contacto de emergencia (opcional)')).toHaveValue('María Pérez');
+  expect(screen.getByLabelText('Teléfono de emergencia (opcional)')).toHaveValue('3415551234');
+  fireEvent.change(screen.getByLabelText('Contacto de emergencia (opcional)'), { target: { value: '' } });
+  fireEvent.change(screen.getByLabelText('Teléfono de emergencia (opcional)'), { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByText('Cambios guardados correctamente.')).toBeVisible();
+  expect(patched).toMatchObject({ emergencyContactName: '', emergencyContactPhone: '' });
+});
