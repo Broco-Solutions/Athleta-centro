@@ -20,14 +20,19 @@ export interface PersonResponseDto {
   id: string;
   firstName: string;
   lastName: string;
+  /** DNI stored as 6 to 8 digits. */
   dni: string;
+  /** National phone stored as 10 digits with no initial 0. */
   phone: string;
   birthDate: string;
   /** @nullable */
   email?: string | null;
   /** @nullable */
   emergencyContactName?: string | null;
-  /** @nullable */
+  /**
+   * Optional emergency phone stored as 10 national digits with no initial 0.
+   * @nullable
+   */
   emergencyContactPhone?: string | null;
   /** @nullable */
   socialWorkId?: string | null;
@@ -66,28 +71,36 @@ export interface PersonEnvelopeDto {
 export interface CreatePersonDto {
   firstName: string;
   lastName: string;
+  /** Required DNI with 6 to 8 digits; dots, spaces and hyphens are accepted and removed before persistence. */
   dni: string;
+  /** Required Argentine national phone with 10 digits and no initial 0, +54 or old 15 prefix; spaces, parentheses, dots and hyphens are accepted. */
   phone: string;
   birthDate: string;
   /** @nullable */
   email?: string | null;
   emergencyContactName?: string;
+  /** Optional emergency phone; when nonempty, the same national 10-digit phone rules apply. Empty values are stored as null. */
   emergencyContactPhone?: string;
-  socialWorkId?: string;
+  /** @nullable */
+  socialWorkId?: string | null;
   affiliateNumber?: string;
 }
 
 export interface UpdatePersonDto {
   firstName?: string;
   lastName?: string;
+  /** Required DNI with 6 to 8 digits; dots, spaces and hyphens are accepted and removed before persistence. */
   dni?: string;
+  /** Required Argentine national phone with 10 digits and no initial 0, +54 or old 15 prefix; spaces, parentheses, dots and hyphens are accepted. */
   phone?: string;
   birthDate?: string;
   /** @nullable */
   email?: string | null;
   emergencyContactName?: string;
+  /** Optional emergency phone; when nonempty, the same national 10-digit phone rules apply. Empty values are stored as null. */
   emergencyContactPhone?: string;
-  socialWorkId?: string;
+  /** @nullable */
+  socialWorkId?: string | null;
   affiliateNumber?: string;
 }
 

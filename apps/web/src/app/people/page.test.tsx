@@ -4,13 +4,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import PeoplePage from './page';
+import { PersonIdentity } from './[id]/clinic-actions';
 
 const server = setupServer(); const nativeFetch = globalThis.fetch;
 const session = { user: { id: 'u1', firstName: 'Test', lastName: 'User', email: 'user@test.local' }, roles: ['PROFESSOR'], permissions: ['PEOPLE_READ', 'PEOPLE_CREATE', 'PEOPLE_UPDATE_GENERAL'], mustChangePassword: false, csrfToken: 'csrf-test' };
 const person = { id: '10000000-0000-4000-8000-000000000001', firstName: 'Ana', lastName: 'Sintética', dni: '20.123.456', phone: '3515550101', birthDate: '1992-03-10', email: null, emergencyContactName: null, emergencyContactPhone: null, socialWorkId: null, affiliateNumber: null, status: 'INACTIVE', contexts: [], hasSalaParticipation: false, isClinicalPatient: false };
 function renderPage(): void { const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }); render(<QueryClientProvider client={client}><PeoplePage /></QueryClientProvider>); }
 beforeAll(() => { globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch; server.listen({ onUnhandledRequest: 'error' }); });
-beforeEach(() => { server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: session })), http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: [person], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } }))); });
+beforeEach(() => { server.use(http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: [{ id: 'work-a', name: 'Cobertura A', isSelectable: true }, { id: 'work-retired', name: 'Cobertura histórica', isSelectable: false }, { id: 'other-retired', name: 'Otra retirada', isSelectable: false }] })),http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: session })), http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: [person], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } }))); });
 afterEach(() => server.resetHandlers()); afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 
 it('renders and searches the People list through HTTP', async () => { let search = ''; server.use(http.get('http://localhost:3000/api/people', ({ request }) => { search = new URL(request.url).searchParams.get('search') ?? ''; return HttpResponse.json({ data: [person], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } }); })); renderPage(); expect(await screen.findByText('Sintética, Ana')).toBeInTheDocument(); fireEvent.change(screen.getByLabelText('Buscar Personas'), { target: { value: '20.123' } }); await waitFor(() => expect(search).toBe('20.123')); });
@@ -240,4 +241,68 @@ it('normalizes DNI and phone before PATCH', async () => {
   fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '(341) 555-1234' } });
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
   await waitFor(() => expect(patched).toMatchObject({ dni: '1234567', phone: '3415551234' }));
+});
+
+
+it('selects optional coverage, enables free-text affiliate and clears it immediately when removed', async () => {
+  let sent: Record<string, unknown> | undefined;
+  server.use(http.post('http://localhost:3000/api/people', async ({ request }) => { sent = await request.json() as Record<string, unknown>; return HttpResponse.json({ data: { ...person, ...sent, initialPin: '1234' } }); }));
+  await openCreation();
+  const select = screen.getByLabelText('Obra social (opcional)');
+  const affiliate = screen.getByLabelText('Número de afiliado (opcional)');
+  expect(affiliate).toBeDisabled();
+  await screen.findByRole('option', { name: 'Cobertura A' });
+  expect(screen.queryByRole('option', { name: /retirada/ })).not.toBeInTheDocument();
+  fireEvent.change(select, { target: { value: 'work-a' } });
+  expect(affiliate).toBeEnabled();
+  fireEvent.change(affiliate, { target: { value: 'ABC-123' } });
+  fireEvent.change(select, { target: { value: '' } });
+  expect(affiliate).toBeDisabled();
+  expect(affiliate).toHaveValue('');
+  fireEvent.change(select, { target: { value: 'work-a' } });
+  fireEvent.change(affiliate, { target: { value: 'ABC-123' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  await screen.findByRole('dialog', { name: 'Persona guardada correctamente' });
+  expect(sent).toMatchObject({ socialWorkId: 'work-a', affiliateNumber: 'ABC-123' });
+  expect(screen.queryByLabelText('Obra social (opcional)')).not.toBeInTheDocument();
+});
+
+it('keeps the retired current coverage editable, excludes other retired works and sends null on removal', async () => {
+  const covered = { ...person, socialWorkId: 'work-retired', affiliateNumber: 'OLD-1' };
+  let sent: Record<string, unknown> | undefined;
+  server.use(
+    http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: [covered], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } })),
+    http.get(`http://localhost:3000/api/sala/participations/person/${person.id}`, () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: [] })),
+    http.patch(`http://localhost:3000/api/people/${person.id}`, async ({ request }) => { sent = await request.json() as Record<string, unknown>; return HttpResponse.json({ data: { ...covered, ...sent } }); }),
+  );
+  renderPage();
+  fireEvent.click(await screen.findByText('Sintética, Ana'));
+  await screen.findByRole('option', { name: 'Cobertura histórica (retirada)' });
+  expect(screen.getByLabelText('Obra social (opcional)')).toHaveValue('work-retired');
+  expect(screen.getByLabelText('Número de afiliado (opcional)')).toHaveValue('OLD-1');
+  expect(screen.queryByRole('option', { name: 'Otra retirada (retirada)' })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Número de afiliado (opcional)'), { target: { value: 'CORRECTED' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  await screen.findByText('Cambios guardados correctamente.');
+  expect(sent).toMatchObject({ socialWorkId: 'work-retired', affiliateNumber: 'CORRECTED' });
+  fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+  fireEvent.change(screen.getByLabelText('Obra social (opcional)'), { target: { value: '' } });
+  expect(screen.getByLabelText('Número de afiliado (opcional)')).toHaveValue('');
+  expect(screen.getByRole('option', { name: 'Cobertura histórica (retirada)' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(sent).toMatchObject({ socialWorkId: null, affiliateNumber: '' }));
+});
+
+
+it.each([
+  ['work-retired', 'ABC-123', 'Obra social: Cobertura histórica'],
+  [null, null, 'Obra social: Sin obra social'],
+])('shows general coverage in the internal identity without displaying IDs: %s', async (socialWorkId, affiliateNumber, label) => {
+  server.use(http.get(`http://localhost:3000/api/people/${person.id}`, () => HttpResponse.json({ data: { ...person, socialWorkId, affiliateNumber } })));
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PersonIdentity personId={person.id} /></QueryClientProvider>);
+  expect(await screen.findByText(label)).toBeInTheDocument();
+  if (affiliateNumber) expect(screen.getByText(`Número de afiliado: ${affiliateNumber}`)).toBeInTheDocument();
+  expect(screen.queryByText('work-retired')).not.toBeInTheDocument();
 });

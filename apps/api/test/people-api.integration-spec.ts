@@ -182,4 +182,42 @@ describe('People API', () => {
     const professor = await session(Role.PROFESSOR);
     await request(app.getHttpServer()).get('/api/clinic/patients/overview').set('Cookie', professor.cookie).expect(403);
   });
+  it('persists optional coverage, switches it, clears it and preserves a retired current work', async () => {
+    const authn = await session(Role.PROFESSOR);
+    const a = await prisma.socialWork.create({ data: { name: 'People coverage A', normalizedName: `people-coverage-a-${Date.now()}` } });
+    const b = await prisma.socialWork.create({ data: { name: 'People coverage B', normalizedName: `people-coverage-b-${Date.now()}` } });
+    const create = async (extra: object, status = 201) => request(app.getHttpServer()).post('/api/people').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ ...payload, ...extra }).expect(status);
+    const created = await create({ socialWorkId: a.id, affiliateNumber: ' ABC-123 ' });
+    const id = created.body.data.id as string;
+    const patch = async (extra: object, status = 200) => request(app.getHttpServer()).patch(`/api/people/${id}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(extra).expect(status);
+    const persisted = async (socialWorkId: string | null, affiliateNumber: string | null) => {
+      expect(await prisma.person.findUniqueOrThrow({ where: { id } })).toMatchObject({ socialWorkId, affiliateNumber });
+    };
+    expect(created.body.data).toMatchObject({ socialWorkId: a.id, affiliateNumber: 'ABC-123' });
+    await persisted(a.id, 'ABC-123');
+    expect((await patch({ socialWorkId: b.id, affiliateNumber: 'B-456' })).body.data).toMatchObject({ socialWorkId: b.id, affiliateNumber: 'B-456' });
+    await persisted(b.id, 'B-456');
+    await prisma.socialWork.update({ where: { id: b.id }, data: { isSelectable: false } });
+    await patch({ socialWorkId: b.id, affiliateNumber: ' Corrected ' });
+    await persisted(b.id, 'Corrected');
+    await patch({ affiliateNumber: 'Only affiliate' });
+    await persisted(b.id, 'Only affiliate');
+    await patch({ socialWorkId: null, affiliateNumber: 'Discarded' });
+    await persisted(null, null);
+    expect((await patch({ affiliateNumber: 'Discarded again' })).body.data.affiliateNumber).toBeNull();
+    await persisted(null, null);
+    expect((await patch({ socialWorkId: b.id }, 400)).body.code).toBe('SOCIAL_WORK_NOT_SELECTABLE');
+    await persisted(null, null);
+    expect((await create({ dni: '20123457', socialWorkId: b.id }, 400)).body.code).toBe('SOCIAL_WORK_NOT_SELECTABLE');
+    expect((await create({ dni: '20123457', socialWorkId: '10000000-0000-4000-8000-000000000099' }, 400)).body.code).toBe('SOCIAL_WORK_NOT_SELECTABLE');
+    const uncovered = await create({ dni: '20123457', affiliateNumber: 'ABC-123' });
+    expect(uncovered.body.data).toMatchObject({ socialWorkId: null, affiliateNumber: null });
+    expect(await prisma.person.findUniqueOrThrow({ where: { id: uncovered.body.data.id } })).toMatchObject({ socialWorkId: null, affiliateNumber: null });
+    await patch({ socialWorkId: a.id, affiliateNumber: '   ' });
+    await persisted(a.id, null);
+    await patch({ socialWorkId: null });
+    await persisted(null, null);
+    await prisma.socialWork.deleteMany({ where: { id: { in: [a.id, b.id] } } });
+  });
+
 });

@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { listSocialWorks } from '@athleta/api-client';
 import { Button } from '@athleta/ui';
 import { currentSession } from '../../../features/auth/auth';
 
@@ -36,8 +37,10 @@ export function SalaContext({ personId }: { personId: string }): React.JSX.Eleme
 }
 
 export function PersonIdentity({ personId }: { personId: string }): React.JSX.Element {
-  const person = useQuery({ queryKey: ['person', personId], queryFn: async () => { const response = await fetch(`/api/people/${personId}`, { credentials: 'include' }); const payload = await response.json() as { data?: { firstName?: string; lastName?: string; dni?: string; status?: string } }; if (!response.ok || !payload.data) throw new Error('READ_FAILED'); return payload.data; } });
+  const person = useQuery({ queryKey: ['person', personId], queryFn: async () => { const response = await fetch(`/api/people/${personId}`, { credentials: 'include' }); const payload = await response.json() as { data?: { firstName?: string; lastName?: string; dni?: string; status?: string; socialWorkId?: string | null; affiliateNumber?: string | null } }; if (!response.ok || !payload.data) throw new Error('READ_FAILED'); return payload.data; } });
+  const catalog = useQuery({ queryKey: ['social-works'], enabled: Boolean(person.data?.socialWorkId), queryFn: async () => { const result = await listSocialWorks({ credentials: 'include' }); if (result.status !== 200) throw new Error('READ_FAILED'); return (result.data as unknown as { data: { id: string; name: string }[] }).data; } });
+  const work = catalog.data?.find((item) => item.id === person.data?.socialWorkId);
   if (person.isLoading) return <><p className="text-sm text-muted-foreground">Cargando Persona…</p><h1 className="text-2xl font-semibold">Ficha de Persona</h1></>;
   if (person.isError || !person.data) return <><h1 className="text-2xl font-semibold">Ficha de Persona</h1><p role="alert" className="text-sm text-red-700">No pudimos cargar la identidad.</p></>;
-  return <><h1 className="text-3xl font-semibold">{person.data.firstName} {person.data.lastName}</h1><p className="mt-1 text-sm">DNI {person.data.dni} · <span className={person.data.status === 'ACTIVE' ? 'font-medium text-emerald-700' : 'text-muted-foreground'}>{person.data.status === 'ACTIVE' ? 'Activo' : 'Inactivo'}</span></p></>;
+  return <><h1 className="text-3xl font-semibold">{person.data.firstName} {person.data.lastName}</h1><p className="mt-1 text-sm">DNI {person.data.dni} · <span className={person.data.status === 'ACTIVE' ? 'font-medium text-emerald-700' : 'text-muted-foreground'}>{person.data.status === 'ACTIVE' ? 'Activo' : 'Inactivo'}</span></p><p className="mt-2 text-sm">Obra social: {person.data.socialWorkId ? work?.name ?? (catalog.isError ? 'No pudimos cargar la obra social.' : 'Cargando…') : 'Sin obra social'}</p>{person.data.affiliateNumber && <p className="text-sm">Número de afiliado: {person.data.affiliateNumber}</p>}</>;
 }

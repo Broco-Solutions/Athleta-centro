@@ -18,6 +18,7 @@ export class PeopleService {
     const existing = await this.prisma.person.findUnique({ where: { normalizedDni }, select: { id: true } });
     if (existing) this.duplicateDni();
     this.validateBirthDate(input.birthDate);
+    if (input.socialWorkId) await this.validateSelectableSocialWork(input.socialWorkId);
     try {
       const pin = this.generatePin();
       const pinHash = await argon2.hash(pin, { type: argon2.argon2id });
@@ -40,6 +41,8 @@ export class PeopleService {
     const dni = input.dni !== undefined ? this.validateDni(input.dni) : undefined;
     const phone = input.phone !== undefined ? this.validatePhone(input.phone) : undefined;
     const emergencyContactPhone = input.emergencyContactPhone !== undefined ? this.emergencyPhone(input.emergencyContactPhone) : undefined;
+    const socialWorkId = input.socialWorkId === undefined ? current.socialWorkId : input.socialWorkId;
+    if (socialWorkId && socialWorkId !== current.socialWorkId) await this.validateSelectableSocialWork(socialWorkId);
     try {
       const person = await this.prisma.person.update({ where: { id }, data: {
         ...(input.firstName !== undefined && { firstName: input.firstName.trim() }),
@@ -51,7 +54,7 @@ export class PeopleService {
         ...(input.emergencyContactName !== undefined && { emergencyContactName: input.emergencyContactName?.trim() || null }),
         ...(emergencyContactPhone !== undefined && { emergencyContactPhone }),
         ...(input.socialWorkId !== undefined && { socialWorkId: input.socialWorkId || null }),
-        ...(input.affiliateNumber !== undefined && { affiliateNumber: input.affiliateNumber?.trim() || null }),
+        ...(!socialWorkId ? { affiliateNumber: null } : input.affiliateNumber !== undefined ? { affiliateNumber: input.affiliateNumber?.trim() || null } : {}),
       } });
       return this.serialize(person);
     } catch (error) {
@@ -120,7 +123,11 @@ export class PeopleService {
   }
 
   private createData(input: CreatePersonDto, normalizedDni: string, phone: string, emergencyContactPhone: string | null): Prisma.PersonUncheckedCreateInput {
-    return { firstName: input.firstName.trim(), lastName: input.lastName.trim(), dni: normalizedDni, normalizedDni, phone, birthDate: this.date(input.birthDate), email: input.email?.trim() || null, normalizedEmail: normalizeEmail(input.email), emergencyContactName: input.emergencyContactName?.trim() || null, emergencyContactPhone, socialWorkId: input.socialWorkId ?? null, affiliateNumber: input.affiliateNumber?.trim() || null };
+    return { firstName: input.firstName.trim(), lastName: input.lastName.trim(), dni: normalizedDni, normalizedDni, phone, birthDate: this.date(input.birthDate), email: input.email?.trim() || null, normalizedEmail: normalizeEmail(input.email), emergencyContactName: input.emergencyContactName?.trim() || null, emergencyContactPhone, socialWorkId: input.socialWorkId ?? null, affiliateNumber: input.socialWorkId ? input.affiliateNumber?.trim() || null : null };
+  }
+  private async validateSelectableSocialWork(id: string): Promise<void> {
+    const socialWork = await this.prisma.socialWork.findUnique({ where: { id }, select: { isSelectable: true } });
+    if (!socialWork?.isSelectable) throw new BadRequestException({ code: 'SOCIAL_WORK_NOT_SELECTABLE', message: 'Social work is not selectable' });
   }
   private validateDni(value: string): string {
     const normalized = typeof value === 'string' ? normalizeDni(value) : '';

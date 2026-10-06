@@ -41,6 +41,17 @@ describe('Portal auth and PIN reset', () => {
 
     const initial = await request(app.getHttpServer()).post('/api/portal/auth/login').send({ dni: person.dni, pin: '1111' }).expect(200);
     expect(initial.body.data.mustChangePin).toBe(false);
+    const initialCookie = initial.headers['set-cookie'][0] as string;
+    const uncovered = await request(app.getHttpServer()).get('/api/portal/me').set('Cookie', initialCookie).expect(200);
+    expect(uncovered.body.data.socialWorkName).toBeUndefined();
+    expect(uncovered.body.data.affiliateNumber).toBeUndefined();
+    const work = await prisma.socialWork.create({ data: { name: 'Obra Social Sintética', normalizedName: `portal-work-${Date.now()}`, isSelectable: false } });
+    await prisma.person.update({ where: { id: person.id }, data: { socialWorkId: work.id, affiliateNumber: 'ABC-123' } });
+    const covered = await request(app.getHttpServer()).get('/api/portal/me').set('Cookie', initialCookie).expect(200);
+    expect(covered.body.data).toMatchObject({ socialWorkName: 'Obra Social Sintética', affiliateNumber: 'ABC-123' });
+    const coveredSession = await request(app.getHttpServer()).get('/api/portal/auth/session').set('Cookie', initialCookie).expect(200);
+    expect(coveredSession.body.data.person.socialWorkName).toBe(work.name);
+
     const reset = await request(app.getHttpServer()).post(`/api/people/${person.id}/reset-portal-pin`).set('Cookie', cookie).set('x-csrf-token', csrf).expect(201);
     const newPin = reset.body.data as string;
     expect(newPin).toMatch(/^\d{4}$/);
@@ -49,6 +60,7 @@ describe('Portal auth and PIN reset', () => {
     await request(app.getHttpServer()).post('/api/portal/auth/login').send({ dni: person.dni, pin: '1111' }).expect(401);
     const temporary = await request(app.getHttpServer()).post('/api/portal/auth/login').send({ dni: person.dni, pin: newPin }).expect(200);
     expect(temporary.body.data.mustChangePin).toBe(true);
+    expect(temporary.body.data.person.socialWorkName).toBe(work.name);
     const portalCookie = temporary.headers['set-cookie'][0] as string;
     await request(app.getHttpServer()).get('/api/portal/me').set('Cookie', portalCookie).expect(200);
     const portalCsrf = temporary.body.data.csrfToken as string;
@@ -60,6 +72,7 @@ describe('Portal auth and PIN reset', () => {
     await prisma.salaParticipation.deleteMany({ where: { personId: person.id } });
     await prisma.portalCredential.deleteMany({ where: { personId: person.id } });
     await prisma.person.delete({ where: { id: person.id } });
+    await prisma.socialWork.delete({ where: { id: work.id } });
     await prisma.salaPlan.delete({ where: { id: plan.id } });
     await prisma.session.deleteMany({ where: { internalUserId: admin.id } });
     await prisma.internalCredential.deleteMany({ where: { internalUserId: admin.id } });

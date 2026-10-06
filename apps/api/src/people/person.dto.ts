@@ -11,7 +11,7 @@ export class CreatePersonDto {
   @ApiPropertyOptional({ type: String, nullable: true }) @ValidateIf((_object, value) => value !== null && value !== undefined) @IsEmail() @MaxLength(254) email?: string | null;
   @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() @MaxLength(150) emergencyContactName?: string;
   @ApiPropertyOptional({ type: String, example: '1112345678', description: 'Optional emergency phone; when nonempty, the same national 10-digit phone rules apply. Empty values are stored as null.' }) @IsOptional() @IsString() @MaxLength(50) emergencyContactPhone?: string;
-  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() socialWorkId?: string;
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true }) @IsOptional() @IsUUID() socialWorkId?: string | null;
   @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() @MaxLength(100) affiliateNumber?: string;
 }
 

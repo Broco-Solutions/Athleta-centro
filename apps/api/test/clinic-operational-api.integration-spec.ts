@@ -260,4 +260,17 @@ describe('Clinic operational appointments API', () => {
     const patient = overview.body.data.find((row: { id: string }) => row.id === person.id) as { lastAttentionAt: string | null };
     expect(patient.lastAttentionAt).toBe(attention.occurredAt.toISOString());
   });
+  it.each([Role.PROFESSOR, Role.KINESIOLOGIST, Role.OSTEOPATH, Role.ADMINISTRATIVE, Role.GENERAL_ADMIN])('applies catalog permissions for %s independently of order permissions', async (role) => {
+    const user = await session(role);
+    const canManage = role === Role.ADMINISTRATIVE || role === Role.GENERAL_ADMIN;
+    const work = await prisma.socialWork.create({ data: { name: 'Catalog fixture', normalizedName: `catalog-${suffix()}` } });
+    const listed = await request(app.getHttpServer()).get('/api/clinic/social-works').set('Cookie', user.cookie).expect(200);
+    expect(listed.body.data).toEqual(expect.arrayContaining([expect.objectContaining({ id: work.id, name: work.name })]));
+    const created = await request(app.getHttpServer()).post('/api/clinic/social-works').set('Cookie', user.cookie).set('x-csrf-token', user.csrf).send({ name: `Catalog ${suffix()}` }).expect(canManage ? 201 : 403);
+    await request(app.getHttpServer()).patch(`/api/clinic/social-works/${work.id}/retire`).set('Cookie', user.cookie).set('x-csrf-token', user.csrf).expect(canManage ? 200 : 403);
+    expect((await prisma.socialWork.findUniqueOrThrow({ where: { id: work.id } })).isSelectable).toBe(!canManage);
+    await prisma.socialWork.delete({ where: { id: work.id } });
+    if (canManage) await prisma.socialWork.delete({ where: { id: created.body.data.id } });
+  });
+
 });

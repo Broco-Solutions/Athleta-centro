@@ -1,9 +1,11 @@
 'use client';
 
-import React, { Suspense } from 'react';
+import React, { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '@athleta/ui';
+import { createSocialWork, retireSocialWork, listSocialWorks } from '@athleta/api-client';
 import { currentSession } from '../../features/auth/auth';
 import { WorkspaceShell } from '../../features/auth/workspace-shell';
 import { PatientList } from '../../features/clinic/patient-list';
@@ -17,6 +19,8 @@ type Study = { id: string; studyDate: string; studyType: string; description?: s
 type Order = { id: string; reference: string; issueDate?: string | null; expirationDate?: string | null; isExpired?: boolean; socialWork?: { name: string } };
 type Indication = { id: string; status: string; trainingCondition: string; affectedArea?: string | null; instructions?: string | null };
 type Evaluation = { id: string; createdAt: string; results?: unknown[] };
+type SocialWork = { id: string; name: string; isSelectable: boolean };
+type Coverage = { socialWorkId: string | null; affiliateNumber: string | null };
 type Row = { id: string };
 
 const tabs = ['Agenda', 'Pacientes', 'Paciente', 'Tratamientos', 'Atenciones', 'Evaluaciones', 'Estudios', 'Obra social', 'Indicaciones'] as const;
@@ -38,6 +42,22 @@ function List<T extends Row>({ query, empty, children }: { query: { isLoading: b
   return <div className="mt-4 space-y-2">{query.data.map((item) => <React.Fragment key={item.id}>{children(item)}</React.Fragment>)}</div>;
 }
 
+function SocialWorkCatalog({ canManage, csrfToken }: { canManage: boolean; csrfToken: string }): React.JSX.Element {
+  const client = useQueryClient();
+  const [name, setName] = useState('');
+  const catalog = useQuery({ queryKey: ['social-works'], queryFn: async () => { const result = await listSocialWorks({ credentials: 'include' }); if (result.status !== 200) throw new Error('No pudimos cargar las obras sociales.'); return (result.data as unknown as { data: SocialWork[] }).data; } });
+  const action = useMutation({ mutationFn: async (id?: string) => {
+    const options = { credentials: 'include', headers: { 'x-csrf-token': csrfToken } } satisfies RequestInit;
+    const result = id ? await retireSocialWork(id, options) : await createSocialWork({ name: name.trim() }, options);
+    if (result.status >= 400) throw new Error('No pudimos guardar los cambios.');
+  }, onSuccess: async (_result, id) => { if (!id) setName(''); await client.invalidateQueries({ queryKey: ['social-works'] }); } });
+  return <section className="rounded border bg-white p-5"><h2 className="text-lg font-semibold">Obras sociales</h2>
+    {canManage && <form className="mt-4 flex flex-wrap items-end gap-3" onSubmit={(event) => { event.preventDefault(); action.mutate(undefined); }}><label className="text-sm">Nueva obra social<input aria-label="Nombre de obra social" className="block h-10 rounded-md border px-3" value={name} onChange={(event) => setName(event.target.value)} /></label><Button type="submit" disabled={!name.trim() || action.isPending}>Guardar</Button></form>}
+    {action.isError && <p role="alert" className="mt-3 text-sm text-red-700">No pudimos guardar los cambios.</p>}
+    <List query={catalog} empty="No hay obras sociales configuradas.">{(work) => <article className="flex items-center justify-between rounded border p-3"><div>{work.name} · {work.isSelectable ? 'Disponible' : 'Retirada'}</div>{canManage && work.isSelectable && <Button variant="secondary" disabled={action.isPending} onClick={() => { if (window.confirm(`¿Retirar ${work.name}? Se conservará en los registros existentes.`)) action.mutate(work.id); }}>Retirar</Button>}</article>}</List>
+  </section>;
+}
+
 function ClinicWorkspace(): React.JSX.Element {
   const search = useSearchParams();
   const personId = search?.get('personId') || '';
@@ -47,17 +67,21 @@ function ClinicWorkspace(): React.JSX.Element {
   const permissions = session.data?.permissions ?? [];
   const patients = useQuery({ queryKey: ['clinic', 'patients', personId], queryFn: () => get<Patient[]>('clinic/patients'), enabled: Boolean(personId) });
   const patient = patients.data?.find((item) => item.id === personId);
-  const listPath = tab === 'Tratamientos' ? `clinic/treatments?personId=${personId}` : tab === 'Atenciones' ? `clinic/attentions?personId=${personId}` : tab === 'Estudios' ? `clinic/studies?personId=${personId}` : tab === 'Obra social' ? personId ? `clinic/orders?personId=${personId}` : 'clinic/social-works' : tab === 'Indicaciones' ? `clinic/indications?personId=${personId}` : '';
+  const listPath = tab === 'Tratamientos' ? `clinic/treatments?personId=${personId}` : tab === 'Atenciones' ? `clinic/attentions?personId=${personId}` : tab === 'Estudios' ? `clinic/studies?personId=${personId}` : tab === 'Obra social' ? personId ? `clinic/orders?personId=${personId}` : '' : tab === 'Indicaciones' ? `clinic/indications?personId=${personId}` : '';
   const list = useQuery({ queryKey: ['clinic', tab, personId], queryFn: () => get<Row[]>(listPath), enabled: Boolean(listPath) && (!personId || Boolean(patient)) });
   const attentions = useQuery({ queryKey: ['clinic', 'attentions', personId], queryFn: () => fetchClinicalAttentions(personId), enabled: Boolean(patient) });
   const evaluations = useQuery({ queryKey: ['clinic', 'evaluations', attentionId], queryFn: () => get<Evaluation[]>(`clinic/attentions/${attentionId}/evaluations`), enabled: tab === 'Evaluaciones' && Boolean(attentionId) && permissions.includes('CLINICAL_HISTORY_READ') });
+  const coverage = useQuery({ queryKey: ['person', personId], queryFn: () => get<Coverage>(`people/${personId}`), enabled: tab === 'Obra social' && Boolean(personId) });
+  const catalog = useQuery({ queryKey: ['social-works'], queryFn: () => get<SocialWork[]>('clinic/social-works'), enabled: tab === 'Obra social' && Boolean(personId) });
+  const socialWork = catalog.data?.find((work) => work.id === coverage.data?.socialWorkId);
+  const canManageCatalog = permissions.includes('SOCIAL_WORK_CATALOG_MANAGE');
   const canManageAppointments = permissions.includes('CLINIC_APPOINTMENT_MANAGE');
   const canRegisterAttention = permissions.includes('CLINIC_ATTENTION_REGISTER') || canManageAppointments;
   const canManageTreatments = permissions.includes('CLINIC_TREATMENT_MANAGE');
   const canManageStudies = permissions.includes('CLINIC_STUDY_MANAGE');
   const canManageIncome = permissions.includes('CLINIC_INCOME_MANAGE');
   const canReadClinicalHistory = permissions.includes('CLINICAL_HISTORY_READ');
-  const visibleTabs = canReadClinicalHistory ? tabs : ['Agenda', 'Pacientes', 'Paciente', 'Atenciones'] as const;
+  const visibleTabs: readonly Tab[] = canReadClinicalHistory ? tabs : ['Agenda', 'Pacientes', 'Paciente', 'Atenciones', ...(canManageCatalog ? ['Obra social' as const] : [])];
   const tabHref = (nextTab: Tab) => {
     const params = new URLSearchParams();
     params.set('tab', nextTab);
@@ -72,7 +96,7 @@ function ClinicWorkspace(): React.JSX.Element {
   } else if (!patient && !personId && tab === 'Agenda') {
     body = <ClinicalAgenda csrfToken={session.data?.csrfToken ?? ''} canManage={canManageAppointments} />;
   } else if (!patient && !personId && tab === 'Obra social') {
-    body = <section className="rounded border bg-white p-5"><h2 className="text-lg font-semibold">Obras sociales y órdenes</h2><p>{list.data?.length || 0} obras sociales configuradas</p></section>;
+    body = <SocialWorkCatalog canManage={canManageCatalog} csrfToken={session.data?.csrfToken ?? ''} />;
   } else if (!patient) {
     body = <section className="rounded border bg-white p-5"><h2 className="text-lg font-semibold">{tab === 'Obra social' ? 'Obras sociales y órdenes' : tab}</h2><p role="alert" className="mt-3">{personId ? 'La Persona todavía no está registrada como Paciente.' : 'Seleccioná un Paciente desde Personas para trabajar en este contexto clínico.'}</p></section>;
   } else if (tab === 'Paciente') {
@@ -95,7 +119,7 @@ function ClinicWorkspace(): React.JSX.Element {
   } else if (tab === 'Estudios') {
     body = <section className="rounded border bg-white p-5"><div className="flex justify-between"><h2 className="text-lg font-semibold">Estudios</h2>{canManageStudies ? <Link href={`/clinic/studies/new?personId=${patient.id}`} className="rounded bg-[#FCCC05] px-3 py-2 text-sm">Nuevo estudio</Link> : null}</div><List<Study> query={list as typeof list & { data: Study[] | undefined }} empty="No hay estudios registrados.">{(study) => <article className="rounded border p-3"><div className="font-medium">{study.studyDate} · {study.studyType}</div><div className="text-sm">{study.description || 'Sin descripción'} · {study.fileAsset ? 'Adjunto' : 'Sin archivo'}</div></article>}</List></section>;
   } else if (tab === 'Obra social') {
-    body = <section className="rounded border bg-white p-5"><h2 className="text-lg font-semibold">Obra social actual</h2><p className="mt-2">Obra social del paciente</p><h3 className="mt-5 font-semibold">Órdenes</h3><List<Order> query={list as typeof list & { data: Order[] | undefined }} empty="No hay órdenes registradas.">{(order) => <article className="rounded border p-3"><div className="font-medium">{order.socialWork?.name || 'Obra social'} · {order.reference}</div><div className="text-sm">Emitida: {order.issueDate || '—'} · Vence: {order.expirationDate || '—'} {order.isExpired ? '· Vencida' : ''}</div></article>}</List></section>;
+    body = <section className="rounded border bg-white p-5"><h2 className="text-lg font-semibold">Obra social actual</h2>{coverage.isError || catalog.isError ? <p role="alert">No pudimos cargar la cobertura actual.</p> : coverage.isLoading || (coverage.data?.socialWorkId && catalog.isLoading) ? <p>Cargando cobertura…</p> : coverage.data?.socialWorkId ? <div className="mt-2"><p>Nombre: {socialWork?.name ?? 'No pudimos resolver el nombre.'}</p><p>Número de afiliado: {coverage.data.affiliateNumber || '—'}</p></div> : <p className="mt-2">Sin obra social</p>}<h3 className="mt-5 font-semibold">Órdenes</h3><List<Order> query={list as typeof list & { data: Order[] | undefined }} empty="No hay órdenes registradas.">{(order) => <article className="rounded border p-3"><div className="font-medium">{order.socialWork?.name || 'Obra social'} · {order.reference}</div><div className="text-sm">Emitida: {order.issueDate || '—'} · Vence: {order.expirationDate || '—'} {order.isExpired ? '· Vencida' : ''}</div></article>}</List></section>;
   } else {
     body = <section className="rounded border bg-white p-5"><h2 className="text-lg font-semibold">Indicaciones</h2><List<Indication> query={list as typeof list & { data: Indication[] | undefined }} empty="No hay indicaciones registradas.">{(indication) => <article className="rounded border p-3"><div>{statusLabel(indication.status)} · {statusLabel(indication.trainingCondition)}</div><div className="text-sm">{indication.affectedArea || ''} {indication.instructions || ''}</div></article>}</List></section>;
   }
