@@ -593,6 +593,24 @@ export interface SalaPaymentDto {
   allocations?: SalaPaymentAllocationDto[];
 }
 
+export interface SalaPlanPaymentPeriodDto {
+  year: number;
+  /**
+   * @minimum 1
+   * @maximum 12
+   */
+  month: number;
+  operationId: string;
+}
+
+export interface RegisterSalaPlanPaymentsDto {
+  personId: string;
+  /** @minItems 1 */
+  periods: SalaPlanPaymentPeriodDto[];
+  paidAt: string;
+  paymentMethodId: string;
+}
+
 export interface FinancialReasonDto {
   /** @maxLength 500 */
   reason: string;
@@ -1293,6 +1311,25 @@ date: string;
 
 export type GetSalaAgendaParams = {
 date: string;
+};
+
+export type RegisterSalaPlanPayments201DataPaymentsItem = { [key: string]: unknown };
+
+export type RegisterSalaPlanPayments201DataPlan = {
+  id: string;
+  name: string;
+  monthlyAmount: string;
+};
+
+export type RegisterSalaPlanPayments201Data = {
+  payments: RegisterSalaPlanPayments201DataPaymentsItem[];
+  plan: RegisterSalaPlanPayments201DataPlan;
+  months: number;
+  totalAmount: string;
+};
+
+export type RegisterSalaPlanPayments201 = {
+  data: RegisterSalaPlanPayments201Data;
 };
 
 export type ListSalaPlans200DataItem = { [key: string]: unknown };
@@ -3702,6 +3739,46 @@ export const createSalaPayment = async (salaPaymentDto: SalaPaymentDto, options?
 
   const data: createSalaPaymentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createSalaPaymentResponse
+}
+
+
+
+export type registerSalaPlanPaymentsResponse201 = {
+  data: RegisterSalaPlanPayments201
+  status: 201
+}
+
+export type registerSalaPlanPaymentsResponseSuccess = (registerSalaPlanPaymentsResponse201) & {
+  headers: Headers;
+};
+;
+
+export type registerSalaPlanPaymentsResponse = (registerSalaPlanPaymentsResponseSuccess)
+
+export const getRegisterSalaPlanPaymentsUrl = () => {
+
+
+
+
+  return `/api/sala/payments/plan-months`
+}
+
+export const registerSalaPlanPayments = async (registerSalaPlanPaymentsDto: RegisterSalaPlanPaymentsDto, options?: RequestInit): Promise<registerSalaPlanPaymentsResponse> => {
+
+  const res = await fetch(getRegisterSalaPlanPaymentsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      registerSalaPlanPaymentsDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: registerSalaPlanPaymentsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as registerSalaPlanPaymentsResponse
 }
 
 

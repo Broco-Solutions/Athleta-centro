@@ -144,6 +144,19 @@ describe('Portal Sala services from the current plan', () => {
     const inactive = await request(app.getHttpServer()).get('/api/portal/sala/services').set('Cookie', f.cookie).expect(200);
     expect(inactive.body.data).toEqual([]);
   });
+  it('allows the same Portal reservation after registering its month from the active Plan', async () => {
+    const f = await fixture();
+    const denied = await reserve(f).expect(403);
+    expect(denied.body.code).toBe('PORTAL_SALA_PAYMENT_REQUIRED');
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
+    const method = await prisma.paymentMethod.create({ data: { name: `Portal manual ${crypto.randomUUID()}` } });
+    paymentMethodId = method.id;
+    const [year, month] = f.body.date.split('-').map(Number);
+    const registered = await sala.registerPlanPayments({ personId, paidAt: '2020-01-01', paymentMethodId, periods: [{ year: year!, month: month!, operationId: crypto.randomUUID() }] }, professorId);
+    expect(registered.payments[0]!.amount.toString()).toBe('20000');
+    await reserve(f).expect(201);
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);
+  });
   it('requires payment for the requested month and creates no reservation without it', async () => {
     const f = await fixture();
     const denied = await reserve(f).expect(403);

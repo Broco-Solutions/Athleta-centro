@@ -3,7 +3,7 @@ import { FinancialAdjustmentKind, Prisma, Role, RoutineStatus, SalaChargeKind, S
 import { PeopleService } from '../people/people.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceCatalogService } from '../finance/finance.service';
-import type { CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
+import type { RegisterSalaPlanPaymentsDto, SalaPaymentDto, CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
 const SALA_DEFAULT_DURATION_MINUTES = 60;
 const eligibleProfessorWhere = { status: InternalUserStatus.ACTIVE, roles: { some: { role: Role.PROFESSOR } } } satisfies Prisma.InternalUserWhereInput;
 const planServicesInclude = {
@@ -38,30 +38,95 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     const outstanding = Prisma.Decimal.max(total.minus(allocated), 0);
     return { status: outstanding.isZero() ? 'SETTLED' : allocated.isZero() ? 'PENDING' : 'PARTIAL', proposedAmount: total.toString(), outstanding: outstanding.toString(), charge };
   }
-  async createPayment(input: { personId: string; year: number; month: number; paidAt: string; amount: string; paymentMethodId: string; operationId: string; adjustmentReason?: string; allocations?: Array<{ chargeId: string; amount: string; operationId: string }> }, actorId: string) {
-    if (input.month < 1 || input.month > 12) throw new BadRequestException({ code: 'SALA_PAYMENT_MONTH_INVALID', message: 'Month is invalid' });
-    if (new Date(`${input.paidAt}T00:00:00Z`) > new Date(`${this.todayOperational()}T00:00:00Z`)) throw new BadRequestException({ code: 'SALA_PAYMENT_DATE_FUTURE', message: 'Paid date cannot be future' });
+  async createPayment(input: SalaPaymentDto, actorId: string) {
+    this.validatePaymentPeriod(input.year, input.month);
+    this.validatePaidAt(input.paidAt);
     const paymentAmount = this.positiveMoney(input.amount, 'SALA_PAYMENT_AMOUNT_INVALID');
-    const method = await this.prisma.paymentMethod.findUnique({ where: { id: input.paymentMethodId } });
-    if (!method || !method.isSelectable) throw new BadRequestException({ code: 'PAYMENT_METHOD_NOT_SELECTABLE', message: 'Payment method is not selectable' });
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.personId}, 0))`;
-      const existing = await tx.salaPayment.findUnique({ where: { operationId: input.operationId }, include: { paymentMethod: true, allocations: true, reversal: true } });
-      if (existing) return existing;
-      const person = await tx.person.findUnique({ where: { id: input.personId }, select: { id: true } });
-      if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
-      let requested = input.allocations;
-      if (!requested?.length) {
-        const monthly = await tx.salaCharge.findFirst({ where: { personId: input.personId, kind: SalaChargeKind.MONTHLY, year: input.year, month: input.month }, include: { adjustments: true, allocations: { where: { payment: { reversal: null } } } } });
-        if (monthly) {
-          const due = monthly.adjustments.reduce((amount, adjustment) => amount.plus(adjustment.amount), monthly.amount).minus(monthly.allocations.reduce((amount, allocation) => amount.plus(allocation.amount), new Prisma.Decimal(0)));
-          const automatic = Prisma.Decimal.min(paymentAmount, Prisma.Decimal.max(due, 0));
-          if (automatic.greaterThan(0)) requested = [{ chargeId: monthly.id, amount: automatic.toString(), operationId: input.operationId }];
+      await this.lockPaymentPerson(tx, input.personId);
+      await this.assertPaymentMethodSelectable(tx, input.paymentMethodId);
+      return this.createPaymentWithinTransaction(tx, input, paymentAmount, actorId);
+    });
+  }
+  async registerPlanPayments(input: RegisterSalaPlanPaymentsDto, actorId: string) {
+    input = { ...input, personId: input.personId.toLowerCase(), periods: input.periods.map((period) => ({ ...period, operationId: period.operationId.toLowerCase() })) };
+    this.validatePaidAt(input.paidAt);
+    if (!input.periods.length) throw new BadRequestException({ code: 'SALA_PAYMENT_PERIOD_REQUIRED', message: 'Seleccioná al menos un período.' });
+    const periods = new Set<string>();
+    const operations = new Set<string>();
+    for (const period of input.periods) {
+      this.validatePaymentPeriod(period.year, period.month);
+      const key = `${period.year}-${period.month}`;
+      if (periods.has(key)) throw new BadRequestException({ code: 'SALA_PAYMENT_PERIOD_DUPLICATE', message: 'Un período aparece más de una vez.' });
+      if (operations.has(period.operationId)) throw new BadRequestException({ code: 'SALA_PAYMENT_OPERATION_DUPLICATE', message: 'Un operationId aparece más de una vez.' });
+      periods.add(key);
+      operations.add(period.operationId);
+    }
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockPaymentPerson(tx, input.personId);
+      await this.assertPaymentMethodSelectable(tx, input.paymentMethodId);
+      const participation = await tx.salaParticipation.findFirst({ where: { personId: input.personId, endDate: null }, include: { plan: true } });
+      if (!participation) throw new BadRequestException({ code: 'SALA_PARTICIPATION_REQUIRED', message: 'Se necesita una participación activa de Sala para registrar pagos.' });
+      const monthlyAmount = this.positiveMoney(participation.plan.monthlyAmount.toString(), 'SALA_PAYMENT_AMOUNT_INVALID');
+      const existingOperations = await tx.salaPayment.findMany({ where: { operationId: { in: [...operations] } } });
+      for (const existing of existingOperations) {
+        const period = input.periods.find((item) => item.operationId === existing.operationId)!;
+        if (existing.personId !== input.personId || existing.year !== period.year || existing.month !== period.month) {
+          throw new ConflictException({ code: 'SALA_PAYMENT_OPERATION_CONFLICT', message: 'El operationId ya pertenece a otro pago.' });
         }
       }
-      await this.validateSalaAllocations(tx, input.personId, paymentAmount, requested ?? []);
-      return tx.salaPayment.create({ data: { personId: input.personId, year: input.year, month: input.month, paidAt: this.date(input.paidAt), amount: paymentAmount, paymentMethodId: input.paymentMethodId, registeredById: actorId, operationId: input.operationId, adjustmentReason: input.adjustmentReason?.trim() || null, allocations: { create: (requested ?? []).map((allocation) => ({ chargeId: allocation.chargeId, amount: allocation.amount, operationId: allocation.operationId })) } }, include: { paymentMethod: true, allocations: true, reversal: true } });
+      const paid = await tx.salaPayment.findMany({ where: { personId: input.personId, reversal: null, OR: input.periods.map(({ year, month }) => ({ year, month })) } });
+      for (const payment of paid) {
+        const period = input.periods.find((item) => item.year === payment.year && item.month === payment.month)!;
+        if (payment.operationId !== period.operationId) this.paymentAlreadyExists(payment.year, payment.month);
+      }
+      const payments = [];
+      for (const period of input.periods) {
+        payments.push(await this.createPaymentWithinTransaction(tx, { ...period, personId: input.personId, paidAt: input.paidAt, paymentMethodId: input.paymentMethodId, amount: monthlyAmount.toString() }, monthlyAmount, actorId));
+      }
+      // Retried operations keep their originally recorded amounts, even if the Plan price changed.
+      const totalAmount = existingOperations.length ? payments.reduce((total, payment) => total.plus(payment.amount), new Prisma.Decimal(0)) : monthlyAmount.times(input.periods.length);
+      return { payments, plan: { id: participation.plan.id, name: participation.plan.name, monthlyAmount: monthlyAmount.toString() }, months: payments.length, totalAmount: totalAmount.toString() };
     });
+  }
+  private async lockPaymentPerson(tx: Prisma.TransactionClient, personId: string): Promise<void> {
+    const lockPersonId = personId.toLowerCase();
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockPersonId}, 0))`;
+  }
+  private validatePaymentPeriod(year: number, month: number): void {
+    if (!Number.isInteger(month) || month < 1 || month > 12) throw new BadRequestException({ code: 'SALA_PAYMENT_MONTH_INVALID', message: 'Month is invalid' });
+    if (!Number.isInteger(year)) throw new BadRequestException({ code: 'SALA_PAYMENT_PERIOD_INVALID', message: 'El Mes/Año es inválido.' });
+  }
+  private validatePaidAt(paidAt: string): void {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(paidAt) || Number.isNaN(new Date(`${paidAt}T00:00:00Z`).getTime()) || new Date(`${paidAt}T00:00:00Z`).toISOString().slice(0, 10) !== paidAt) throw new BadRequestException({ code: 'SALA_PAYMENT_DATE_INVALID', message: 'La fecha de cobro es inválida.' });
+    if (paidAt > this.todayOperational()) throw new BadRequestException({ code: 'SALA_PAYMENT_DATE_FUTURE', message: 'Paid date cannot be future' });
+  }
+  private async assertPaymentMethodSelectable(tx: Prisma.TransactionClient, paymentMethodId: string): Promise<void> {
+    const method = await tx.paymentMethod.findUnique({ where: { id: paymentMethodId } });
+    if (!method || !method.isSelectable) throw new BadRequestException({ code: 'PAYMENT_METHOD_NOT_SELECTABLE', message: 'Payment method is not selectable' });
+  }
+  private paymentAlreadyExists(year: number, month: number): never {
+    const label = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month - 1, 1)));
+    throw new ConflictException({ code: 'SALA_PAYMENT_ALREADY_EXISTS', message: `El período ${label} ya tiene un pago registrado.` });
+  }
+  private async createPaymentWithinTransaction(tx: Prisma.TransactionClient, input: SalaPaymentDto, paymentAmount: Prisma.Decimal, actorId: string) {
+    const existing = await tx.salaPayment.findUnique({ where: { operationId: input.operationId }, include: { paymentMethod: true, allocations: true, reversal: true } });
+    if (existing) return existing;
+    const paid = await tx.salaPayment.findFirst({ where: { personId: input.personId, year: input.year, month: input.month, reversal: null }, select: { id: true } });
+    if (paid) this.paymentAlreadyExists(input.year, input.month);
+    const person = await tx.person.findUnique({ where: { id: input.personId }, select: { id: true } });
+    if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
+    let requested = input.allocations;
+    if (!requested?.length) {
+      const monthly = await tx.salaCharge.findFirst({ where: { personId: input.personId, kind: SalaChargeKind.MONTHLY, year: input.year, month: input.month }, include: { adjustments: true, allocations: { where: { payment: { reversal: null } } } } });
+      if (monthly) {
+        const due = monthly.adjustments.reduce((amount, adjustment) => amount.plus(adjustment.amount), monthly.amount).minus(monthly.allocations.reduce((amount, allocation) => amount.plus(allocation.amount), new Prisma.Decimal(0)));
+        const automatic = Prisma.Decimal.min(paymentAmount, Prisma.Decimal.max(due, 0));
+        if (automatic.greaterThan(0)) requested = [{ chargeId: monthly.id, amount: automatic.toString(), operationId: input.operationId }];
+      }
+    }
+    await this.validateSalaAllocations(tx, input.personId, paymentAmount, requested ?? []);
+    return tx.salaPayment.create({ data: { personId: input.personId, year: input.year, month: input.month, paidAt: this.date(input.paidAt), amount: paymentAmount, paymentMethodId: input.paymentMethodId, registeredById: actorId, operationId: input.operationId, adjustmentReason: input.adjustmentReason?.trim() || null, allocations: { create: (requested ?? []).map((allocation) => ({ chargeId: allocation.chargeId, amount: allocation.amount, operationId: allocation.operationId })) } }, include: { paymentMethod: true, allocations: true, reversal: true } });
   }
   async reversePayment(id: string, reason: string, operationId: string, actorId: string) {
     const value = this.requiredReason(reason);
@@ -184,7 +249,7 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     });
   }
   async listPlans() {
-    const plans = await this.prisma.salaPlan.findMany({ include: planServicesInclude, orderBy: { name: 'asc' } });
+    const plans = await this.prisma.salaPlan.findMany({ where: { isSelectable: true }, include: planServicesInclude, orderBy: { name: 'asc' } });
     return plans.map((plan) => this.mapPlanServices(plan));
   }
   async createPlan(input: PlanDto) {
@@ -463,7 +528,7 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
   private mapPlanServices(plan: PlanWithServices) {
     return { ...plan, services: plan.services.map((link) => link.serviceType) };
   }
-  private async assertPlanNameAvailable(name: string, excludingId?: string): Promise<void> { const plans = await this.prisma.salaPlan.findMany({ select: { id: true, name: true } }); if (plans.some((plan) => plan.id !== excludingId && this.normalizeName(plan.name) === this.normalizeName(name))) throw new ConflictException({ code: 'SALA_PLAN_DUPLICATE', message: 'A plan with this name already exists' }); }
+  private async assertPlanNameAvailable(name: string, excludingId?: string): Promise<void> { const plans = await this.prisma.salaPlan.findMany({ where: { isSelectable: true }, select: { id: true, name: true } }); if (plans.some((plan) => plan.id !== excludingId && this.normalizeName(plan.name) === this.normalizeName(name))) throw new ConflictException({ code: 'SALA_PLAN_DUPLICATE', message: 'A plan with this name already exists' }); }
   private validateServiceDuration(durationMinutes: number): void { if (durationMinutes <= 0 || durationMinutes % 15 !== 0) throw new BadRequestException({ code: 'SALA_SERVICE_DURATION_INVALID', message: 'Service duration must be a positive multiple of 15 minutes' }); }
   private validateWindow(startTime: Date, durationMinutes: number): void { if (this.minutes(startTime) % 15 !== 0 || durationMinutes <= 0 || durationMinutes % 15 !== 0) throw new BadRequestException({ code: 'SALA_SCHEDULE_GRID_INVALID', message: 'Opening windows must align to 15-minute slots' }); }
   private validateWeeklyWindows(windows: { weekday: SalaWeekday; start: Date; duration: number }[]): void {
