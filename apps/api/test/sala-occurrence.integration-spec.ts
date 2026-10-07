@@ -57,14 +57,16 @@ describe('SalaOccurrence persistence and API', () => {
     const dni = `${Math.floor(10_000_000 + Math.random() * 89_999_999)}`;
     const person = await prisma.person.create({ data: { firstName: 'Persona', lastName: 'Occurrence', dni, normalizedDni: dni, phone: '3515550101', birthDate: new Date('1990-01-01T00:00:00Z') } });
     const plan = await prisma.salaPlan.create({ data: { name: `Plan-${suffix}`, monthlyAmount: 1000 } });
+    const service = await sala.createServiceType({ name: `Musculación-${suffix}`, durationMinutes: 60 });
+    await prisma.salaPlanService.create({ data: { planId: plan.id, serviceTypeId: service.id } });
     const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' });
     const slot = await sala.createSlot({ weekday, startTime: '09:00', durationMinutes: windowDuration, specificCapacity: 5 });
-    return { actor, person, participation, slot, date };
+    return { actor, person, participation, slot, service, date };
   }
 
   it('projects past fixed bookings as RESERVED and materializes manual corrections with audit data', async () => {
     const fixture = await setup();
-    const fixed = await sala.createFixed({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, startDate: '2026-01-01', confirmOverbooking: true });
+    const fixed = await sala.createFixed({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, serviceTypeId: fixture.service.id, startDate: '2026-01-01', confirmOverbooking: true });
 
     expect((await sala.agenda(fixture.date))[0]?.people[0]).toMatchObject({ origin: 'FIXED', status: 'RESERVED', isMaterialized: false });
     const attended = await sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date, status: SalaOccurrenceStatus.ATTENDED }, fixture.actor.id);
@@ -79,7 +81,7 @@ describe('SalaOccurrence persistence and API', () => {
 
   it('cancels one fixed occurrence without ending its recurrence', async () => {
     const fixture = await setup();
-    const fixed = await sala.createFixed({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, startDate: '2026-01-01', confirmOverbooking: true });
+    const fixed = await sala.createFixed({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, serviceTypeId: fixture.service.id, startDate: '2026-01-01', confirmOverbooking: true });
     await sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date, status: SalaOccurrenceStatus.CANCELLED }, fixture.actor.id);
     expect((await sala.agenda(fixture.date))[0]?.people[0]?.status).toBe('CANCELLED');
     expect((await sala.agenda('2026-09-03'))[0]?.people[0]?.status).toBe('RESERVED');
@@ -88,7 +90,7 @@ describe('SalaOccurrence persistence and API', () => {
 
   it('uses explicit occurrence state as the authority over a one-off planning source', async () => {
     const fixture = await setup();
-    const reservation = await sala.createReservation({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, date: fixture.date, confirmOverbooking: true });
+    const reservation = await sala.createReservation({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, serviceTypeId: fixture.service.id, date: fixture.date, confirmOverbooking: true });
     await sala.cancelReservation(reservation.id);
     expect((await sala.agenda(fixture.date))[0]?.people[0]?.status).toBe('CANCELLED');
     await sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date, status: SalaOccurrenceStatus.ATTENDED }, fixture.actor.id);
@@ -97,7 +99,7 @@ describe('SalaOccurrence persistence and API', () => {
 
   it('keeps one persisted occurrence under concurrent corrections', async () => {
     const fixture = await setup();
-    await sala.createFixed({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, startDate: '2026-01-01', confirmOverbooking: true });
+    await sala.createFixed({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, serviceTypeId: fixture.service.id, startDate: '2026-01-01', confirmOverbooking: true });
     await Promise.all([
       sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date, status: SalaOccurrenceStatus.ATTENDED }, fixture.actor.id),
       sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date, status: SalaOccurrenceStatus.ABSENT }, fixture.actor.id),
@@ -122,16 +124,17 @@ describe('SalaOccurrence persistence and API', () => {
     expect((await sala.agenda(fixture.date)).find((item) => item.slot.startTime === '09:30')?.people[0]).toMatchObject({ startTime: '09:30', durationMinutes: 60, origin: 'SPONTANEOUS' });
   });
 
-  it('uses the 60-minute Sala default instead of the opening-window duration', async () => {
+  it('preserves the 60-minute Sala default when projecting historical reservations without a service', async () => {
     const fixture = await setup('2026-08-27', 'THURSDAY', 300);
-    const reservation = await sala.createReservation({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, date: fixture.date });
-    expect(reservation.serviceDurationMinutes).toBe(60);
+    const reservation = await prisma.oneOffReservation.create({ data: { personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, date: new Date(`${fixture.date}T00:00:00Z`) } });
+    expect(reservation.serviceTypeId).toBeNull();
+    expect(reservation.serviceDurationMinutes).toBeNull();
     expect((await sala.agenda(fixture.date)).find((item) => item.slot.startTime === '09:00')?.people[0]).toMatchObject({ startTime: '09:00', durationMinutes: 60 });
   });
 
   it('projects closure as CANCELLED while preserving the next fixed occurrence', async () => {
     const fixture = await setup();
-    await sala.createFixed({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, startDate: '2026-01-01', confirmOverbooking: true });
+    await sala.createFixed({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, serviceTypeId: fixture.service.id, startDate: '2026-01-01', confirmOverbooking: true });
     await sala.addException(fixture.slot.id, { date: fixture.date, type: 'CLOSURE' });
     expect((await sala.agenda(fixture.date))[0]).toMatchObject({ isClosed: true, people: [expect.objectContaining({ status: 'CANCELLED' })] });
     expect((await sala.agenda('2026-09-03'))[0]?.people[0]?.status).toBe('RESERVED');
@@ -139,7 +142,7 @@ describe('SalaOccurrence persistence and API', () => {
 
   it('enforces source and uniqueness constraints directly in PostgreSQL', async () => {
     const fixture = await setup();
-    const fixed = await sala.createFixed({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, startDate: '2026-01-01', confirmOverbooking: true });
+    const fixed = await sala.createFixed({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, serviceTypeId: fixture.service.id, startDate: '2026-01-01', confirmOverbooking: true });
     await prisma.salaOccurrence.create({ data: { personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: new Date(`${fixture.date}T00:00:00Z`), origin: 'FIXED', status: 'RESERVED', fixedSalaBookingId: fixed.id, createdBy: fixture.actor.id, lastModifiedBy: fixture.actor.id } });
     await expect(prisma.salaOccurrence.create({ data: { personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: new Date(`${fixture.date}T00:00:00Z`), origin: 'FIXED', status: 'ATTENDED', fixedSalaBookingId: fixed.id, createdBy: fixture.actor.id, lastModifiedBy: fixture.actor.id } })).rejects.toMatchObject({ code: 'P2002' });
     await expect(prisma.salaOccurrence.create({ data: { personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: new Date('2026-09-03T00:00:00Z'), origin: 'SPONTANEOUS', status: 'ATTENDED', fixedSalaBookingId: fixed.id, createdBy: fixture.actor.id, lastModifiedBy: fixture.actor.id } })).rejects.toThrow('sala_occurrences_origin_source_check');
@@ -152,7 +155,7 @@ describe('SalaOccurrence persistence and API', () => {
     const past = new Date(current); past.setUTCDate(past.getUTCDate() - 7);
     const future = new Date(current); future.setUTCDate(future.getUTCDate() + 7);
     const fixture = await setup(today, weekday);
-    await sala.createFixed({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, startDate: '2026-01-01', confirmOverbooking: true });
+    await sala.createFixed({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, serviceTypeId: fixture.service.id, startDate: '2026-01-01', confirmOverbooking: true });
     await sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: past.toISOString().slice(0, 10), status: SalaOccurrenceStatus.ATTENDED }, fixture.actor.id);
     await sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: future.toISOString().slice(0, 10), status: SalaOccurrenceStatus.ATTENDED }, fixture.actor.id);
     await sala.leave(fixture.participation.id, false, fixture.actor.id);
@@ -162,7 +165,7 @@ describe('SalaOccurrence persistence and API', () => {
 
   it('enforces API authentication and attendance permissions', async () => {
     const fixture = await setup();
-    await sala.createFixed({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, startDate: '2026-01-01', confirmOverbooking: true });
+    await sala.createFixed({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, serviceTypeId: fixture.service.id, startDate: '2026-01-01', confirmOverbooking: true });
     const payload = { personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date };
     await request(app.getHttpServer()).post('/api/sala/occurrences/attend').send(payload).expect(401);
     const unauthorized = await users.create({ firstName: 'Clinic', lastName: 'Only', email: `clinic-${randomUUID()}@athleta.test`, roles: [Role.KINESIOLOGIST] });

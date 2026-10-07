@@ -628,6 +628,14 @@ export interface UpdateSalaConfigurationDto {
   capacity: number;
 }
 
+export interface PlanDto {
+  name: string;
+  monthlyAmount: number;
+  /** @minItems 1 */
+  serviceTypeIds: string[];
+  isSelectable?: boolean;
+}
+
 export interface SalaServiceTypeDto {
   name: string;
   /** @minimum 15 */
@@ -1291,6 +1299,16 @@ export type ListSalaPlans200DataItem = { [key: string]: unknown };
 
 export type ListSalaPlans200 = {
   data?: ListSalaPlans200DataItem[];
+};
+
+export type ListPersonSalaServices200DataItem = {
+  id: string;
+  name: string;
+  durationMinutes: number;
+};
+
+export type ListPersonSalaServices200 = {
+  data?: ListPersonSalaServices200DataItem[];
 };
 
 export type ListClinicalPatientsOverviewParams = {
@@ -4068,14 +4086,15 @@ export const getCreateSalaPlanUrl = () => {
   return `/api/sala/plans`
 }
 
-export const createSalaPlan = async ( options?: RequestInit): Promise<createSalaPlanResponse> => {
+export const createSalaPlan = async (planDto: PlanDto, options?: RequestInit): Promise<createSalaPlanResponse> => {
 
   const res = await fetch(getCreateSalaPlanUrl(),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      planDto,)
   }
 )
 
@@ -4107,14 +4126,16 @@ export const getUpdateSalaPlanUrl = (id: string,) => {
   return `/api/sala/plans/${id}`
 }
 
-export const updateSalaPlan = async (id: string, options?: RequestInit): Promise<updateSalaPlanResponse> => {
+export const updateSalaPlan = async (id: string,
+    planDto: PlanDto, options?: RequestInit): Promise<updateSalaPlanResponse> => {
 
   const res = await fetch(getUpdateSalaPlanUrl(id),
   {
     ...options,
-    method: 'PATCH'
-
-
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      planDto,)
   }
 )
 
@@ -4161,6 +4182,45 @@ export const retireSalaPlan = async (id: string, options?: RequestInit): Promise
 
   const data: retireSalaPlanResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as retireSalaPlanResponse
+}
+
+
+
+export type listPersonSalaServicesResponse200 = {
+  data: ListPersonSalaServices200
+  status: 200
+}
+
+export type listPersonSalaServicesResponseSuccess = (listPersonSalaServicesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPersonSalaServicesResponse = (listPersonSalaServicesResponseSuccess)
+
+export const getListPersonSalaServicesUrl = (personId: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/services`
+}
+
+export const listPersonSalaServices = async (personId: string, options?: RequestInit): Promise<listPersonSalaServicesResponse> => {
+
+  const res = await fetch(getListPersonSalaServicesUrl(personId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listPersonSalaServicesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPersonSalaServicesResponse
 }
 
 

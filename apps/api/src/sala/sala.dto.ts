@@ -1,12 +1,19 @@
 import { CreatePersonDto } from '../people/person.dto';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { SalaOccurrenceStatus, SalaScheduleExceptionType, SalaWeekday } from '@prisma/client';
 
 export class CapacityDto { @ApiProperty({ type: Number, minimum: 1 }) @Type(() => Number) @IsInt() @Min(1) capacity!: number; }
 export class UpdateSalaConfigurationDto extends CapacityDto {}
-export class PlanDto { @ApiProperty() @IsString() @MinLength(1) @MaxLength(120) name!: string; @ApiProperty() @Type(() => Number) @IsInt() monthlyAmount!: number; @ApiPropertyOptional() @IsOptional() isSelectable?: boolean; }
+export class PlanDto {
+  @ApiProperty({ type: String }) @IsString() @MinLength(1) @MaxLength(120) name!: string;
+  @ApiProperty({ type: Number }) @Type(() => Number) @IsInt() monthlyAmount!: number;
+  @ApiProperty({ type: [String], format: 'uuid', minItems: 1, uniqueItems: true })
+  @IsArray() @ArrayMinSize(1) @ArrayUnique() @IsUUID(undefined, { each: true }) serviceTypeIds!: string[];
+  @ApiPropertyOptional({ type: Boolean }) @IsOptional() isSelectable?: boolean;
+}
+
 export class SalaServiceTypeDto { @ApiProperty({ type: String }) @IsString() @MinLength(1) @MaxLength(120) name!: string; @ApiProperty({ type: Number, minimum: 15, multipleOf: 15 }) @Type(() => Number) @IsInt() @Min(15) durationMinutes!: number; @ApiPropertyOptional({ type: Boolean }) @IsOptional() @IsBoolean() isSelectable?: boolean; }
 export class ScheduleSlotDto { @ApiProperty({ enum: SalaWeekday, type: String }) @IsEnum(SalaWeekday) weekday!: SalaWeekday; @ApiProperty({ example: '09:00', type: String }) @IsString() startTime!: string; @ApiPropertyOptional({ minimum: 1, type: Number }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) durationMinutes = 60; @ApiPropertyOptional({ minimum: 1, nullable: true, type: Number }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) specificCapacity?: number | null; }
 export class ReplaceWeeklyScheduleDto { @ApiProperty({ type: () => [ScheduleSlotDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => ScheduleSlotDto) windows!: ScheduleSlotDto[]; }

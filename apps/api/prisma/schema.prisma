@@ -572,8 +572,20 @@ model SalaPlan {
   participations SalaParticipation[]
   assignments    SalaPlanAssignment[]
   charges        SalaCharge[]
+  services       SalaPlanService[]
 
   @@map("sala_plans")
+}
+
+model SalaPlanService {
+  planId        String          @map("plan_id") @db.Uuid
+  serviceTypeId String          @map("service_type_id") @db.Uuid
+  plan          SalaPlan        @relation(fields: [planId], references: [id], onDelete: Cascade)
+  serviceType   SalaServiceType @relation(fields: [serviceTypeId], references: [id], onDelete: Cascade)
+
+  @@id([planId, serviceTypeId])
+  @@index([serviceTypeId])
+  @@map("sala_plan_services")
 }
 
 model SalaParticipation {
@@ -625,6 +637,7 @@ model SalaServiceType {
   updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
   fixedBookings   FixedSalaBooking[]
   reservations    OneOffReservation[]
+  plans           SalaPlanService[]
 
   @@map("sala_service_types")
 }

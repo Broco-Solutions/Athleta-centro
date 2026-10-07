@@ -15,6 +15,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const code = typeof rawResponse === 'object' && rawResponse !== null && 'code' in rawResponse
       ? String(rawResponse.code)
       : statusCode === 400 ? 'VALIDATION_ERROR' : statusCode === 429 ? 'RATE_LIMIT_EXCEEDED' : statusCode === 500 ? 'INTERNAL_ERROR' : 'HTTP_ERROR';
-    response.status(statusCode).json({ statusCode, code, message, details: { requestId: request.header('x-request-id') } });
+    const details: { requestId: string | undefined; year?: number; month?: number } = { requestId: request.header('x-request-id') };
+    if (code === 'PORTAL_SALA_PAYMENT_REQUIRED' && typeof rawResponse === 'object' && rawResponse !== null && 'details' in rawResponse) {
+      const period = rawResponse.details;
+      if (typeof period === 'object' && period !== null && 'year' in period && 'month' in period
+        && typeof period.year === 'number' && typeof period.month === 'number') {
+        details.year = period.year;
+        details.month = period.month;
+      }
+    }
+    response.status(statusCode).json({ statusCode, code, message, details });
   }
 }

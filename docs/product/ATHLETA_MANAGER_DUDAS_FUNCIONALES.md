@@ -101,6 +101,8 @@ El resto de las dudas originales figura resuelto, no aplica o queda a criterio t
 
 | ID | Estado | Definición resultante | Fuente |
 |---|---|---|---|
+| SAL-PLA-01 | RESUELTO | Un Servicio de Sala representa una actividad y su duración. Un Plan define precio mensual y uno o más Servicios incluidos. El Servicio no tiene precio propio. Un Servicio puede estar incluido en varios Planes. Un Plan nuevo requiere al menos un Servicio. Por ahora los Servicios no poseen disponibilidad horaria ni capacidad propia: utilizan la grilla y capacidad generales de Sala. | [Registro SAL-PLA-01](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), definición aprobada 2026-10-07 |
+| SAL-PLA-02 | RESUELTO | Una Persona que participa de Sala sólo puede crear nuevas Reservas y Turnos fijos para Servicios incluidos en su Plan actual. Los Servicios que se muestran en Portal y en la operación interna del Alumno se derivan de ese Plan. Un Servicio retirado no puede utilizarse para nuevas operaciones. Los registros ya existentes no se cancelan ni reescriben automáticamente cuando cambia el Plan o su composición de Servicios. La modificación de un Turno fijo también exige un Servicio permitido por el Plan actual. | [Registro SAL-PLA-02](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), definición aprobada 2026-10-07 |
 | SAL-PAG-01 | RESUELTO | Sí. El mes de incorporación queda Pago pendiente desde el momento del ingreso si aún no tiene un Pago válido, sin importar el día del mes. | §6.19, §6.33 |
 | SAL-PAG-02 | RESUELTO | Sí. El mes de incorporación ya cuenta como primer mes impago si no existe Pago válido. | §6.19 |
 | SAL-PAG-03 | RESUELTO | Sí. Los próximos Pagos proponen el **precio actual del Plan actual**; si el Plan cambió antes de registrar ese pago, se usa el nuevo Plan. | §6.31–§6.34 |
@@ -341,6 +343,7 @@ El resto de las dudas originales figura resuelto, no aplica o queda a criterio t
 | POR-SAL-05 | RESUELTO | La ventana de reservas del Portal incluye desde el día actual hasta el día actual + 30 días, ambos inclusive. | [Registro POR-SAL-05](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | POR-SAL-06 | RESUELTO | Si cancela una reserva y el horario continúa sin capacidad disponible, no puede volver a reservar. Solo puede hacerlo si en ese momento existe lugar. | §10.7 |
 | POR-SAL-07 | RESUELTO | Los compromisos futuros Cancelados permanecen visibles e identificados hasta que pasa su fecha/hora. Después dejan de mostrarse; no existe historial de asistencias/cancelaciones pasadas en Portal. | §10.5 |
+| POR-SAL-08 | RESUELTO | Las nuevas reservas puntuales creadas por el Alumno desde Portal requieren un Pago de Sala válido correspondiente al Mes/Año calendario de la fecha reservada. La fecha real de cobro no define la vigencia. Un Pago revertido no habilita reservas. La restricción no aplica a operaciones internas realizadas por el personal ni a Turnos fijos del Portal. La falta o reversión posterior del Pago no cancela automáticamente Reservas ya existentes. | [Registro POR-SAL-08](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), definición aprobada 2026-10-07 |
 
 ---
 

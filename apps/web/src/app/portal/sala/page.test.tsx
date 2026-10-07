@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import PortalSala from './page';
+import { portalFetch } from '../portal-ui';
 
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
@@ -24,7 +25,7 @@ beforeEach(() => {
     http.get('http://localhost:3000/api/portal/auth/session', () => HttpResponse.json({ data: { csrfToken: 'csrf' } })),
     http.post('http://localhost:3000/api/portal/sala/reservations', async ({ request }) => {
       const body = await request.json();
-      expect(body).toMatchObject({ scheduleSlotId: 'window', startTime: '09:00' });
+      expect(body).toMatchObject({ scheduleSlotId: 'window', serviceTypeId: 'service', startTime: '09:00', date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
       return HttpResponse.json({ data: { id: 'reservation' } }, { status: 201 });
     }),
   );
@@ -95,4 +96,73 @@ it('opens the custom finish confirmation and removes the fixed booking after suc
   fireEvent.click(within(dialog).getByRole('button', { name: 'Finalizar turno' }));
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Finalizar turno fijo' })).not.toBeInTheDocument());
   await waitFor(() => expect(screen.getByText('No tenés un turno fijo.')).toBeInTheDocument());
+});
+
+it('offers only services returned for the current plan', async () => {
+  server.use(http.get('http://localhost:3000/api/portal/sala/services', () => HttpResponse.json({ data: [
+    { id: 'muscle', name: 'Musculación', durationMinutes: 60 },
+    { id: 'functional', name: 'Funcional', durationMinutes: 45 },
+  ] })));
+  renderPortalSala();
+  await screen.findAllByRole('option', { name: 'Musculación · 60 min' });
+  expect(screen.getAllByRole('option', { name: 'Funcional · 45 min' })).toHaveLength(2);
+  expect(screen.queryByRole('option', { name: /Calistenia/ })).not.toBeInTheDocument();
+});
+it('shows the empty plan state and disables new reservations and fixed bookings', async () => {
+  server.use(http.get('http://localhost:3000/api/portal/sala/services', () => HttpResponse.json({ data: [] })));
+  renderPortalSala();
+  expect(await screen.findByText('Tu Plan actual no tiene servicios disponibles. Consultá con Athleta.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Reservar horario' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Crear turno fijo' })).toBeDisabled();
+});
+it('preserves an old fixed service in the listing but requires an allowed service when editing', async () => {
+  let submitted: unknown;
+  server.use(
+    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [{
+      id: 'old-fixed', startDate: '2026-09-07', startTime: '09:00',
+      serviceType: { id: 'calisthenics', name: 'Calistenia' }, scheduleSlot: { id: 'window', weekday: 'MONDAY' },
+    }], routine: null, evaluations: [], paymentState: 'PENDING' } })),
+    http.post('http://localhost:3000/api/portal/sala/fixed-bookings/old-fixed/change', async ({ request }) => { submitted = await request.json(); return HttpResponse.json({ data: {} }); }),
+  );
+  renderPortalSala();
+  expect(await screen.findByText('Calistenia')).toBeInTheDocument();
+  await screen.findAllByRole('option', { name: 'Rehabilitación · 45 min' });
+  fireEvent.click(screen.getByRole('button', { name: 'Modificar' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Modificar turno fijo' });
+  const selector = within(dialog).getByRole('combobox', { name: 'Servicio' });
+  expect(selector).toHaveValue('');
+  expect(within(dialog).getByRole('option', { name: 'Seleccionar servicio' })).toBeInTheDocument();
+  expect(within(dialog).queryByRole('option', { name: 'Calistenia' })).not.toBeInTheDocument();
+  expect(within(dialog).getByRole('button', { name: 'Guardar cambios' })).toBeDisabled();
+  fireEvent.change(selector, { target: { value: 'service' } });
+  await within(dialog).findByRole('option', { name: '09:00' });
+  fireEvent.change(within(dialog).getByRole('combobox', { name: 'Hora' }), { target: { value: 'window:09:00' } });
+  await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Guardar cambios' })).toBeEnabled());
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar cambios' }));
+  await waitFor(() => expect(submitted).toMatchObject({ serviceTypeId: 'service' }));
+});
+
+const paymentMessage = 'Para reservar en noviembre necesitás tener registrado el pago de noviembre.';
+it.each([
+  ['PORTAL_SALA_PAYMENT_REQUIRED', paymentMessage, paymentMessage, 403],
+  ['SALA_CAPACITY_FULL', 'Capacidad agotada.', 'No pudimos reservar ese horario. Revisá la disponibilidad.', 409],
+])('shows the appropriate reservation message for %s', async (code, message, expected, status) => {
+  server.use(http.post('http://localhost:3000/api/portal/sala/reservations', () => HttpResponse.json({
+    statusCode: status, code, message, details: { year: 2026, month: 11 },
+  }, { status })));
+  renderPortalSala();
+  expect(await screen.findByText('Para reservar desde el Portal necesitás tener abonado el mes correspondiente a la fecha elegida.')).toBeInTheDocument();
+  await screen.findAllByRole('option', { name: 'Rehabilitación · 45 min' });
+  fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'service' } });
+  await screen.findByRole('option', { name: '09:00 · Disponible' });
+  fireEvent.change(screen.getByLabelText('Inicio'), { target: { value: 'window:09:00' } });
+  const reserve = screen.getByRole('button', { name: 'Reservar horario' });
+  await waitFor(() => expect(reserve).toBeEnabled());
+  fireEvent.click(reserve);
+  expect(await screen.findByText(expected)).toBeInTheDocument();
+});
+
+it('keeps a generic fetch error when the response is not structured', async () => {
+  server.use(http.get('http://localhost:3000/api/portal/sala/services', () => HttpResponse.text('Unavailable', { status: 503 })));
+  await expect(portalFetch('sala/services')).rejects.toThrow('No pudimos cargar esta información.');
 });

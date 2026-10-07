@@ -6,9 +6,23 @@ import { usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { formatOperationalTime } from '../../lib/operational-time';
 
+export class PortalApiError extends Error {
+  constructor(public readonly code: string, message: string) {
+    super(message);
+    this.name = 'PortalApiError';
+  }
+}
+
 export const portalFetch = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(`/api/portal/${path}`, { credentials: 'include', ...init });
-  if (!response.ok) throw new Error('No pudimos cargar esta información.');
+  if (!response.ok) {
+    const error: unknown = await response.json().catch(() => null);
+    if (error && typeof error === 'object' && 'code' in error && 'message' in error
+      && typeof error.code === 'string' && typeof error.message === 'string') {
+      throw new PortalApiError(error.code, error.message);
+    }
+    throw new Error('No pudimos cargar esta información.');
+  }
   const body = await response.json() as { data: T };
   return body.data;
 };

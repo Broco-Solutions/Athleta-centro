@@ -6,6 +6,13 @@ import { FinanceCatalogService } from '../finance/finance.service';
 import type { CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
 const SALA_DEFAULT_DURATION_MINUTES = 60;
 const eligibleProfessorWhere = { status: InternalUserStatus.ACTIVE, roles: { some: { role: Role.PROFESSOR } } } satisfies Prisma.InternalUserWhereInput;
+const planServicesInclude = {
+  services: {
+    include: { serviceType: { select: { id: true, name: true, durationMinutes: true, isSelectable: true } } },
+    orderBy: { serviceType: { name: 'asc' } },
+  },
+} satisfies Prisma.SalaPlanInclude;
+type PlanWithServices = Prisma.SalaPlanGetPayload<{ include: typeof planServicesInclude }>;
 @Injectable()
 export class SalaService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(SalaService.name);
@@ -165,9 +172,62 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
   async createServiceType(input: SalaServiceTypeDto) { this.validateServiceDuration(input.durationMinutes); try { return await this.prisma.salaServiceType.create({ data: { name: input.name.trim(), normalizedName: this.normalizeName(input.name), durationMinutes: input.durationMinutes, isSelectable: input.isSelectable ?? true } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_SERVICE_TYPE_DUPLICATE', message: 'A service with this name already exists' }); throw error; } }
   async updateServiceType(id: string, input: SalaServiceTypeDto) { this.validateServiceDuration(input.durationMinutes); try { return await this.prisma.salaServiceType.update({ where: { id }, data: { name: input.name.trim(), normalizedName: this.normalizeName(input.name), durationMinutes: input.durationMinutes, ...(input.isSelectable !== undefined ? { isSelectable: input.isSelectable } : {}) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_SERVICE_TYPE_NOT_FOUND', message: 'Service not found' }); if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_SERVICE_TYPE_DUPLICATE', message: 'A service with this name already exists' }); throw error; } }
   async retireServiceType(id: string) { const service = await this.prisma.salaServiceType.findUnique({ where: { id }, select: { id: true } }); if (!service) throw new NotFoundException({ code: 'SALA_SERVICE_TYPE_NOT_FOUND', message: 'Service not found' }); return this.prisma.salaServiceType.update({ where: { id }, data: { isSelectable: false } }); }
-  async listPlans() { return this.prisma.salaPlan.findMany({ orderBy: { name: 'asc' } }); }
-  async createPlan(input: PlanDto) { await this.assertPlanNameAvailable(input.name); try { return await this.prisma.salaPlan.create({ data: { name: input.name.trim(), monthlyAmount: input.monthlyAmount, isSelectable: input.isSelectable ?? true } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_PLAN_DUPLICATE', message: 'A plan with this name already exists' }); throw error; } }
-  async updatePlan(id: string, input: PlanDto) { await this.assertPlanNameAvailable(input.name, id); try { return await this.prisma.salaPlan.update({ where: { id }, data: { name: input.name.trim(), monthlyAmount: input.monthlyAmount, ...(input.isSelectable !== undefined ? { isSelectable: input.isSelectable } : {}) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_PLAN_NOT_FOUND', message: 'Plan not found' }); if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_PLAN_DUPLICATE', message: 'A plan with this name already exists' }); throw error; } }
+  async listPersonServiceTypes(personId: string) {
+    const participation = await this.prisma.salaParticipation.findFirst({
+      where: { personId, endDate: null }, select: { planId: true },
+    });
+    if (!participation) return [];
+    return this.prisma.salaServiceType.findMany({
+      where: { isSelectable: true, plans: { some: { planId: participation.planId } } },
+      select: { id: true, name: true, durationMinutes: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+  async listPlans() {
+    const plans = await this.prisma.salaPlan.findMany({ include: planServicesInclude, orderBy: { name: 'asc' } });
+    return plans.map((plan) => this.mapPlanServices(plan));
+  }
+  async createPlan(input: PlanDto) {
+    await this.assertPlanNameAvailable(input.name);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.assertPlanServicesAvailable(tx, input.serviceTypeIds);
+        const plan = await tx.salaPlan.create({
+          data: {
+            name: input.name.trim(), monthlyAmount: input.monthlyAmount, isSelectable: input.isSelectable ?? true,
+            services: { create: input.serviceTypeIds.map((serviceTypeId) => ({ serviceTypeId })) },
+          },
+          include: planServicesInclude,
+        });
+        return this.mapPlanServices(plan);
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_PLAN_DUPLICATE', message: 'A plan with this name already exists' });
+      throw error;
+    }
+  }
+  async updatePlan(id: string, input: PlanDto) {
+    await this.assertPlanNameAvailable(input.name, id);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.assertPlanServicesAvailable(tx, input.serviceTypeIds);
+        const plan = await tx.salaPlan.update({
+          where: { id },
+          data: {
+            name: input.name.trim(), monthlyAmount: input.monthlyAmount,
+            ...(input.isSelectable !== undefined ? { isSelectable: input.isSelectable } : {}),
+            services: { deleteMany: {}, create: input.serviceTypeIds.map((serviceTypeId) => ({ serviceTypeId })) },
+          },
+          include: planServicesInclude,
+        });
+        return this.mapPlanServices(plan);
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_PLAN_NOT_FOUND', message: 'Plan not found' });
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_PLAN_DUPLICATE', message: 'A plan with this name already exists' });
+      throw error;
+    }
+  }
   async retirePlan(id: string) { const plan = await this.prisma.salaPlan.findUnique({ where: { id }, select: { id: true } }); if (!plan) throw new NotFoundException({ code: 'SALA_PLAN_NOT_FOUND', message: 'Plan not found' }); return this.prisma.salaPlan.update({ where: { id }, data: { isSelectable: false } }); }
   async removeException(id: string) { try { return await this.prisma.salaScheduleException.delete({ where: { id } }); } catch { throw new NotFoundException({ code: 'SALA_EXCEPTION_NOT_FOUND', message: 'Exception not found' }); } }
   async listSlots() { return this.prisma.salaScheduleSlot.findMany({ where: { isActive: true }, include: { exceptions: true }, orderBy: [{ weekday: 'asc' }, { startTime: 'asc' }] }); }
@@ -394,6 +454,15 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
   }
   private optionalText(value: string | null | undefined): string | null { const normalized = value?.trim(); return normalized ? normalized : null; }
   private normalizeName(value: string): string { return value.trim().normalize('NFKC').toLocaleLowerCase('es-AR'); }
+  private async assertPlanServicesAvailable(tx: Prisma.TransactionClient, serviceTypeIds: string[]): Promise<void> {
+    const count = await tx.salaServiceType.count({ where: { id: { in: serviceTypeIds }, isSelectable: true } });
+    if (serviceTypeIds.length === 0 || count !== serviceTypeIds.length) {
+      throw new BadRequestException({ code: 'SALA_PLAN_SERVICE_INVALID', message: 'Plan services must exist and be selectable' });
+    }
+  }
+  private mapPlanServices(plan: PlanWithServices) {
+    return { ...plan, services: plan.services.map((link) => link.serviceType) };
+  }
   private async assertPlanNameAvailable(name: string, excludingId?: string): Promise<void> { const plans = await this.prisma.salaPlan.findMany({ select: { id: true, name: true } }); if (plans.some((plan) => plan.id !== excludingId && this.normalizeName(plan.name) === this.normalizeName(name))) throw new ConflictException({ code: 'SALA_PLAN_DUPLICATE', message: 'A plan with this name already exists' }); }
   private validateServiceDuration(durationMinutes: number): void { if (durationMinutes <= 0 || durationMinutes % 15 !== 0) throw new BadRequestException({ code: 'SALA_SERVICE_DURATION_INVALID', message: 'Service duration must be a positive multiple of 15 minutes' }); }
   private validateWindow(startTime: Date, durationMinutes: number): void { if (this.minutes(startTime) % 15 !== 0 || durationMinutes <= 0 || durationMinutes % 15 !== 0) throw new BadRequestException({ code: 'SALA_SCHEDULE_GRID_INVALID', message: 'Opening windows must align to 15-minute slots' }); }
@@ -405,6 +474,7 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     }
   }
   private async validateBooking(tx: Prisma.TransactionClient, input: FixedBookingDto | OneOffReservationDto, date: string, excludingFixed?: { id: string }): Promise<{ startTime: Date; durationMinutes: number }> {
+    if (!input.serviceTypeId) throw new BadRequestException({ code: 'SALA_SERVICE_REQUIRED', message: 'Se requiere un Servicio para reservar.' });
     const requestedDay = this.date(date);
     await tx.$queryRaw`SELECT id FROM sala_schedule_slots WHERE id = ${input.scheduleSlotId}::uuid FOR UPDATE`;
     const [participation, window, service] = await Promise.all([
@@ -418,8 +488,16 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     if ('date' in input && this.weekday(day) !== window.weekday) throw new NotFoundException({ code: 'SALA_SCHEDULE_NOT_FOUND', message: 'Opening window not found for this date' });
     if (window.startsAt > day || (window.endedAt && window.endedAt < day)) throw new NotFoundException({ code: 'SALA_SCHEDULE_NOT_FOUND', message: 'Opening window not active for this date' });
     const exception = await tx.salaScheduleException.findUnique({ where: { scheduleSlotId_date: { scheduleSlotId: window.id, date: day } } });
-    if (input.serviceTypeId && !service) throw new BadRequestException({ code: 'SALA_SERVICE_TYPE_INVALID', message: 'Service is not selectable' });
-    const durationMinutes = service?.durationMinutes ?? SALA_DEFAULT_DURATION_MINUTES;
+    if (!service) throw new BadRequestException({ code: 'SALA_SERVICE_TYPE_INVALID', message: 'Service is not selectable' });
+    const planService = await tx.salaPlanService.findUnique({
+      where: { planId_serviceTypeId: { planId: participation.planId, serviceTypeId: input.serviceTypeId } },
+      select: { planId: true },
+    });
+    if (!planService) throw new BadRequestException({
+      code: 'SALA_SERVICE_NOT_INCLUDED_IN_PLAN',
+      message: 'El servicio no está incluido en el Plan actual de la Persona.',
+    });
+    const durationMinutes = service.durationMinutes;
     this.validateServiceDuration(durationMinutes);
     const resolvedStartTime = this.time(input.startTime ?? this.formatMinutes(this.minutes(window.startTime)));
     const start = this.minutes(resolvedStartTime);
