@@ -8,13 +8,13 @@ export class AuthSecurityMiddleware {
   constructor(private readonly auth: AuthService, private readonly rateLimits: AuthRateLimitService) {}
   async use(request: Request, _response: Response, next: NextFunction): Promise<void> {
     const path = request.originalUrl.split('?')[0] ?? request.path;
-    const publicPath =
+    const bypassInternalSecurity =
       path === '/api/auth/login' ||
-      path === '/api/portal/auth/login' ||
+      path.startsWith('/api/portal/') ||
       path === '/health';
     const allowedWhilePasswordChangeRequired = path === '/api/auth/session' || path === '/api/auth/change-password' || path === '/api/auth/logout';
     if (path.startsWith('/api/')) this.rateLimits.assertGeneralLimit(request.ip ?? 'unknown');
-    if (publicPath || !request.cookies?.athleta_session) return next();
+    if (bypassInternalSecurity || !request.cookies?.athleta_session) return next();
     try {
       const current = await this.auth.current(request.cookies.athleta_session);
       if (current.session.mustChangePassword && !allowedWhilePasswordChangeRequired) {

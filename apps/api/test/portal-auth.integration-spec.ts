@@ -33,7 +33,7 @@ describe('Portal auth and PIN reset', () => {
     await auth.provisionCredential(admin.id, 'ValidPass1!');
     await prisma.internalCredential.update({ where: { internalUserId: admin.id }, data: { mustChangePassword: false } });
     const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: admin.email, password: 'ValidPass1!' }).expect(200);
-    const cookie = login.headers['set-cookie'][0] as string;
+    const cookie = (login.headers['set-cookie'][0] as string).split(';')[0]!;
     const csrf = login.body.data.csrfToken as string;
     const plan = await prisma.salaPlan.create({ data: { name: `Portal plan ${Date.now()}`, monthlyAmount: 1000 } });
     const person = await prisma.person.create({ data: { firstName: 'Portal', lastName: 'Person', dni: `${Date.now()}`.slice(-8), normalizedDni: `${Date.now()}`.slice(-8), phone: '3515550000', birthDate: new Date('1990-01-01'), portalCredential: { create: { pinHash: await argon2.hash('1111', { type: argon2.argon2id }), mustChangePin: false } } } });
@@ -52,6 +52,8 @@ describe('Portal auth and PIN reset', () => {
     const coveredSession = await request(app.getHttpServer()).get('/api/portal/auth/session').set('Cookie', initialCookie).expect(200);
     expect(coveredSession.body.data.person.socialWorkName).toBe(work.name);
 
+    const internalDenied = await request(app.getHttpServer()).post(`/api/people/${person.id}/reset-portal-pin`).set('Cookie', cookie).expect(401);
+    expect(internalDenied.body.code).toBe('CSRF_INVALID');
     const reset = await request(app.getHttpServer()).post(`/api/people/${person.id}/reset-portal-pin`).set('Cookie', cookie).set('x-csrf-token', csrf).expect(201);
     const newPin = reset.body.data as string;
     expect(newPin).toMatch(/^\d{4}$/);
@@ -62,10 +64,14 @@ describe('Portal auth and PIN reset', () => {
     const temporary = await request(app.getHttpServer()).post('/api/portal/auth/login').set('Cookie', cookie).send({ dni: person.dni, pin: newPin }).expect(200);
     expect(temporary.body.data.mustChangePin).toBe(true);
     expect(temporary.body.data.person.socialWorkName).toBe(work.name);
-    const portalCookie = temporary.headers['set-cookie'][0] as string;
+    const portalCookie = (temporary.headers['set-cookie'][0] as string).split(';')[0]!;
+    const bothCookies = `${cookie}; ${portalCookie}`;
     await request(app.getHttpServer()).get('/api/portal/me').set('Cookie', portalCookie).expect(200);
     const portalCsrf = temporary.body.data.csrfToken as string;
-    await request(app.getHttpServer()).post('/api/portal/auth/change-pin').set('Cookie', portalCookie).set('x-csrf-token', portalCsrf).send({ currentPin: newPin, nextPin: '4321' }).expect(200);
+    expect(portalCsrf).not.toBe(csrf);
+    const portalDenied = await request(app.getHttpServer()).post('/api/portal/auth/change-pin').set('Cookie', bothCookies).set('x-csrf-token', 'invalid-portal-csrf').send({ currentPin: newPin, nextPin: '4321' }).expect(403);
+    expect(portalDenied.body.code).toBe('CSRF_INVALID');
+    await request(app.getHttpServer()).post('/api/portal/auth/change-pin').set('Cookie', bothCookies).set('x-csrf-token', portalCsrf).send({ currentPin: newPin, nextPin: '4321' }).expect(200);
     await request(app.getHttpServer()).post('/api/portal/auth/login').send({ dni: person.dni, pin: newPin }).expect(401);
     await request(app.getHttpServer()).post('/api/portal/auth/login').send({ dni: person.dni, pin: '4321' }).expect(200);
 
