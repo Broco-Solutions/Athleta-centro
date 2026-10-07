@@ -136,3 +136,11 @@ it.each([
   fireEvent.click(screen.getByRole('button', { name: 'Guardar e incorporar' }));
   expect(await screen.findByText(message)).toBeVisible(); expect(posts).toBe(0);
 });
+
+it.each([true, false])('shows spontaneous incorporation only with agenda permission (%s)', async (allowed) => {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: allowed ? session.permissions : session.permissions.filter((permission) => permission !== 'SALA_AGENDA_MANAGE') } })), http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [] })));
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SalaPage /></QueryClientProvider>);
+  await screen.findByRole('heading', { name: 'Agenda' });
+  if (allowed) expect(await screen.findByRole('button', { name: 'Incorporación espontánea' })).toBeVisible();
+  else { await screen.findByRole('button', { name: /Cerrar sesión/ }); expect(screen.queryByRole('button', { name: 'Incorporación espontánea' })).not.toBeInTheDocument(); }
+});

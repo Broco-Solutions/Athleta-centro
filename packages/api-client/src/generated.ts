@@ -470,12 +470,86 @@ export interface OccurrenceCorrectionDto {
   status: OccurrenceCorrectionDtoStatus;
 }
 
+export interface SpontaneousPlanOptionDto {
+  id: string;
+  name: string;
+}
+
+export interface SpontaneousServiceOptionDto {
+  id: string;
+  name: string;
+  durationMinutes: number;
+}
+
+export interface SpontaneousOptionsDto {
+  eligible: boolean;
+  participationId?: string;
+  plan?: SpontaneousPlanOptionDto;
+  mainProfessor?: SalaProfessorOptionDto;
+  services: SpontaneousServiceOptionDto[];
+}
+
+export interface SpontaneousOptionsEnvelopeDto {
+  data: SpontaneousOptionsDto;
+}
+
+export interface JoinSpontaneousSalaDto {
+  personId: string;
+  scheduleSlotId: string;
+  date: string;
+  serviceTypeId: string;
+  /** @pattern ^([01]\d|2[0-3]):(00|15|30|45)$ */
+  startTime: string;
+  confirmOverbooking?: boolean;
+  planId: string;
+  mainProfessorId: string;
+}
+
+export interface CreateSpontaneousSalaStudentDto {
+  firstName: string;
+  lastName: string;
+  /** Required DNI with 6 to 8 digits; dots, spaces and hyphens are accepted and removed before persistence. */
+  dni: string;
+  /** Required Argentine national phone with 10 digits and no initial 0, +54 or old 15 prefix; spaces, parentheses, dots and hyphens are accepted. */
+  phone: string;
+  birthDate: string;
+  /** @nullable */
+  email?: string | null;
+  emergencyContactName?: string;
+  /** Optional emergency phone; when nonempty, the same national 10-digit phone rules apply. Empty values are stored as null. */
+  emergencyContactPhone?: string;
+  /** @nullable */
+  socialWorkId?: string | null;
+  affiliateNumber?: string;
+  mainProfessorId: string;
+  planId: string;
+  scheduleSlotId: string;
+  date: string;
+  serviceTypeId: string;
+  /** @pattern ^([01]\d|2[0-3]):(00|15|30|45)$ */
+  startTime: string;
+  confirmOverbooking?: boolean;
+}
+
+export type SpontaneousStudentResponseDtoOccurrence = { [key: string]: unknown };
+
+export interface SpontaneousStudentResponseDto {
+  person: PersonResponseDto;
+  occurrence: SpontaneousStudentResponseDtoOccurrence;
+}
+
+export interface SpontaneousStudentEnvelopeDto {
+  data: SpontaneousStudentResponseDto;
+}
+
 export interface SpontaneousOccurrenceDto {
   personId: string;
   scheduleSlotId: string;
   date: string;
+  serviceTypeId: string;
   /** @pattern ^([01]\d|2[0-3]):(00|15|30|45)$ */
   startTime: string;
+  confirmOverbooking?: boolean;
 }
 
 export interface RoutineExerciseDto {
@@ -1310,6 +1384,10 @@ date: string;
 };
 
 export type GetSalaAgendaParams = {
+date: string;
+};
+
+export type GetPersonSalaSpontaneousOptionsParams = {
 date: string;
 };
 
@@ -3105,6 +3183,134 @@ export const correctSalaOccurrence = async (occurrenceCorrectionDto: OccurrenceC
 
   const data: correctSalaOccurrenceResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as correctSalaOccurrenceResponse
+}
+
+
+
+export type getPersonSalaSpontaneousOptionsResponse200 = {
+  data: SpontaneousOptionsEnvelopeDto
+  status: 200
+}
+
+export type getPersonSalaSpontaneousOptionsResponseSuccess = (getPersonSalaSpontaneousOptionsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getPersonSalaSpontaneousOptionsResponse = (getPersonSalaSpontaneousOptionsResponseSuccess)
+
+export const getGetPersonSalaSpontaneousOptionsUrl = (personId: string,
+    params: GetPersonSalaSpontaneousOptionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/sala/people/${personId}/spontaneous-options?${stringifiedParams}` : `/api/sala/people/${personId}/spontaneous-options`
+}
+
+export const getPersonSalaSpontaneousOptions = async (personId: string,
+    params: GetPersonSalaSpontaneousOptionsParams, options?: RequestInit): Promise<getPersonSalaSpontaneousOptionsResponse> => {
+
+  const res = await fetch(getGetPersonSalaSpontaneousOptionsUrl(personId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getPersonSalaSpontaneousOptionsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getPersonSalaSpontaneousOptionsResponse
+}
+
+
+
+export type joinSalaAndCreateSpontaneousOccurrenceResponse201 = {
+  data: void
+  status: 201
+}
+
+export type joinSalaAndCreateSpontaneousOccurrenceResponseSuccess = (joinSalaAndCreateSpontaneousOccurrenceResponse201) & {
+  headers: Headers;
+};
+;
+
+export type joinSalaAndCreateSpontaneousOccurrenceResponse = (joinSalaAndCreateSpontaneousOccurrenceResponseSuccess)
+
+export const getJoinSalaAndCreateSpontaneousOccurrenceUrl = () => {
+
+
+
+
+  return `/api/sala/occurrences/spontaneous/join`
+}
+
+export const joinSalaAndCreateSpontaneousOccurrence = async (joinSpontaneousSalaDto: JoinSpontaneousSalaDto, options?: RequestInit): Promise<joinSalaAndCreateSpontaneousOccurrenceResponse> => {
+
+  const res = await fetch(getJoinSalaAndCreateSpontaneousOccurrenceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      joinSpontaneousSalaDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: joinSalaAndCreateSpontaneousOccurrenceResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as joinSalaAndCreateSpontaneousOccurrenceResponse
+}
+
+
+
+export type createSalaStudentAndSpontaneousOccurrenceResponse201 = {
+  data: SpontaneousStudentEnvelopeDto
+  status: 201
+}
+
+export type createSalaStudentAndSpontaneousOccurrenceResponseSuccess = (createSalaStudentAndSpontaneousOccurrenceResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSalaStudentAndSpontaneousOccurrenceResponse = (createSalaStudentAndSpontaneousOccurrenceResponseSuccess)
+
+export const getCreateSalaStudentAndSpontaneousOccurrenceUrl = () => {
+
+
+
+
+  return `/api/sala/occurrences/spontaneous/create-student`
+}
+
+export const createSalaStudentAndSpontaneousOccurrence = async (createSpontaneousSalaStudentDto: CreateSpontaneousSalaStudentDto, options?: RequestInit): Promise<createSalaStudentAndSpontaneousOccurrenceResponse> => {
+
+  const res = await fetch(getCreateSalaStudentAndSpontaneousOccurrenceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createSpontaneousSalaStudentDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSalaStudentAndSpontaneousOccurrenceResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSalaStudentAndSpontaneousOccurrenceResponse
 }
 
 

@@ -21,7 +21,6 @@ Los siguientes puntos continúan pendientes después de la consolidación histó
 
 | ID | Tema pendiente |
 |---|---|
-| SAL-TUR-08 | Si una incorporación con origen específicamente “Espontáneo” puede cargarse retrospectivamente; existe una diferencia temporal entre frontend y backend. |
 | INI-03 | Presentación exacta de Cancelados/Ausentes en Sala: total combinado o valores separados. |
 | INI-04 | Criterio exacto de “Próximos horarios” de Sala. |
 | INI-06 | Label visible exacto de la tarjeta de Atendidos/Atenciones. |
@@ -88,12 +87,13 @@ El resto de las dudas originales figura resuelto, no aplica o queda a criterio t
 | SAL-TUR-05 | RESUELTO | El límite de 30 días aplica al Portal. Los usuarios internos no tienen un límite temporal futuro específico para reservas puntuales. | §6.12 |
 | SAL-TUR-06 | RESUELTO | Sí. Una Persona no puede estar registrada dos veces en la misma fecha y el mismo horario, independientemente del origen de la presencia. | §6.14 |
 | SAL-TUR-07 | RESUELTO | Sí. La incorporación espontánea se registra como presencia de origen espontáneo y se marca la asistencia; los indicadores la tratan como **Asistió**. | §6.16–§6.17 |
-| SAL-TUR-08 | PENDIENTE | No existe decisión aprobada sobre el Espontáneo retrospectivo. El frontend habilita la incorporación solo para la fecha actual (`agenda-panel.tsx` — `SpontaneousModal`), mientras el backend puede procesar una fecha histórica si se cumplen las restantes precondiciones (`sala.service.ts` — `createSpontaneousOccurrence(...)`). Esta diferencia entre capas impide consolidar una regla única y requiere discusión funcional. | §6.12, §6.17 |
+| SAL-TUR-08 | RESUELTO | Profesor, Administrativo y Administrador general pueden registrar una incorporación espontánea en el día actual y también retrospectivamente en una fecha pasada cuando la asistencia efectivamente ocurrió. Una fecha futura no admite incorporación espontánea; corresponde Reserva puntual o Turno fijo. | Definición aprobada 2026-10-07 |
 | SAL-TUR-09 | RESUELTO | Sí. Los estados de las ocurrencias pueden corregirse posteriormente sin límite de tiempo por usuarios internos habilitados. | §6.15 |
 | SAL-TUR-10 | RESUELTO | Sí. Los estados Reservado, Asistió, Cancelado y Ausente son corregibles posteriormente; no existe una matriz rígida de transición. | §6.15 |
 | SAL-TUR-11 | RESUELTO | Sí. Ausente puede corregirse a Asistió y viceversa como parte de la corrección manual. | §6.15 |
 | SAL-TUR-12 | RESUELTO | El cierre excepcional de una fecha **cancela esa ocurrencia concreta**; la recurrencia del Turno fijo continúa las semanas siguientes. | §6.9, §6.11 |
 | SAL-TUR-13 | RESUELTO | Las reservas futuras afectadas por un reemplazo de grilla se **cancelan**, no se eliminan como si nunca hubieran existido. | §6.8, §13.7–§13.9 |
+| SAL-TUR-14 | RESUELTO | La incorporación espontánea puede iniciar desde un Alumno de Sala, una Persona existente todavía no incorporada a Sala o una Persona nueva. Cuando la Persona todavía no pertenece a Sala y la operación corresponde al día actual, el mismo flujo permite asignar Plan y Profesor principal, elegir un Servicio incluido en el Plan y registrar la asistencia espontánea sin abandonar Agenda. La incorporación a Sala y la asistencia se confirman como una única operación. La falta de Pago no bloquea esta operación. Para una fecha pasada no se crea ni backdatea una nueva participación: la Persona debe haber tenido participación válida en esa fecha. El Servicio es obligatorio para nuevas incorporaciones espontáneas y su duración determina los bloques de capacidad ocupados. | Definición aprobada 2026-10-07 |
 
 ---
 

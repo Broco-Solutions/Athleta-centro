@@ -1,7 +1,7 @@
-import { CreatePersonDto } from '../people/person.dto';
+import { CreatePersonDto, PersonResponseDto } from '../people/person.dto';
 import { Type } from 'class-transformer';
 import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, IntersectionType, PickType } from '@nestjs/swagger';
 import { SalaOccurrenceStatus, SalaScheduleExceptionType, SalaWeekday } from '@prisma/client';
 
 export class CapacityDto { @ApiProperty({ type: Number, minimum: 1 }) @Type(() => Number) @IsInt() @Min(1) capacity!: number; }
@@ -27,7 +27,26 @@ export class OneOffReservationDto { @ApiProperty({ type: String, format: 'uuid' 
 export class ChangeFixedBookingDto extends FixedBookingDto { @ApiProperty({ type: String, format: 'uuid' }) @IsString() id!: string; }
 export class EndFixedBookingDto { @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) endDate!: string; }
 export class OccurrenceReferenceDto { @ApiProperty({ type: String, format: 'uuid' }) @IsString() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsString() scheduleSlotId!: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) date!: string; }
-export class SpontaneousOccurrenceDto extends OccurrenceReferenceDto { @ApiProperty({ type: String, example: '10:30', pattern: '^([01]\\d|2[0-3]):(00|15|30|45)$' }) @Matches(/^([01]\d|2[0-3]):(00|15|30|45)$/) startTime!: string; }
+export class SpontaneousOccurrenceDto extends OccurrenceReferenceDto {
+  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() serviceTypeId!: string;
+  @ApiProperty({ type: String, example: '10:30', pattern: '^([01]\\d|2[0-3]):(00|15|30|45)$' }) @Matches(/^([01]\d|2[0-3]):(00|15|30|45)$/) startTime!: string;
+  @ApiPropertyOptional({ type: Boolean }) @IsOptional() @IsBoolean() confirmOverbooking?: boolean;
+}
+export class JoinSpontaneousSalaDto extends SpontaneousOccurrenceDto {
+  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() planId!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() mainProfessorId!: string;
+}
+export class SpontaneousOptionsQueryDto {
+  @ApiProperty({ type: String, format: 'date' }) @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) date!: string;
+}
+export class SpontaneousPlanOptionDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String }) name!: string;
+}
+export class SpontaneousServiceOptionDto extends SpontaneousPlanOptionDto {
+  @ApiProperty({ type: Number }) durationMinutes!: number;
+}
+
 export class OccurrenceCorrectionDto extends OccurrenceReferenceDto { @ApiProperty({ enum: SalaOccurrenceStatus, type: String }) @IsEnum(SalaOccurrenceStatus) status!: SalaOccurrenceStatus; }
 export class SalaAgendaPersonDto { @ApiProperty({ type: String, format: 'uuid' }) id!: string; @ApiProperty({ type: String }) firstName!: string; @ApiProperty({ type: String }) lastName!: string; @ApiProperty({ type: String }) dni!: string; }
 export class SalaAgendaProfessionalDto { @ApiProperty({ type: String, format: 'uuid' }) id!: string; @ApiProperty({ type: String }) firstName!: string; @ApiProperty({ type: String }) lastName!: string; }
@@ -95,3 +114,21 @@ export class SalaProfessorOptionDto {
 export class SalaProfessorListEnvelopeDto {
   @ApiProperty({ type: () => [SalaProfessorOptionDto] }) data!: SalaProfessorOptionDto[];
 }
+
+export class CreateSpontaneousSalaStudentDto extends IntersectionType(
+  CreateSalaStudentDto,
+  PickType(SpontaneousOccurrenceDto, ['scheduleSlotId', 'serviceTypeId', 'startTime', 'date', 'confirmOverbooking'] as const),
+) {}
+export class SpontaneousOptionsDto {
+  @ApiProperty({ type: Boolean }) eligible!: boolean;
+  @ApiPropertyOptional({ type: String, format: 'uuid' }) participationId?: string;
+  @ApiPropertyOptional({ type: () => SpontaneousPlanOptionDto }) plan?: SpontaneousPlanOptionDto;
+  @ApiPropertyOptional({ type: () => SalaProfessorOptionDto }) mainProfessor?: SalaProfessorOptionDto;
+  @ApiProperty({ type: () => [SpontaneousServiceOptionDto] }) services!: SpontaneousServiceOptionDto[];
+}
+export class SpontaneousOptionsEnvelopeDto { @ApiProperty({ type: () => SpontaneousOptionsDto }) data!: SpontaneousOptionsDto; }
+export class SpontaneousStudentResponseDto {
+  @ApiProperty({ type: () => PersonResponseDto }) person!: PersonResponseDto;
+  @ApiProperty({ type: Object }) occurrence!: object;
+}
+export class SpontaneousStudentEnvelopeDto { @ApiProperty({ type: () => SpontaneousStudentResponseDto }) data!: SpontaneousStudentResponseDto; }

@@ -47,11 +47,10 @@ Definiciones aprobadas el **2026-10-07** para los Bloques 1 y 2 de Planes y Serv
 
 ## Decisiones todavía no consolidadas
 
-Estos seis puntos permanecen **PENDIENTE**. Su implementación actual no equivale a ratificación funcional.
+Estos cinco puntos permanecen **PENDIENTE**. Su implementación actual no equivale a ratificación funcional.
 
 | ID / Tema | Motivo de la pendiente y evidencia observada |
 |---|---|
-| SAL-TUR-08 — Espontáneo retrospectivo | `apps/web/src/features/sala/agenda-panel.tsx` — `SpontaneousModal` habilita la carga solo para la fecha actual. `apps/api/src/sala/sala.service.ts` — `SalaService.createSpontaneousOccurrence(...)` no impone esa misma restricción y puede procesar una fecha histórica si cumple las restantes precondiciones. La diferencia entre capas impide consolidar una regla única. |
 | INI-03 — Cancelados/Ausentes en Sala | Falta aprobar la presentación como total combinado o subtotales separados. `apps/web/src/app/page.tsx` — `HomePage` contiene una bienvenida, sin implementación suficiente de esas tarjetas. |
 | INI-04 — Próximos horarios de Sala | Falta aprobar cantidad y horizonte exactos. `apps/web/src/app/page.tsx` — `HomePage` no implementa este bloque del Dashboard. |
 | INI-06 — Label de Atendidos/Atenciones | Falta aprobar el texto visible exacto. `apps/web/src/app/page.tsx` — `HomePage` no implementa esa tarjeta. |
@@ -73,3 +72,15 @@ Los casos siguientes quedan registrados sin adoptar una decisión definitiva, mo
 | PER-07 — Inactivación y actividades ya iniciadas de Sala | La inactivación global afecta desde la confirmación hacia adelante y preserva actividades cuya hora de inicio ya ocurrió. | `PeopleService.inactivate(...)` cancela ocurrencias de Sala desde la fecha actual, sin distinguir la hora de inicio de las ocurrencias de ese día. | `docs/product/ATHLETA_MANAGER_DUDAS_FUNCIONALES.md` — PER-07; `apps/api/src/people/people.service.ts` — `inactivate(...)`. | Requiere análisis funcional. |
 | Precisión monetaria en documentación técnica | `ARCHITECTURE.md`, sección Dinero, indica normalmente dos decimales en ARS y posible mayor precisión de cotizaciones; `DATABASE.md` establece ARS sin decimales y cotización con dos. | `money(...)` exige ARS entero y `exchange(...)` admite hasta dos decimales. Los campos de importes y `ExchangeRate.rate` reflejan esas precisiones. La contradicción técnica se registra sin modificar documentos fuera del alcance. | `docs/architecture/ARCHITECTURE.md` — Dinero; `docs/architecture/DATABASE.md` — Importes monetarios y Dólar; `apps/api/src/finance/finance.service.ts` — `money(...)`, `exchange(...)`; `apps/api/prisma/schema.prisma` — `Expense.amount`, `ExchangeRate.rate`. | Requiere análisis funcional. |
 | Bloqueos y modelo preliminar de DATABASE.md | `DATABASE.md` todavía marca pendientes el vínculo clínico y varias cardinalidades, propone puentes para Atención–Tratamiento y Estudio–Archivo, y declara unicidad Persona/Mes/Año para Pago de Sala. El documento de dudas ya confirma varias de esas cardinalidades. | El schema contiene `ClinicalPatient` explícito, Atención opcional a un Tratamiento, Atención única por Turno, Evolución única por Atención y archivo opcional único por Estudio. `SalaPayment` tiene unicidad por operación e índice Persona/Mes/Año, sin unicidad declarada sobre ese período; `createPayment(...)` no rechaza por período duplicado. Estas diferencias no autorizan nuevas decisiones ni cambios de arquitectura en esta tarea. | `docs/architecture/DATABASE.md` — isPatient, relaciones clínicas, SalaPayment y BLOCKED_BY_FUNCTIONAL_DEFINITION; `docs/product/ATHLETA_MANAGER_DUDAS_FUNCIONALES.md` — PER-01, CLI-ATE-01, CLI-ATE-08, CLI-EVO-01 y CLI-EST-03; `apps/api/prisma/schema.prisma` — modelos citados; `apps/api/src/sala/sala.service.ts` — `createPayment(...)`. | Requiere análisis funcional. |
+
+## SAL-TUR-08 — Espontáneo retrospectivo
+
+Estado: **RESUELTO**. Definición aprobada 2026-10-07.
+
+Profesor, Administrativo y Administrador general pueden registrar una incorporación espontánea en el día actual y también retrospectivamente en una fecha pasada cuando la asistencia efectivamente ocurrió. Una fecha futura no admite incorporación espontánea; corresponde Reserva puntual o Turno fijo.
+
+## SAL-TUR-14 — Alta desde incorporación espontánea
+
+Estado: **RESUELTO**. Definición aprobada 2026-10-07.
+
+La incorporación espontánea puede iniciar desde un Alumno de Sala, una Persona existente todavía no incorporada a Sala o una Persona nueva. Cuando la Persona todavía no pertenece a Sala y la operación corresponde al día actual, el mismo flujo permite asignar Plan y Profesor principal, elegir un Servicio incluido en el Plan y registrar la asistencia espontánea sin abandonar Agenda. La incorporación a Sala y la asistencia se confirman como una única operación. La falta de Pago no bloquea esta operación. Para una fecha pasada no se crea ni backdatea una nueva participación: la Persona debe haber tenido participación válida en esa fecha. El Servicio es obligatorio para nuevas incorporaciones espontáneas y su duración determina los bloques de capacidad ocupados.

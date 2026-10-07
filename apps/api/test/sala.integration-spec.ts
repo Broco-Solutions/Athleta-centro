@@ -1,8 +1,10 @@
+import * as argon2 from 'argon2';
+import { randomUUID } from 'node:crypto';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { Test } from '@nestjs/testing';
 import { ValidationPipe, type INestApplication } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Role, type SalaWeekday } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { AuthService } from '../src/auth/auth.service';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -578,4 +580,180 @@ describe('Sala configuration API', () => {
     const persisted = await prisma.fixedSalaBooking.findFirstOrThrow({ where: { id: changed.id } });
     expect({ startTime: persisted.startTime?.toISOString().slice(11, 16), serviceDurationMinutes: persisted.serviceDurationMinutes, scheduleSlotId: persisted.scheduleSlotId }).toEqual({ startTime: '09:30', serviceDurationMinutes: 45, scheduleSlotId: window.id });
   });
+  describe('spontaneous attendance with explicit services', () => {
+    const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
+    const shifted = (offset: number) => new Date(new Date(`${today()}T00:00:00Z`).getTime() + offset * 86400000).toISOString().slice(0, 10);
+    async function fixture(date = today(), role: Role = Role.PROFESSOR) {
+      const authn = await session(role);
+      const professor = role === Role.PROFESSOR ? await prisma.internalUser.findFirstOrThrow({ where: { roles: { some: { role: Role.PROFESSOR } } } }) : await users.create({ firstName: 'Profe', lastName: 'Sintético', email: `profe-${randomUUID()}@test.local`, roles: [Role.PROFESSOR] });
+      const actor = await prisma.internalUser.findFirstOrThrow({ where: { email: `${role.toLowerCase()}@sala.test` } });
+      const service = await sala.createServiceType({ name: 'Funcional', durationMinutes: 45 });
+      const other = await sala.createServiceType({ name: 'Calistenia', durationMinutes: 60 });
+      const plan = await sala.createPlan({ name: 'Plan Base', monthlyAmount: 1000, serviceTypeIds: [service.id] });
+      const person = await prisma.person.create({ data: { firstName: 'Alumna', lastName: 'Sintética', dni: '30123456', normalizedDni: '30123456', phone: '3515550000', birthDate: new Date('1990-01-01') } });
+      const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: shifted(-30) });
+      const weekday = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'][new Date(`${date}T00:00:00Z`).getUTCDay()] as SalaWeekday;
+      const slot = await sala.createSlot({ weekday, startTime: '09:00', durationMinutes: 120, specificCapacity: 1 });
+      const input = { personId: person.id, scheduleSlotId: slot.id, date, startTime: '09:00', serviceTypeId: service.id };
+      return { authn, actor, professor, person, participation, service, other, plan, slot, input };
+    }
+    function post(path: string, authn: { cookie: string; csrf: string }, input: object) { return request(app.getHttpServer()).post(`/api/sala/occurrences/spontaneous${path}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(input); }
+    it('persists service and a 45-minute snapshot, projects its Professor and occupies only three blocks', async () => {
+      const f = await fixture();
+      const response = await post('', f.authn, f.input).expect(201);
+      expect(response.body.data).toMatchObject({ origin: 'SPONTANEOUS', status: 'ATTENDED', serviceTypeId: f.service.id, serviceDurationMinutes: 45 });
+      const persisted = await prisma.salaOccurrence.findUniqueOrThrow({ where: { id: response.body.data.id } });
+      expect(persisted.startTime?.toISOString().slice(11, 16)).toBe('09:00');
+      expect((await sala.agenda(today()))[0]?.people[0]).toMatchObject({ service: { name: 'Funcional' }, durationMinutes: 45, professional: { id: f.professor.id } });
+      expect((await sala.availability(today())).slice(0, 4).map((state) => state.reserved)).toEqual([1, 1, 1, 0]);
+      // A later catalog edit must not rewrite attendance duration.
+      await sala.updateServiceType(f.service.id, { name: 'Funcional', durationMinutes: 60 });
+      expect((await sala.agenda(today()))[0]?.people[0]?.durationMinutes).toBe(45);
+      expect((await sala.availability(today()))[3]?.reserved).toBe(0);
+    });
+    it('rejects services outside the Plan, retired services and missing service without creating attendance', async () => {
+      const f = await fixture();
+      expect((await post('', f.authn, { ...f.input, serviceTypeId: f.other.id }).expect(400)).body.code).toBe('SALA_SERVICE_NOT_INCLUDED_IN_PLAN');
+      await sala.retireServiceType(f.service.id);
+      expect((await post('', f.authn, f.input).expect(400)).body.code).toBe('SALA_SERVICE_TYPE_INVALID');
+      const missing = { personId: f.input.personId, scheduleSlotId: f.input.scheduleSlotId, date: f.input.date, startTime: f.input.startTime };
+      await post('', f.authn, missing).expect(400);
+      expect(await prisma.salaOccurrence.count()).toBe(0);
+    });
+    it('rejects future attendance', async () => {
+      const f = await fixture(shifted(1));
+      expect((await post('', f.authn, f.input).expect(400)).body.code).toBe('SALA_SPONTANEOUS_FUTURE_NOT_ALLOWED');
+      expect(await prisma.salaOccurrence.count()).toBe(0);
+    });
+    it('uses the applicable past Plan assignment and returns its selectable services in options', async () => {
+      const past = shifted(-7); const f = await fixture(past);
+      const later = await sala.createPlan({ name: 'Plan posterior', monthlyAmount: 2000, serviceTypeIds: [f.other.id] });
+      await prisma.salaParticipation.update({ where: { id: f.participation.id }, data: { planId: later.id, endDate: new Date(`${shifted(-1)}T00:00:00Z`), planAssignments: { create: { planId: later.id, effectiveFrom: new Date(`${shifted(-2)}T00:00:00Z`) } } } });
+      const options = await request(app.getHttpServer()).get(`/api/sala/people/${f.person.id}/spontaneous-options?date=${past}`).set('Cookie', f.authn.cookie).expect(200);
+      expect(options.body.data).toMatchObject({ eligible: true, participationId: f.participation.id, plan: { id: f.plan.id }, services: [{ id: f.service.id, durationMinutes: 45 }] });
+      expect((await post('', f.authn, { ...f.input, serviceTypeId: f.other.id }).expect(400)).body.code).toBe('SALA_SERVICE_NOT_INCLUDED_IN_PLAN');
+      await post('', f.authn, f.input).expect(201);
+      expect((await sala.agenda(past))[0]?.people[0]).toMatchObject({ origin: 'SPONTANEOUS', status: 'ATTENDED', professional: { id: f.professor.id } });
+      expect(await sala.getSpontaneousOptions(f.person.id, today())).toEqual({ eligible: false, services: [] });
+    });
+    it('falls back to the participation Plan for legacy history and retains legacy occurrence duration', async () => {
+      const f = await fixture(shifted(-7));
+      await prisma.salaPlanAssignment.deleteMany();
+      expect(await sala.getSpontaneousOptions(f.person.id, f.input.date)).toMatchObject({ eligible: true, plan: { id: f.plan.id } });
+      await prisma.salaOccurrence.create({ data: { personId: f.person.id, scheduleSlotId: f.slot.id, date: new Date(`${f.input.date}T00:00:00Z`), startTime: new Date('1970-01-01T09:00:00Z'), origin: 'SPONTANEOUS', status: 'ATTENDED', createdBy: f.actor.id, lastModifiedBy: f.actor.id } });
+      expect((await sala.agenda(f.input.date))[0]?.people[0]).toMatchObject({ service: null, durationMinutes: 60 });
+      expect((await sala.availability(f.input.date)).slice(0, 5).map((state) => state.reserved)).toEqual([1, 1, 1, 1, 0]);
+    });
+    it('rejects past attendance without valid participation and offers ineligible options', async () => {
+      const f = await fixture(shifted(-7));
+      await prisma.salaParticipation.update({ where: { id: f.participation.id }, data: { startDate: new Date(`${today()}T00:00:00Z`) } });
+      expect((await post('', f.authn, f.input).expect(400)).body.code).toBe('SALA_PARTICIPATION_REQUIRED');
+      expect(await sala.getSpontaneousOptions(f.person.id, f.input.date)).toEqual({ eligible: false, services: [] });
+      expect(await prisma.salaOccurrence.count()).toBe(0);
+    });
+    it.each(['fixed', 'reservation', 'occurrence'])('rejects duplicate presence from %s', async (source) => {
+      const f = await fixture();
+      const booking = { ...f.input, salaParticipationId: f.participation.id };
+      if (source === 'fixed') await sala.createFixed({ ...booking, startDate: today() });
+      else if (source === 'reservation') await sala.createReservation(booking);
+      else await post('', f.authn, f.input).expect(201);
+      expect((await post('', f.authn, f.input).expect(409)).body.code).toBe('SALA_OCCURRENCE_DUPLICATE');
+      expect(await prisma.salaOccurrence.count()).toBe(source === 'occurrence' ? 1 : 0);
+    });
+    it('rejects incomplete duration and closed schedules', async () => {
+      const f = await fixture();
+      expect((await post('', f.authn, { ...f.input, startTime: '10:45' }).expect(409)).body.code).toBe('SALA_REQUIRED_SLOTS_UNAVAILABLE');
+      await sala.addException(f.slot.id, { date: today(), type: 'CLOSURE' });
+      expect((await post('', f.authn, f.input).expect(409)).body.code).toBe('SALA_SCHEDULE_CLOSED');
+      expect(await prisma.salaOccurrence.count()).toBe(0);
+    });
+    it('requests deliberate overbooking and lets attendance constrain new reservations and fixed bookings', async () => {
+      const f = await fixture();
+      await post('', f.authn, f.input).expect(201);
+      const second = await prisma.person.create({ data: { firstName: 'Otro', lastName: 'Sintético', dni: '30123457', normalizedDni: '30123457', phone: '3515550000', birthDate: new Date('1990-01-01') } });
+      const participation = await sala.join({ personId: second.id, planId: f.plan.id, mainProfessorId: f.professor.id, startDate: today() });
+      const input = { ...f.input, personId: second.id };
+      const rejected = await post('', f.authn, input).expect(409);
+      expect(rejected.body).toMatchObject({ code: 'SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED', details: { fullSlots: 3, requiredSlots: 3 } });
+      await expect(sala.createReservation({ ...input, salaParticipationId: participation.id })).rejects.toMatchObject({ response: { code: 'SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED' } });
+      await expect(sala.createFixed({ ...input, salaParticipationId: participation.id, startDate: today() })).rejects.toMatchObject({ response: { code: 'SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED' } });
+      await post('', f.authn, { ...input, confirmOverbooking: true }).expect(201);
+      expect((await sala.availability(today())).slice(0, 3).every((state) => state.isOverbooked)).toBe(true);
+    });
+    it('serializes concurrent attendance at the last available capacity', async () => {
+      const f = await fixture();
+      const second = await prisma.person.create({ data: { firstName: 'Otra', lastName: 'Concurrente', dni: '30123457', normalizedDni: '30123457', phone: '3515550000', birthDate: new Date('1990-01-01') } });
+      await sala.join({ personId: second.id, planId: f.plan.id, mainProfessorId: f.professor.id, startDate: today() });
+      const responses = await Promise.all([post('', f.authn, f.input), post('', f.authn, { ...f.input, personId: second.id })]);
+      expect(responses.map((response) => response.status).sort()).toEqual([201, 409]);
+      expect(responses.find((response) => response.status === 409)?.body.code).toBe('SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED');
+      expect(await prisma.salaOccurrence.count()).toBe(1);
+    });
+    it.each(['join', 'create-student'])('atomically onboards through %s, returns PIN only for a new Person, and never creates a Payment', async (route) => {
+      const f = await fixture();
+      await prisma.salaBillingConfiguration.create({ data: { id: 'default', cutoverDate: new Date(`${today()}T00:00:00Z`) } });
+      const candidate = route === 'join' ? await prisma.person.create({ data: { firstName: 'Nueva', lastName: 'Existente', dni: '30123457', normalizedDni: '30123457', phone: '3515550000', birthDate: new Date('1990-01-01') } }) : null;
+      const input = { scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, startTime: '09:00', date: today(), planId: f.plan.id, mainProfessorId: f.professor.id, ...(candidate ? { personId: candidate.id } : { firstName: 'Nueva', lastName: 'Sintética', dni: '30123457', phone: '3515550000', birthDate: '1990-01-01' }) };
+      const response = await post(`/${route}`, f.authn, input).expect(201);
+      const createdPerson = await prisma.person.findUniqueOrThrow({ where: { normalizedDni: '30123457' } });
+      const participation = await prisma.salaParticipation.findFirstOrThrow({ where: { personId: createdPerson.id } });
+      expect(await prisma.salaPlanAssignment.count({ where: { salaParticipationId: participation.id } })).toBe(1);
+      expect(await prisma.salaOccurrence.findFirstOrThrow({ where: { personId: createdPerson.id } })).toMatchObject({ status: 'ATTENDED', origin: 'SPONTANEOUS' });
+      expect(await prisma.salaPayment.count()).toBe(0);
+      expect(await prisma.salaCharge.count({ where: { personId: createdPerson.id } })).toBe(1);
+      if (!candidate) {
+        const pin = response.body.data.person.initialPin;
+        expect(pin).toMatch(/^\d{4}$/);
+        const credential = await prisma.portalCredential.findUniqueOrThrow({ where: { personId: createdPerson.id } });
+        expect(await argon2.verify(credential.pinHash, pin)).toBe(true);
+        expect(credential.mustChangePin).toBe(true);
+      }
+      // Full capacity must roll back every onboarding record, including the generated charge.
+      const failed = { ...input, ...(candidate ? { personId: f.person.id } : { dni: '30123458' }) };
+      if (candidate) await prisma.salaParticipation.delete({ where: { id: f.participation.id } });
+      const counts = { people: await prisma.person.count(), credentials: await prisma.portalCredential.count(), assignments: await prisma.salaPlanAssignment.count(), participations: await prisma.salaParticipation.count(), charges: await prisma.salaCharge.count(), occurrences: await prisma.salaOccurrence.count() };
+      expect((await post(`/${route}`, f.authn, failed).expect(409)).body.code).toBe('SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED');
+      expect({ people: await prisma.person.count(), credentials: await prisma.portalCredential.count(), assignments: await prisma.salaPlanAssignment.count(), participations: await prisma.salaParticipation.count(), charges: await prisma.salaCharge.count(), occurrences: await prisma.salaOccurrence.count() }).toEqual(counts);
+      if (!candidate) expect(await prisma.person.findUnique({ where: { normalizedDni: '30123458' } })).toBeNull();
+    });
+    it.each(['join', 'create-student'])('allows inline %s only today', async (route) => {
+      const f = await fixture();
+      const input = { scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, startTime: '09:00', planId: f.plan.id, mainProfessorId: f.professor.id, ...(route === 'join' ? { personId: f.person.id } : { firstName: 'Nueva', lastName: 'Sintética', dni: '30123458', phone: '3515550000', birthDate: '1990-01-01' }) };
+      for (const date of [shifted(-1), shifted(1)]) expect((await post(`/${route}`, f.authn, { ...input, date }).expect(400)).body.code).toBe('SALA_SPONTANEOUS_ONBOARDING_TODAY_ONLY');
+      expect(await prisma.person.count()).toBe(1); expect(await prisma.salaOccurrence.count()).toBe(0);
+    });
+    it.each([Role.PROFESSOR, Role.ADMINISTRATIVE, Role.GENERAL_ADMIN])('preserves spontaneous permissions for %s', async (role) => {
+      const f = await fixture(today(), role);
+      await post('', f.authn, f.input).expect(201);
+      const student = { scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, startTime: '10:00', date: today(), planId: f.plan.id, mainProfessorId: f.professor.id, firstName: 'Nueva', lastName: 'Sintética', dni: '30123458', phone: '3515550000', birthDate: '1990-01-01' };
+      await post('/create-student', f.authn, student).expect(201);
+    });
+    it('uses the current Plan today and offers only its selectable services sorted by name', async () => {
+      const f = await fixture();
+      const alphabetical = await sala.createServiceType({ name: 'Aeróbico', durationMinutes: 30 });
+      const current = await sala.createPlan({ name: 'Plan actual', monthlyAmount: 1500, serviceTypeIds: [f.other.id, alphabetical.id] });
+      await prisma.salaParticipation.update({ where: { id: f.participation.id }, data: { planId: current.id, planAssignments: { create: { planId: current.id, effectiveFrom: new Date(`${shifted(20)}T00:00:00Z`) } } } });
+      const options = await sala.getSpontaneousOptions(f.person.id, today());
+      expect(options).toMatchObject({ plan: { id: current.id }, services: [{ id: alphabetical.id }, { id: f.other.id }] });
+      await sala.retireServiceType(f.other.id);
+      expect((await sala.getSpontaneousOptions(f.person.id, today())).services).toEqual([{ id: alphabetical.id, name: 'Aeróbico', durationMinutes: 30 }]);
+      await post('', f.authn, { ...f.input, serviceTypeId: alphabetical.id }).expect(201);
+    });
+    it('keeps the existing duplicate DNI error and leaves no inline onboarding records', async () => {
+      const f = await fixture();
+      const before = { people: await prisma.person.count(), credentials: await prisma.portalCredential.count(), assignments: await prisma.salaPlanAssignment.count(), participations: await prisma.salaParticipation.count() };
+      const input = { scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, startTime: '09:00', date: today(), planId: f.plan.id, mainProfessorId: f.professor.id, firstName: 'Duplicada', lastName: 'Sintética', dni: f.person.dni, phone: '3515550000', birthDate: '1990-01-01' };
+      expect((await post('/create-student', f.authn, input).expect(409)).body.code).toBe('PERSON_DNI_ALREADY_EXISTS');
+      expect({ people: await prisma.person.count(), credentials: await prisma.portalCredential.count(), assignments: await prisma.salaPlanAssignment.count(), participations: await prisma.salaParticipation.count() }).toEqual(before);
+      expect(await prisma.salaOccurrence.count()).toBe(0);
+    });
+    it('rejects users lacking agenda permission on all spontaneous endpoints', async () => {
+      const f = await fixture(); const denied = await session(Role.KINESIOLOGIST);
+      await post('', denied, f.input).expect(403);
+      await post('/join', denied, { ...f.input, planId: f.plan.id, mainProfessorId: f.professor.id }).expect(403);
+      await post('/create-student', denied, { scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, startTime: '09:00', date: today(), planId: f.plan.id, mainProfessorId: f.professor.id, firstName: 'Nueva', lastName: 'Sintética', dni: '30123458', phone: '3515550000', birthDate: '1990-01-01' }).expect(403);
+      expect(await prisma.salaOccurrence.count()).toBe(0);
+    });
+  });
+
 });

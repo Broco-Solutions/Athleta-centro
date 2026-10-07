@@ -8,7 +8,10 @@ export class AuthSecurityMiddleware {
   constructor(private readonly auth: AuthService, private readonly rateLimits: AuthRateLimitService) {}
   async use(request: Request, _response: Response, next: NextFunction): Promise<void> {
     const path = request.originalUrl.split('?')[0] ?? request.path;
-    const publicPath = path === '/api/auth/login' || path === '/health';
+    const publicPath =
+      path === '/api/auth/login' ||
+      path === '/api/portal/auth/login' ||
+      path === '/health';
     const allowedWhilePasswordChangeRequired = path === '/api/auth/session' || path === '/api/auth/change-password' || path === '/api/auth/logout';
     if (path.startsWith('/api/')) this.rateLimits.assertGeneralLimit(request.ip ?? 'unknown');
     if (publicPath || !request.cookies?.athleta_session) return next();

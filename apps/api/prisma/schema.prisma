@@ -638,6 +638,7 @@ model SalaServiceType {
   fixedBookings   FixedSalaBooking[]
   reservations    OneOffReservation[]
   plans           SalaPlanService[]
+  occurrences     SalaOccurrence[]
 
   @@map("sala_service_types")
 }
@@ -822,6 +823,9 @@ model SalaOccurrence {
   scheduleSlotId      String               @map("schedule_slot_id") @db.Uuid
   date                DateTime             @db.Date
   startTime           DateTime?            @map("start_time") @db.Time(0)
+  serviceTypeId       String?              @map("service_type_id") @db.Uuid
+  serviceDurationMinutes Int?               @map("service_duration_minutes")
+  serviceType         SalaServiceType?     @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
   origin              SalaOccurrenceOrigin
   status              SalaOccurrenceStatus
   fixedSalaBookingId  String?              @map("fixed_sala_booking_id") @db.Uuid
@@ -839,6 +843,7 @@ model SalaOccurrence {
 
   @@unique([personId, scheduleSlotId, date])
   @@index([date, scheduleSlotId])
+  @@index([serviceTypeId])
   @@map("sala_occurrences")
 }
 

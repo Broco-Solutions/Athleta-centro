@@ -1,7 +1,7 @@
 'use client';
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useForm } from 'react-hook-form';
+import { useForm, type UseFormReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -13,12 +13,12 @@ export function todayOperational(): string {
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
 }
-const personSchema = z.object({ firstName: z.string().trim().min(1, 'Ingresá el nombre'), lastName: z.string().trim().min(1, 'Ingresá el apellido'), dni: z.string().refine((value) => !/[^0-9 .-]/.test(value) && /^\d{6,8}$/.test(value.replace(/[^0-9]/g, '')), 'El DNI debe tener entre 6 y 8 dígitos.').transform((value) => value.replace(/[^0-9]/g, '')), phone: z.string().refine((value) => !/[^0-9 ().-]/.test(value) && /^[1-9]\d{9}$/.test(value.replace(/[^0-9]/g, '')), 'El teléfono debe tener 10 dígitos.').transform((value) => value.replace(/[^0-9]/g, '')), birthDate: z.string().min(1, 'Ingresá la fecha').refine((value) => value <= todayOperational(), 'La fecha de nacimiento no puede ser futura'), email: z.union([z.literal(''), z.email('Email inválido')]).optional(), emergencyContactName: z.string().trim().max(150), emergencyContactPhone: z.string().refine((value) => !value.trim() || (!/[^0-9 ().-]/.test(value) && /^[1-9]\d{9}$/.test(value.replace(/[^0-9]/g, ''))), 'El teléfono de emergencia debe tener 10 dígitos.').transform((value) => value.replace(/[^0-9]/g, '')), socialWorkId: z.string(), affiliateNumber: z.string().max(100) });
+export const personSchema = z.object({ firstName: z.string().trim().min(1, 'Ingresá el nombre'), lastName: z.string().trim().min(1, 'Ingresá el apellido'), dni: z.string().refine((value) => !/[^0-9 .-]/.test(value) && /^\d{6,8}$/.test(value.replace(/[^0-9]/g, '')), 'El DNI debe tener entre 6 y 8 dígitos.').transform((value) => value.replace(/[^0-9]/g, '')), phone: z.string().refine((value) => !/[^0-9 ().-]/.test(value) && /^[1-9]\d{9}$/.test(value.replace(/[^0-9]/g, '')), 'El teléfono debe tener 10 dígitos.').transform((value) => value.replace(/[^0-9]/g, '')), birthDate: z.string().min(1, 'Ingresá la fecha').refine((value) => value <= todayOperational(), 'La fecha de nacimiento no puede ser futura'), email: z.union([z.literal(''), z.email('Email inválido')]).optional(), emergencyContactName: z.string().trim().max(150), emergencyContactPhone: z.string().refine((value) => !value.trim() || (!/[^0-9 ().-]/.test(value) && /^[1-9]\d{9}$/.test(value.replace(/[^0-9]/g, ''))), 'El teléfono de emergencia debe tener 10 dígitos.').transform((value) => value.replace(/[^0-9]/g, '')), socialWorkId: z.string(), affiliateNumber: z.string().max(100) });
 
 const assignmentSchema = z.object({ planId: z.string().min(1, 'Seleccioná un Plan'), mainProfessorId: z.string().min(1, 'Seleccioná un Profesor principal') });
-const studentSchema = personSchema.extend(assignmentSchema.shape);
-type StudentValues = z.infer<typeof studentSchema>;
-type Notice = { pin: string; firstName: string; lastName: string };
+export const studentSchema = personSchema.extend(assignmentSchema.shape);
+export type StudentValues = z.infer<typeof studentSchema>;
+export type Notice = { pin: string; firstName: string; lastName: string };
 type Plan = { id: string; name: string; isSelectable?: boolean };
 type SocialWork = { id: string; name: string; isSelectable: boolean };
 const fieldClass = 'mt-1 h-10 w-full rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-ring';
@@ -30,12 +30,11 @@ function checked<T>(response: { status: number; data: T }): T {
 export function StudentOnboarding({ csrfToken, canPlanManage, canCreate }: { csrfToken: string; canPlanManage: boolean; canCreate: boolean }): React.JSX.Element {
   const [mode, setMode] = useState<'new' | 'existing' | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
-  const [copied, setCopied] = useState(false);
   const [confirmation, setConfirmation] = useState('');
   const client = useQueryClient();
   const saved = async (created?: Notice) => {
     setMode(null);
-    if (created) { setNotice(created); setCopied(false); }
+    if (created) { setNotice(created); }
     else setConfirmation('Persona incorporada a Sala correctamente.');
     await client.invalidateQueries({ queryKey: ['people'] });
   };
@@ -44,14 +43,7 @@ export function StudentOnboarding({ csrfToken, canPlanManage, canCreate }: { csr
     <Button variant="secondary" onClick={() => { setConfirmation(''); setMode('existing'); }}>Incorporar Persona existente</Button>
     {confirmation && <p role="status" className="w-full text-sm text-green-700">{confirmation}</p>}
     {mode && <OnboardingDialog mode={mode} csrfToken={csrfToken} canPlanManage={canPlanManage} onClose={() => setMode(null)} onSaved={saved} />}
-    {notice && <div role="dialog" aria-modal="true" aria-labelledby="student-pin-title" className="fixed inset-0 z-30 grid place-items-center bg-black/50 p-4"><div className="w-full max-w-md rounded-md bg-white p-6 text-center shadow-sm">
-      <h3 id="student-pin-title" className="text-lg font-semibold">Alumno guardado correctamente</h3>
-      <p className="mt-2 text-sm">{notice.firstName} {notice.lastName}</p><p className="mt-5 text-sm">PIN temporal del Portal</p>
-      <p aria-label="PIN temporal" className="mt-1 font-mono text-4xl font-bold tracking-[0.35em]">{notice.pin}</p>
-      <p className="mt-3 text-sm text-muted-foreground">Este PIN se mostrará una sola vez. Compartilo de forma segura con la Persona.</p>
-      <div className="mt-5 flex justify-center gap-2"><Button variant="secondary" onClick={async () => { try { await navigator.clipboard.writeText(notice.pin); setCopied(true); } catch { setCopied(false); } }}>Copiar PIN</Button><Button onClick={() => { setNotice(null); setCopied(false); }}>Entendido</Button></div>
-      {copied && <p role="status" className="mt-3 text-sm text-green-700">PIN copiado</p>}
-    </div></div>}
+    {notice && <TemporaryPortalPin notice={notice} onClose={() => setNotice(null)} />}
   </div>;
 }
 
@@ -67,7 +59,6 @@ function OnboardingDialog({ mode, csrfToken, canPlanManage, onClose, onSaved }: 
   const [page, setPage] = useState(1);
   const [personId, setPersonId] = useState('');
   const candidates = useQuery({ queryKey: ['people', 'sala-candidates', search, page], enabled: mode === 'existing', queryFn: async () => checked(await listPeople({ search, page, pageSize: 25 }, options)) });
-  const socialWorkId = form.watch('socialWorkId');
   const mutation = useMutation({ gcTime: 0, mutationFn: async (values?: StudentValues) => {
     if (!csrfToken) throw new Error('Sesión inválida');
     if (mode === 'existing') { checked(await joinSala({ personId, planId: form.getValues('planId'), mainProfessorId: form.getValues('mainProfessorId'), startDate: todayOperational() }, options)); return; }
@@ -80,12 +71,7 @@ function OnboardingDialog({ mode, csrfToken, canPlanManage, onClose, onSaved }: 
   return <div role="dialog" aria-modal="true" aria-labelledby="student-form-title" className="fixed inset-0 z-20 grid place-items-center bg-black/40 p-4"><div className="max-h-[90vh] w-full max-w-xl overflow-auto rounded-md bg-white p-6 shadow-sm">
     <h2 id="student-form-title" className="mb-5 text-xl font-semibold">{mode === 'new' ? 'Nuevo alumno' : 'Incorporar Persona existente'}</h2>
     <form className="grid gap-4 sm:grid-cols-2" onSubmit={mode === 'new' ? form.handleSubmit((values) => mutation.mutate(values)) : (event) => { event.preventDefault(); if (personId && form.getValues('planId') && form.getValues('mainProfessorId')) mutation.mutate(undefined); }}>
-      {mode === 'new' ? <>
-        {([['firstName','Nombre'],['lastName','Apellido'],['dni','DNI'],['phone','Teléfono'],['birthDate','Fecha de nacimiento'],['email','Email (opcional)'],['emergencyContactName','Contacto de emergencia (opcional)'],['emergencyContactPhone','Teléfono de emergencia (opcional)']] as const).map(([name,label]) => <label key={name} className="text-sm">{label}<input aria-label={label} type={name === 'birthDate' ? 'date' : name === 'email' ? 'email' : 'text'} inputMode={name === 'dni' ? 'numeric' : name === 'phone' || name === 'emergencyContactPhone' ? 'tel' : undefined} maxLength={name === 'emergencyContactName' ? 150 : undefined} className={fieldClass} {...form.register(name)} /><span className="text-xs text-red-700">{form.formState.errors[name]?.message}</span></label>)}
-        <label className="text-sm">Obra social (opcional)<select aria-label="Obra social (opcional)" className={fieldClass} {...form.register('socialWorkId', { onChange: (event: React.ChangeEvent<HTMLSelectElement>) => { if (!event.target.value) form.setValue('affiliateNumber', ''); } })}><option value="">Sin obra social</option>{works.data?.filter((work) => work.isSelectable).map((work) => <option key={work.id} value={work.id}>{work.name}</option>)}</select></label>
-        <label className="text-sm">Número de afiliado (opcional)<input aria-label="Número de afiliado (opcional)" maxLength={100} disabled={!socialWorkId} className={fieldClass} {...form.register('affiliateNumber')} /></label>
-        {works.isError && <p role="alert">No pudimos cargar las obras sociales.</p>}
-      </> : <div className="space-y-3 sm:col-span-2">
+      {mode === 'new' ? <StudentPersonFields form={form} works={works.data ?? []} worksError={works.isError} /> : <div className="space-y-3 sm:col-span-2">
         <label className="text-sm">Buscar Persona<input aria-label="Buscar Persona" placeholder="Nombre o DNI" className={fieldClass} value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} /></label>
         <label className="block text-sm">Persona<select aria-label="Persona" required className={fieldClass} value={personId} onChange={(event) => setPersonId(event.target.value)}><option value="">Seleccionar Persona</option>{candidates.data?.data.filter((person) => !person.hasSalaParticipation).map((person) => <option key={person.id} value={person.id}>{person.lastName}, {person.firstName} · {person.dni}</option>)}</select></label>
         {candidates.isLoading && <p role="status">Buscando Personas…</p>}{candidates.isError && <p role="alert">No pudimos buscar Personas.</p>}
@@ -103,4 +89,26 @@ function OnboardingDialog({ mode, csrfToken, canPlanManage, onClose, onSaved }: 
       <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="secondary" disabled={mutation.isPending} onClick={onClose}>Cancelar</Button><Button type="submit" disabled={!ready || mutation.isPending || (mode === 'existing' && !personId)}>{mutation.isPending ? 'Guardando…' : mode === 'new' ? 'Guardar e incorporar' : 'Incorporar a Sala'}</Button></div>
     </form>
   </div></div>;
+}
+
+export function TemporaryPortalPin({ notice, onClose }: { notice: Notice; onClose: () => void }): React.JSX.Element {
+  const [copied, setCopied] = useState(false);
+  return <div role="dialog" aria-modal="true" aria-labelledby="student-pin-title" className="fixed inset-0 z-30 grid place-items-center bg-black/50 p-4"><div className="w-full max-w-md rounded-md bg-white p-6 text-center shadow-sm">
+      <h3 id="student-pin-title" className="text-lg font-semibold">Alumno guardado correctamente</h3>
+      <p className="mt-2 text-sm">{notice.firstName} {notice.lastName}</p><p className="mt-5 text-sm">PIN temporal del Portal</p>
+      <p aria-label="PIN temporal" className="mt-1 font-mono text-4xl font-bold tracking-[0.35em]">{notice.pin}</p>
+      <p className="mt-3 text-sm text-muted-foreground">Este PIN se mostrará una sola vez. Compartilo de forma segura con la Persona.</p>
+      <div className="mt-5 flex justify-center gap-2"><Button variant="secondary" onClick={async () => { try { await navigator.clipboard.writeText(notice.pin); setCopied(true); } catch { setCopied(false); } }}>Copiar PIN</Button><Button onClick={() => { onClose(); setCopied(false); }}>Entendido</Button></div>
+      {copied && <p role="status" className="mt-3 text-sm text-green-700">PIN copiado</p>}
+    </div></div>;
+}
+
+export function StudentPersonFields({ form, works, worksError }: { form: UseFormReturn<StudentValues>; works: SocialWork[]; worksError: boolean }): React.JSX.Element {
+  const socialWorkId = form.watch('socialWorkId');
+  return <>
+        {([['firstName','Nombre'],['lastName','Apellido'],['dni','DNI'],['phone','Teléfono'],['birthDate','Fecha de nacimiento'],['email','Email (opcional)'],['emergencyContactName','Contacto de emergencia (opcional)'],['emergencyContactPhone','Teléfono de emergencia (opcional)']] as const).map(([name,label]) => <label key={name} className="text-sm">{label}<input aria-label={label} type={name === 'birthDate' ? 'date' : name === 'email' ? 'email' : 'text'} inputMode={name === 'dni' ? 'numeric' : name === 'phone' || name === 'emergencyContactPhone' ? 'tel' : undefined} maxLength={name === 'emergencyContactName' ? 150 : undefined} className={fieldClass} {...form.register(name)} /><span className="text-xs text-red-700">{form.formState.errors[name]?.message}</span></label>)}
+        <label className="text-sm">Obra social (opcional)<select aria-label="Obra social (opcional)" className={fieldClass} {...form.register('socialWorkId', { onChange: (event: React.ChangeEvent<HTMLSelectElement>) => { if (!event.target.value) form.setValue('affiliateNumber', ''); } })}><option value="">Sin obra social</option>{works.filter((work) => work.isSelectable).map((work) => <option key={work.id} value={work.id}>{work.name}</option>)}</select></label>
+        <label className="text-sm">Número de afiliado (opcional)<input aria-label="Número de afiliado (opcional)" maxLength={100} disabled={!socialWorkId} className={fieldClass} {...form.register('affiliateNumber')} /></label>
+        {worksError && <p role="alert">No pudimos cargar las obras sociales.</p>}
+  </>;
 }

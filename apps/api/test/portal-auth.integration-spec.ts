@@ -57,8 +57,9 @@ describe('Portal auth and PIN reset', () => {
     expect(newPin).toMatch(/^\d{4}$/);
     const credential = await prisma.portalCredential.findUniqueOrThrow({ where: { personId: person.id } });
     expect(await argon2.verify(credential.pinHash, newPin)).toBe(true);
-    await request(app.getHttpServer()).post('/api/portal/auth/login').send({ dni: person.dni, pin: '1111' }).expect(401);
-    const temporary = await request(app.getHttpServer()).post('/api/portal/auth/login').send({ dni: person.dni, pin: newPin }).expect(200);
+    const invalid = await request(app.getHttpServer()).post('/api/portal/auth/login').set('Cookie', cookie).send({ dni: person.dni, pin: '1111' }).expect(401);
+    expect(invalid.body.code).toBe('PORTAL_INVALID_CREDENTIALS');
+    const temporary = await request(app.getHttpServer()).post('/api/portal/auth/login').set('Cookie', cookie).send({ dni: person.dni, pin: newPin }).expect(200);
     expect(temporary.body.data.mustChangePin).toBe(true);
     expect(temporary.body.data.person.socialWorkName).toBe(work.name);
     const portalCookie = temporary.headers['set-cookie'][0] as string;

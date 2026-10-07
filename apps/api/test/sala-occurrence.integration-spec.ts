@@ -118,7 +118,7 @@ describe('SalaOccurrence persistence and API', () => {
 
   it('creates spontaneous attendance at the selected 15-minute start time', async () => {
     const fixture = await setup('2026-08-27', 'THURSDAY', 120);
-    const spontaneous = await sala.createSpontaneousOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date, startTime: '09:30' }, fixture.actor.id);
+    const spontaneous = await sala.createSpontaneousOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date, startTime: '09:30', serviceTypeId: fixture.service.id }, fixture.actor.id);
     expect(spontaneous).toMatchObject({ origin: 'SPONTANEOUS', status: 'ATTENDED' });
     expect(await prisma.oneOffReservation.findUniqueOrThrow({ where: { personId_scheduleSlotId_date: { personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date } } })).toMatchObject({ serviceDurationMinutes: 60, startTime: new Date('1970-01-01T09:30:00.000Z') });
     expect((await sala.agenda(fixture.date)).find((item) => item.slot.startTime === '09:30')?.people[0]).toMatchObject({ startTime: '09:30', durationMinutes: 60, origin: 'SPONTANEOUS' });
