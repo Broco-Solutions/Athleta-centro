@@ -28,15 +28,13 @@ export class PortalService {
   private async assertSalaReservationPaymentEligibility(personId: string, date: Date): Promise<void> {
     const year = date.getUTCFullYear();
     const month = date.getUTCMonth() + 1;
+    const reservationDay = date.getUTCDate();
     const payment = await this.prisma.salaPayment.findFirst({
       where: { personId, year, month, reversal: { is: null } },
       select: { id: true },
     });
     if (payment) return;
-    const [currentYear, currentMonth, currentDay] = this.todayOperational().split('-').map(Number) as [number, number, number];
-    const period = year * 12 + month;
-    const currentPeriod = currentYear * 12 + currentMonth;
-    if (period > currentPeriod || (period === currentPeriod && currentDay <= 15)) return;
+    if (reservationDay <= 15) return;
     const monthName = new Intl.DateTimeFormat('es-AR', { month: 'long', timeZone: 'UTC' }).format(date);
     throw new ForbiddenException({
       code: 'PORTAL_SALA_PAYMENT_REQUIRED',

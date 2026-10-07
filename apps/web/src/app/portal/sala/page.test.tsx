@@ -152,7 +152,7 @@ it.each([
     statusCode: status, code, message, details: { year: 2026, month: 11 },
   }, { status })));
   renderPortalSala();
-  expect(await screen.findByText('Podés reservar con el pago pendiente hasta el día 15 inclusive del mes correspondiente. Desde el 16, para nuevas reservas, ese mes debe estar abonado.')).toBeInTheDocument();
+  expect(await screen.findByText('Con el pago pendiente podés reservar únicamente fechas del 1 al 15 inclusive. Para reservar desde el día 16 hasta fin de mes, ese mes debe estar abonado.')).toBeInTheDocument();
   await screen.findAllByRole('option', { name: 'Rehabilitación · 45 min' });
   fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'service' } });
   await screen.findByRole('option', { name: '09:00 · Disponible' });
@@ -168,20 +168,17 @@ it('keeps a generic fetch error when the response is not structured', async () =
   await expect(portalFetch('sala/services')).rejects.toThrow('No pudimos cargar esta información.');
 });
 
-it.each([
-  ['2026-10-15', 'Podés realizar nuevas reservas durante el período de gracia hasta el 15 inclusive.'],
-  ['2026-10-16', 'Para nuevas reservas de este mes necesitás registrar el pago.'],
-])('shows pending payment guidance for operational date %s', async (date, guidance) => {
+it.each(['2026-10-05', '2026-10-15', '2026-10-16', '2026-10-25'])('shows the same pending payment guidance for operational date %s', async date => {
   vi.spyOn(portalUi, 'today').mockReturnValue(date);
   renderPortalSala();
   expect(await screen.findByText('Pago pendiente')).toBeInTheDocument();
-  expect(screen.getByText(guidance)).toBeInTheDocument();
+  expect(screen.getByText('Con el pago pendiente podés reservar únicamente fechas del 1 al 15 inclusive.')).toBeInTheDocument();
 });
 it('shows registered payment without pending guidance', async () => {
   vi.spyOn(portalUi, 'today').mockReturnValue('2026-10-16');
   server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, evaluations: [], paymentState: 'PAID' } })));
   renderPortalSala();
   expect(await screen.findByText('Pago registrado')).toBeInTheDocument();
-  expect(screen.queryByText('Para nuevas reservas de este mes necesitás registrar el pago.')).not.toBeInTheDocument();
-  expect(screen.queryByText('Podés realizar nuevas reservas durante el período de gracia hasta el 15 inclusive.')).not.toBeInTheDocument();
+  expect(screen.queryByText('Pago pendiente')).not.toBeInTheDocument();
+  expect(screen.queryByText('Con el pago pendiente podés reservar únicamente fechas del 1 al 15 inclusive.')).not.toBeInTheDocument();
 });

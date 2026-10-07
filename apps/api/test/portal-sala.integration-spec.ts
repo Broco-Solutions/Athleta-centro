@@ -193,44 +193,50 @@ describe('Portal Sala services from the current plan', () => {
       jest.useRealTimers();
     }
   });
-  it('blocks a past unpaid period if the eligibility helper is evaluated directly', async () => {
-    const f = await fixture();
-    operationalDate.mockReturnValue('2026-11-10');
-    const portal = app.get(PortalService) as unknown as { assertSalaReservationPaymentEligibility(personId: string, date: Date): Promise<void> };
-    await expect(portal.assertSalaReservationPaymentEligibility(personId, new Date(`${f.body.date}T00:00:00Z`))).rejects.toMatchObject({
-      response: { code: 'PORTAL_SALA_PAYMENT_REQUIRED', details: { year: 2026, month: 10 } },
-    });
-    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
-  });
-
-  it.each(['2026-10-10', '2026-10-15'])('allows pending October during grace on %s and preserves the reservation on day 16', async today => {
-    operationalDate.mockReturnValue(today);
-    const f = await fixture();
-    const created = await reserve(f).expect(201);
-    const id = created.body.data.id as string;
-    const before = await prisma.oneOffReservation.findUniqueOrThrow({ where: { id } });
-    const pending = await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
-    expect(pending.body.data.paymentState).toBe('PENDING');
-    operationalDate.mockReturnValue('2026-10-16');
-    await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
-    expect(await prisma.oneOffReservation.findUniqueOrThrow({ where: { id } })).toEqual(before);
-    const denied = await reserve(f).expect(403);
-    expect(denied.body).toMatchObject({ code: 'PORTAL_SALA_PAYMENT_REQUIRED', details: { year: 2026, month: 10 } });
-    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);
-  });
-  it('allows pending November on October 20 even with October pending', async () => {
-    operationalDate.mockReturnValue('2026-10-20');
-    const f = await fixture('2026-11-05');
+  it.each(['2026-10-01', '2026-10-10', '2026-10-15'])('allows the unpaid reserved date %s in the first fortnight', async date => {
+    operationalDate.mockReturnValue(date === '2026-10-01' ? date : '2026-10-05');
+    const f = await fixture(date);
     await reserve(f).expect(201);
     expect(await prisma.salaPayment.count({ where: { personId } })).toBe(0);
     expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);
   });
-  it('requires pending November payment starting November 16', async () => {
-    operationalDate.mockReturnValue('2026-11-16');
-    const f = await fixture('2026-11-20');
+  it.each(['2026-10-16', '2026-10-20', '2026-10-25', '2026-10-31'])('blocks the unpaid reserved date %s even when today is October 5', async date => {
+    operationalDate.mockReturnValue('2026-10-05');
+    const f = await fixture(date);
+    const denied = await reserve(f).expect(403);
+    expect(denied.body).toMatchObject({
+      statusCode: 403, code: 'PORTAL_SALA_PAYMENT_REQUIRED', details: { year: 2026, month: 10 },
+      message: 'Para reservar en octubre necesitás tener registrado el pago de octubre.',
+    });
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
+  });
+  it.each(['2026-10-05', '2026-10-15', '2026-10-16', '2026-10-20', '2026-10-25', '2026-10-31'])('allows the paid reserved date %s when today is October 5', async date => {
+    operationalDate.mockReturnValue('2026-10-05');
+    const f = await fixture(date);
+    await payment(date);
+    await reserve(f).expect(201);
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);
+  });
+  it.each(['2026-11-05', '2026-11-15'])('allows an unpaid future-month date %s in the first fortnight', async date => {
+    operationalDate.mockReturnValue('2026-10-20');
+    const f = await fixture(date);
+    await reserve(f).expect(201);
+    expect(await prisma.salaPayment.count({ where: { personId } })).toBe(0);
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);
+  });
+  it.each(['2026-11-16', '2026-11-20'])('blocks an unpaid future-month date %s in the second fortnight', async date => {
+    operationalDate.mockReturnValue('2026-10-25');
+    const f = await fixture(date);
     const denied = await reserve(f).expect(403);
     expect(denied.body).toMatchObject({ code: 'PORTAL_SALA_PAYMENT_REQUIRED', details: { year: 2026, month: 11 } });
     expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
+  });
+  it('allows a paid future-month date in the second fortnight', async () => {
+    operationalDate.mockReturnValue('2026-10-25');
+    const f = await fixture('2026-11-20');
+    await payment(f.body.date);
+    await reserve(f).expect(201);
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);
   });
   it.each([
     ['2026-10-16', 201], ['2026-11-15', 201],
@@ -299,16 +305,18 @@ describe('Portal Sala services from the current plan', () => {
     expect(denied.body.code).toBe('PORTAL_SALA_PAYMENT_REQUIRED');
     expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
   });
-  it('rejects a reversed payment for the requested period', async () => {
-    const f = await fixture();
+  it.each([['2026-11-10', 201], ['2026-11-20', 403]])('treats reversed payment as pending for reserved date %s', async (date, status) => {
+    operationalDate.mockReturnValue('2026-10-25');
+    const f = await fixture(date);
     const paid = await payment(f.body.date);
     await reverse(paid.id);
     expect(await prisma.salaPayment.findUniqueOrThrow({ where: { id: paid.id } })).toEqual(paid);
-    const denied = await reserve(f).expect(403);
-    expect(denied.body.code).toBe('PORTAL_SALA_PAYMENT_REQUIRED');
-    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
+    const result = await reserve(f).expect(status);
+    if (status === 403) expect(result.body).toMatchObject({ code: 'PORTAL_SALA_PAYMENT_REQUIRED', details: { year: 2026, month: 11 } });
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(status === 201 ? 1 : 0);
   });
-  it('does not show PAID for a reversed payment in the current month', async () => {
+  it.each(['2026-10-05', '2026-10-15', '2026-10-16', '2026-10-25'])('reports current-month payment state independently of operational day %s', async today => {
+    operationalDate.mockReturnValue(today);
     const f = await fixture();
     const pending = await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
     expect(pending.body.data.paymentState).toBe('PENDING');
