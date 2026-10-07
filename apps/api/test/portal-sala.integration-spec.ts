@@ -8,6 +8,7 @@ import { AppModule } from '../src/app.module';
 import { InternalUserService } from '../src/team/internal-user.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
+import { PortalService } from '../src/portal/portal.service';
 import { SalaService } from '../src/sala/sala.service';
 
 describe('Portal Sala services from the current plan', () => {
@@ -21,6 +22,12 @@ describe('Portal Sala services from the current plan', () => {
   let windowId: string;
   let serviceIds: string[] = [];
   let paymentMethodId: string;
+  let operationalDate: jest.SpyInstance<string, []>;
+
+  beforeEach(() => {
+    // A local seam controls only Portal's date rules, leaving sessions and timers alone.
+    operationalDate = jest.spyOn(app.get(PortalService) as unknown as { todayOperational(): string }, 'todayOperational').mockReturnValue('2026-10-16');
+  });
 
   beforeAll(async () => {
     app = (await Test.createTestingModule({ imports: [AppModule] }).compile()).createNestApplication();
@@ -33,6 +40,7 @@ describe('Portal Sala services from the current plan', () => {
     sala = app.get(SalaService);
   });
   afterEach(async () => {
+    operationalDate.mockRestore();
     if (personId) {
       await prisma.salaPaymentReversal.deleteMany({ where: { payment: { personId } } });
       await prisma.salaPayment.deleteMany({ where: { personId } });
@@ -57,7 +65,7 @@ describe('Portal Sala services from the current plan', () => {
   });
   afterAll(() => app.close());
 
-  async function fixture() {
+  async function fixture(date = '2026-10-20') {
     const suffix = crypto.randomUUID();
     const professor = await users.create({ firstName: 'Portal', lastName: 'Profesor', email: `portal-sala-${suffix}@test.local`, roles: [Role.PROFESSOR] });
     professorId = professor.id;
@@ -70,11 +78,11 @@ describe('Portal Sala services from the current plan', () => {
     const person = await prisma.person.create({ data: { firstName: 'Portal', lastName: 'Alumno sintético', dni, normalizedDni: dni, phone: '3515550000', birthDate: new Date('1990-01-01'), portalCredential: { create: { pinHash: await argon2.hash('1111', { type: argon2.argon2id }), mustChangePin: false } } } });
     personId = person.id;
     const participation = await sala.join({ personId: person.id, mainProfessorId: professor.id, planId: plan.id, startDate: '2020-01-01' });
-    const day = new Date(); day.setUTCDate(day.getUTCDate() + 1);
-    const date = day.toISOString().slice(0, 10);
+    const day = new Date(`${date}T00:00:00.000Z`);
     const weekday = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'][day.getUTCDay()] as SalaWeekday;
     const window = await sala.createSlot({ weekday, startTime: '09:00', durationMinutes: 120, specificCapacity: 5 });
     windowId = window.id;
+    await prisma.salaScheduleSlot.update({ where: { id: windowId }, data: { startsAt: new Date('2020-01-01') } });
     const login = await request(app.getHttpServer()).post('/api/portal/auth/login').send({ dni, pin: '1111' }).expect(200);
     return { muscle, calisthenics, participation, cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string,
       body: { date, startDate: date, scheduleSlotId: window.id, startTime: '09:00' } };
@@ -170,6 +178,71 @@ describe('Portal Sala services from the current plan', () => {
     const inactive = await request(app.getHttpServer()).get('/api/portal/sala/services').set('Cookie', f.cookie).expect(200);
     expect(inactive.body.data).toEqual([]);
   });
+  it('uses Argentina midnight for the operational day and month', () => {
+    operationalDate.mockRestore();
+    const portal = app.get(PortalService) as unknown as { todayOperational(): string };
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(new Date('2026-10-16T02:59:59Z'));
+      expect(portal.todayOperational()).toBe('2026-10-15');
+      jest.setSystemTime(new Date('2026-10-16T03:00:00Z'));
+      expect(portal.todayOperational()).toBe('2026-10-16');
+      jest.setSystemTime(new Date('2026-11-01T02:59:59Z'));
+      expect(portal.todayOperational()).toBe('2026-10-31');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  it('blocks a past unpaid period if the eligibility helper is evaluated directly', async () => {
+    const f = await fixture();
+    operationalDate.mockReturnValue('2026-11-10');
+    const portal = app.get(PortalService) as unknown as { assertSalaReservationPaymentEligibility(personId: string, date: Date): Promise<void> };
+    await expect(portal.assertSalaReservationPaymentEligibility(personId, new Date(`${f.body.date}T00:00:00Z`))).rejects.toMatchObject({
+      response: { code: 'PORTAL_SALA_PAYMENT_REQUIRED', details: { year: 2026, month: 10 } },
+    });
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
+  });
+
+  it.each(['2026-10-10', '2026-10-15'])('allows pending October during grace on %s and preserves the reservation on day 16', async today => {
+    operationalDate.mockReturnValue(today);
+    const f = await fixture();
+    const created = await reserve(f).expect(201);
+    const id = created.body.data.id as string;
+    const before = await prisma.oneOffReservation.findUniqueOrThrow({ where: { id } });
+    const pending = await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
+    expect(pending.body.data.paymentState).toBe('PENDING');
+    operationalDate.mockReturnValue('2026-10-16');
+    await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
+    expect(await prisma.oneOffReservation.findUniqueOrThrow({ where: { id } })).toEqual(before);
+    const denied = await reserve(f).expect(403);
+    expect(denied.body).toMatchObject({ code: 'PORTAL_SALA_PAYMENT_REQUIRED', details: { year: 2026, month: 10 } });
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);
+  });
+  it('allows pending November on October 20 even with October pending', async () => {
+    operationalDate.mockReturnValue('2026-10-20');
+    const f = await fixture('2026-11-05');
+    await reserve(f).expect(201);
+    expect(await prisma.salaPayment.count({ where: { personId } })).toBe(0);
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);
+  });
+  it('requires pending November payment starting November 16', async () => {
+    operationalDate.mockReturnValue('2026-11-16');
+    const f = await fixture('2026-11-20');
+    const denied = await reserve(f).expect(403);
+    expect(denied.body).toMatchObject({ code: 'PORTAL_SALA_PAYMENT_REQUIRED', details: { year: 2026, month: 11 } });
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
+  });
+  it.each([
+    ['2026-10-16', 201], ['2026-11-15', 201],
+    ['2026-10-15', 400], ['2026-11-16', 400],
+  ])('keeps the operational 30-day window inclusive for %s', async (date, status) => {
+    const f = await fixture(date);
+    await payment(date);
+    const result = await reserve(f).expect(status);
+    if (status === 400) expect(result.body.code).toBe('PORTAL_DATE_OUT_OF_RANGE');
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(status === 201 ? 1 : 0);
+  });
+
   it('allows the same Portal reservation after registering its month from the active Plan', async () => {
     const f = await fixture();
     const denied = await reserve(f).expect(403);
@@ -202,9 +275,21 @@ describe('Portal Sala services from the current plan', () => {
     expect(await prisma.oneOffReservation.findUniqueOrThrow({ where: { id } })).toEqual(before);
     await reserve(f).expect(403);
     expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);
-    // Cancellation and availability remain available even after reversal.
+    // Availability remains available even after reversal.
     await request(app.getHttpServer()).get(`/api/portal/sala/availability?date=${f.body.date}`).set('Cookie', f.cookie).expect(200);
-    await request(app.getHttpServer()).post(`/api/portal/sala/reservations/${id}/cancel`).set('Cookie', f.cookie).set('x-csrf-token', f.csrf).expect(200);
+  });
+  it('still allows cancellation after reversal', async () => {
+    // Cancellation uses the real instant; keep its booking future while controlling payment eligibility.
+    const future = new Date();
+    future.setUTCMonth(future.getUTCMonth() + 1, 20);
+    const date = future.toISOString().slice(0, 10);
+    operationalDate.mockReturnValue(`${date.slice(0, 7)}-16`);
+    const f = await fixture(date);
+    const paid = await payment(date);
+    const created = await reserve(f).expect(201);
+    await reverse(paid.id);
+    await request(app.getHttpServer()).post(`/api/portal/sala/reservations/${created.body.data.id}/cancel`).set('Cookie', f.cookie).set('x-csrf-token', f.csrf).expect(200);
+    expect((await prisma.oneOffReservation.findUniqueOrThrow({ where: { id: created.body.data.id } })).cancelledAt).not.toBeNull();
   });
   it('rejects a valid payment for another month', async () => {
     const f = await fixture();
@@ -218,26 +303,30 @@ describe('Portal Sala services from the current plan', () => {
     const f = await fixture();
     const paid = await payment(f.body.date);
     await reverse(paid.id);
+    expect(await prisma.salaPayment.findUniqueOrThrow({ where: { id: paid.id } })).toEqual(paid);
     const denied = await reserve(f).expect(403);
     expect(denied.body.code).toBe('PORTAL_SALA_PAYMENT_REQUIRED');
     expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
   });
   it('does not show PAID for a reversed payment in the current month', async () => {
     const f = await fixture();
-    const paid = await payment(new Date().toISOString().slice(0, 10));
+    const pending = await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
+    expect(pending.body.data.paymentState).toBe('PENDING');
+    const paid = await payment('2026-10-01');
     const before = await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
     expect(before.body.data.paymentState).toBe('PAID');
     await reverse(paid.id);
     const after = await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
     expect(after.body.data.paymentState).toBe('PENDING');
   });
-  it('allows an internal reservation without any monthly payment', async () => {
+  it.each([Role.PROFESSOR, Role.ADMINISTRATIVE, Role.GENERAL_ADMIN])('allows an internal reservation as %s without any monthly payment', async role => {
     const f = await fixture();
     const auth = app.get(AuthService);
-    await prisma.internalUserRole.create({ data: { internalUserId: professorId, role: Role.GENERAL_ADMIN } });
+    if (role !== Role.PROFESSOR) await prisma.internalUserRole.create({ data: { internalUserId: professorId, role } });
     await auth.provisionCredential(professorId, 'ValidPass1!');
     await prisma.internalCredential.update({ where: { internalUserId: professorId }, data: { mustChangePassword: false } });
     const user = await prisma.internalUser.findUniqueOrThrow({ where: { id: professorId } });
+    await prisma.internalUserRole.deleteMany({ where: { internalUserId: professorId, role: { not: role } } });
     const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200);
     const created = await request(app.getHttpServer()).post('/api/sala/reservations').set('Cookie', login.headers['set-cookie'][0] as string).set('x-csrf-token', login.body.data.csrfToken as string)
       .send({ personId, salaParticipationId: f.participation.id, date: f.body.date, scheduleSlotId: f.body.scheduleSlotId, startTime: f.body.startTime, serviceTypeId: f.muscle.id }).expect(201);
