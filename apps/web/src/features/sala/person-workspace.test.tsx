@@ -86,3 +86,48 @@ it('does not query person services without an active participation', async () =>
   expect(personServicesRequests).toBe(0);
   expect(catalogRequests).toBe(0);
 });
+
+it.each(['reservations', 'fixed'])('offers only half-hour starts and submits distinct starts from one window on %s', async tab => {
+  navigation.tab = tab;
+  const submitted: Record<string, string>[] = [];
+  server.use(
+    http.get('http://localhost:3000/api/sala/availability', () => HttpResponse.json({ data: ['12:00', '12:15', '12:30', '12:45'].map(startTime => ({ slotId: `window:${startTime}`, scheduleSlotId: 'window', startTime })) })),
+    http.post(`http://localhost:3000/api/sala/${tab === 'fixed' ? 'fixed-bookings' : 'reservations'}`, async ({ request }) => { submitted.push(await request.json() as Record<string, string>); return HttpResponse.json({ data: {} }, { status: 201 }); }),
+  );
+  renderWorkspace();
+  await screen.findByRole('option', { name: 'Musculación' });
+  await screen.findByRole('option', { name: '12:30' });
+  expect(screen.getByRole('option', { name: '12:00' })).toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: '12:15' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: '12:45' })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Servicio'), { target: { value: 'muscle' } });
+  for (const [index, startTime] of ['12:00', '12:30'].entries()) {
+    fireEvent.change(screen.getByLabelText('Horario'), { target: { value: `window:${startTime}` } });
+    expect(screen.getByLabelText('Horario')).toHaveValue(`window:${startTime}`);
+    const submit = screen.getByRole('button', { name: tab === 'fixed' ? 'Crear turno fijo' : 'Crear reserva' });
+    await waitFor(() => expect(submit).toBeEnabled());
+    fireEvent.click(submit);
+    await waitFor(() => expect(submitted).toHaveLength(index + 1));
+    expect(submitted[index]).toMatchObject({ scheduleSlotId: 'window', startTime, serviceTypeId: 'muscle' });
+  }
+});
+it.each(['12:15', '12:45'])('shows historical fixed start %s and requires a new half-hour selection', async startTime => {
+  navigation.tab = 'fixed';
+  let submitted: unknown;
+  server.use(
+    http.get(`http://localhost:3000/api/sala/people/${personId}/fixed-bookings`, () => HttpResponse.json({ data: [{ id: 'historical', startDate: '2026-08-31', startTime, scheduleSlot: { id: 'window', weekday: 'MONDAY', startTime: '12:00' }, serviceType: services[0] }] })),
+    http.get('http://localhost:3000/api/sala/availability', () => HttpResponse.json({ data: ['12:00', '12:15', '12:30', '12:45'].map(startTime => ({ slotId: `window:${startTime}`, scheduleSlotId: 'window', startTime })) })),
+    http.post('http://localhost:3000/api/sala/fixed-bookings/historical/change', async ({ request }) => { submitted = await request.json(); return HttpResponse.json({ data: {} }); }),
+  );
+  renderWorkspace();
+  await screen.findByRole('option', { name: 'Musculación' });
+  expect(await screen.findByText(new RegExp(`MONDAY · ${startTime}`))).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Modificar' }));
+  expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeDisabled();
+  expect(screen.queryByRole('option', { name: startTime })).not.toBeInTheDocument();
+  await screen.findByRole('option', { name: '12:30' });
+  fireEvent.change(screen.getByLabelText('Horario'), { target: { value: 'window:12:30' } });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+  await waitFor(() => expect(submitted).toMatchObject({ scheduleSlotId: 'window', startTime: '12:30' }));
+});

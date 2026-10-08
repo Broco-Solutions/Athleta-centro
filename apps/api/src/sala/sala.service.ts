@@ -621,7 +621,7 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     const start = this.minutes(resolvedStartTime);
     const windowStart = this.minutes(window.startTime);
     const end = start + durationMinutes;
-    if (start % 15 !== 0 || start < windowStart || end > windowStart + window.durationMinutes) throw new ConflictException({ code: 'SALA_REQUIRED_SLOTS_UNAVAILABLE', message: 'The service does not fit completely within the opening window' });
+    if (start % 30 !== 0 || start < windowStart || end > windowStart + window.durationMinutes) throw new ConflictException({ code: 'SALA_REQUIRED_SLOTS_UNAVAILABLE', message: 'The service does not fit completely within the opening window' });
     if (exception?.type === SalaScheduleExceptionType.CLOSURE) throw new ConflictException({ code: 'SALA_SCHEDULE_CLOSED', message: 'Schedule is closed' });
     const validationDate = day.toISOString().slice(0, 10);
     const states = (await this.availability(validationDate, tx, excludingFixed?.id)).filter((state) => state.scheduleSlotId === window.id && this.parseMinutes(state.startTime) >= start && this.parseMinutes(state.startTime) < end);

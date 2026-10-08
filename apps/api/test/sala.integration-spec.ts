@@ -299,6 +299,54 @@ describe('Sala configuration API', () => {
     const booking = { personId: person.id, salaParticipationId: participation.id, scheduleSlotId: window.id, startTime: '09:00', startDate: '2026-08-31', date: '2026-08-31' };
     return { muscle, functional, calisthenics, plan, participation, person, booking };
   }
+  it.each(['reservation', 'fixed'].flatMap(operation => ['12:00', '12:30', '12:15', '12:45'].map(startTime => [operation, startTime])))('enforces half-hour planned starts for %s at %s through DTO and service', async (operation, startTime) => {
+    const authn = await session(Role.ADMINISTRATIVE);
+    const f = await planBookingFixture();
+    await prisma.salaScheduleSlot.update({ where: { id: f.booking.scheduleSlotId }, data: { startTime: new Date('1970-01-01T12:00:00Z'), durationMinutes: 120 } });
+    const { date, startDate, ...common } = f.booking;
+    const input = { ...common, startTime: startTime!, serviceTypeId: f.muscle.id, ...(operation === 'reservation' ? { date } : { startDate }) };
+    const valid = ['12:00', '12:30'].includes(startTime!);
+    const response = await request(app.getHttpServer()).post(`/api/sala/${operation === 'reservation' ? 'reservations' : 'fixed-bookings'}`)
+      .set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(input).expect(valid ? 201 : 400);
+    if (valid) {
+      expect(response.body.data.startTime).toContain(`T${startTime}:00`);
+    } else {
+      const serviceInput = { ...f.booking, startTime: startTime!, serviceTypeId: f.muscle.id };
+      await expect(operation === 'reservation' ? sala.createReservation(serviceInput) : sala.createFixed(serviceInput))
+        .rejects.toMatchObject({ response: { code: 'SALA_REQUIRED_SLOTS_UNAVAILABLE' } });
+      expect(await prisma.oneOffReservation.count()).toBe(0);
+      expect(await prisma.fixedSalaBooking.count()).toBe(0);
+    }
+  });
+  it.each(['12:15', '12:45'])('preserves a historical fixed start %s and requires a half-hour start when changing it', async startTime => {
+    const f = await planBookingFixture();
+    await prisma.salaScheduleSlot.update({ where: { id: f.booking.scheduleSlotId }, data: { durationMinutes: 420 } });
+    const fixed = await sala.createFixed({ ...f.booking, serviceTypeId: f.functional.id });
+    const historical = await prisma.fixedSalaBooking.update({ where: { id: fixed.id }, data: { startTime: new Date(`1970-01-01T${startTime}:00Z`) } });
+    expect(await sala.listFixed(f.person.id)).toEqual(expect.arrayContaining([expect.objectContaining({ id: fixed.id, startTime: historical.startTime })]));
+    await expect(sala.changeFixed({ ...f.booking, id: fixed.id, serviceTypeId: f.functional.id, startTime }))
+      .rejects.toMatchObject({ response: { code: 'SALA_REQUIRED_SLOTS_UNAVAILABLE' } });
+    expect(await prisma.fixedSalaBooking.findUnique({ where: { id: fixed.id } })).toEqual(historical);
+    await sala.changeFixed({ ...f.booking, id: fixed.id, serviceTypeId: f.functional.id, startTime: '12:30' });
+  });
+  it('counts simultaneous presence in every quarter-hour for 60 and 45 minute services', async () => {
+    const f = await planBookingFixture();
+    await prisma.salaScheduleSlot.update({ where: { id: f.booking.scheduleSlotId }, data: { startTime: new Date('1970-01-01T12:00:00Z'), durationMinutes: 120, specificCapacity: 10 } });
+    await sala.createReservation({ ...f.booking, serviceTypeId: f.functional.id, startTime: '12:30' });
+    expect((await sala.availability(f.booking.date)).map(slot => [slot.startTime, slot.reserved])).toEqual([
+      ['12:00', 0], ['12:15', 0], ['12:30', 1], ['12:45', 1], ['13:00', 1], ['13:15', 0], ['13:30', 0], ['13:45', 0],
+    ]);
+    const participation = await prisma.salaParticipation.findUniqueOrThrow({ where: { id: f.participation.id } });
+    for (let index = 0; index < 9; index++) {
+      const dni = uniqueDni();
+      const person = await prisma.person.create({ data: { firstName: `Capacidad${index}`, lastName: 'Sintética', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1990-01-01') } });
+      const joined = await sala.join({ personId: person.id, planId: f.plan.id, mainProfessorId: participation.mainProfessorId, startDate: '2026-01-01' });
+      await sala.createFixed({ ...f.booking, personId: person.id, salaParticipationId: joined.id, serviceTypeId: f.muscle.id, startTime: '12:00' });
+    }
+    expect((await sala.availability(f.booking.date)).slice(0, 6).map(slot => slot.reserved)).toEqual([9, 9, 10, 10, 1, 0]);
+    await expect(sala.createReservation({ ...f.booking, serviceTypeId: f.muscle.id, startTime: '12:30' }))
+      .rejects.toMatchObject({ response: { code: 'SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED', details: { fullSlots: 2, requiredSlots: 4 } } });
+  });
   it('lists only selectable services from the current active participation plan', async () => {
     const authn = await session(Role.PROFESSOR);
     const f = await planBookingFixture();
@@ -610,6 +658,14 @@ describe('Sala configuration API', () => {
       await sala.updateServiceType(f.service.id, { name: 'Funcional', durationMinutes: 60 });
       expect((await sala.agenda(today()))[0]?.people[0]?.durationMinutes).toBe(45);
       expect((await sala.availability(today()))[3]?.reserved).toBe(0);
+    });
+    it('keeps a spontaneous arrival at 12:15 valid and occupies three quarter-hour blocks', async () => {
+      const f = await fixture();
+      await prisma.salaScheduleSlot.update({ where: { id: f.slot.id }, data: { startTime: new Date('1970-01-01T12:00:00Z') } });
+      const response = await post('', f.authn, { ...f.input, startTime: '12:15' }).expect(201);
+      expect(response.body.data).toMatchObject({ origin: 'SPONTANEOUS', status: 'ATTENDED' });
+      expect(response.body.data.startTime).toContain('T12:15:00');
+      expect((await sala.availability(today())).slice(0, 5).map(slot => slot.reserved)).toEqual([0, 1, 1, 1, 0]);
     });
     it('rejects services outside the Plan, retired services and missing service without creating attendance', async () => {
       const f = await fixture();

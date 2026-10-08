@@ -182,3 +182,46 @@ it('shows registered payment without pending guidance', async () => {
   expect(screen.queryByText('Pago pendiente')).not.toBeInTheDocument();
   expect(screen.queryByText('Con el pago pendiente podés reservar únicamente fechas del 1 al 15 inclusive.')).not.toBeInTheDocument();
 });
+
+it('offers only half-hour planned starts while checking every block of the service', async () => {
+  server.use(http.get('http://localhost:3000/api/portal/sala/availability', () => HttpResponse.json({ data: ['09:00', '09:15', '09:30', '09:45', '10:00', '10:15', '10:30'].map(startTime => ({ scheduleSlotId: 'window', startTime, available: true })) })));
+  renderPortalSala();
+  await screen.findAllByRole('option', { name: 'Rehabilitación · 45 min' });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Servicio' }), { target: { value: 'service' } });
+  fireEvent.change(screen.getByLabelText('Servicio turno fijo'), { target: { value: 'service' } });
+  for (const label of ['Inicio', 'Hora turno fijo']) {
+    const select = screen.getByLabelText(label);
+    await within(select).findByRole('option', { name: '10:00 · Disponible' });
+    expect(Array.from(select.querySelectorAll('option')).map(option => option.value)).toEqual(['', 'window:09:00', 'window:09:30', 'window:10:00']);
+  }
+  fireEvent.change(screen.getByLabelText('Hora turno fijo'), { target: { value: 'window:09:30' } });
+  expect(screen.getByLabelText('Hora turno fijo')).toHaveValue('window:09:30');
+  expect(screen.getByRole('button', { name: 'Crear turno fijo' })).toBeEnabled();
+});
+it('excludes a 60-minute start when an intermediate quarter-hour block is full', async () => {
+  server.use(
+    http.get('http://localhost:3000/api/portal/sala/services', () => HttpResponse.json({ data: [{ id: 'service', name: 'Musculación', durationMinutes: 60 }] })),
+    http.get('http://localhost:3000/api/portal/sala/availability', () => HttpResponse.json({ data: ['12:30', '12:45', '13:00', '13:15'].map(startTime => ({ scheduleSlotId: 'window', startTime, available: startTime !== '13:00' })) })),
+  );
+  renderPortalSala();
+  await screen.findAllByRole('option', { name: 'Musculación · 60 min' });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Servicio' }), { target: { value: 'service' } });
+  fireEvent.change(screen.getByLabelText('Servicio turno fijo'), { target: { value: 'service' } });
+  expect(screen.getByLabelText('Inicio').querySelectorAll('option')).toHaveLength(1);
+  expect(screen.getByLabelText('Hora turno fijo').querySelectorAll('option')).toHaveLength(1);
+});
+it.each(['09:15', '09:45'])('keeps historical fixed start %s as a disabled reference and requires a valid new start', async startTime => {
+  let submitted: Record<string, string> | undefined;
+  fixedHandlers({ weekday: 'MONDAY', startTime, active: true }, body => { submitted = body; });
+  renderPortalSala();
+  await screen.findByRole('button', { name: 'Modificar' });
+  fireEvent.click(screen.getByRole('button', { name: 'Modificar' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Modificar turno fijo' });
+  expect(within(dialog).getByRole('option', { name: `Actual · ${startTime}` })).toBeDisabled();
+  expect(within(dialog).getByRole('button', { name: 'Guardar cambios' })).toBeDisabled();
+  expect(within(dialog).queryByRole('option', { name: startTime })).not.toBeInTheDocument();
+  await within(dialog).findByRole('option', { name: '09:30' });
+  fireEvent.change(within(dialog).getByLabelText('Hora'), { target: { value: 'window:09:30' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar cambios' }));
+  await waitFor(() => expect(submitted).toMatchObject({ scheduleSlotId: 'window', startTime: '09:30' }));
+});

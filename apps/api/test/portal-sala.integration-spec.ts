@@ -105,6 +105,28 @@ describe('Portal Sala services from the current plan', () => {
     return request(app.getHttpServer()).post('/api/portal/sala/reservations').set('Cookie', f.cookie).set('x-csrf-token', f.csrf)
       .send({ date: f.body.date, scheduleSlotId: f.body.scheduleSlotId, startTime: f.body.startTime, serviceTypeId: f.muscle.id });
   }
+  it.each(['reservations', 'fixed-bookings'].flatMap(path => ['09:00', '09:30', '09:15', '09:45'].map(startTime => [path, startTime])))('validates planned Portal %s starts at %s in SalaService', async (path, startTime) => {
+    const f = await fixture();
+    await payment(f.body.date);
+    const valid = ['09:00', '09:30'].includes(startTime!);
+    const response = await request(app.getHttpServer()).post(`/api/portal/sala/${path}`).set('Cookie', f.cookie).set('x-csrf-token', f.csrf)
+      .send({ scheduleSlotId: windowId, serviceTypeId: f.muscle.id, startTime, ...(path === 'reservations' ? { date: f.body.date } : { startDate: f.body.startDate }) }).expect(valid ? 201 : 409);
+    if (valid) expect(response.body.data.startTime).toContain(`T${startTime}:00`);
+    else {
+      expect(response.body.code).toBe('SALA_REQUIRED_SLOTS_UNAVAILABLE');
+      expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
+      expect(await prisma.fixedSalaBooking.count({ where: { personId } })).toBe(0);
+    }
+  });
+  it.each(['09:15', '09:45'])('rejects a forged Portal fixed change to %s without altering the existing booking', async startTime => {
+    const f = await fixture();
+    const body = { scheduleSlotId: windowId, serviceTypeId: f.muscle.id, startTime: '09:00', startDate: f.body.startDate };
+    const created = await request(app.getHttpServer()).post('/api/portal/sala/fixed-bookings').set('Cookie', f.cookie).set('x-csrf-token', f.csrf).send(body).expect(201);
+    const before = await prisma.fixedSalaBooking.findUniqueOrThrow({ where: { id: created.body.data.id } });
+    const denied = await request(app.getHttpServer()).post(`/api/portal/sala/fixed-bookings/${before.id}/change`).set('Cookie', f.cookie).set('x-csrf-token', f.csrf).send({ ...body, startTime }).expect(409);
+    expect(denied.body.code).toBe('SALA_REQUIRED_SLOTS_UNAVAILABLE');
+    expect(await prisma.fixedSalaBooking.findUnique({ where: { id: before.id } })).toEqual(before);
+  });
   it('uses Portal CSRF for reservations and fixed bookings when an internal session coexists', async () => {
     const f = await fixture();
     const auth = app.get(AuthService);
@@ -347,7 +369,7 @@ describe('Portal Sala services from the current plan', () => {
     const body = { startDate: f.body.startDate, scheduleSlotId: f.body.scheduleSlotId, startTime: f.body.startTime, serviceTypeId: f.muscle.id };
     const created = await request(app.getHttpServer()).post('/api/portal/sala/fixed-bookings').set('Cookie', f.cookie).set('x-csrf-token', f.csrf).send(body).expect(201);
     const changed = await request(app.getHttpServer()).post(`/api/portal/sala/fixed-bookings/${created.body.data.id}/change`).set('Cookie', f.cookie).set('x-csrf-token', f.csrf)
-      .send({ ...body, startTime: '09:15' }).expect(201);
+      .send({ ...body, startTime: '09:30' }).expect(201);
     await request(app.getHttpServer()).post(`/api/portal/sala/fixed-bookings/${changed.body.data.id}/end`).set('Cookie', f.cookie).set('x-csrf-token', f.csrf)
       .send({ endDate: f.body.date }).expect(201);
     expect(await prisma.salaPayment.count({ where: { personId } })).toBe(0);

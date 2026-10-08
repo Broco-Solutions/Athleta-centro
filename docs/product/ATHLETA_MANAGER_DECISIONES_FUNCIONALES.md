@@ -106,3 +106,17 @@ La restricción aplica únicamente a nuevas Reservas puntuales creadas por el Al
 La falta de Pago o la reversión posterior de un Pago no cancela ni modifica Reservas ya existentes.
 
 El Pago continúa siendo registrado manualmente en Athleta Manager; no existe procesamiento automático de cobros en el alcance actual.
+
+## SAL-HOR-09 — Inicio de Turnos planificados cada 30 minutos
+
+Estado: **RESUELTO**. Definición aprobada 2026-10-08.
+
+Las Reservas puntuales y los Turnos fijos de Sala sólo pueden comenzar cada 30 minutos, en horarios terminados en :00 o :30.
+
+La granularidad de inicio de 30 minutos no modifica la unidad interna de capacidad de Sala, que continúa siendo de 15 minutos. La duración de cada Servicio continúa siendo un múltiplo de 15 minutos y consume capacidad en todos los bloques consecutivos correspondientes.
+
+La regla de inicio cada 30 minutos se aplica tanto al Portal como a la operación interna para crear o modificar Reservas puntuales y Turnos fijos.
+
+La Incorporación espontánea no está sujeta a esta restricción y conserva la granularidad operativa de 15 minutos porque representa una llegada real.
+
+Los registros históricos existentes con inicio :15 o :45 se conservan y no se reescriben automáticamente; una nueva creación o modificación debe respetar :00/:30.

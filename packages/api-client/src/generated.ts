@@ -313,7 +313,7 @@ export interface FixedBookingDto {
   /** Weekly opening window */
   scheduleSlotId: string;
   serviceTypeId: string;
-  /** @pattern ^([01]\d|2[0-3]):(00|15|30|45)$ */
+  /** @pattern ^([01]\d|2[0-3]):(00|30)$ */
   startTime: string;
   startDate: string;
   /** @nullable */
@@ -327,7 +327,7 @@ export interface ChangeFixedBookingDto {
   /** Weekly opening window */
   scheduleSlotId: string;
   serviceTypeId: string;
-  /** @pattern ^([01]\d|2[0-3]):(00|15|30|45)$ */
+  /** @pattern ^([01]\d|2[0-3]):(00|30)$ */
   startTime: string;
   startDate: string;
   /** @nullable */
@@ -346,7 +346,7 @@ export interface OneOffReservationDto {
   /** Weekly opening window */
   scheduleSlotId: string;
   serviceTypeId: string;
-  /** @pattern ^([01]\d|2[0-3]):(00|15|30|45)$ */
+  /** @pattern ^([01]\d|2[0-3]):(00|30)$ */
   startTime: string;
   date: string;
   confirmOverbooking?: boolean;
