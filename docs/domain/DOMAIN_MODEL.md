@@ -655,7 +655,7 @@ OneOffReservation
 - schedule/time
 ```
 
-Su presencia operativa se representa posteriormente mediante `SalaOccurrence`.
+Su presencia operativa se representa posteriormente mediante `SalaOccurrence`. Una Persona puede tener varias Reservas puntuales en una fecha, incluso dentro de la misma ventana semanal, cuando sus intervalos no se superponen.
 
 ---
 
@@ -690,7 +690,7 @@ Esto permite unificar la operación diaria y la asistencia independientemente de
 
 **Estado técnico:** `LAZY_MATERIALIZATION`
 
-Las ocurrencias futuras de `FixedSalaBooking` no se pre-materializan masivamente. La agenda proyecta `RESERVED` para una fecha concreta combinando bookings, reservas y excepciones. Una `SalaOccurrence` se persiste cuando existe una operación explícita sobre esa fecha (`ATTENDED`, `ABSENT`, `CANCELLED`, corrección o incorporación `SPONTANEOUS`).
+Las ocurrencias futuras de `FixedSalaBooking` no se pre-materializan masivamente. La agenda proyecta `RESERVED` o `PENDING_PAYMENT` para una fecha concreta combinando bookings, Pagos y excepciones. `PENDING_PAYMENT` es una condición derivada que ocupa cupo. Una `SalaOccurrence` se persiste cuando existe una operación explícita sobre esa fecha (`ATTENDED`, `ABSENT`, `CANCELLED`, corrección o incorporación `SPONTANEOUS`) o cuando vence impaga una ocurrencia fija. Esta cancelación libera cupo y no finaliza la recurrencia.
 
 Esta estrategia es reversible y no modifica el comportamiento funcional externo.
 

@@ -28,7 +28,7 @@ beforeEach(() => {
     http.get('http://localhost:3000/api/sala/schedule', () => HttpResponse.json({ data: [] })),
     http.get('http://localhost:3000/api/sala/service-types/all', () => HttpResponse.json({ data: services })),
     http.get('http://localhost:3000/api/sala/service-types', () => HttpResponse.json({ data: services.filter(service => service.isSelectable) })),
-    http.get('http://localhost:3000/api/sala/configuration', () => HttpResponse.json({ data: { data: { generalCapacity: 5 } } })),
+    http.get('http://localhost:3000/api/sala/configuration', () => HttpResponse.json({ data: { generalCapacity: 5 } })),
     http.get('http://localhost:3000/api/sala/physical-test-definitions', () => HttpResponse.json({ data: tests })),
     http.post('http://localhost:3000/api/sala/physical-test-definitions', async ({ request }) => { tests.push({ id: 'test-1', ...(await request.json() as { name: string; type: string; description: string | null }), isActive: true }); return HttpResponse.json({ data: tests[0] }, { status: 201 }); }),
   );
@@ -37,6 +37,13 @@ afterEach(() => server.resetHandlers());
 afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 
 function renderPage(): void { render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><SalaConfigurationPage /></QueryClientProvider>); }
+
+it('shows the effective capacity returned by the backend', async () => {
+  renderPage();
+  fireEvent.click(await screen.findByText('Capacidad'));
+  await waitFor(() => expect(screen.getByLabelText('Capacidad general')).toHaveValue(5));
+  expect(screen.getByText('Capacidad general: 5 personas')).toBeInTheDocument();
+});
 
 it('shows the physical tests section and its empty state', async () => {
   renderPage();

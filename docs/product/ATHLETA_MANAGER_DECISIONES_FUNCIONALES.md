@@ -120,3 +120,13 @@ La regla de inicio cada 30 minutos se aplica tanto al Portal como a la operació
 La Incorporación espontánea no está sujeta a esta restricción y conserva la granularidad operativa de 15 minutos porque representa una llegada real.
 
 Los registros históricos existentes con inicio :15 o :45 se conservan y no se reescriben automáticamente; una nueva creación o modificación debe respetar :00/:30.
+
+## SAL-TUR-15 / SAL-TUR-16 / SAL-HOR-10 — Ajustes UAT de reservas de Sala
+
+Estado: **RESUELTO**. Definición aprobada 2026-10-08.
+
+Una Persona puede reservar varias actividades en una misma fecha, incluidas varias Reservas puntuales o un Turno fijo con una Reserva puntual, siempre que sus intervalos completos no se superpongan y exista capacidad. Las actividades consecutivas son válidas. La identidad de cada Reserva puntual considera su hora de inicio dentro de la ventana semanal. Cada ocurrencia conserva su origen para corregir el estado de la actividad exacta.
+
+El Turno fijo semanal puede crearse sin Pago. Del día 1 al 15, su ocurrencia está Reservada. Después del día 15, si falta un Pago válido y no revertido del Mes/Año correspondiente, el estado funcional derivado es **Pendiente de pago**; ocupa capacidad en todos sus bloques de 15 minutos. Un Pago válido registrado antes del inicio la habilita como Reservada. Si llega el instante de inicio sin Pago válido, se cancela y persiste sólo esa ocurrencia. Un Pago posterior no la reactiva; las siguientes ocurrencias y el Turno fijo semanal continúan. La cancelación automática se distingue de las correcciones manuales por su marca de fecha y hora. La regla de Pago de las Reservas puntuales del Portal definida en POR-SAL-08 permanece vigente.
+
+La capacidad general inicial es **10 personas**. Puede modificarse desde Configuración de Sala, con mínimo 1. Para cada bloque prevalece la excepción de capacidad, luego la capacidad específica de la ventana, luego la capacidad general configurada y finalmente el valor inicial 10. La instalación inicial crea esa configuración sin reemplazar valores existentes.

@@ -21,7 +21,18 @@ afterEach(() => server.resetHandlers()); afterAll(() => { server.close(); global
 it('calculates proportional duration and a 09:30 to 10:15 booking', () => { const bookings = buildTimelineBookings([{ ...group([entry('Homer', '09:00', 60)]), people: [entry('Homer', '09:30', 45)] }]); expect(bookings[0]).toMatchObject({ startMinutes: 570, durationMinutes: 45, endMinutes: 615 }); });
 it('groups simultaneous bookings by professional and assigns overlap levels', () => { const bookings = buildTimelineBookings([{ ...group([entry('Homer'), entry('Marge')]), people: [entry('Homer'), entry('Marge')] }]); const rows = groupTimelineBookings(bookings); expect(rows).toHaveLength(1); expect(rows[0]?.bookings).toHaveLength(2); expect([...overlapLevels(bookings).values()]).toEqual([0, 1]); });
 it('keeps a third simultaneous booking visible and opens its detail modal', async () => { const people = [entry('Homer'), entry('Marge'), entry('Bart')]; server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [group(people)] }))); renderAgenda(); expect(await screen.findByText('Homer Sintética')).toBeInTheDocument(); expect(screen.getByText('Marge Sintética')).toBeInTheDocument(); expect(screen.getByText('Bart Sintética')).toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: /Homer Sintética 09:00 Reservado/ })); expect(screen.getByRole('dialog')).toHaveTextContent('Kinesio'); });
-it('marks a booking attended through the existing mutation and refreshes', async () => { let submitted: unknown; server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [group()] })), http.post('http://localhost:3000/api/sala/occurrences/attend', async ({ request }) => { submitted = await request.json(); return HttpResponse.json({ data: { status: 'ATTENDED' } }, { status: 201 }); })); renderAgenda(); fireEvent.click(await screen.findByRole('button', { name: /Homer Sintética 09:00 Reservado/ })); fireEvent.click(screen.getByRole('button', { name: 'Asistió' })); await waitFor(() => expect(submitted).toEqual({ personId: `${person.id}-Homer`, scheduleSlotId: slotId, date: '2026-09-02' })); });
+it('marks a booking attended through the existing mutation and refreshes', async () => { let submitted: unknown; server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [group()] })), http.post('http://localhost:3000/api/sala/occurrences/attend', async ({ request }) => { submitted = await request.json(); return HttpResponse.json({ data: { status: 'ATTENDED' } }, { status: 201 }); })); renderAgenda(); fireEvent.click(await screen.findByRole('button', { name: /Homer Sintética 09:00 Reservado/ })); fireEvent.click(screen.getByRole('button', { name: 'Asistió' })); await waitFor(() => expect(submitted).toEqual({ personId: `${person.id}-Homer`, scheduleSlotId: slotId, date: '2026-09-02', startTime: '09:00' })); });
+
+it('distinguishes pending payment and automatic cancellation from absence', async () => {
+  server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [group([{ ...entry('Homer'), origin: 'FIXED', status: 'PENDING_PAYMENT' }, { ...entry('Marge'), origin: 'FIXED', status: 'CANCELLED', cancelledForNonPayment: true }])] })));
+  renderAgenda();
+  fireEvent.click(await screen.findByRole('button', { name: /Homer Sintética 09:00 Pendiente de pago/ }));
+  expect(screen.getByRole('dialog')).toHaveTextContent('El lugar está reservado, pero requiere el pago');
+  expect(screen.queryByRole('button', { name: 'Asistió' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+  fireEvent.click(screen.getByRole('button', { name: /Marge Sintética 09:00 Cancelado/ }));
+  expect(screen.getByRole('dialog')).toHaveTextContent('Por falta de pago');
+});
 
 it('keeps direct initial actions for RESERVED', async () => {
   server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [group()] })));
@@ -63,7 +74,7 @@ it.each([
   expect(modal.getByRole('button', { name: 'Guardar corrección' })).toBeDisabled();
   fireEvent.change(select, { target: { value: target } });
   fireEvent.click(modal.getByRole('button', { name: 'Guardar corrección' }));
-  await waitFor(() => expect(submitted).toEqual({ personId: `${person.id}-Homer`, scheduleSlotId: slotId, date: '2026-09-02', status: target }));
+  await waitFor(() => expect(submitted).toEqual({ personId: `${person.id}-Homer`, scheduleSlotId: slotId, date: '2026-09-02', startTime: '09:00', status: target }));
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   await waitFor(() => expect(reads).toBeGreaterThan(1));
 });

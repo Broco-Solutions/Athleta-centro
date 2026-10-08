@@ -1652,7 +1652,7 @@ ABSENT
 
 La DB debe impedir valores arbitrarios.
 
-No existe una matriz rígida: un usuario autorizado puede corregir manualmente cualquiera de estos estados. La DB protege el enum, la unicidad `Person + fecha + horario` y la coherencia entre origen y booking; Application valida la referencia operacional y registra trazabilidad.
+No existe una matriz rígida: un usuario autorizado puede corregir manualmente cualquiera de estos estados. La DB protege el enum, la unicidad de cada fuente por fecha y la de Reservas puntuales activas por Persona, ventana, fecha e inicio; Application impide intervalos superpuestos y valida la referencia operacional. Las cancelaciones automáticas por impago dejan marca propia de trazabilidad.
 
 ---
 

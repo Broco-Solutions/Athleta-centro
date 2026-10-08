@@ -538,6 +538,8 @@ RESERVED
 
 hasta que un usuario autorizado corrija su estado.
 
+Excepción funcional: una ocurrencia de Turno fijo posterior al día 15 sin Pago válido se proyecta como `PENDING_PAYMENT`, condición derivada que ocupa cupo. Si llega su hora de inicio sin Pago válido, se persiste `CANCELLED` para esa ocurrencia y se libera el cupo. Un Pago posterior no la reactiva; el Turno fijo semanal y sus ocurrencias futuras continúan. Esto no implica una transición automática a `ABSENT`.
+
 ---
 
 # 21. Correcciones de SalaOccurrence
@@ -2135,7 +2137,7 @@ La persistencia utiliza proyección/materialización lazy:
 FixedSalaBooking / OneOffReservation + concrete date
 → virtual RESERVED occurrence
 
-explicit attendance operation
+explicit attendance operation or unpaid fixed occurrence reaching its start
 → persisted SalaOccurrence
 ```
 

@@ -45,6 +45,34 @@ it('enables a valid Portal Sala reservation and sends the selected start', async
   expect(await screen.findByText('Horario reservado.')).toBeInTheDocument();
 });
 
+it.each([
+  ['SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED', 'No hay lugar disponible para ese horario.'],
+  ['SALA_RESERVATION_DUPLICATE', 'Ya tenés una actividad reservada en ese horario. Elegí otro horario.'],
+  ['SALA_BOOKING_OVERLAP', 'Ya tenés una actividad reservada en ese horario. Elegí otro horario.'],
+  ['PORTAL_SALA_PAYMENT_REQUIRED', 'Para reservar esta fecha necesitás tener abonado el mes correspondiente.'],
+])('shows a specific Portal reservation message for %s', async (code, expected) => {
+  server.use(http.post('http://localhost:3000/api/portal/sala/reservations', () => HttpResponse.json({ statusCode: code === 'PORTAL_SALA_PAYMENT_REQUIRED' ? 403 : 409, code, message: 'Conflict' }, { status: code === 'PORTAL_SALA_PAYMENT_REQUIRED' ? 403 : 409 })));
+  renderPortalSala();
+  await screen.findByRole('button', { name: 'Reservar horario' });
+  fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'service' } });
+  fireEvent.change(screen.getByLabelText('Inicio'), { target: { value: 'window:09:00' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Reservar horario' }));
+  expect(await screen.findByText(expected)).toBeInTheDocument();
+});
+
+it('shows pending, paid and expired fixed occurrences separately', async () => {
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [{ id: 'fixed-1', startDate: '2026-10-01', startTime: '09:00', serviceType: { name: 'Rehabilitación' }, scheduleSlot: { id: 'window', weekday: 'MONDAY' } }], fixedOccurrences: [
+    { fixedSalaBookingId: 'fixed-1', date: '2026-10-12', startTime: '09:00', status: 'RESERVED', cancelledForNonPayment: false },
+    { fixedSalaBookingId: 'fixed-1', date: '2026-10-19', startTime: '09:00', status: 'PENDING_PAYMENT', cancelledForNonPayment: false },
+    { fixedSalaBookingId: 'fixed-1', date: '2026-10-26', startTime: '09:00', status: 'CANCELLED', cancelledForNonPayment: true },
+  ], routine: null, evaluations: [], paymentState: 'PENDING' } })));
+  renderPortalSala();
+  expect(await screen.findByText('Pendiente de pago')).toBeInTheDocument();
+  expect(screen.getByText('Reservado')).toBeInTheDocument();
+  expect(screen.getByText('Cancelado')).toBeInTheDocument();
+  expect(screen.getByText(/Tu lugar está reservado/)).toBeInTheDocument();
+});
+
 function renderPortalSala(): void {
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><PortalSala /></QueryClientProvider>);
 }
@@ -145,8 +173,8 @@ it('preserves an old fixed service in the listing but requires an allowed servic
 
 const paymentMessage = 'Para reservar en noviembre necesitás tener registrado el pago de noviembre.';
 it.each([
-  ['PORTAL_SALA_PAYMENT_REQUIRED', paymentMessage, paymentMessage, 403],
-  ['SALA_CAPACITY_FULL', 'Capacidad agotada.', 'No pudimos reservar ese horario. Revisá la disponibilidad.', 409],
+  ['PORTAL_SALA_PAYMENT_REQUIRED', paymentMessage, 'Para reservar esta fecha necesitás tener abonado el mes correspondiente.', 403],
+  ['SALA_CAPACITY_FULL', 'Capacidad agotada.', 'No hay lugar disponible para ese horario.', 409],
 ])('shows the appropriate reservation message for %s', async (code, message, expected, status) => {
   server.use(http.post('http://localhost:3000/api/portal/sala/reservations', () => HttpResponse.json({
     statusCode: status, code, message, details: { year: 2026, month: 11 },

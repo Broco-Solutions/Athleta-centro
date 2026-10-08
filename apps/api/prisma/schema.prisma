@@ -811,7 +811,7 @@ model OneOffReservation {
   serviceType            SalaServiceType?  @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
   occurrences            SalaOccurrence[]
 
-  @@unique([personId, scheduleSlotId, date])
+  @@index([personId, date])
   @@index([date, scheduleSlotId])
   @@index([serviceTypeId])
   @@map("one_off_reservations")
@@ -830,18 +830,20 @@ model SalaOccurrence {
   status              SalaOccurrenceStatus
   fixedSalaBookingId  String?              @map("fixed_sala_booking_id") @db.Uuid
   oneOffReservationId String?              @map("one_off_reservation_id") @db.Uuid
-  createdBy           String               @map("created_by") @db.Uuid
+  createdBy           String?              @map("created_by") @db.Uuid
   createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   lastModifiedAt      DateTime             @updatedAt @map("last_modified_at") @db.Timestamptz(6)
-  lastModifiedBy      String               @map("last_modified_by") @db.Uuid
+  lastModifiedBy      String?              @map("last_modified_by") @db.Uuid
+  cancelledForNonPaymentAt DateTime?       @map("cancelled_for_non_payment_at") @db.Timestamptz(6)
   person              Person               @relation(fields: [personId], references: [id], onDelete: Restrict)
   scheduleSlot        SalaScheduleSlot     @relation(fields: [scheduleSlotId], references: [id], onDelete: Restrict)
   fixedSalaBooking    FixedSalaBooking?    @relation(fields: [fixedSalaBookingId], references: [id], onDelete: Restrict)
   oneOffReservation   OneOffReservation?   @relation(fields: [oneOffReservationId], references: [id], onDelete: Restrict)
-  creator             InternalUser         @relation("SalaOccurrenceCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
-  lastModifier        InternalUser         @relation("SalaOccurrenceModifiedBy", fields: [lastModifiedBy], references: [id], onDelete: Restrict)
+  creator             InternalUser?        @relation("SalaOccurrenceCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
+  lastModifier        InternalUser?        @relation("SalaOccurrenceModifiedBy", fields: [lastModifiedBy], references: [id], onDelete: Restrict)
 
-  @@unique([personId, scheduleSlotId, date])
+  @@unique([fixedSalaBookingId, date])
+  @@unique([oneOffReservationId, date])
   @@index([date, scheduleSlotId])
   @@index([serviceTypeId])
   @@map("sala_occurrences")

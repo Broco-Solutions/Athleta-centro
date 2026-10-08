@@ -42,6 +42,7 @@ describe('Portal Sala services from the current plan', () => {
   afterEach(async () => {
     operationalDate.mockRestore();
     if (personId) {
+      await prisma.salaOccurrence.deleteMany({ where: { personId } });
       await prisma.salaPaymentReversal.deleteMany({ where: { payment: { personId } } });
       await prisma.salaPayment.deleteMany({ where: { personId } });
       await prisma.oneOffReservation.deleteMany({ where: { personId } });
@@ -101,6 +102,40 @@ describe('Portal Sala services from the current plan', () => {
   async function reverse(paymentId: string) {
     return prisma.salaPaymentReversal.create({ data: { paymentId, reason: 'Reversión sintética', registeredById: professorId, operationId: crypto.randomUUID() } });
   }
+  it('derives each fixed occurrence from the matching payment period and counts pending capacity', async () => {
+    const f = await fixture('2026-10-20');
+    await prisma.salaScheduleSlot.update({ where: { id: windowId }, data: { specificCapacity: 1 } });
+    const fixed = await sala.createFixed({ personId, salaParticipationId: f.participation.id, scheduleSlotId: windowId, serviceTypeId: f.muscle.id, startTime: '09:00', startDate: '2026-10-13' });
+    expect(await sala.fixedOccurrenceStates(personId, ['2026-10-13', '2026-10-20'])).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fixedSalaBookingId: fixed.id, date: '2026-10-13', status: 'RESERVED' }),
+      expect.objectContaining({ fixedSalaBookingId: fixed.id, date: '2026-10-20', status: 'PENDING_PAYMENT' }),
+    ]));
+    expect((await sala.availability('2026-10-20')).find((item) => item.startTime === '09:00')).toMatchObject({ reserved: 1, available: 0 });
+    const portal = await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
+    expect(portal.body.data.fixedOccurrences).toEqual(expect.arrayContaining([expect.objectContaining({ date: '2026-10-20', status: 'PENDING_PAYMENT' })]));
+    await payment('2026-11-20');
+    expect(await sala.fixedOccurrenceStates(personId, ['2026-10-20'])).toEqual([expect.objectContaining({ status: 'PENDING_PAYMENT' })]);
+    const paid = await prisma.salaPayment.create({ data: { personId, year: 2026, month: 10, paidAt: new Date('2026-10-08'), amount: 1, paymentMethodId, registeredById: professorId, operationId: crypto.randomUUID() } });
+    expect(await sala.fixedOccurrenceStates(personId, ['2026-10-20'])).toEqual([expect.objectContaining({ status: 'RESERVED' })]);
+    await reverse(paid.id);
+    expect(await sala.fixedOccurrenceStates(personId, ['2026-10-20'])).toEqual([expect.objectContaining({ status: 'PENDING_PAYMENT' })]);
+  });
+  it('cancels only an expired unpaid occurrence and never reactivates it after late payment', async () => {
+    const f = await fixture('2026-10-20');
+    const fixed = await sala.createFixed({ personId, salaParticipationId: f.participation.id, scheduleSlotId: windowId, serviceTypeId: f.muscle.id, startTime: '09:00', startDate: '2026-09-29' });
+    await prisma.fixedSalaBooking.update({ where: { id: fixed.id }, data: { createdAt: new Date('2026-09-01T00:00:00Z') } });
+    const first = await sala.fixedOccurrenceStates(personId, ['2026-09-29', '2026-10-20']);
+    expect(first).toEqual(expect.arrayContaining([
+      expect.objectContaining({ date: '2026-09-29', status: 'CANCELLED', cancelledForNonPayment: true }),
+      expect.objectContaining({ date: '2026-10-20', status: 'PENDING_PAYMENT' }),
+    ]));
+    expect((await sala.availability('2026-09-29')).find((item) => item.startTime === '09:00')?.reserved).toBe(0);
+    await sala.fixedOccurrenceStates(personId, ['2026-09-29']);
+    expect(await prisma.salaOccurrence.count({ where: { fixedSalaBookingId: fixed.id, date: new Date('2026-09-29') } })).toBe(1);
+    await payment('2026-09-29');
+    expect(await sala.fixedOccurrenceStates(personId, ['2026-09-29'])).toEqual([expect.objectContaining({ status: 'CANCELLED' })]);
+    expect((await prisma.fixedSalaBooking.findUniqueOrThrow({ where: { id: fixed.id } })).endDate).toBeNull();
+  });
   function reserve(f: Awaited<ReturnType<typeof fixture>>) {
     return request(app.getHttpServer()).post('/api/portal/sala/reservations').set('Cookie', f.cookie).set('x-csrf-token', f.csrf)
       .send({ date: f.body.date, scheduleSlotId: f.body.scheduleSlotId, startTime: f.body.startTime, serviceTypeId: f.muscle.id });

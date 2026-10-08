@@ -840,7 +840,7 @@ lastModifiedBy
 lastModifiedAt
 ```
 
-Se utiliza materialización lazy: los bookings proyectan `RESERVED` para la fecha consultada y solo se persiste la ocurrencia concreta cuando existe una operación explícita. La DB garantiza unicidad por `personId + scheduleSlotId + date`, FKs históricas `RESTRICT` y coherencia entre `origin` y la referencia de booking mediante `CHECK`.
+Se utiliza materialización lazy: las reservas proyectan `RESERVED` o, para Turnos fijos posteriores al día 15 sin Pago válido, `PENDING_PAYMENT`. La cancelación por impago se persiste al vencer la hora de inicio. La DB garantiza unicidad de ocurrencia por booking de origen y fecha; una Persona puede tener varias actividades no superpuestas en la misma fecha y ventana. Las Reservas puntuales activas son únicas por Persona, ventana, fecha e inicio. Se mantienen FKs históricas `RESTRICT` y coherencia entre `origin` y la referencia de booking mediante `CHECK`.
 
 ---
 

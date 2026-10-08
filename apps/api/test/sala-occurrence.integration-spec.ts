@@ -98,6 +98,24 @@ describe('SalaOccurrence persistence and API', () => {
     expect((await prisma.fixedSalaBooking.findUniqueOrThrow({ where: { id: fixed.id } })).endDate).toBeNull();
   });
 
+  it('corrects the exact reservation when one person has two activities in a weekly window', async () => {
+    const f = await setup('2026-08-27', 'THURSDAY', 120);
+    const first = await sala.createReservation({ personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, date: f.date, startTime: '09:00' });
+    const second = await sala.createReservation({ personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, date: f.date, startTime: '10:00' });
+    await expect(sala.commandOccurrence({ personId: f.person.id, scheduleSlotId: f.slot.id, date: f.date, status: SalaOccurrenceStatus.ATTENDED }, f.actor.id)).rejects.toMatchObject({ response: { code: 'SALA_OCCURRENCE_AMBIGUOUS' } });
+    await sala.commandOccurrence({ personId: f.person.id, scheduleSlotId: f.slot.id, date: f.date, startTime: '09:00', sourceId: first.id, status: SalaOccurrenceStatus.ATTENDED }, f.actor.id);
+    await sala.commandOccurrence({ personId: f.person.id, scheduleSlotId: f.slot.id, date: f.date, startTime: '10:00', sourceId: second.id, status: SalaOccurrenceStatus.ABSENT }, f.actor.id);
+    expect(await prisma.salaOccurrence.findMany({ where: { personId: f.person.id }, orderBy: { startTime: 'asc' } })).toEqual([
+      expect.objectContaining({ oneOffReservationId: first.id, status: 'ATTENDED' }),
+      expect.objectContaining({ oneOffReservationId: second.id, status: 'ABSENT' }),
+    ]);
+    const agenda = await sala.agenda(f.date);
+    expect(agenda.flatMap((block) => block.people)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sourceId: first.id, status: 'ATTENDED' }),
+      expect.objectContaining({ sourceId: second.id, status: 'ABSENT' }),
+    ]));
+  });
+
   it('uses explicit occurrence state as the authority over a one-off planning source', async () => {
     const fixture = await setup();
     const reservation = await sala.createReservation({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, serviceTypeId: fixture.service.id, date: fixture.date, confirmOverbooking: true });
@@ -183,8 +201,8 @@ describe('SalaOccurrence persistence and API', () => {
     await sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: past.toISOString().slice(0, 10), status: SalaOccurrenceStatus.ATTENDED }, fixture.actor.id);
     await sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: future.toISOString().slice(0, 10), status: SalaOccurrenceStatus.ATTENDED }, fixture.actor.id);
     await sala.leave(fixture.participation.id, false, fixture.actor.id);
-    expect((await prisma.salaOccurrence.findUniqueOrThrow({ where: { personId_scheduleSlotId_date: { personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: past } } })).status).toBe('ATTENDED');
-    expect((await prisma.salaOccurrence.findUniqueOrThrow({ where: { personId_scheduleSlotId_date: { personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: future } } })).status).toBe('CANCELLED');
+    expect((await prisma.salaOccurrence.findFirstOrThrow({ where: { personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: past } })).status).toBe('ATTENDED');
+    expect((await prisma.salaOccurrence.findFirstOrThrow({ where: { personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: future } })).status).toBe('CANCELLED');
   });
 
   it('enforces API authentication and attendance/correction permissions and accepts RESERVED corrections', async () => {

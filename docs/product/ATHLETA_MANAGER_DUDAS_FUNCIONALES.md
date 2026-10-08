@@ -74,6 +74,7 @@ El resto de las dudas originales figura resuelto, no aplica o queda a criterio t
 | SAL-HOR-07 | RESUELTO | La excepción por fecha no modifica día/hora/duración: se limita a cierre o cambio de capacidad de esa ocurrencia. | §6.9 |
 | SAL-HOR-08 | RESUELTO | Toda capacidad válida es un entero mayor o igual a 1. El valor 0 no representa cierre. Los cierres se registran explícitamente como excepciones de cierre. | [Registro SAL-HOR-08](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | SAL-HOR-09 | RESUELTO | Reservas puntuales y Turnos fijos comienzan sólo en :00/:30; capacidad y espontáneos conservan bloques de 15 minutos. Los registros históricos se conservan; nuevas creaciones o modificaciones respetan :00/:30. | Definición aprobada 2026-10-08 |
+| SAL-HOR-10 | RESUELTO | La capacidad general inicial es 10 y puede editarse después. Una excepción de capacidad prevalece sobre la capacidad específica de la ventana; ésta prevalece sobre la general. El mínimo es 1. | Definición UAT 2026-10-08 |
 
 ---
 
@@ -95,6 +96,8 @@ El resto de las dudas originales figura resuelto, no aplica o queda a criterio t
 | SAL-TUR-12 | RESUELTO | El cierre excepcional de una fecha **cancela esa ocurrencia concreta**; la recurrencia del Turno fijo continúa las semanas siguientes. | §6.9, §6.11 |
 | SAL-TUR-13 | RESUELTO | Las reservas futuras afectadas por un reemplazo de grilla se **cancelan**, no se eliminan como si nunca hubieran existido. | §6.8, §13.7–§13.9 |
 | SAL-TUR-14 | RESUELTO | La incorporación espontánea puede iniciar desde un Alumno de Sala, una Persona existente todavía no incorporada a Sala o una Persona nueva. Cuando la Persona todavía no pertenece a Sala y la operación corresponde al día actual, el mismo flujo permite asignar Plan y Profesor principal, elegir un Servicio incluido en el Plan y registrar la asistencia espontánea sin abandonar Agenda. La incorporación a Sala y la asistencia se confirman como una única operación. La falta de Pago no bloquea esta operación. Para una fecha pasada no se crea ni backdatea una nueva participación: la Persona debe haber tenido participación válida en esa fecha. El Servicio es obligatorio para nuevas incorporaciones espontáneas y su duración determina los bloques de capacidad ocupados. | Definición aprobada 2026-10-07 |
+| SAL-TUR-15 | RESUELTO | Una Persona puede tener varias Reservas puntuales y combinar Turno fijo con Reserva puntual en una misma fecha si los intervalos completos no se superponen y hay capacidad. Las actividades consecutivas son válidas. | Definición UAT 2026-10-08 |
+| SAL-TUR-16 | RESUELTO | Un Turno fijo puede crearse sin Pago. Cada ocurrencia posterior al día 15 queda Pendiente de pago y ocupa cupo hasta que se registre Pago válido de ese Mes/Año antes de su inicio o llegue su hora sin Pago. En el segundo caso se cancela sólo esa ocurrencia, persiste la cancelación y un Pago posterior no la reactiva. La recurrencia continúa. | Definición UAT 2026-10-08 |
 
 ---
 

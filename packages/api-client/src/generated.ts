@@ -405,6 +405,7 @@ export const SalaAgendaEntryDtoStatus = {
   ATTENDED: 'ATTENDED',
   CANCELLED: 'CANCELLED',
   ABSENT: 'ABSENT',
+  PENDING_PAYMENT: 'PENDING_PAYMENT',
 } as const;
 
 /**
@@ -423,6 +424,8 @@ export interface SalaAgendaEntryDto {
   origin: SalaAgendaEntryDtoOrigin;
   status: SalaAgendaEntryDtoStatus;
   isMaterialized: boolean;
+  cancelledForNonPayment?: boolean;
+  sourceId: string;
   startTime: string;
   /** @minimum 15 */
   durationMinutes: number;
@@ -450,6 +453,8 @@ export interface OccurrenceReferenceDto {
   personId: string;
   scheduleSlotId: string;
   date: string;
+  startTime?: string;
+  sourceId?: string;
 }
 
 export type OccurrenceCorrectionDtoStatus = typeof OccurrenceCorrectionDtoStatus[keyof typeof OccurrenceCorrectionDtoStatus];
@@ -467,6 +472,8 @@ export interface OccurrenceCorrectionDto {
   personId: string;
   scheduleSlotId: string;
   date: string;
+  startTime?: string;
+  sourceId?: string;
   status: OccurrenceCorrectionDtoStatus;
 }
 
