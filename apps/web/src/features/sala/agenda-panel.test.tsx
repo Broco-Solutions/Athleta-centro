@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import { todayOperational } from './student-onboarding';
-import { AgendaPanel, buildTimelineBookings, groupTimelineBookings, overlapLevels } from './agenda-panel';
+import { AgendaPanel, buildTimelineBookings, groupTimelineBookings, overlapLevels, type AgendaEntry } from './agenda-panel';
 
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
@@ -13,8 +13,8 @@ const professional = { id: '30000000-0000-4000-8000-000000000001', firstName: 'M
 const slotId = '20000000-0000-4000-8000-000000000001';
 const operationalToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
 const entry = (name: string, startTime = '09:00', durationMinutes = 60, status: 'RESERVED' | 'ATTENDED' | 'ABSENT' | 'CANCELLED' = 'RESERVED') => ({ personId: `${person.id}-${name}`, person: { ...person, id: `${person.id}-${name}`, firstName: name }, origin: 'ONE_OFF' as const, status, startTime, durationMinutes, professional, service: { name: 'Kinesio' } });
-const group = (people = [entry('Homer')]) => ({ slot: { id: slotId, scheduleSlotId: slotId, startTime: '09:00', durationMinutes: 15 }, capacity: 3, reserved: people.length, available: 3 - people.length, isOverbooked: false, isClosed: false, people });
-function renderAgenda(date = '2026-09-02', people = [person]) { return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><AgendaPanel canManageAgenda canManageParticipation canCreatePerson date={date} onDateChange={() => undefined} csrfToken="csrf" people={people} /></QueryClientProvider>); }
+const group = (people: AgendaEntry[] = [entry('Homer')]) => ({ slot: { id: slotId, scheduleSlotId: slotId, startTime: '09:00', durationMinutes: 15 }, capacity: 3, reserved: people.length, available: 3 - people.length, isOverbooked: false, isClosed: false, people });
+function renderAgenda(date = '2026-09-02', people = [person], canManageAgenda = true) { return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><AgendaPanel canManageAgenda={canManageAgenda} canManageParticipation canCreatePerson date={date} onDateChange={() => undefined} csrfToken="csrf" people={people} /></QueryClientProvider>); }
 beforeAll(() => { globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch; server.listen({ onUnhandledRequest: 'error' }); });
 afterEach(() => server.resetHandlers()); afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 
@@ -22,6 +22,81 @@ it('calculates proportional duration and a 09:30 to 10:15 booking', () => { cons
 it('groups simultaneous bookings by professional and assigns overlap levels', () => { const bookings = buildTimelineBookings([{ ...group([entry('Homer'), entry('Marge')]), people: [entry('Homer'), entry('Marge')] }]); const rows = groupTimelineBookings(bookings); expect(rows).toHaveLength(1); expect(rows[0]?.bookings).toHaveLength(2); expect([...overlapLevels(bookings).values()]).toEqual([0, 1]); });
 it('keeps a third simultaneous booking visible and opens its detail modal', async () => { const people = [entry('Homer'), entry('Marge'), entry('Bart')]; server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [group(people)] }))); renderAgenda(); expect(await screen.findByText('Homer Sintética')).toBeInTheDocument(); expect(screen.getByText('Marge Sintética')).toBeInTheDocument(); expect(screen.getByText('Bart Sintética')).toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: /Homer Sintética 09:00 Reservado/ })); expect(screen.getByRole('dialog')).toHaveTextContent('Kinesio'); });
 it('marks a booking attended through the existing mutation and refreshes', async () => { let submitted: unknown; server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [group()] })), http.post('http://localhost:3000/api/sala/occurrences/attend', async ({ request }) => { submitted = await request.json(); return HttpResponse.json({ data: { status: 'ATTENDED' } }, { status: 201 }); })); renderAgenda(); fireEvent.click(await screen.findByRole('button', { name: /Homer Sintética 09:00 Reservado/ })); fireEvent.click(screen.getByRole('button', { name: 'Asistió' })); await waitFor(() => expect(submitted).toEqual({ personId: `${person.id}-Homer`, scheduleSlotId: slotId, date: '2026-09-02' })); });
+
+it('keeps direct initial actions for RESERVED', async () => {
+  server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [group()] })));
+  renderAgenda();
+  fireEvent.click(await screen.findByRole('button', { name: /Homer Sintética 09:00 Reservado/ }));
+  const modal = within(screen.getByRole('dialog'));
+  for (const name of ['Asistió', 'Ausente', 'Cancelar turno']) expect(modal.getByRole('button', { name })).toBeVisible();
+  expect(modal.queryByRole('button', { name: 'Corregir estado' })).not.toBeInTheDocument();
+});
+
+it.each([
+  ['ATTENDED', 'Asistió', 'ABSENT', 'ONE_OFF'],
+  ['ABSENT', 'Ausente', 'ATTENDED', 'FIXED'],
+  ['CANCELLED', 'Cancelado', 'RESERVED', 'ONE_OFF'],
+  ['ATTENDED', 'Asistió', 'CANCELLED', 'SPONTANEOUS'],
+] as const)('corrects %s (label %s) to %s via the existing correction endpoint (%s)', async (status, label, target, origin) => {
+  let submitted: unknown; let reads = 0;
+  server.use(
+    http.get('http://localhost:3000/api/sala/agenda', () => { reads++; return HttpResponse.json({ data: [group([{ ...entry('Homer', '09:00', 60, status), origin }])] }); }),
+    http.post('http://localhost:3000/api/sala/occurrences/correct', async ({ request }) => {
+      expect(request.credentials).toBe('include');
+      expect(request.headers.get('x-csrf-token')).toBe('csrf');
+      submitted = await request.json();
+      return HttpResponse.json({ data: { status: target } }, { status: 201 });
+    }),
+  );
+  renderAgenda();
+  fireEvent.click(await screen.findByRole('button', { name: `Homer Sintética 09:00 ${label}` }));
+  const modal = within(screen.getByRole('dialog'));
+  expect(modal.getByText('Estado')).toBeVisible();
+  expect(modal.getByText(label)).toBeVisible();
+  fireEvent.click(modal.getByRole('button', { name: 'Corregir estado' }));
+  const select = modal.getByLabelText('Nuevo estado');
+  const labels = { RESERVED: 'Reservado', ATTENDED: 'Asistió', ABSENT: 'Ausente', CANCELLED: 'Cancelado' };
+  for (const candidate of Object.keys(labels) as Array<keyof typeof labels>) {
+    if (candidate === status) expect(within(select).queryByRole('option', { name: labels[candidate] })).not.toBeInTheDocument();
+    else expect(within(select).getByRole('option', { name: labels[candidate] })).toBeInTheDocument();
+  }
+  expect(modal.getByRole('button', { name: 'Guardar corrección' })).toBeDisabled();
+  fireEvent.change(select, { target: { value: target } });
+  fireEvent.click(modal.getByRole('button', { name: 'Guardar corrección' }));
+  await waitFor(() => expect(submitted).toEqual({ personId: `${person.id}-Homer`, scheduleSlotId: slotId, date: '2026-09-02', status: target }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  await waitFor(() => expect(reads).toBeGreaterThan(1));
+});
+
+it('cancels correction mode without closing the detail and reports correction failures', async () => {
+  server.use(
+    http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [group([entry('Homer', '09:00', 60, 'ABSENT')])] })),
+    http.post('http://localhost:3000/api/sala/occurrences/correct', () => HttpResponse.json({}, { status: 500 })),
+  );
+  renderAgenda();
+  fireEvent.click(await screen.findByRole('button', { name: /Homer Sintética 09:00 Ausente/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Corregir estado' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar corrección' }));
+  expect(screen.getByRole('dialog')).toBeVisible();
+  expect(screen.queryByLabelText('Nuevo estado')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Corregir estado' }));
+  fireEvent.change(screen.getByLabelText('Nuevo estado'), { target: { value: 'ATTENDED' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar corrección' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo corregir el estado.');
+  expect(screen.getByLabelText('Nuevo estado')).toHaveValue('ATTENDED');
+});
+
+it.each(['RESERVED', 'ATTENDED', 'ABSENT', 'CANCELLED'] as const)('shows %s details without modifying actions for a reader', async (status) => {
+  server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [group([entry('Homer', '09:00', 60, status)])] })));
+  renderAgenda('2026-09-02', [person], false);
+  fireEvent.click(await screen.findByRole('button', { name: /Homer Sintética 09:00/ }));
+  const modal = within(screen.getByRole('dialog'));
+  expect(modal.getByText('Homer Sintética')).toBeVisible();
+  expect(modal.getByText('Estado')).toBeVisible();
+  const labels = { RESERVED: 'Reservado', ATTENDED: 'Asistió', ABSENT: 'Ausente', CANCELLED: 'Cancelado' };
+  expect(modal.getByText(labels[status])).toBeVisible();
+  for (const name of ['Asistió', 'Ausente', 'Cancelar turno', 'Corregir estado', 'Guardar corrección']) expect(modal.queryByRole('button', { name })).not.toBeInTheDocument();
+});
 it('opens spontaneous incorporation in a custom modal', async () => { server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [group()] }))); renderAgenda(); fireEvent.click(await screen.findByRole('button', { name: 'Incorporación espontánea' })); expect(screen.getByRole('dialog')).toHaveTextContent('Incorporación espontánea'); expect(screen.getByRole('button', { name: 'Cancelar' })).toBeInTheDocument(); });
 
 const serviceId = '40000000-0000-4000-8000-000000000001';

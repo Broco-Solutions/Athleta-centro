@@ -75,6 +75,12 @@ describe('SalaOccurrence persistence and API', () => {
     const absent = await sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date, status: SalaOccurrenceStatus.ABSENT }, fixture.actor.id);
     expect(absent.status).toBe('ABSENT');
     expect(absent.lastModifiedAt.getTime()).toBeGreaterThanOrEqual(firstModifiedAt.getTime());
+    const reference = { personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date };
+    const correctedAttendance = await sala.commandOccurrence({ ...reference, status: SalaOccurrenceStatus.ATTENDED }, fixture.actor.id);
+    expect(correctedAttendance).toMatchObject({ id: attended.id, status: 'ATTENDED', origin: 'FIXED', fixedSalaBookingId: fixed.id });
+    const reserved = await sala.commandOccurrence({ ...reference, status: SalaOccurrenceStatus.RESERVED }, fixture.actor.id);
+    expect(reserved).toMatchObject({ id: attended.id, status: 'RESERVED', lastModifiedBy: fixture.actor.id });
+    expect(await prisma.salaOccurrence.count()).toBe(1);
     expect((await prisma.fixedSalaBooking.findUniqueOrThrow({ where: { id: fixed.id } })).endDate).toBeNull();
     expect((await sala.agenda('2026-09-03'))[0]?.people[0]?.status).toBe('RESERVED');
   });
@@ -84,6 +90,10 @@ describe('SalaOccurrence persistence and API', () => {
     const fixed = await sala.createFixed({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, serviceTypeId: fixture.service.id, startDate: '2026-01-01', confirmOverbooking: true });
     await sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date, status: SalaOccurrenceStatus.CANCELLED }, fixture.actor.id);
     expect((await sala.agenda(fixture.date))[0]?.people[0]?.status).toBe('CANCELLED');
+    const corrected = await sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date, status: SalaOccurrenceStatus.ATTENDED }, fixture.actor.id);
+    expect(corrected).toMatchObject({ status: 'ATTENDED', origin: 'FIXED', fixedSalaBookingId: fixed.id });
+    expect((await sala.agenda(fixture.date))[0]?.people[0]?.status).toBe('ATTENDED');
+    expect(await prisma.salaOccurrence.count()).toBe(1);
     expect((await sala.agenda('2026-09-03'))[0]?.people[0]?.status).toBe('RESERVED');
     expect((await prisma.fixedSalaBooking.findUniqueOrThrow({ where: { id: fixed.id } })).endDate).toBeNull();
   });
@@ -92,9 +102,19 @@ describe('SalaOccurrence persistence and API', () => {
     const fixture = await setup();
     const reservation = await sala.createReservation({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, serviceTypeId: fixture.service.id, date: fixture.date, confirmOverbooking: true });
     await sala.cancelReservation(reservation.id);
+    const cancelledSource = await prisma.oneOffReservation.findUniqueOrThrow({ where: { id: reservation.id } });
     expect((await sala.agenda(fixture.date))[0]?.people[0]?.status).toBe('CANCELLED');
     await sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date, status: SalaOccurrenceStatus.ATTENDED }, fixture.actor.id);
-    expect((await sala.agenda(fixture.date))[0]?.people[0]).toMatchObject({ origin: 'ONE_OFF', status: 'ATTENDED', oneOffReservationId: reservation.id });
+    expect((await sala.agenda(fixture.date))[0]?.people[0]).toMatchObject({ origin: 'ONE_OFF', status: 'ATTENDED' });
+    expect(await prisma.salaOccurrence.findMany()).toEqual([expect.objectContaining({ origin: 'ONE_OFF', status: 'ATTENDED', oneOffReservationId: reservation.id })]);
+    await sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date, status: SalaOccurrenceStatus.CANCELLED }, fixture.actor.id);
+    await sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date, status: SalaOccurrenceStatus.RESERVED }, fixture.actor.id);
+    expect((await sala.agenda(fixture.date))[0]?.people[0]).toMatchObject({ origin: 'ONE_OFF', status: 'RESERVED' });
+    expect(await prisma.salaOccurrence.findMany()).toEqual([expect.objectContaining({ origin: 'ONE_OFF', status: 'RESERVED', oneOffReservationId: reservation.id })]);
+    expect(await prisma.oneOffReservation.findUniqueOrThrow({ where: { id: reservation.id } })).toEqual(cancelledSource);
+    expect((await prisma.oneOffReservation.findUniqueOrThrow({ where: { id: reservation.id } })).cancelledAt).not.toBeNull();
+    expect(await prisma.oneOffReservation.count()).toBe(1);
+    expect(await prisma.salaOccurrence.count()).toBe(1);
   });
 
   it('keeps one persisted occurrence under concurrent corrections', async () => {
@@ -120,8 +140,12 @@ describe('SalaOccurrence persistence and API', () => {
     const fixture = await setup('2026-08-27', 'THURSDAY', 120);
     const spontaneous = await sala.createSpontaneousOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date, startTime: '09:30', serviceTypeId: fixture.service.id }, fixture.actor.id);
     expect(spontaneous).toMatchObject({ origin: 'SPONTANEOUS', status: 'ATTENDED' });
-    expect(await prisma.oneOffReservation.findUniqueOrThrow({ where: { personId_scheduleSlotId_date: { personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date } } })).toMatchObject({ serviceDurationMinutes: 60, startTime: new Date('1970-01-01T09:30:00.000Z') });
+    expect(await prisma.salaOccurrence.findUniqueOrThrow({ where: { id: spontaneous.id } })).toMatchObject({ serviceDurationMinutes: 60, startTime: new Date('1970-01-01T09:30:00.000Z'), serviceTypeId: fixture.service.id });
     expect((await sala.agenda(fixture.date)).find((item) => item.slot.startTime === '09:30')?.people[0]).toMatchObject({ startTime: '09:30', durationMinutes: 60, origin: 'SPONTANEOUS' });
+    const corrected = await sala.commandOccurrence({ personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date, status: SalaOccurrenceStatus.ABSENT }, fixture.actor.id);
+    expect(corrected).toMatchObject({ id: spontaneous.id, origin: 'SPONTANEOUS', status: 'ABSENT', oneOffReservationId: null, fixedSalaBookingId: null, serviceTypeId: fixture.service.id, serviceDurationMinutes: 60, startTime: spontaneous.startTime });
+    expect(await prisma.oneOffReservation.count()).toBe(0);
+    expect(await prisma.salaOccurrence.count()).toBe(1);
   });
 
   it('preserves the 60-minute Sala default when projecting historical reservations without a service', async () => {
@@ -163,8 +187,8 @@ describe('SalaOccurrence persistence and API', () => {
     expect((await prisma.salaOccurrence.findUniqueOrThrow({ where: { personId_scheduleSlotId_date: { personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: future } } })).status).toBe('CANCELLED');
   });
 
-  it('enforces API authentication and attendance permissions', async () => {
-    const fixture = await setup();
+  it('enforces API authentication and attendance/correction permissions and accepts RESERVED corrections', async () => {
+    const fixture = await setup('2026-09-02', 'WEDNESDAY');
     await sala.createFixed({ personId: fixture.person.id, salaParticipationId: fixture.participation.id, scheduleSlotId: fixture.slot.id, serviceTypeId: fixture.service.id, startDate: '2026-01-01', confirmOverbooking: true });
     const payload = { personId: fixture.person.id, scheduleSlotId: fixture.slot.id, date: fixture.date };
     await request(app.getHttpServer()).post('/api/sala/occurrences/attend').send(payload).expect(401);
@@ -173,9 +197,14 @@ describe('SalaOccurrence persistence and API', () => {
     await prisma.internalCredential.update({ where: { internalUserId: unauthorized.id }, data: { mustChangePassword: false } });
     const deniedLogin = await request(app.getHttpServer()).post('/api/auth/login').send({ email: unauthorized.email, password: 'ValidPass1!' }).expect(200);
     await request(app.getHttpServer()).post('/api/sala/occurrences/attend').set('Cookie', deniedLogin.headers['set-cookie'][0] as string).set('x-csrf-token', deniedLogin.body.data.csrfToken as string).send(payload).expect(403);
+    await request(app.getHttpServer()).post('/api/sala/occurrences/correct').set('Cookie', deniedLogin.headers['set-cookie'][0] as string).set('x-csrf-token', deniedLogin.body.data.csrfToken as string).send({ ...payload, status: 'RESERVED' }).expect(403);
+    expect(await prisma.salaOccurrence.count()).toBe(0);
     await auth.provisionCredential(fixture.actor.id, 'ValidPass1!');
     await prisma.internalCredential.update({ where: { internalUserId: fixture.actor.id }, data: { mustChangePassword: false } });
     const allowedLogin = await request(app.getHttpServer()).post('/api/auth/login').send({ email: fixture.actor.email, password: 'ValidPass1!' }).expect(200);
     await request(app.getHttpServer()).post('/api/sala/occurrences/attend').set('Cookie', allowedLogin.headers['set-cookie'][0] as string).set('x-csrf-token', allowedLogin.body.data.csrfToken as string).send(payload).expect(201);
+    const correction = await request(app.getHttpServer()).post('/api/sala/occurrences/correct').set('Cookie', allowedLogin.headers['set-cookie'][0] as string).set('x-csrf-token', allowedLogin.body.data.csrfToken as string).send({ ...payload, status: 'RESERVED' }).expect(201);
+    expect(correction.body.data).toMatchObject({ status: 'RESERVED', lastModifiedBy: fixture.actor.id });
+    expect(await prisma.salaOccurrence.findMany()).toEqual([expect.objectContaining({ id: correction.body.data.id, status: 'RESERVED' })]);
   });
 });
