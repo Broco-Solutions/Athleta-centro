@@ -42,13 +42,13 @@ export async function portalLogout(): Promise<void> {
   window.location.href = '/portal/login';
 }
 
-export function PortalLogoutButton(): React.JSX.Element {
+export function PortalLogoutButton({ compactOnMobile = false }: { compactOnMobile?: boolean }): React.JSX.Element {
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState('');
   return <span><button type="button" disabled={pending} className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm disabled:opacity-50" onClick={async () => {
     setPending(true); setError('');
     try { await portalLogout(); } catch { setError('No pudimos cerrar la sesión. Intentá nuevamente.'); setPending(false); }
-  }}><LogOut size={16} aria-hidden="true" />{pending ? 'Cerrando sesión…' : 'Cerrar sesión'}</button>{error ? <span role="alert" className="block text-sm">{error}</span> : null}</span>;
+  }} aria-label={pending ? 'Cerrando sesión…' : 'Cerrar sesión'}><LogOut size={16} aria-hidden="true" /><span className={compactOnMobile ? 'md:hidden' : undefined}>{pending ? 'Saliendo…' : 'Salir'}</span><span className={compactOnMobile ? 'hidden md:inline' : undefined}>{pending ? 'Cerrando sesión…' : 'Cerrar sesión'}</span></button>{error ? <span role="alert" className="block text-sm">{error}</span> : null}</span>;
 }
 
 export function PortalNav(): React.JSX.Element {
@@ -63,15 +63,14 @@ export function PortalFrame({ title, subtitle, action, backToHome = false, child
 }): React.JSX.Element {
   return <div className="flex min-h-screen flex-col bg-background">
     <header className="bg-sidebar text-sidebar-foreground">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-4 sm:gap-6 sm:px-6 lg:px-8">
         <Link href="/portal" aria-label="Athleta · Inicio" className="shrink-0">
           <span aria-hidden="true" className="flex justify-center gap-1 text-primary">{[0, 1, 2].map(star => <Star key={star} size={12} fill="currentColor" />)}</span>
           <span className="block text-xl font-bold tracking-[0.22em]">ATHLETA</span>
           <span className="hidden text-[8px] tracking-wider lg:block">CENTRO DE REHABILITACIÓN Y ENTRENAMIENTO</span>
         </Link>
-        <span className="text-xs text-sidebar-foreground/70 md:hidden">Portal personal</span>
         <div className="hidden flex-1 md:block"><PortalNav /></div>
-        <div className="hidden items-center gap-3 md:flex"><Link href="/portal/change-pin" className="inline-flex min-h-11 items-center gap-2 text-sm"><KeyRound size={16} aria-hidden="true" />Cambiar PIN</Link><PortalLogoutButton /></div>
+        <div className="flex shrink-0 items-center gap-1 sm:gap-3"><Link href="/portal/change-pin" aria-label="Cambiar PIN" className="inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-sm sm:gap-2 sm:px-3"><KeyRound size={16} aria-hidden="true" /><span className="md:hidden">PIN</span><span className="hidden md:inline">Cambiar PIN</span></Link><PortalLogoutButton compactOnMobile /></div>
       </div>
     </header>
     <div className="border-b bg-surface px-4 md:hidden"><PortalNav /></div>

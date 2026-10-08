@@ -34,6 +34,9 @@ afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 it('greets the real person and links to booking and existing Sala sections with actual appointment and payment', async () => {
   renderHome();
   expect(await screen.findByRole('heading', { name: 'Hola, Persona' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Cambiar PIN' })).toHaveAttribute('href', '/portal/change-pin');
+  expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
+  expect(screen.queryByText('Portal personal')).not.toBeInTheDocument();
   expect(await screen.findByRole('link', { name: 'Reservar en Sala' })).toHaveAttribute('href', '/portal/sala/reservar');
   expect(await screen.findByText(/viernes, 09 de octubre · 17:00/i)).toBeInTheDocument();
   expect(screen.getByText('Reservado')).toBeInTheDocument();
