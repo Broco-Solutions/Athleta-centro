@@ -652,9 +652,51 @@ model ExerciseDefinition {
   createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
   routineExercises RoutineExercise[]
+  routineTemplateExercises RoutineTemplateExercise[]
 
   @@unique([name])
   @@map("exercise_definitions")
+}
+
+model RoutineTemplate {
+  id        String               @id @default(uuid()) @db.Uuid
+  name      String               @db.VarChar(120)
+  createdAt DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  days      RoutineTemplateDay[]
+
+  @@map("routine_templates")
+}
+
+model RoutineTemplateDay {
+  id                String                    @id @default(uuid()) @db.Uuid
+  routineTemplateId String                    @map("routine_template_id") @db.Uuid
+  position          Int
+  name              String?                   @db.VarChar(120)
+  routineTemplate   RoutineTemplate           @relation(fields: [routineTemplateId], references: [id], onDelete: Cascade)
+  exercises         RoutineTemplateExercise[]
+
+  @@unique([routineTemplateId, position])
+  @@map("routine_template_days")
+}
+
+model RoutineTemplateExercise {
+  id                   String             @id @default(uuid()) @db.Uuid
+  routineTemplateDayId  String             @map("routine_template_day_id") @db.Uuid
+  exerciseDefinitionId String             @map("exercise_definition_id") @db.Uuid
+  position             Int
+  series               String?            @db.VarChar(80)
+  repetitions          String?            @db.VarChar(80)
+  duration             String?            @db.VarChar(80)
+  load                 String?            @db.VarChar(80)
+  rest                 String?            @db.VarChar(80)
+  notes                String?            @db.VarChar(500)
+  routineTemplateDay   RoutineTemplateDay @relation(fields: [routineTemplateDayId], references: [id], onDelete: Cascade)
+  exerciseDefinition   ExerciseDefinition @relation(fields: [exerciseDefinitionId], references: [id], onDelete: Restrict)
+
+  @@unique([routineTemplateDayId, position])
+  @@index([exerciseDefinitionId])
+  @@map("routine_template_exercises")
 }
 
 model Routine {

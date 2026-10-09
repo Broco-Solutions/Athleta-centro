@@ -3,7 +3,7 @@ import { FinancialAdjustmentKind, Prisma, Role, RoutineStatus, SalaChargeKind, S
 import { PeopleService } from '../people/people.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceCatalogService } from '../finance/finance.service';
-import type { JoinSpontaneousSalaDto, CreateSpontaneousSalaStudentDto, RegisterSalaPlanPaymentsDto, SalaPaymentDto, CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
+import type { JoinSpontaneousSalaDto, CreateSpontaneousSalaStudentDto, RegisterSalaPlanPaymentsDto, SalaPaymentDto, CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, RoutineTemplateDto, RoutineDayDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
 const SALA_DEFAULT_DURATION_MINUTES = 60;
 const eligibleProfessorWhere = { status: InternalUserStatus.ACTIVE, roles: { some: { role: Role.PROFESSOR } } } satisfies Prisma.InternalUserWhereInput;
 const planServicesInclude = {
@@ -483,6 +483,52 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
       return { exercise: retired, affectedActiveRoutines: activeRoutines };
     });
   }
+  async listRoutineTemplates() {
+    return this.prisma.routineTemplate.findMany({ orderBy: { name: 'asc' }, include: this.routineTemplateInclude() });
+  }
+  async createRoutineTemplate(input: RoutineTemplateDto) {
+    const name = this.validateRoutineTemplate(input);
+    return this.prisma.$transaction(async (tx) => {
+      await this.validateRoutineExercises(tx, input);
+      return tx.routineTemplate.create({ data: { name, days: { create: this.routineContent(input.days) } }, include: this.routineTemplateInclude() });
+    });
+  }
+  async updateRoutineTemplate(id: string, input: RoutineTemplateDto) {
+    const name = this.validateRoutineTemplate(input);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.validateRoutineExercises(tx, input);
+        await tx.routineTemplate.update({ where: { id }, data: { name } });
+        await tx.routineTemplateDay.deleteMany({ where: { routineTemplateId: id } });
+        return tx.routineTemplate.update({ where: { id }, data: { days: { create: this.routineContent(input.days) } }, include: this.routineTemplateInclude() });
+      });
+    } catch (error) { this.handleRoutineTemplateNotFound(error); throw error; }
+  }
+  async deleteRoutineTemplate(id: string) {
+    try { return await this.prisma.routineTemplate.delete({ where: { id } }); }
+    catch (error) { this.handleRoutineTemplateNotFound(error); throw error; }
+  }
+  private handleRoutineTemplateNotFound(error: unknown): void {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_ROUTINE_TEMPLATE_NOT_FOUND', message: 'Routine template not found' });
+  }
+  private validateRoutineTemplate(input: RoutineTemplateDto): string {
+    const name = input.name.trim();
+    if (!name || name.length > 120) throw new BadRequestException({ code: 'SALA_ROUTINE_TEMPLATE_NAME_INVALID', message: 'A routine template name of up to 120 characters is required' });
+    if (!input.days.length) throw new BadRequestException({ code: 'SALA_ROUTINE_TEMPLATE_DAYS_REQUIRED', message: 'At least one day is required' });
+    this.validateRoutine(input);
+    return name;
+  }
+  private async validateRoutineExercises(tx: Prisma.TransactionClient, input: { days: RoutineDayDto[] }): Promise<void> {
+      const exerciseIds = [...new Set(input.days.flatMap((day) => day.exercises.map((exercise) => exercise.exerciseDefinitionId)))];
+      const validExercises = await tx.exerciseDefinition.count({ where: { id: { in: exerciseIds }, isActive: true } });
+      if (validExercises !== exerciseIds.length) throw new BadRequestException({ code: 'SALA_EXERCISE_INVALID', message: 'Every routine exercise must reference an active catalog exercise' });
+  }
+  private routineTemplateInclude() {
+    return { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } } } as const;
+  }
+  private routineContent(days: RoutineDayDto[]) {
+    return days.map((day, dayIndex) => ({ position: dayIndex + 1, name: this.optionalText(day.name), exercises: { create: day.exercises.map((exercise, exerciseIndex) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, position: exerciseIndex + 1, series: this.optionalText(exercise.series), repetitions: this.optionalText(exercise.repetitions), duration: this.optionalText(exercise.duration), load: this.optionalText(exercise.load), rest: this.optionalText(exercise.rest), notes: this.optionalText(exercise.notes) })) } }));
+  }
   async listRoutines(personId: string) { return this.prisma.routine.findMany({ where: { personId }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } }, salaParticipation: { select: { id: true, startDate: true, endDate: true } } }, orderBy: { version: 'desc' } }); }
   async replaceRoutine(input: ReplaceRoutineDto, failureAfterArchive = false) {
     this.validateRoutine(input);
@@ -490,9 +536,7 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
       await tx.$queryRaw`SELECT id FROM people WHERE id = ${input.personId}::uuid FOR UPDATE`;
       const participation = await tx.salaParticipation.findFirst({ where: { id: input.salaParticipationId, personId: input.personId, endDate: null }, select: { id: true } });
       if (!participation) throw new BadRequestException({ code: 'SALA_ACTIVE_PARTICIPATION_REQUIRED', message: 'An active Sala participation is required' });
-      const exerciseIds = [...new Set(input.days.flatMap((day) => day.exercises.map((exercise) => exercise.exerciseDefinitionId)))];
-      const validExercises = await tx.exerciseDefinition.count({ where: { id: { in: exerciseIds }, isActive: true } });
-      if (validExercises !== exerciseIds.length) throw new BadRequestException({ code: 'SALA_EXERCISE_INVALID', message: 'Every routine exercise must reference an active catalog exercise' });
+      await this.validateRoutineExercises(tx, input);
       const currentVersion = await tx.routine.aggregate({ where: { personId: input.personId }, _max: { version: true } });
       await tx.routine.updateMany({ where: { personId: input.personId, status: RoutineStatus.ACTIVE }, data: { status: RoutineStatus.HISTORICAL } });
       if (failureAfterArchive) throw new Error('SIMULATED_ROUTINE_REPLACEMENT_FAILURE');
@@ -773,7 +817,7 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     }
     return { startTime: resolvedStartTime, durationMinutes };
   }
-  private validateRoutine(input: ReplaceRoutineDto): void { for (const day of input.days) for (const exercise of day.exercises) if (this.optionalText(exercise.repetitions) && this.optionalText(exercise.duration)) throw new BadRequestException({ code: 'SALA_ROUTINE_REPETITIONS_DURATION_EXCLUSIVE', message: 'Repetitions and duration are alternatives' }); }
+  private validateRoutine(input: { days: RoutineDayDto[] }): void { for (const day of input.days) for (const exercise of day.exercises) if (this.optionalText(exercise.repetitions) && this.optionalText(exercise.duration)) throw new BadRequestException({ code: 'SALA_ROUTINE_REPETITIONS_DURATION_EXCLUSIVE', message: 'Repetitions and duration are alternatives' }); }
   private minutes(value: Date): number { return value.getUTCHours() * 60 + value.getUTCMinutes(); }
   private parseMinutes(value: string): number { const [hours, minutes] = value.split(':').map(Number); return (hours ?? 0) * 60 + (minutes ?? 0); }
   private formatMinutes(value: number): string { return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`; }

@@ -79,6 +79,10 @@ export class RoutineDayDto {
   @ApiPropertyOptional({ type: String, maxLength: 120, nullable: true }) @IsOptional() @IsString() @MaxLength(120) name?: string | null;
   @ApiProperty({ type: () => [RoutineExerciseDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RoutineExerciseDto) exercises!: RoutineExerciseDto[];
 }
+export class RoutineTemplateDto {
+  @ApiProperty({ type: String, maxLength: 120 }) @IsString() @MinLength(1) @MaxLength(120) name!: string;
+  @ApiProperty({ type: () => [RoutineDayDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RoutineDayDto) days!: RoutineDayDto[];
+}
 export class ReplaceRoutineDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string;
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() salaParticipationId!: string;
