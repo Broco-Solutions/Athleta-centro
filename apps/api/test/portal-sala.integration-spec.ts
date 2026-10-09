@@ -239,31 +239,44 @@ describe('Portal Sala services from the current plan', () => {
     expect(inactive.body.data).toEqual([]);
   });
   it.each([
-    ['2026-10-15', '09:00', 400, 'PORTAL_DATE_OUT_OF_RANGE'],
-    ['2026-10-16', '09:00', 400, 'PORTAL_SALA_TIME_PASSED'],
-    ['2026-10-16', '09:30', 201, null],
-    ['2026-10-16', '10:00', 201, null],
-    ['2026-11-15', '09:00', 201, null],
-    ['2026-11-16', '09:00', 400, 'PORTAL_DATE_OUT_OF_RANGE'],
-  ])('applies Portal time bounds to %s at %s', async (date, startTime, status, code) => {
+    ['2026-10-15', '09:00', '12:49:00Z', 400, 'PORTAL_DATE_OUT_OF_RANGE'],
+    ['2026-10-16', '09:00', '12:49:00Z', 400, 'PORTAL_SALA_TIME_PASSED'],
+    ['2026-10-16', '09:30', '12:54:59.999Z', 201, null],
+    ['2026-10-16', '09:30', '12:55:00Z', 201, null],
+    ['2026-10-16', '09:30', '12:55:00.001Z', 400, 'PORTAL_SALA_TIME_PASSED'],
+    ['2026-10-16', '10:00', '12:49:00Z', 201, null],
+    ['2026-11-15', '09:00', '12:49:00Z', 201, null],
+    ['2026-11-16', '09:00', '12:49:00Z', 400, 'PORTAL_DATE_OUT_OF_RANGE'],
+  ])('applies Portal time bounds to %s at %s with current UTC time %s', async (date, startTime, now, status, code) => {
     const f = await fixture(date as string);
     await prisma.salaServiceType.update({ where: { id: f.muscle.id }, data: { durationMinutes: 45 } });
-    reservationNow.mockReturnValue(new Date('2026-10-16T12:49:00Z')); // 09:49 Buenos Aires
+    // 09:30–10:15 Buenos Aires: 12:55 UTC leaves exactly 20 minutes.
+    reservationNow.mockReturnValue(new Date(`2026-10-16T${now}`));
     await payment(f.body.date);
     f.body.startTime = startTime as string;
     const result = await reserve(f).expect(status as number);
     if (code) expect(result.body.code).toBe(code);
     expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(status === 201 ? 1 : 0);
+    if (status !== 201) expect(await prisma.salaOccurrence.count({ where: { personId } })).toBe(0);
     if (status === 201) expect(result.body.data.serviceDurationMinutes).toBe(45);
   });
-  it('rejects an activity at its exact end, including the legacy start fallback', async () => {
+  it.each([
+    ['12:40:00Z', 201],
+    ['12:40:00.001Z', 400],
+    ['13:00:00Z', 400],
+  ])('applies the 20-minute minimum to the legacy start fallback at %s', async (now, status) => {
     const f = await fixture('2026-10-16');
     await payment(f.body.date);
-    reservationNow.mockReturnValue(new Date('2026-10-16T13:00:00Z'));
+    // The fallback resolves to 09:00–10:00 Buenos Aires.
+    reservationNow.mockReturnValue(new Date(`2026-10-16T${now}`));
     const result = await request(app.getHttpServer()).post('/api/portal/sala/reservations').set('Cookie', f.cookie).set('x-csrf-token', f.csrf)
-      .send({ date: f.body.date, scheduleSlotId: windowId, serviceTypeId: f.muscle.id }).expect(400);
-    expect(result.body.code).toBe('PORTAL_SALA_TIME_PASSED');
-    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
+      .send({ date: f.body.date, scheduleSlotId: windowId, serviceTypeId: f.muscle.id }).expect(status as number);
+    if (status === 400) {
+      expect(result.body.code).toBe('PORTAL_SALA_TIME_PASSED');
+      expect(result.body.message).toBe('Ese horario ya no admite reservas porque quedan menos de 20 minutos de actividad. Elegí otro horario.');
+      expect(await prisma.salaOccurrence.count({ where: { personId } })).toBe(0);
+    }
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(status === 201 ? 1 : 0);
   });
   it('rejects past Portal availability while preserving internal retrospective availability', async () => {
     const f = await fixture('2026-10-15');

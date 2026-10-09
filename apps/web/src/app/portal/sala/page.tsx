@@ -1,5 +1,5 @@
 'use client';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, Circle, Minus, Plus } from 'lucide-react';
 import { bookingError, PortalFrame, portalFetch, formatDate, formatTime, today } from '../portal-ui';
@@ -38,6 +38,12 @@ export default function PortalSala(): React.JSX.Element {
   const client = useQueryClient();
   const [message, setMessage] = useState('');
   const [reservationDialog, setReservationDialog] = useState(false);
+  const [reservationNow, setReservationNow] = useState(Date.now);
+  useEffect(() => {
+    if (!reservationDialog) return;
+    const timer = setInterval(() => setReservationNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, [reservationDialog]);
   const [reservationService, setReservationService] = useState('');
   const [reservationDate, setReservationDate] = useState(today);
   const [reservationKey, setReservationKey] = useState('');
@@ -50,7 +56,7 @@ export default function PortalSala(): React.JSX.Element {
   const services = useQuery({ queryKey: ['portal', 'sala', 'services'], queryFn: () => portalFetch<Service[]>('sala/services') });
   const selectedService = services.data?.find(item => item.id === reservationService);
   const availability = useQuery({ queryKey: ['portal', 'sala', 'availability', reservationDate], queryFn: async () => (await portalFetch<Slot[]>(`sala/availability?date=${reservationDate}`)).map(item => ({ ...item, startTime: formatTime(item.startTime), endTime: formatTime(item.endTime) })), enabled: reservationDialog && Boolean(selectedService && reservationDate) });
-  const reservationOptions = starts(availability.data ?? [], selectedService).filter(item => reservationDate !== today() || new Date(`${reservationDate}T${item.startTime}:00-03:00`).getTime() + (selectedService?.durationMinutes ?? 0) * 60_000 > Date.now());
+  const reservationOptions = starts(availability.data ?? [], selectedService).filter(item => reservationDate !== today() || new Date(`${reservationDate}T${item.startTime}:00-03:00`).getTime() + (selectedService?.durationMinutes ?? 0) * 60_000 - reservationNow >= 20 * 60_000);
   const selectedReservation = reservationOptions.find(item => item.key === reservationKey && item.available);
   const saveReservation = useMutation({ mutationFn: async () => { if (!selectedService || !selectedReservation) throw new Error('RESERVATION_REQUIRED'); const token = await csrf(); return portalFetch('sala/reservations', { method: 'POST', headers: { 'content-type': 'application/json', 'x-csrf-token': token }, body: JSON.stringify({ date: reservationDate, serviceTypeId: selectedService.id, scheduleSlotId: selectedReservation.scheduleSlotId, startTime: selectedReservation.startTime }) }); }, onSuccess: async () => { setMessage('Reserva creada.'); setReservationDialog(false); setReservationKey(''); await refresh(); }, onError: error => setReservationError(bookingError(error)) });
   const service = services.data?.find(item => item.id === fixedService);
@@ -77,7 +83,7 @@ export default function PortalSala(): React.JSX.Element {
     {services.data?.length === 0 ? <p className="text-sm text-muted-foreground">Tu Plan actual no tiene servicios disponibles. Consultá con Athleta.</p> : null}
     {message ? <p role="status" className="text-sm">{message}</p> : null}
     <section className="rounded-lg border bg-white p-4"><h2 className="text-lg font-semibold">Próximos compromisos</h2>{sala.reservations.length ? <ul className="mt-2 divide-y">{sala.reservations.map(item => <li key={item.id} className="flex items-center justify-between gap-3 py-3 text-sm"><span><strong>{formatDate(item.date)}{item.startTime ? ` · ${formatTime(item.startTime)}` : ''}</strong><br />{item.serviceType?.name ?? 'Sala'} · {item.cancelledAt ? 'Cancelado' : 'Reservado'}</span>{!item.cancelledAt ? <button type="button" className="min-h-11 rounded border px-3 py-2" onClick={() => cancel.mutate(item.id)}>Cancelar</button> : null}</li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">No tenés próximos horarios.</p>}</section>
-    <button type="button" className="min-h-12 w-full rounded-lg bg-primary px-5 font-semibold hover:bg-primary-hover disabled:opacity-50" disabled={!services.data?.length} onClick={() => { setReservationService(services.data?.length === 1 ? services.data[0]?.id ?? '' : ''); setReservationDate(today()); setReservationKey(''); setReservationError(''); setReservationDialog(true); }}>Reservar horario</button>
+    <button type="button" className="min-h-12 w-full rounded-lg bg-primary px-5 font-semibold hover:bg-primary-hover disabled:opacity-50" disabled={!services.data?.length} onClick={() => { setReservationService(services.data?.length === 1 ? services.data[0]?.id ?? '' : ''); setReservationDate(today()); setReservationKey(''); setReservationError(''); setReservationNow(Date.now()); setReservationDialog(true); }}>Reservar horario</button>
     {reservationDialog ? <div role="dialog" aria-modal="true" aria-labelledby="reservation-title" className="fixed inset-0 z-30 overflow-y-auto bg-white sm:grid sm:place-items-center sm:bg-black/50 sm:p-4"><div className="min-h-full w-full bg-surface p-4 sm:min-h-0 sm:max-w-4xl sm:rounded-lg sm:border sm:p-8"><button type="button" className="mb-6 inline-flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm font-medium" disabled={saveReservation.isPending} onClick={() => setReservationDialog(false)}><ArrowLeft size={18} aria-hidden="true" />Volver a Sala</button><div className="mx-auto max-w-3xl space-y-8"><h2 id="reservation-title" className="text-2xl font-semibold">Reserva puntual</h2>
       <Step number={1} title="Servicio"><div className="grid gap-3 sm:grid-cols-2">{services.data?.map(item => <button type="button" key={item.id} aria-label={`${item.name} ${item.durationMinutes} min`} aria-pressed={reservationService === item.id} disabled={saveReservation.isPending} className={choiceClass(reservationService === item.id)} onClick={() => { setReservationService(item.id); setReservationKey(''); setReservationError(''); }}><span>{item.name}<span className="block text-sm text-muted-foreground">{item.durationMinutes} min</span></span>{reservationService === item.id ? <Check size={20} aria-hidden="true" /> : null}</button>)}</div></Step>
       <Step number={2} title="Fecha"><label className="block text-sm" htmlFor="reservation-date">Fecha de la reserva</label><input id="reservation-date" type="date" className="min-h-12 w-full rounded-lg border bg-surface px-4 sm:w-auto" min={today()} max={maxDate.toISOString().slice(0, 10)} value={reservationDate} disabled={saveReservation.isPending} onChange={event => { setReservationDate(event.target.value); setReservationKey(''); setReservationError(''); }} /></Step>

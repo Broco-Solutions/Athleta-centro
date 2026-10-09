@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
@@ -207,9 +207,9 @@ it('shows registered payment without pending guidance', async () => {
   expect(screen.queryByText('Con el pago pendiente podés reservar únicamente fechas del 1 al 15 inclusive.')).not.toBeInTheDocument();
 });
 
-async function openReservation(): Promise<HTMLElement> {
+async function openReservation(now = '2026-10-16T12:49:00Z'): Promise<HTMLElement> {
   vi.spyOn(portalUi, 'today').mockReturnValue('2026-10-16');
-  vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-10-16T12:49:00Z').getTime());
+  vi.spyOn(Date, 'now').mockReturnValue(new Date(now).getTime());
   renderPortalSala();
   const open = await screen.findByRole('button', { name: 'Reservar horario' });
   await waitFor(() => expect(open).toBeEnabled());
@@ -217,7 +217,7 @@ async function openReservation(): Promise<HTMLElement> {
   return screen.findByRole('dialog', { name: 'Reserva puntual' });
 }
 it('restores reservation steps, date bounds and ongoing/future starts using the service duration', async () => {
-  const dialog = await openReservation();
+  const dialog = await openReservation('2026-10-16T12:55:00Z');
   expect(within(dialog).getByLabelText('Fecha de la reserva')).toHaveAttribute('min', '2026-10-16');
   expect(within(dialog).getByLabelText('Fecha de la reserva')).toHaveAttribute('max', '2026-11-15');
   await within(dialog).findByRole('button', { name: '09:30–10:15 Hay lugar' });
@@ -236,8 +236,47 @@ it('creates an ongoing reservation through the existing endpoint with only the s
   expect(await screen.findByText('Reserva creada.')).toBeInTheDocument();
   expect(submitted).toEqual({ date: '2026-10-16', scheduleSlotId: 'window', serviceTypeId: 'service', startTime: '09:30' });
 });
+it('expires a selected start automatically below 20 minutes and refreshes the clock when reopening', async () => {
+  let availabilityRequests = 0;
+  server.use(http.get('http://localhost:3000/api/portal/sala/availability', ({ request }) => {
+    availabilityRequests += 1;
+    return HttpResponse.json({ data: baseBlocks(new URL(request.url).searchParams.get('date') ?? undefined) });
+  }));
+  // Keep fetch/Query timers real; only the local interval needs to advance.
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  try {
+    const dialog = await openReservation('2026-10-16T12:55:00Z');
+    const option = await within(dialog).findByRole('button', { name: '09:30–10:15 Hay lugar' });
+    fireEvent.click(option);
+    const confirm = within(dialog).getByRole('button', { name: 'Confirmar reserva' });
+    expect(confirm).toBeEnabled();
+    const requestsBeforeTick = availabilityRequests;
+    vi.mocked(Date.now).mockReturnValue(new Date('2026-10-16T12:55:00.001Z').getTime());
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(screen.getByRole('dialog', { name: 'Reserva puntual' })).toBe(dialog);
+    expect(within(dialog).getByLabelText('Fecha de la reserva')).toHaveValue('2026-10-16');
+    expect(within(dialog).queryByRole('button', { name: '09:30–10:15 Hay lugar' })).not.toBeInTheDocument();
+    expect(confirm).toBeDisabled();
+    expect(availabilityRequests).toBe(requestsBeforeTick);
+    expect(within(dialog).getByRole('button', { name: '10:00–10:45 Hay lugar' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: /09:45–/ })).not.toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Volver a Sala' }));
+    expect(vi.getTimerCount()).toBe(0);
+    vi.mocked(Date.now).mockReturnValue(new Date('2026-10-16T13:25:00.001Z').getTime());
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar horario' }));
+    const reopened = screen.getByRole('dialog', { name: 'Reserva puntual' });
+    expect(within(reopened).queryByRole('button', { name: '10:00–10:45 Hay lugar' })).not.toBeInTheDocument();
+    expect(within(reopened).getByRole('button', { name: 'Confirmar reserva' })).toBeDisabled();
+    cleanup();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    cleanup();
+    vi.useRealTimers();
+  }
+});
 it.each([
-  ['PORTAL_SALA_TIME_PASSED', 'Ese horario ya finalizó. Elegí un horario actual o posterior.'],
+  ['PORTAL_SALA_TIME_PASSED', 'Ese horario ya no admite reservas porque quedan menos de 20 minutos de actividad. Elegí otro horario.'],
   ['PORTAL_SALA_PAYMENT_REQUIRED', 'Para reservar esta fecha necesitás tener abonado el mes correspondiente.'],
 ])('shows the reservation rejection %s', async (code, message) => {
   server.use(http.post('http://localhost:3000/api/portal/sala/reservations', () => HttpResponse.json({ code, message: 'Rechazado' }, { status: 400 })));
