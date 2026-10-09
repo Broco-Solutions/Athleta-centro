@@ -32,7 +32,7 @@ export type RoutineApi = {
   create: (input: RoutineInput, options: RequestInit) => Promise<unknown>;
   replace: (routineId: string, input: RoutineInput, options: RequestInit) => Promise<unknown>;
   duplicate: (routineId: string, options: RequestInit) => Promise<unknown>;
-  createExercise: (input: ExerciseDefinitionDto, options: RequestInit) => Promise<unknown>;
+  createExercise: (input: ExerciseDefinitionDto, options: RequestInit) => Promise<ExerciseDefinition>;
   updateExercise: (id: string, input: ExerciseDefinitionDto, options: RequestInit) => Promise<unknown>;
   retireExercise: (id: string, input: { confirmActiveRoutineImpact: boolean }, options: RequestInit) => Promise<unknown>;
 };
@@ -63,13 +63,49 @@ function describeExercise(exercise: RoutineExercise, definitions: ExerciseDefini
 }
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : 'No se pudo completar la operación.'; }
 
-function RoutineExerciseForm({ definitions, initial, onSave, onCancel, disabled }: { definitions: ExerciseDefinition[]; initial?: ExerciseForm; onSave: (exercise: ExerciseForm) => void; onCancel: () => void; disabled: boolean }): React.JSX.Element {
-  const { register, watch, handleSubmit, reset } = useForm<ExerciseForm>({ defaultValues: initial ?? emptyExercise() });
+type ExerciseCatalogProps = {
+  definitions: ExerciseDefinition[];
+  catalogLoading: boolean;
+  catalogError: boolean;
+  onCreateExercise: (input: ExerciseDefinitionDto) => Promise<ExerciseDefinition>;
+};
+const definitionSchema = z.object({
+  name: z.string().trim().min(1, 'El Nombre es obligatorio.').max(120),
+  primaryMuscle: z.string().trim().min(1, 'El Músculo principal es obligatorio.').max(120),
+  description: z.string().trim().max(500),
+});
+
+function RoutineExerciseForm({ definitions, catalogLoading, catalogError, onCreateExercise, initial, onSave, onCancel, disabled }: ExerciseCatalogProps & { initial?: ExerciseForm; onSave: (exercise: ExerciseForm) => void; onCancel: () => void; disabled: boolean }): React.JSX.Element {
+  const { register, watch, handleSubmit, reset, setValue } = useForm<ExerciseForm>({ defaultValues: initial ?? emptyExercise() });
+  const [error, setError] = useState<string | null>(null);
+  const [creatingExercise, setCreatingExercise] = useState(false);
+  const [creationError, setCreationError] = useState<string | null>(null);
+  const definitionForm = useForm<z.infer<typeof definitionSchema>>({ defaultValues: { name: '', primaryMuscle: '', description: '' } });
+  const createDefinition = useMutation({
+    mutationFn: onCreateExercise,
+    onSuccess: (created) => {
+      setValue('exerciseDefinitionId', created.id, { shouldDirty: true });
+      setError(null);
+      setCreationError(null);
+      // Explicit values avoid a native reset of the enclosing routine entry form.
+      definitionForm.reset({ name: '', primaryMuscle: '', description: '' });
+      setCreatingExercise(false);
+    },
+  });
+  const submitDefinition = definitionForm.handleSubmit((form) => {
+    if (disabled || createDefinition.isPending) return;
+    const parsed = definitionSchema.safeParse(form);
+    if (!parsed.success) { setCreationError(parsed.error.issues[0]?.message ?? 'Revisá los datos del ejercicio.'); return; }
+    setCreationError(null);
+    createDefinition.mutate(parsed.data);
+  });
+  const activeDefinitions = definitions.filter((item) => item.isActive);
+  const catalogUnavailable = catalogLoading || catalogError;
   const repetitions = watch('repetitions')?.trim();
   const duration = watch('duration')?.trim();
   const invalidAlternatives = Boolean(repetitions && duration);
-  const [error, setError] = useState<string | null>(null);
   const submit = handleSubmit((form) => {
+    if (disabled || catalogUnavailable || createDefinition.isPending) return;
     const parsed = exerciseSchema.safeParse(form);
     if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Revisá los datos del ejercicio.'); return; }
     onSave(parsed.data);
@@ -78,7 +114,17 @@ function RoutineExerciseForm({ definitions, initial, onSave, onCancel, disabled 
   });
   return <form className="mt-3 grid gap-2 rounded-md border bg-white p-3" onSubmit={submit}>
     <div className="grid gap-2 sm:grid-cols-2">
-      <label className="text-sm">Ejercicio<select aria-label="Ejercicio" className={fieldClass} {...register('exerciseDefinitionId')} disabled={disabled}><option value="">Seleccionar ejercicio</option>{definitions.filter((item) => item.isActive).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.primaryMuscle}</option>)}</select></label>
+      <div className="sm:col-span-2">
+        <div className="flex items-end gap-2"><label className="grow text-sm">Ejercicio<select aria-label="Ejercicio" className={fieldClass} {...register('exerciseDefinitionId')} value={watch('exerciseDefinitionId')} disabled={disabled || catalogUnavailable || createDefinition.isPending}><option value="">Seleccionar ejercicio</option>{activeDefinitions.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.primaryMuscle}</option>)}</select></label><Button type="button" variant="secondary" disabled={disabled || createDefinition.isPending} onClick={() => setCreatingExercise(true)}>Nuevo ejercicio</Button></div>
+        {catalogLoading ? <p role="status" className="mt-2 text-sm text-muted-foreground">Cargando catálogo de ejercicios…</p> : catalogError ? <p role="alert" className="mt-2 text-sm text-red-700">No se pudo cargar el catálogo de ejercicios.</p> : activeDefinitions.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">Todavía no hay ejercicios en el catálogo. Creá uno nuevo para continuar.</p> : null}
+        {creatingExercise ? <fieldset aria-label="Nuevo ejercicio del catálogo" className="mt-3 grid gap-2 rounded-md border p-3" disabled={disabled || createDefinition.isPending} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void submitDefinition(); } }}>
+          <label className="text-sm">Nombre<input aria-label="Nombre del ejercicio" className={fieldClass} {...definitionForm.register('name')} maxLength={120}/></label>
+          <label className="text-sm">Músculo principal<input aria-label="Músculo principal" className={fieldClass} {...definitionForm.register('primaryMuscle')} maxLength={120}/></label>
+          <label className="text-sm">Descripción opcional<input aria-label="Descripción del ejercicio" className={fieldClass} {...definitionForm.register('description')} maxLength={500}/></label>
+          {creationError || createDefinition.error ? <p role="alert" className="text-sm text-red-700">{creationError ?? errorMessage(createDefinition.error)}</p> : null}
+          <Button type="button" onClick={() => void submitDefinition()} disabled={disabled || createDefinition.isPending}>{createDefinition.isPending ? 'Creando…' : 'Crear y seleccionar'}</Button>
+        </fieldset> : null}
+      </div>
       <label className="text-sm">Series<input aria-label="Series" className={fieldClass} {...register('series')} disabled={disabled} maxLength={80}/></label>
       <label className="text-sm">Repeticiones<input aria-label="Repeticiones" className={fieldClass} {...register('repetitions')} disabled={disabled || Boolean(duration && !repetitions)} maxLength={80}/></label>
       <label className="text-sm">Tiempo<input aria-label="Tiempo" className={fieldClass} {...register('duration')} disabled={disabled || Boolean(repetitions && !duration)} maxLength={80}/></label>
@@ -87,18 +133,18 @@ function RoutineExerciseForm({ definitions, initial, onSave, onCancel, disabled 
     </div>
     <label className="text-sm">Observación<textarea aria-label="Observación" className="min-h-16 w-full rounded-md border bg-white px-3 py-2 text-sm" {...register('notes')} disabled={disabled} maxLength={500}/></label>
     {invalidAlternatives || error ? <p role="alert" className="text-sm text-red-700">{invalidAlternatives ? exclusiveMessage : error}</p> : null}
-    <div className="flex flex-wrap gap-2"><Button type="submit" variant="secondary" disabled={disabled}>{initial ? 'Guardar ejercicio' : 'Agregar ejercicio'}</Button>{initial ? <Button type="button" variant="ghost" onClick={onCancel}>Cancelar edición</Button> : null}</div>
+    <div className="flex flex-wrap gap-2"><Button type="submit" variant="secondary" disabled={disabled || catalogUnavailable || createDefinition.isPending}>{initial ? 'Guardar ejercicio' : 'Agregar a la rutina'}</Button>{initial ? <Button type="button" variant="ghost" onClick={onCancel}>Cancelar edición</Button> : null}</div>
   </form>;
 }
 
-function DayEditor({ day, index, definitions, onChange, onRemove, canRemove, disabled }: { day: EditingDay; index: number; definitions: ExerciseDefinition[]; onChange: (day: EditingDay) => void; onRemove: () => void; canRemove: boolean; disabled: boolean }): React.JSX.Element {
+function DayEditor({ day, index, definitions, catalogLoading, catalogError, onCreateExercise, onChange, onRemove, canRemove, disabled }: ExerciseCatalogProps & { day: EditingDay; index: number; onChange: (day: EditingDay) => void; onRemove: () => void; canRemove: boolean; disabled: boolean }): React.JSX.Element {
   const [editingEntry, setEditingEntry] = useState<number | null>(null);
   const [formVersion, setFormVersion] = useState(0);
   const finishEditing = () => { setEditingEntry(null); setFormVersion((value) => value + 1); };
   return <fieldset aria-label={`Día ${index + 1}`} className="mt-3 rounded-md border p-3" disabled={disabled}>
     <div className="flex items-end gap-2"><label className="grow text-sm">Nombre del día<input aria-label={`Nombre del día ${index + 1}`} className={fieldClass} maxLength={120} value={day.name} onChange={(event) => onChange({ ...day, name: event.target.value })}/></label><Button type="button" variant="ghost" disabled={!canRemove || disabled} onClick={onRemove}>Quitar día</Button></div>
     <ul className="mt-3 divide-y rounded-md border">{day.exercises.map((exercise, entryIndex) => <li key={entryIndex} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm"><span>{describeExercise(exercise, definitions)}</span><span className="flex gap-1"><Button type="button" variant="ghost" onClick={() => { setEditingEntry(entryIndex); setFormVersion((value) => value + 1); }}>Editar</Button><Button type="button" variant="ghost" onClick={() => { onChange({ ...day, exercises: day.exercises.filter((_, itemIndex) => itemIndex !== entryIndex) }); finishEditing(); }}>Quitar</Button></span></li>)}</ul>
-    <RoutineExerciseForm key={formVersion} definitions={definitions} {...(editingEntry !== null && day.exercises[editingEntry] ? { initial: day.exercises[editingEntry] } : {})} onCancel={finishEditing} disabled={disabled} onSave={(exercise) => { onChange({ ...day, exercises: editingEntry === null ? [...day.exercises, exercise] : day.exercises.map((item, itemIndex) => itemIndex === editingEntry ? exercise : item) }); finishEditing(); }}/>
+    <RoutineExerciseForm key={formVersion} definitions={definitions} catalogLoading={catalogLoading} catalogError={catalogError} onCreateExercise={onCreateExercise} {...(editingEntry !== null && day.exercises[editingEntry] ? { initial: day.exercises[editingEntry] } : {})} onCancel={finishEditing} disabled={disabled} onSave={(exercise) => { onChange({ ...day, exercises: editingEntry === null ? [...day.exercises, exercise] : day.exercises.map((item, itemIndex) => itemIndex === editingEntry ? exercise : item) }); finishEditing(); }}/>
   </fieldset>;
 }
 
@@ -115,6 +161,13 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
   const definitions = useQuery({ queryKey: ['sala-exercise-definitions'], queryFn: () => api.exercises(options), enabled: canManage });
   const active = routines.data?.find((routine) => routine.status === 'ACTIVE');
   const historical = routines.data?.filter((routine) => routine.status === 'HISTORICAL') ?? [];
+  const createInlineExercise = async (input: ExerciseDefinitionDto): Promise<ExerciseDefinition> => {
+    const created = await api.createExercise(input, options);
+    await queryClient.cancelQueries({ queryKey: ['sala-exercise-definitions'] });
+    queryClient.setQueryData<ExerciseDefinition[]>(['sala-exercise-definitions'], (current = []) => [...current.filter((item) => item.id !== created.id), created]);
+    void queryClient.invalidateQueries({ queryKey: ['sala-exercise-definitions'] });
+    return created;
+  };
   const refreshRoutines = () => queryClient.invalidateQueries({ queryKey: ['sala-routines', personId] });
   const refreshCatalog = async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: ['sala-exercise-definitions'] }), refreshRoutines()]); };
   const mutation = useMutation({
@@ -164,7 +217,7 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
     {!routines.isLoading && !routines.isError && !active ? <p className="mt-3 text-sm text-muted-foreground">No hay una rutina activa.</p> : null}
     {active ? <RoutineSummary routine={active} definitions={definitions.data ?? []} onDuplicate={canManage && participationId && !editing ? () => { setFeedback(null); duplicate.mutate(active.id); } : undefined} duplicating={duplicate.isPending}/> : null}
     {historical.length > 0 ? <details className="mt-4"><summary className="cursor-pointer text-sm font-medium">Rutinas históricas ({historical.length})</summary><div className="mt-2 grid gap-2">{historical.map((routine) => <RoutineSummary key={routine.id} routine={routine} definitions={definitions.data ?? []} onDuplicate={canManage && participationId && !editing ? () => { setFeedback(null); duplicate.mutate(routine.id); } : undefined} duplicating={duplicate.isPending}/>)}</div></details> : null}
-    {canManage && editing ? <div className="mt-4 rounded-md border bg-white p-4"><h4 className="font-semibold">{active ? 'Editar rutina' : 'Nueva rutina'}</h4>{days.map((day, index) => <DayEditor key={day.key} day={day} index={index} definitions={definitions.data ?? []} disabled={mutation.isPending} canRemove={days.length > 1} onRemove={() => setDays((items) => items.filter((item) => item.key !== day.key))} onChange={(next) => setDays((items) => items.map((item) => item.key === day.key ? next : item))}/>)}<Button className="mt-3" type="button" variant="secondary" disabled={mutation.isPending} onClick={() => setDays((items) => [...items, newDay(`Día ${items.length + 1}`)])}>Agregar día</Button><div className="mt-4 flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setEditing(false)} disabled={mutation.isPending}>Cancelar</Button><Button type="button" onClick={() => { setFeedback(null); mutation.mutate(); }} disabled={mutation.isPending}>{mutation.isPending ? 'Guardando…' : 'Guardar rutina'}</Button></div></div> : null}
+    {canManage && editing ? <div className="mt-4 rounded-md border bg-white p-4"><h4 className="font-semibold">{active ? 'Editar rutina' : 'Nueva rutina'}</h4>{days.map((day, index) => <DayEditor key={day.key} day={day} index={index} definitions={definitions.data ?? []} catalogLoading={definitions.isLoading} catalogError={definitions.isError} onCreateExercise={createInlineExercise} disabled={mutation.isPending} canRemove={days.length > 1} onRemove={() => setDays((items) => items.filter((item) => item.key !== day.key))} onChange={(next) => setDays((items) => items.map((item) => item.key === day.key ? next : item))}/>)}<Button className="mt-3" type="button" variant="secondary" disabled={mutation.isPending} onClick={() => setDays((items) => [...items, newDay(`Día ${items.length + 1}`)])}>Agregar día</Button><div className="mt-4 flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setEditing(false)} disabled={mutation.isPending}>Cancelar</Button><Button type="button" onClick={() => { setFeedback(null); mutation.mutate(); }} disabled={mutation.isPending}>{mutation.isPending ? 'Guardando…' : 'Guardar rutina'}</Button></div></div> : null}
   </section>;
 }
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
@@ -181,4 +181,54 @@ it('preserves structured HTTP retirement errors so the panel displays impact bef
   fireEvent.click(await screen.findByRole('button', { name: 'Retirar' }));
   expect(await screen.findByRole('alertdialog')).toHaveTextContent('2 Rutinas activas'); expect(confirmations).toEqual([false]);
   fireEvent.click(screen.getByRole('button', { name: 'Confirmar retiro' })); await screen.findByText('Ejercicio retirado correctamente.'); expect(confirmations).toEqual([false, true]);
+});
+
+async function startInlineCreation() {
+  await screen.findByText('Día de fuerza');
+  fireEvent.click(screen.getByRole('button', { name: 'Editar rutina' }));
+  const scope = within(screen.getByRole('group', { name: 'Día 1' }));
+  fireEvent.change(scope.getByLabelText('Series'), { target: { value: '4' } });
+  fireEvent.click(scope.getByRole('button', { name: 'Nuevo ejercicio' }));
+  for (const [label, value] of [['Nombre del ejercicio', 'Peso muerto'], ['Músculo principal', 'Piernas'], ['Descripción del ejercicio', 'Con barra']]) fireEvent.change(scope.getByLabelText(label!), { target: { value } });
+  fireEvent.click(scope.getByRole('button', { name: 'Crear y seleccionar' }));
+  return scope;
+}
+it('returns the actual created catalog entity through the adapter and selects it inline', async () => {
+  navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); routineHandlers();
+  const created = { id: 'deadlift', name: 'Peso muerto', primaryMuscle: 'Piernas', description: 'Con barra', isActive: true };
+  const writes: unknown[] = [];
+  let saved = false;
+  server.use(
+    http.get('http://localhost:3000/api/sala/exercise-definitions', () => HttpResponse.json({ data: saved ? [created] : [] })),
+    http.post('http://localhost:3000/api/sala/exercise-definitions', async ({ request }) => {
+      writes.push(await request.json()); saved = true;
+      expect(request.headers.get('x-csrf-token')).toBe('csrf');
+      return HttpResponse.json({ data: created }, { status: 201 });
+    }),
+  );
+  renderWorkspace(); const scope = await startInlineCreation();
+  await waitFor(() => expect(scope.getByLabelText('Ejercicio')).toHaveValue('deadlift'));
+  expect(scope.getByRole('option', { name: 'Peso muerto · Piernas' })).toBeInTheDocument();
+  expect(writes).toEqual([{ name: 'Peso muerto', primaryMuscle: 'Piernas', description: 'Con barra' }]);
+  expect(scope.getByLabelText('Series')).toHaveValue('4'); expect(scope.getAllByRole('listitem')).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Guardar rutina' })).toBeInTheDocument();
+});
+it.each([400, 409])('keeps an inline HTTP %s catalog creation failure as an error', async status => {
+  navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); routineHandlers();
+  server.use(http.post('http://localhost:3000/api/sala/exercise-definitions', () => HttpResponse.json({ code: 'EXERCISE_CREATION_FAILED', message: 'No se pudo crear el ejercicio.' }, { status })));
+  renderWorkspace(); const scope = await startInlineCreation();
+  expect(await scope.findByRole('alert')).toHaveTextContent('No se pudo crear el ejercicio.');
+  expect(scope.getByLabelText('Nombre del ejercicio')).toHaveValue('Peso muerto');
+  expect(scope.getByLabelText('Músculo principal')).toHaveValue('Piernas');
+  expect(scope.getByLabelText('Descripción del ejercicio')).toHaveValue('Con barra');
+  expect(scope.queryByRole('option', { name: 'Peso muerto · Piernas' })).not.toBeInTheDocument();
+  expect(scope.getByLabelText('Series')).toHaveValue('4'); expect(scope.getAllByRole('listitem')).toHaveLength(1);
+});
+it('rejects an unexpected successful creation body without a created entity', async () => {
+  navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); routineHandlers();
+  server.use(http.post('http://localhost:3000/api/sala/exercise-definitions', () => HttpResponse.json({ data: {} }, { status: 201 })));
+  renderWorkspace(); const scope = await startInlineCreation();
+  expect(await scope.findByRole('alert')).toHaveTextContent('La respuesta no contiene el ejercicio creado.');
+  expect(scope.getByLabelText('Nombre del ejercicio')).toHaveValue('Peso muerto');
+  expect(scope.queryByRole('option', { name: 'Peso muerto · Piernas' })).not.toBeInTheDocument();
 });

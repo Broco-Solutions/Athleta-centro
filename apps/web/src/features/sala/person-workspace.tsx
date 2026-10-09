@@ -54,7 +54,16 @@ export function SalaPersonWorkspace({ personId }: { personId: string }): React.J
     create: async (input, requestOptions) => assertRoutineResponse(await replaceSalaRoutine(input, requestOptions)),
     replace: async (_id, input, requestOptions) => assertRoutineResponse(await replaceSalaRoutine(input, requestOptions)),
     duplicate: async (id, requestOptions) => assertRoutineResponse(await duplicateSalaRoutine(id, requestOptions)),
-    createExercise: async (input, requestOptions) => assertRoutineResponse(await createSalaExerciseDefinition(input, requestOptions)),
+    createExercise: async (input, requestOptions) => {
+      const response = await createSalaExerciseDefinition(input, requestOptions);
+      assertRoutineResponse(response);
+      // Orval currently types this successful body as void; the controller returns { data: entity }.
+      const created = (response.data as unknown as { data?: Partial<ExerciseDefinition> } | null)?.data;
+      if (!created || typeof created.id !== 'string' || !created.id || typeof created.name !== 'string' || typeof created.primaryMuscle !== 'string' || typeof created.isActive !== 'boolean') {
+        throw new Error('La respuesta no contiene el ejercicio creado.');
+      }
+      return created as ExerciseDefinition;
+    },
     updateExercise: async (id, input, requestOptions) => assertRoutineResponse(await updateSalaExerciseDefinition(id, input, requestOptions)),
     retireExercise: async (id, input, requestOptions) => assertRoutineResponse(await retireSalaExerciseDefinition(id, input, requestOptions)),
   };

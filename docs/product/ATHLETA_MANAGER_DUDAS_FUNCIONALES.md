@@ -125,7 +125,7 @@ El resto de las dudas originales figura resuelto, no aplica o queda a criterio t
 
 | ID | Estado | Definición resultante | Fuente |
 |---|---|---|---|
-| SAL-RUT-01 | RESUELTO | Todo ejercicio de una Rutina proviene del catálogo. Si no existe, Profesor/Admin general puede crearlo durante la carga y continuar. | §6.23 |
+| SAL-RUT-01 | RESUELTO | Todo ejercicio de una Rutina proviene del catálogo. Si no existe, Profesor/Admin general puede crearlo desde el propio flujo de carga de la Rutina y continuar sin salir del editor. Al crearlo desde una entrada de Rutina, el nuevo Ejercicio queda seleccionado en esa entrada para continuar la carga. | §6.23 |
 | SAL-RUT-02 | RESUELTO | Editar Nombre, Músculo principal o Descripción actualiza el mismo Ejercicio y las Rutinas que lo utilizan muestran la definición actual. | §6.23 |
 | SAL-RUT-03 | RESUELTO | No. Si se retira un Ejercicio utilizado en Rutinas activas, previa advertencia se quita también de esas Rutinas. Las históricas no se modifican. | §6.23 |
 | SAL-RUT-04 | RESUELTO | Sí. Puede retirarse un Ejercicio usado en Rutinas activas; se informa la cantidad de Rutinas activas distintas afectadas, no la cantidad de apariciones del Ejercicio. Al confirmar, se elimina de esas Rutinas activas; las históricas permanecen sin modificación. | §6.23 |
