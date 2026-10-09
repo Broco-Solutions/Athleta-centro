@@ -17,6 +17,7 @@ const routine: Routine = {
 function renderPanel(rows: Routine[] = [routine], canManage = true, catalog: RoutineApi['exercises'] = async () => definitions) {
   const api = {
     list: vi.fn<RoutineApi['list']>().mockResolvedValue(rows), exercises: vi.fn<RoutineApi['exercises']>().mockImplementation(catalog),
+    templates: vi.fn<RoutineApi['templates']>().mockResolvedValue([]),
     create: vi.fn<RoutineApi['create']>().mockResolvedValue({}), replace: vi.fn<RoutineApi['replace']>().mockResolvedValue({}),
     duplicate: vi.fn<RoutineApi['duplicate']>().mockResolvedValue({}), createExercise: vi.fn<RoutineApi['createExercise']>().mockResolvedValue({ id: 'row', name: 'Remo', primaryMuscle: 'Espalda', isActive: true }),
     updateExercise: vi.fn<RoutineApi['updateExercise']>().mockResolvedValue({}), retireExercise: vi.fn<RoutineApi['retireExercise']>().mockResolvedValue({}),
@@ -86,8 +87,8 @@ it('edits all days and entries, adds and removes days and saves the complete ord
 
 it('requires only the exercise and keeps at least one visible day', async () => {
   const { api } = renderPanel([]);
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Crear rutina' })).toBeEnabled());
-  fireEvent.click(screen.getByRole('button', { name: 'Crear rutina' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Crear desde cero' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Crear desde cero' }));
   expect(day(1).getByLabelText('Nombre del día 1')).toHaveValue('Día 1');
   expect(day(1).getByRole('button', { name: 'Quitar día' })).toBeDisabled();
   fireEvent.click(day(1).getByRole('button', { name: 'Agregar a la rutina' }));
@@ -163,14 +164,14 @@ it('allows read-only users to see active and historical routines without managem
   const { api } = renderPanel([routine, { ...routine, id: 'old', version: 1, status: 'HISTORICAL' }], false);
   await screen.findAllByText('Fuerza'); fireEvent.click(screen.getByText('Rutinas históricas (1)'));
   expect(screen.getByText('Rutina v1')).toBeInTheDocument();
-  for (const name of ['Crear rutina', 'Editar rutina', 'Duplicar rutina']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  for (const name of ['Crear desde cero', 'Usar preestablecida', 'Editar rutina', 'Duplicar rutina']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
   expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument(); expect(api.exercises).not.toHaveBeenCalled();
 });
 
 const deadlift = { id: 'deadlift', name: 'Peso muerto', primaryMuscle: 'Piernas', description: 'Con barra', isActive: true };
 async function startNewRoutine() {
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Crear rutina' })).toBeEnabled());
-  fireEvent.click(screen.getByRole('button', { name: 'Crear rutina' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Crear desde cero' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Crear desde cero' }));
 }
 function fillInline(index = 1) {
   const scope = day(index);
