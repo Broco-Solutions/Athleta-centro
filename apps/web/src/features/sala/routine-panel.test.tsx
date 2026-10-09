@@ -72,13 +72,16 @@ it('edits all days and entries, adds and removes days and saves the complete ord
   await screen.findByText('Rutina guardada correctamente.');
   expect(api.replace).toHaveBeenCalledWith('routine', {
     personId: 'person', salaParticipationId: 'participation', days: [
-      { position: 1, name: 'Fuerza', exercises: [
+      { name: 'Fuerza', exercises: [
         { exerciseDefinitionId: 'squat', series: '5', repetitions: '10', duration: null, load: '40 kg', rest: '30 s', notes: 'Controlar técnica' },
         { exerciseDefinitionId: 'plank', series: null, repetitions: null, duration: null, load: null, rest: null, notes: null },
       ] },
-      { position: 2, name: 'Movilidad', exercises: [{ exerciseDefinitionId: 'plank', series: null, repetitions: null, duration: null, load: null, rest: null, notes: null }] },
+      { name: 'Movilidad', exercises: [{ exerciseDefinitionId: 'plank', series: null, repetitions: null, duration: null, load: null, rest: null, notes: null }] },
     ],
   }, expect.objectContaining({ credentials: 'include', headers: { 'x-csrf-token': 'csrf' } }));
+  const savedDays = api.replace.mock.calls[0]![1].days;
+  expect(savedDays).toHaveLength(2);
+  for (const savedDay of savedDays) expect(savedDay).not.toHaveProperty('position');
 });
 
 it('requires only the exercise and keeps at least one visible day', async () => {
@@ -208,9 +211,12 @@ it('creates and selects inline, preserves the draft and saves the full multi-day
   change(day(2), 'Tiempo', '45 s'); await add(day(2), 'deadlift');
   fireEvent.click(screen.getByRole('button', { name: 'Guardar rutina' }));
   await waitFor(() => expect(api.create).toHaveBeenCalledExactlyOnceWith({ personId: 'person', salaParticipationId: 'participation', days: [
-    { position: 1, name: 'Fuerza', exercises: [{ exerciseDefinitionId: 'deadlift', series: '4', repetitions: '8', duration: null, load: '60 kg', rest: '30 s', notes: 'Controlar técnica' }] },
-    { position: 2, name: 'Día 2', exercises: [{ exerciseDefinitionId: 'deadlift', series: null, repetitions: null, duration: '45 s', load: null, rest: null, notes: null }] },
+    { name: 'Fuerza', exercises: [{ exerciseDefinitionId: 'deadlift', series: '4', repetitions: '8', duration: null, load: '60 kg', rest: '30 s', notes: 'Controlar técnica' }] },
+    { name: 'Día 2', exercises: [{ exerciseDefinitionId: 'deadlift', series: null, repetitions: null, duration: '45 s', load: null, rest: null, notes: null }] },
   ] }, expect.any(Object)));
+  const savedDays = api.create.mock.calls[0]![0].days;
+  expect(savedDays).toHaveLength(2);
+  for (const savedDay of savedDays) expect(savedDay).not.toHaveProperty('position');
 });
 it('selects the created exercise only in its originating day and preserves time and existing entries', async () => {
   const { api } = renderPanel(); await startEditing();

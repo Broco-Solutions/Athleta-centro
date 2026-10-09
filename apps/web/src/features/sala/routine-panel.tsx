@@ -172,7 +172,7 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
   const refreshCatalog = async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: ['sala-exercise-definitions'] }), refreshRoutines()]); };
   const mutation = useMutation({
     mutationFn: async () => {
-      const input: RoutineInput = { personId, salaParticipationId: participationId, days: days.map((day, dayIndex) => ({ position: dayIndex + 1, name: day.name.trim() || `Día ${dayIndex + 1}`, exercises: day.exercises.map((exercise) => {
+      const input: RoutineInput = { personId, salaParticipationId: participationId, days: days.map((day, dayIndex) => ({ name: day.name.trim() || `Día ${dayIndex + 1}`, exercises: day.exercises.map((exercise) => {
         const parsed = exerciseSchema.parse(exercise);
         return { exerciseDefinitionId: parsed.exerciseDefinitionId, series: parsed.series || null, repetitions: parsed.repetitions || null, duration: parsed.duration || null, load: parsed.load || null, rest: parsed.rest || null, notes: parsed.notes || null };
       }) })) };
