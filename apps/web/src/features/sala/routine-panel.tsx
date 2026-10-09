@@ -2,32 +2,18 @@
 
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
-import { z } from 'zod';
 import { Button } from '@athleta/ui';
 import type { ExerciseDefinitionDto, ReplaceRoutineDto } from '@athleta/api-client';
+import { DayEditor, RoutineContentSummary, copyRoutineDays, routineDaysToDraft, draftToRoutineDays, newDay, fieldClass, errorMessage, type EditingDay, type RoutineDay, type ExerciseDefinition, type RoutineTemplate } from './routine-editor';
+export type { ExerciseDefinition, RoutineDay, RoutineExercise, RoutineTemplate } from './routine-editor';
 
-export type RoutineExercise = {
-  id?: string;
-  position?: number;
-  exerciseDefinitionId: string;
-  exerciseDefinition?: { name: string } | null;
-  exerciseName?: string;
-  series?: string | null | undefined;
-  repetitions?: string | null | undefined;
-  duration?: string | null | undefined;
-  load?: string | null | undefined;
-  rest?: string | null | undefined;
-  notes?: string | null | undefined;
-};
-export type RoutineDay = { id?: string; position: number; name?: string | null | undefined; exercises: RoutineExercise[] };
 export type Routine = { id: string; personId: string; salaParticipationId: string; status: 'ACTIVE' | 'HISTORICAL'; version: number; createdAt?: string; days: RoutineDay[] };
-export type ExerciseDefinition = { id: string; name: string; primaryMuscle: string; description?: string | null | undefined; isActive: boolean };
 export type RoutineInput = ReplaceRoutineDto;
 
 /** Operations use the generated client through the workspace adapter. */
 export type RoutineApi = {
   list: (personId: string, options: RequestInit) => Promise<Routine[]>;
+  templates: (options: RequestInit) => Promise<RoutineTemplate[]>;
   exercises: (options: RequestInit) => Promise<ExerciseDefinition[]>;
   create: (input: RoutineInput, options: RequestInit) => Promise<unknown>;
   replace: (routineId: string, input: RoutineInput, options: RequestInit) => Promise<unknown>;
@@ -37,119 +23,11 @@ export type RoutineApi = {
   retireExercise: (id: string, input: { confirmActiveRoutineImpact: boolean }, options: RequestInit) => Promise<unknown>;
 };
 
-const exclusiveMessage = 'Elegí Repeticiones o Tiempo, no ambos.';
-const exerciseSchema = z.object({
-  exerciseDefinitionId: z.string().min(1, 'Seleccioná un ejercicio'),
-  series: z.string().trim().max(80).optional(),
-  repetitions: z.string().trim().max(80).optional(),
-  duration: z.string().trim().max(80).optional(),
-  load: z.string().trim().max(80).optional(),
-  rest: z.string().trim().max(80).optional(),
-  notes: z.string().trim().max(500).optional(),
-}).refine((entry) => !(entry.repetitions && entry.duration), { message: exclusiveMessage });
-type ExerciseForm = z.infer<typeof exerciseSchema>;
-type EditingDay = { key: string; name: string; exercises: ExerciseForm[] };
-const fieldClass = 'h-10 w-full rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-ring';
-
-function emptyExercise(): ExerciseForm {
-  return { exerciseDefinitionId: '', series: '', repetitions: '', duration: '', load: '', rest: '', notes: '' };
-}
-function newDay(name = 'Día 1'): EditingDay { return { key: crypto.randomUUID(), name, exercises: [] }; }
-function displayExercise(exercise: RoutineExercise, definitions: ExerciseDefinition[]): string {
-  return exercise.exerciseDefinition?.name ?? exercise.exerciseName ?? definitions.find((item) => item.id === exercise.exerciseDefinitionId)?.name ?? 'Ejercicio';
-}
-function describeExercise(exercise: RoutineExercise, definitions: ExerciseDefinition[]): string {
-  return [displayExercise(exercise, definitions), exercise.series && `${exercise.series} series`, exercise.repetitions && `${exercise.repetitions} rep.`, exercise.duration && `Tiempo ${exercise.duration}`, exercise.load && `Carga ${exercise.load}`, exercise.rest && `Descanso ${exercise.rest}`, exercise.notes && `Observación ${exercise.notes}`].filter(Boolean).join(' · ');
-}
-function errorMessage(error: unknown): string { return error instanceof Error ? error.message : 'No se pudo completar la operación.'; }
-
-type ExerciseCatalogProps = {
-  definitions: ExerciseDefinition[];
-  catalogLoading: boolean;
-  catalogError: boolean;
-  onCreateExercise: (input: ExerciseDefinitionDto) => Promise<ExerciseDefinition>;
-};
-const definitionSchema = z.object({
-  name: z.string().trim().min(1, 'El Nombre es obligatorio.').max(120),
-  primaryMuscle: z.string().trim().min(1, 'El Músculo principal es obligatorio.').max(120),
-  description: z.string().trim().max(500),
-});
-
-function RoutineExerciseForm({ definitions, catalogLoading, catalogError, onCreateExercise, initial, onSave, onCancel, disabled }: ExerciseCatalogProps & { initial?: ExerciseForm; onSave: (exercise: ExerciseForm) => void; onCancel: () => void; disabled: boolean }): React.JSX.Element {
-  const { register, watch, handleSubmit, reset, setValue } = useForm<ExerciseForm>({ defaultValues: initial ?? emptyExercise() });
-  const [error, setError] = useState<string | null>(null);
-  const [creatingExercise, setCreatingExercise] = useState(false);
-  const [creationError, setCreationError] = useState<string | null>(null);
-  const definitionForm = useForm<z.infer<typeof definitionSchema>>({ defaultValues: { name: '', primaryMuscle: '', description: '' } });
-  const createDefinition = useMutation({
-    mutationFn: onCreateExercise,
-    onSuccess: (created) => {
-      setValue('exerciseDefinitionId', created.id, { shouldDirty: true });
-      setError(null);
-      setCreationError(null);
-      // Explicit values avoid a native reset of the enclosing routine entry form.
-      definitionForm.reset({ name: '', primaryMuscle: '', description: '' });
-      setCreatingExercise(false);
-    },
-  });
-  const submitDefinition = definitionForm.handleSubmit((form) => {
-    if (disabled || createDefinition.isPending) return;
-    const parsed = definitionSchema.safeParse(form);
-    if (!parsed.success) { setCreationError(parsed.error.issues[0]?.message ?? 'Revisá los datos del ejercicio.'); return; }
-    setCreationError(null);
-    createDefinition.mutate(parsed.data);
-  });
-  const activeDefinitions = definitions.filter((item) => item.isActive);
-  const catalogUnavailable = catalogLoading || catalogError;
-  const repetitions = watch('repetitions')?.trim();
-  const duration = watch('duration')?.trim();
-  const invalidAlternatives = Boolean(repetitions && duration);
-  const submit = handleSubmit((form) => {
-    if (disabled || catalogUnavailable || createDefinition.isPending) return;
-    const parsed = exerciseSchema.safeParse(form);
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Revisá los datos del ejercicio.'); return; }
-    onSave(parsed.data);
-    reset(emptyExercise());
-    setError(null);
-  });
-  return <form className="mt-3 grid gap-2 rounded-md border bg-white p-3" onSubmit={submit}>
-    <div className="grid gap-2 sm:grid-cols-2">
-      <div className="sm:col-span-2">
-        <div className="flex items-end gap-2"><label className="grow text-sm">Ejercicio<select aria-label="Ejercicio" className={fieldClass} {...register('exerciseDefinitionId')} value={watch('exerciseDefinitionId')} disabled={disabled || catalogUnavailable || createDefinition.isPending}><option value="">Seleccionar ejercicio</option>{activeDefinitions.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.primaryMuscle}</option>)}</select></label><Button type="button" variant="secondary" disabled={disabled || createDefinition.isPending} onClick={() => setCreatingExercise(true)}>Nuevo ejercicio</Button></div>
-        {catalogLoading ? <p role="status" className="mt-2 text-sm text-muted-foreground">Cargando catálogo de ejercicios…</p> : catalogError ? <p role="alert" className="mt-2 text-sm text-red-700">No se pudo cargar el catálogo de ejercicios.</p> : activeDefinitions.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">Todavía no hay ejercicios en el catálogo. Creá uno nuevo para continuar.</p> : null}
-        {creatingExercise ? <fieldset aria-label="Nuevo ejercicio del catálogo" className="mt-3 grid gap-2 rounded-md border p-3" disabled={disabled || createDefinition.isPending} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void submitDefinition(); } }}>
-          <label className="text-sm">Nombre<input aria-label="Nombre del ejercicio" className={fieldClass} {...definitionForm.register('name')} maxLength={120}/></label>
-          <label className="text-sm">Músculo principal<input aria-label="Músculo principal" className={fieldClass} {...definitionForm.register('primaryMuscle')} maxLength={120}/></label>
-          <label className="text-sm">Descripción opcional<input aria-label="Descripción del ejercicio" className={fieldClass} {...definitionForm.register('description')} maxLength={500}/></label>
-          {creationError || createDefinition.error ? <p role="alert" className="text-sm text-red-700">{creationError ?? errorMessage(createDefinition.error)}</p> : null}
-          <Button type="button" onClick={() => void submitDefinition()} disabled={disabled || createDefinition.isPending}>{createDefinition.isPending ? 'Creando…' : 'Crear y seleccionar'}</Button>
-        </fieldset> : null}
-      </div>
-      <label className="text-sm">Series<input aria-label="Series" className={fieldClass} {...register('series')} disabled={disabled} maxLength={80}/></label>
-      <label className="text-sm">Repeticiones<input aria-label="Repeticiones" className={fieldClass} {...register('repetitions')} disabled={disabled || Boolean(duration && !repetitions)} maxLength={80}/></label>
-      <label className="text-sm">Tiempo<input aria-label="Tiempo" className={fieldClass} {...register('duration')} disabled={disabled || Boolean(repetitions && !duration)} maxLength={80}/></label>
-      <label className="text-sm">Carga<input aria-label="Carga" className={fieldClass} {...register('load')} disabled={disabled} maxLength={80}/></label>
-      <label className="text-sm">Descanso<input aria-label="Descanso" className={fieldClass} {...register('rest')} disabled={disabled} maxLength={80}/></label>
-    </div>
-    <label className="text-sm">Observación<textarea aria-label="Observación" className="min-h-16 w-full rounded-md border bg-white px-3 py-2 text-sm" {...register('notes')} disabled={disabled} maxLength={500}/></label>
-    {invalidAlternatives || error ? <p role="alert" className="text-sm text-red-700">{invalidAlternatives ? exclusiveMessage : error}</p> : null}
-    <div className="flex flex-wrap gap-2"><Button type="submit" variant="secondary" disabled={disabled || catalogUnavailable || createDefinition.isPending}>{initial ? 'Guardar ejercicio' : 'Agregar a la rutina'}</Button>{initial ? <Button type="button" variant="ghost" onClick={onCancel}>Cancelar edición</Button> : null}</div>
-  </form>;
-}
-
-function DayEditor({ day, index, definitions, catalogLoading, catalogError, onCreateExercise, onChange, onRemove, canRemove, disabled }: ExerciseCatalogProps & { day: EditingDay; index: number; onChange: (day: EditingDay) => void; onRemove: () => void; canRemove: boolean; disabled: boolean }): React.JSX.Element {
-  const [editingEntry, setEditingEntry] = useState<number | null>(null);
-  const [formVersion, setFormVersion] = useState(0);
-  const finishEditing = () => { setEditingEntry(null); setFormVersion((value) => value + 1); };
-  return <fieldset aria-label={`Día ${index + 1}`} className="mt-3 rounded-md border p-3" disabled={disabled}>
-    <div className="flex items-end gap-2"><label className="grow text-sm">Nombre del día<input aria-label={`Nombre del día ${index + 1}`} className={fieldClass} maxLength={120} value={day.name} onChange={(event) => onChange({ ...day, name: event.target.value })}/></label><Button type="button" variant="ghost" disabled={!canRemove || disabled} onClick={onRemove}>Quitar día</Button></div>
-    <ul className="mt-3 divide-y rounded-md border">{day.exercises.map((exercise, entryIndex) => <li key={entryIndex} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm"><span>{describeExercise(exercise, definitions)}</span><span className="flex gap-1"><Button type="button" variant="ghost" onClick={() => { setEditingEntry(entryIndex); setFormVersion((value) => value + 1); }}>Editar</Button><Button type="button" variant="ghost" onClick={() => { onChange({ ...day, exercises: day.exercises.filter((_, itemIndex) => itemIndex !== entryIndex) }); finishEditing(); }}>Quitar</Button></span></li>)}</ul>
-    <RoutineExerciseForm key={formVersion} definitions={definitions} catalogLoading={catalogLoading} catalogError={catalogError} onCreateExercise={onCreateExercise} {...(editingEntry !== null && day.exercises[editingEntry] ? { initial: day.exercises[editingEntry] } : {})} onCancel={finishEditing} disabled={disabled} onSave={(exercise) => { onChange({ ...day, exercises: editingEntry === null ? [...day.exercises, exercise] : day.exercises.map((item, itemIndex) => itemIndex === editingEntry ? exercise : item) }); finishEditing(); }}/>
-  </fieldset>;
-}
-
 export function RoutinePanel({ personId, participationId, csrfToken, api, canManage }: { personId: string; participationId: string; csrfToken: string; api: RoutineApi; canManage: boolean }): React.JSX.Element {
   const queryClient = useQueryClient();
+  const [selectingTemplate, setSelectingTemplate] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<RoutineTemplate | null>(null);
+  const [personalizing, setPersonalizing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [days, setDays] = useState<EditingDay[]>(() => [newDay()]);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -159,6 +37,7 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
   const options = useMemo<RequestInit>(() => ({ credentials: 'include', headers: { 'x-csrf-token': csrfToken } }), [csrfToken]);
   const routines = useQuery({ queryKey: ['sala-routines', personId], queryFn: () => api.list(personId, options), enabled: Boolean(personId) });
   const definitions = useQuery({ queryKey: ['sala-exercise-definitions'], queryFn: () => api.exercises(options), enabled: canManage });
+  const templates = useQuery({ queryKey: ['sala-routine-templates'], queryFn: () => api.templates(options), enabled: canManage && selectingTemplate });
   const active = routines.data?.find((routine) => routine.status === 'ACTIVE');
   const historical = routines.data?.filter((routine) => routine.status === 'HISTORICAL') ?? [];
   const createInlineExercise = async (input: ExerciseDefinitionDto): Promise<ExerciseDefinition> => {
@@ -172,13 +51,17 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
   const refreshCatalog = async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: ['sala-exercise-definitions'] }), refreshRoutines()]); };
   const mutation = useMutation({
     mutationFn: async () => {
-      const input: RoutineInput = { personId, salaParticipationId: participationId, days: days.map((day, dayIndex) => ({ name: day.name.trim() || `Día ${dayIndex + 1}`, exercises: day.exercises.map((exercise) => {
-        const parsed = exerciseSchema.parse(exercise);
-        return { exerciseDefinitionId: parsed.exerciseDefinitionId, series: parsed.series || null, repetitions: parsed.repetitions || null, duration: parsed.duration || null, load: parsed.load || null, rest: parsed.rest || null, notes: parsed.notes || null };
-      }) })) };
+      const input: RoutineInput = { personId, salaParticipationId: participationId, days: draftToRoutineDays(days) };
       return active ? api.replace(active.id, input, options) : api.create(input, options);
     },
     onSuccess: async () => { setEditing(false); setDays([newDay()]); setFeedback('Rutina guardada correctamente.'); await refreshRoutines(); },
+  });
+  const assign = useMutation({
+    mutationFn: async (template: RoutineTemplate) => {
+      const input: RoutineInput = { personId, salaParticipationId: participationId, days: copyRoutineDays(template.days) };
+      return active ? api.replace(active.id, input, options) : api.create(input, options);
+    },
+    onSuccess: async () => { setSelectingTemplate(false); setSelectedTemplate(null); setFeedback('Rutina asignada correctamente.'); await refreshRoutines(); },
   });
   const duplicate = useMutation({ mutationFn: (id: string) => api.duplicate(id, options), onSuccess: async () => { setFeedback('Rutina duplicada correctamente.'); await refreshRoutines(); } });
   const exerciseMutation = useMutation({
@@ -195,14 +78,15 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
   });
   const startEditing = () => {
     mutation.reset(); setFeedback(null);
-    setDays(active?.days.length ? active.days.map((day, index) => ({ key: crypto.randomUUID(), name: day.name ?? `Día ${index + 1}`, exercises: day.exercises.map((exercise) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, series: exercise.series ?? '', repetitions: exercise.repetitions ?? '', duration: exercise.duration ?? '', load: exercise.load ?? '', rest: exercise.rest ?? '', notes: exercise.notes ?? '' })) })) : [newDay()]);
+    setPersonalizing(false); setSelectingTemplate(false);
+    setDays(active?.days.length ? routineDaysToDraft(active.days) : [newDay()]);
     setEditing(true);
   };
   const retireNeedsConfirmation = (retire.error as (Error & { code?: string }) | null)?.code === 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED';
-  const actionErrors = [mutation.error, duplicate.error, exerciseMutation.error, retireNeedsConfirmation ? null : retire.error].filter(Boolean);
+  const actionErrors = [mutation.error, assign.error, duplicate.error, exerciseMutation.error, retireNeedsConfirmation ? null : retire.error].filter(Boolean);
   const catalogBusy = exerciseMutation.isPending || retire.isPending;
   return <section aria-labelledby="routine-heading" className="mt-4 rounded-md border bg-surface-muted p-4">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 id="routine-heading" className="font-semibold">Rutina</h3><p className="text-sm text-muted-foreground">Planificación de entrenamiento vigente e histórica.</p></div>{canManage && participationId ? <Button type="button" variant="secondary" onClick={startEditing} disabled={routines.isLoading || routines.isError || editing || duplicate.isPending}>{active ? 'Editar rutina' : 'Crear rutina'}</Button> : null}</div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 id="routine-heading" className="font-semibold">Rutina</h3><p className="text-sm text-muted-foreground">Planificación de entrenamiento vigente e histórica.</p></div>{canManage && participationId ? <div className="flex gap-2"><Button type="button" variant="secondary" onClick={startEditing} disabled={routines.isLoading || routines.isError || editing || duplicate.isPending || assign.isPending}>{active ? 'Editar rutina' : 'Crear desde cero'}</Button><Button type="button" variant="secondary" disabled={routines.isLoading || routines.isError || editing || duplicate.isPending || assign.isPending} onClick={() => { setSelectingTemplate(true); setSelectedTemplate(null); setFeedback(null); assign.reset(); }}>Usar preestablecida</Button></div> : null}</div>
     {canManage ? <details className="mt-3 rounded-md border bg-white p-3"><summary className="cursor-pointer text-sm font-medium">Administrar ejercicios</summary><p className="mt-2 text-xs text-muted-foreground">Catálogo utilizado para armar rutinas.</p>
       <div className="mt-3 grid gap-2 sm:grid-cols-3"><input className={fieldClass} aria-label="Nombre del ejercicio" placeholder="Nombre" maxLength={120} value={newExercise.name} onChange={(event) => setNewExercise((current) => ({ ...current, name: event.target.value }))}/><input className={fieldClass} aria-label="Músculo principal" placeholder="Músculo principal" maxLength={120} value={newExercise.primaryMuscle} onChange={(event) => setNewExercise((current) => ({ ...current, primaryMuscle: event.target.value }))}/><input className={fieldClass} aria-label="Descripción del ejercicio" placeholder="Descripción opcional" maxLength={500} value={newExercise.description} onChange={(event) => setNewExercise((current) => ({ ...current, description: event.target.value }))}/></div>
       <Button className="mt-2" type="button" disabled={!newExercise.name.trim() || !newExercise.primaryMuscle.trim() || catalogBusy} onClick={() => { setFeedback(null); exerciseMutation.mutate(); }}>{catalogId ? 'Guardar cambios del ejercicio' : 'Nuevo ejercicio'}</Button>{catalogId ? <Button type="button" variant="ghost" onClick={() => { setCatalogId(null); setNewExercise({ name: '', primaryMuscle: '', description: '' }); exerciseMutation.reset(); }}>Cancelar edición del catálogo</Button> : null}
@@ -217,10 +101,18 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
     {!routines.isLoading && !routines.isError && !active ? <p className="mt-3 text-sm text-muted-foreground">No hay una rutina activa.</p> : null}
     {active ? <RoutineSummary routine={active} definitions={definitions.data ?? []} onDuplicate={canManage && participationId && !editing ? () => { setFeedback(null); duplicate.mutate(active.id); } : undefined} duplicating={duplicate.isPending}/> : null}
     {historical.length > 0 ? <details className="mt-4"><summary className="cursor-pointer text-sm font-medium">Rutinas históricas ({historical.length})</summary><div className="mt-2 grid gap-2">{historical.map((routine) => <RoutineSummary key={routine.id} routine={routine} definitions={definitions.data ?? []} onDuplicate={canManage && participationId && !editing ? () => { setFeedback(null); duplicate.mutate(routine.id); } : undefined} duplicating={duplicate.isPending}/>)}</div></details> : null}
-    {canManage && editing ? <div className="mt-4 rounded-md border bg-white p-4"><h4 className="font-semibold">{active ? 'Editar rutina' : 'Nueva rutina'}</h4>{days.map((day, index) => <DayEditor key={day.key} day={day} index={index} definitions={definitions.data ?? []} catalogLoading={definitions.isLoading} catalogError={definitions.isError} onCreateExercise={createInlineExercise} disabled={mutation.isPending} canRemove={days.length > 1} onRemove={() => setDays((items) => items.filter((item) => item.key !== day.key))} onChange={(next) => setDays((items) => items.map((item) => item.key === day.key ? next : item))}/>)}<Button className="mt-3" type="button" variant="secondary" disabled={mutation.isPending} onClick={() => setDays((items) => [...items, newDay(`Día ${items.length + 1}`)])}>Agregar día</Button><div className="mt-4 flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setEditing(false)} disabled={mutation.isPending}>Cancelar</Button><Button type="button" onClick={() => { setFeedback(null); mutation.mutate(); }} disabled={mutation.isPending}>{mutation.isPending ? 'Guardando…' : 'Guardar rutina'}</Button></div></div> : null}
+    {canManage && selectingTemplate ? <div className="mt-4 rounded-md border bg-white p-4">
+      {selectedTemplate ? <><h4 className="font-semibold">{selectedTemplate.name} — {selectedTemplate.days.length} días</h4><RoutineContentSummary days={selectedTemplate.days}/>
+        {selectedTemplate.days.some((day) => day.exercises.some((exercise) => exercise.exerciseDefinition?.isActive === false)) ? <p className="mt-3 text-sm">Esta rutina contiene ejercicios que ya no están disponibles. Editala para reemplazarlos o quitarlos.</p> : null}
+        <div className="mt-4 flex gap-2"><Button type="button" disabled={assign.isPending || selectedTemplate.days.some((day) => day.exercises.some((exercise) => exercise.exerciseDefinition?.isActive === false))} onClick={() => assign.mutate(selectedTemplate)}>Asignar rutina</Button><Button type="button" variant="secondary" disabled={assign.isPending} onClick={() => { setDays(routineDaysToDraft(selectedTemplate.days)); setPersonalizing(true); setSelectingTemplate(false); setEditing(true); mutation.reset(); }}>Editar</Button><Button type="button" variant="ghost" disabled={assign.isPending} onClick={() => { setSelectedTemplate(null); assign.reset(); }}>Volver</Button></div></> : <>
+        <h4 className="font-semibold">Usar preestablecida</h4>{templates.isLoading ? <p role="status">Cargando rutinas preestablecidas…</p> : templates.isError ? <p role="alert">{errorMessage(templates.error)}</p> : templates.data?.length === 0 ? <p>No hay rutinas preestablecidas disponibles. Podés crear la rutina desde cero.</p> : <ul className="mt-3 grid gap-2">{templates.data?.map((template) => <li key={template.id}><Button type="button" variant="secondary" onClick={() => setSelectedTemplate(template)}>{template.name}</Button></li>)}</ul>}
+        <Button type="button" variant="ghost" onClick={() => setSelectingTemplate(false)}>Volver</Button>
+      </>}
+    </div> : null}
+    {canManage && editing ? <div className="mt-4 rounded-md border bg-white p-4"><h4 className="font-semibold">{personalizing ? 'Personalizar rutina' : active ? 'Editar rutina' : 'Nueva rutina'}</h4>{days.map((day, index) => <DayEditor key={day.key} day={day} index={index} definitions={[...(definitions.data ?? []), ...(selectedTemplate?.days.flatMap((day) => day.exercises.filter((entry) => entry.exerciseDefinition?.isActive === false).map((entry) => ({ id: entry.exerciseDefinitionId, name: entry.exerciseDefinition!.name, primaryMuscle: '', isActive: false }))) ?? [])]} catalogLoading={definitions.isLoading} catalogError={definitions.isError} onCreateExercise={createInlineExercise} disabled={mutation.isPending} canRemove={days.length > 1} onRemove={() => setDays((items) => items.filter((item) => item.key !== day.key))} onChange={(next) => setDays((items) => items.map((item) => item.key === day.key ? next : item))}/>)}<Button className="mt-3" type="button" variant="secondary" disabled={mutation.isPending} onClick={() => setDays((items) => [...items, newDay(`Día ${items.length + 1}`)])}>Agregar día</Button><div className="mt-4 flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setEditing(false)} disabled={mutation.isPending}>Cancelar</Button><Button type="button" onClick={() => { setFeedback(null); mutation.mutate(); }} disabled={mutation.isPending}>{mutation.isPending ? 'Guardando…' : 'Guardar rutina'}</Button></div></div> : null}
   </section>;
 }
 
 function RoutineSummary({ routine, definitions, onDuplicate, duplicating }: { routine: Routine; definitions: ExerciseDefinition[]; onDuplicate?: (() => void) | undefined; duplicating: boolean }): React.JSX.Element {
-  return <article className="mt-3 rounded-md border bg-white p-3"><div className="flex flex-wrap items-center justify-between gap-3"><h4 className="font-medium">Rutina v{routine.version}</h4><span className={routine.status === 'ACTIVE' ? 'rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-800' : 'rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700'}>{routine.status === 'ACTIVE' ? 'Activa' : 'Histórica'}</span>{onDuplicate ? <Button type="button" variant="secondary" disabled={duplicating} onClick={onDuplicate}>Duplicar rutina</Button> : null}</div><div className="mt-2 grid gap-3">{routine.days.map((day) => <div key={day.id ?? day.position}><p className="text-sm font-medium">{day.name ?? `Día ${day.position}`}</p>{day.exercises.length === 0 ? <p className="text-xs text-muted-foreground">Sin ejercicios.</p> : <ul className="mt-1 grid gap-1 text-sm">{day.exercises.map((exercise, index) => <li key={exercise.id ?? index}>{describeExercise(exercise, definitions)}</li>)}</ul>}</div>)}</div></article>;
+  return <article className="mt-3 rounded-md border bg-white p-3"><div className="flex flex-wrap items-center justify-between gap-3"><h4 className="font-medium">Rutina v{routine.version}</h4><span className={routine.status === 'ACTIVE' ? 'rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-800' : 'rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700'}>{routine.status === 'ACTIVE' ? 'Activa' : 'Histórica'}</span>{onDuplicate ? <Button type="button" variant="secondary" disabled={duplicating} onClick={onDuplicate}>Duplicar rutina</Button> : null}</div><RoutineContentSummary days={routine.days} definitions={definitions}/></article>;
 }

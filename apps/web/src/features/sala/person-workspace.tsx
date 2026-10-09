@@ -4,10 +4,10 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@athleta/ui';
-import { cancelSalaReservation, changeFixedSalaBooking, createFixedSalaBooking, createSalaExerciseDefinition, duplicateSalaRoutine, updateSalaExerciseDefinition, retireSalaExerciseDefinition, createSalaReservation, endFixedSalaBooking, getPerson, getSalaAvailability, listFixedSalaBookings, listPersonSalaParticipations, listPersonSalaRoutines, listSalaExerciseDefinitions, listSalaReservations, listPersonSalaServices, replaceSalaRoutine } from '@athleta/api-client';
+import { cancelSalaReservation, changeFixedSalaBooking, createFixedSalaBooking, createSalaExerciseDefinition, duplicateSalaRoutine, updateSalaExerciseDefinition, retireSalaExerciseDefinition, createSalaReservation, endFixedSalaBooking, getPerson, getSalaAvailability, listFixedSalaBookings, listPersonSalaParticipations, listPersonSalaRoutines, listSalaExerciseDefinitions, listSalaRoutineTemplates, listSalaReservations, listPersonSalaServices, replaceSalaRoutine } from '@athleta/api-client';
 import { currentSession } from '../auth/auth';
 import { WorkspaceShell } from '../auth/workspace-shell';
-import { RoutinePanel, type ExerciseDefinition, type Routine, type RoutineApi } from './routine-panel';
+import { RoutinePanel, type ExerciseDefinition, type Routine, type RoutineApi, type RoutineTemplate } from './routine-panel';
 import { PhysicalEvaluationPanel } from './physical-evaluation-panel';
 import { PaymentPanel } from './payment-panel';
 
@@ -50,6 +50,7 @@ export function SalaPersonWorkspace({ personId }: { personId: string }): React.J
   const reserve = useMutation({ mutationFn: async () => assertBookingResponse(await createSalaReservation({ ...bookingInput, date }, options(csrf))), onSuccess: refresh }); const createFixed = useMutation({ mutationFn: async () => assertBookingResponse(await createFixedSalaBooking(bookingInput, options(csrf))), onSuccess: refresh }); const updateFixed = useMutation({ mutationFn: async () => { if (editingFixed) assertBookingResponse(await changeFixedSalaBooking(editingFixed.id, { ...bookingInput, id: editingFixed.id }, options(csrf))); }, onSuccess: async () => { setEditingFixed(null); await refresh(); } }); const finishFixed = useMutation({ mutationFn: (id: string) => endFixedSalaBooking(id, { endDate: date }, options(csrf)), onSuccess: refresh }); const cancel = useMutation({ mutationFn: (id: string) => cancelSalaReservation(id, options(csrf)), onSuccess: refresh });
   const routineApi: RoutineApi = {
     list: async (id, requestOptions) => { const response = await listPersonSalaRoutines(id, requestOptions); assertRoutineResponse(response); return unwrap<Routine>(response); },
+    templates: async (requestOptions) => { const response = await listSalaRoutineTemplates(requestOptions); assertRoutineResponse(response); return unwrap<RoutineTemplate>(response); },
     exercises: async (requestOptions) => { const response = await listSalaExerciseDefinitions(requestOptions); assertRoutineResponse(response); return unwrap<ExerciseDefinition>(response); },
     create: async (input, requestOptions) => assertRoutineResponse(await replaceSalaRoutine(input, requestOptions)),
     replace: async (_id, input, requestOptions) => assertRoutineResponse(await replaceSalaRoutine(input, requestOptions)),

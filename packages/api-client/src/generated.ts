@@ -602,6 +602,12 @@ export interface RoutineDayDto {
   exercises: RoutineExerciseDto[];
 }
 
+export interface RoutineTemplateDto {
+  /** @maxLength 120 */
+  name: string;
+  days: RoutineDayDto[];
+}
+
 export interface ReplaceRoutineDto {
   personId: string;
   salaParticipationId: string;
@@ -3358,6 +3364,165 @@ export const createSpontaneousSalaOccurrence = async (spontaneousOccurrenceDto: 
 
   const data: createSpontaneousSalaOccurrenceResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createSpontaneousSalaOccurrenceResponse
+}
+
+
+
+export type listSalaRoutineTemplatesResponse200 = {
+  data: void
+  status: 200
+}
+
+export type listSalaRoutineTemplatesResponseSuccess = (listSalaRoutineTemplatesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listSalaRoutineTemplatesResponse = (listSalaRoutineTemplatesResponseSuccess)
+
+export const getListSalaRoutineTemplatesUrl = () => {
+
+
+
+
+  return `/api/sala/routine-templates`
+}
+
+export const listSalaRoutineTemplates = async ( options?: RequestInit): Promise<listSalaRoutineTemplatesResponse> => {
+
+  const res = await fetch(getListSalaRoutineTemplatesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSalaRoutineTemplatesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSalaRoutineTemplatesResponse
+}
+
+
+
+export type createSalaRoutineTemplateResponse201 = {
+  data: void
+  status: 201
+}
+
+export type createSalaRoutineTemplateResponseSuccess = (createSalaRoutineTemplateResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSalaRoutineTemplateResponse = (createSalaRoutineTemplateResponseSuccess)
+
+export const getCreateSalaRoutineTemplateUrl = () => {
+
+
+
+
+  return `/api/sala/routine-templates`
+}
+
+export const createSalaRoutineTemplate = async (routineTemplateDto: RoutineTemplateDto, options?: RequestInit): Promise<createSalaRoutineTemplateResponse> => {
+
+  const res = await fetch(getCreateSalaRoutineTemplateUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      routineTemplateDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSalaRoutineTemplateResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSalaRoutineTemplateResponse
+}
+
+
+
+export type updateSalaRoutineTemplateResponse200 = {
+  data: void
+  status: 200
+}
+
+export type updateSalaRoutineTemplateResponseSuccess = (updateSalaRoutineTemplateResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateSalaRoutineTemplateResponse = (updateSalaRoutineTemplateResponseSuccess)
+
+export const getUpdateSalaRoutineTemplateUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/routine-templates/${id}`
+}
+
+export const updateSalaRoutineTemplate = async (id: string,
+    routineTemplateDto: RoutineTemplateDto, options?: RequestInit): Promise<updateSalaRoutineTemplateResponse> => {
+
+  const res = await fetch(getUpdateSalaRoutineTemplateUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      routineTemplateDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateSalaRoutineTemplateResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateSalaRoutineTemplateResponse
+}
+
+
+
+export type deleteSalaRoutineTemplateResponse200 = {
+  data: void
+  status: 200
+}
+
+export type deleteSalaRoutineTemplateResponseSuccess = (deleteSalaRoutineTemplateResponse200) & {
+  headers: Headers;
+};
+;
+
+export type deleteSalaRoutineTemplateResponse = (deleteSalaRoutineTemplateResponseSuccess)
+
+export const getDeleteSalaRoutineTemplateUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/routine-templates/${id}`
+}
+
+export const deleteSalaRoutineTemplate = async (id: string, options?: RequestInit): Promise<deleteSalaRoutineTemplateResponse> => {
+
+  const res = await fetch(getDeleteSalaRoutineTemplateUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteSalaRoutineTemplateResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as deleteSalaRoutineTemplateResponse
 }
 
 
