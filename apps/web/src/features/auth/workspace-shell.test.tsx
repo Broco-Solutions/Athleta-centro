@@ -1,6 +1,6 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { currentSession } from './auth';
 import { WorkspaceShell } from './workspace-shell';
@@ -38,7 +38,7 @@ describe('WorkspaceShell', () => {
 
     const brand = await screen.findByRole('link', { name: 'Athleta · Inicio' });
     expect(brand).toHaveAttribute('href', '/');
-    expect(within(brand).getByText('ATHLETA')).toBeInTheDocument();
+    expect(within(brand).getByRole('img', { name: 'Athleta' })).toHaveAttribute('src', expect.stringContaining('logo-athleta.png'));
 
     const navigation = screen.getByRole('navigation', { name: 'Navegación principal' });
     expect(within(navigation).getByRole('link', { name: 'Inicio' })).toHaveAttribute('aria-current', 'page');
@@ -58,18 +58,58 @@ describe('WorkspaceShell', () => {
     ['Personas', 'PEOPLE_READ', ['Personas']],
     ['Equipo', 'TEAM_READ', ['Equipo']],
     ['Sala', 'SALA_AGENDA_MANAGE', ['Sala']],
+    ['Rutinas', 'SALA_ROUTINE_MANAGE', ['Sala', 'Rutinas']],
     ['Reservas', 'SALA_RELATION_READ', ['Reservas']],
     ['Clínica', 'CLINIC_OPERATIONAL_READ', ['Reservas', 'Clínica']],
     ['Finanzas', 'FINANCE_OPERATIONAL_READ', ['Finanzas']],
   ])('mantiene la regla de acceso actual de %s', async (_label, permission, expectedLabels) => {
     renderShell({ permissions: [permission] });
 
-    const navigation = await screen.findByRole('navigation', { name: 'Navegación principal' });
-    for (const label of expectedLabels) expect(within(navigation).getByRole('link', { name: label })).toBeInTheDocument();
-    for (const hiddenLabel of ['Personas', 'Equipo', 'Sala', 'Reservas', 'Clínica', 'Finanzas']) {
-      if (!expectedLabels.includes(hiddenLabel)) expect(within(navigation).queryByRole('link', { name: hiddenLabel })).not.toBeInTheDocument();
+    const desktopNavigation = await screen.findByRole('navigation', { name: 'Navegación principal' });
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
+    const drawer = screen.getByRole('dialog', { name: 'Menú principal' });
+    for (const navigation of [desktopNavigation, within(drawer).getByRole('navigation')]) {
+      expect(within(navigation).getAllByRole('link').map((link) => link.textContent)).toEqual(['Inicio', ...expectedLabels]);
     }
-    expect(within(navigation).getByRole('link', { name: 'Inicio' })).toBeInTheDocument();
+  });
+
+  it('abre el drawer cerrado inicialmente y conserva la marca y el activo amarillo en ambas navegaciones', async () => {
+    renderShell({ permissions: ['PEOPLE_READ'], active: 'Personas' });
+
+    const trigger = await screen.findByRole('button', { name: 'Abrir menú' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveAttribute('aria-controls', 'internal-mobile-navigation');
+    expect(screen.queryByRole('dialog', { name: 'Menú principal' })).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const drawer = screen.getByRole('dialog', { name: 'Menú principal' });
+    expect(drawer).toHaveAttribute('id', 'internal-mobile-navigation');
+    const brand = within(drawer).getByRole('link', { name: 'Athleta · Inicio' });
+    expect(brand).toHaveAttribute('href', '/');
+    expect(within(brand).getByRole('img', { name: 'Athleta' })).toBeInTheDocument();
+    for (const navigation of [drawer, screen.getByRole('navigation', { name: 'Navegación principal' })]) {
+      const activeLink = within(navigation).getByRole('link', { name: 'Personas' });
+      expect(activeLink).toHaveAttribute('aria-current', 'page');
+      expect(activeLink).toHaveClass('bg-primary', 'font-semibold', 'text-primary-foreground');
+    }
+  });
+
+  it.each(['botón', 'overlay', 'acceso', 'marca', 'Escape'])('cierra el drawer mediante %s', async (method) => {
+    renderShell({ permissions: ['PEOPLE_READ'] });
+    const trigger = await screen.findByRole('button', { name: 'Abrir menú' });
+    fireEvent.click(trigger);
+    const drawer = screen.getByRole('dialog', { name: 'Menú principal' });
+
+    if (method === 'botón') fireEvent.click(within(drawer).getByRole('button', { name: 'Cerrar menú' }));
+    if (method === 'overlay') fireEvent.click(screen.getByRole('button', { name: 'Cerrar menú desde el fondo' }));
+    if (method === 'acceso') fireEvent.click(within(drawer).getByRole('link', { name: 'Personas' }));
+    if (method === 'marca') fireEvent.click(within(drawer).getByRole('link', { name: 'Athleta · Inicio' }));
+    if (method === 'Escape') fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog', { name: 'Menú principal' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cerrar menú desde el fondo' })).not.toBeInTheDocument();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('muestra las acciones de usuario para una sesión interna normal', async () => {

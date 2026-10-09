@@ -4,7 +4,8 @@ import React from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import Image from 'next/image';
-import { Activity, CalendarDays, ClipboardList, Dumbbell, UserCog, Users, Wallet } from 'lucide-react';
+import { Activity, CalendarDays, ClipboardList, Dumbbell, Menu, UserCog, Users, Wallet, X } from 'lucide-react';
+import { Button } from '@athleta/ui';
 import { currentSession } from './auth';
 import { AuthShell } from './auth-shell';
 
@@ -30,24 +31,54 @@ const navigation: NavigationItem[] = [
 ];
 
 export function WorkspaceShell({ children, active }: { children: React.ReactNode; active: string }): React.JSX.Element {
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const closeMenuRef = React.useRef<HTMLButtonElement>(null);
   const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false });
   const permissions = session.data?.permissions ?? [];
   const visibleNavigation = navigation.filter((item) => item.canAccess(permissions));
 
-  return <AuthShell>
+  React.useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeMenuRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileMenuOpen(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      trigger?.focus();
+    };
+  }, [mobileMenuOpen]);
+
+  const navigationLinks = (onNavigate?: () => void) => visibleNavigation.map(({ href, label, icon: Icon }) => <Link key={label} aria-current={active === label ? 'page' : undefined} className={`flex min-h-11 items-center gap-3 rounded-md px-3 py-2.5 text-sm md:min-h-0 ${active === label ? 'bg-primary font-semibold text-primary-foreground' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'}`} href={href} onClick={() => onNavigate?.()}>
+    <Icon aria-hidden="true" size={18} />
+    <span>{label}</span>
+  </Link>);
+
+  return <AuthShell mobileNavigationTrigger={<Button variant="ghost" aria-label="Abrir menú" aria-expanded={mobileMenuOpen} aria-controls="internal-mobile-navigation" className="h-11 gap-2 px-3 md:hidden" onClick={() => setMobileMenuOpen(true)}><Menu aria-hidden="true" size={20} />Menú</Button>}>
     <main className="min-h-screen min-w-0 bg-background pt-14 md:ml-60">
-      <aside className="flex min-w-0 items-center gap-4 overflow-x-auto bg-sidebar px-4 py-3 text-sidebar-foreground md:fixed md:inset-y-0 md:left-0 md:z-50 md:w-60 md:items-stretch md:flex-col md:gap-0 md:overflow-y-auto md:px-4 md:py-6">
-        <Link href="/" aria-label="Athleta · Inicio" className="mr-2 shrink-0 text-center md:mb-10 md:mr-0">
-          <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-36 md:w-full" />
+      <aside className="fixed inset-y-0 left-0 z-50 hidden w-60 min-w-0 flex-col overflow-y-auto bg-sidebar px-4 py-6 text-sidebar-foreground md:flex">
+        <Link href="/" aria-label="Athleta · Inicio" className="mb-10 shrink-0 text-center">
+          <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-full" />
         </Link>
-        <nav aria-label="Navegación principal" className="flex min-w-0 shrink-0 gap-1 md:block md:space-y-1">
-          {visibleNavigation.map(({ href, label, icon: Icon }) => <Link key={label} aria-current={active === label ? 'page' : undefined} className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm ${active === label ? 'bg-primary font-semibold text-primary-foreground' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'}`} href={href}>
-            <Icon aria-hidden="true" size={18} />
-            <span>{label}</span>
-          </Link>)}
+        <nav aria-label="Navegación principal" className="min-w-0 space-y-1">
+          {navigationLinks()}
         </nav>
       </aside>
-      <section className="min-w-0 p-5 md:pt-8 md:px-8 md:pb-8">{children}</section>
+      {mobileMenuOpen ? <>
+        <button type="button" aria-label="Cerrar menú desde el fondo" className="fixed inset-0 z-50 bg-black/40 md:hidden" onClick={() => setMobileMenuOpen(false)} />
+        <div id="internal-mobile-navigation" role="dialog" aria-label="Menú principal" className="fixed inset-y-0 left-0 z-[60] w-72 max-w-[85vw] min-w-0 overflow-y-auto bg-sidebar px-4 py-6 text-sidebar-foreground md:hidden">
+          <div className="mb-8 flex min-w-0 items-start justify-between gap-3">
+            <Link href="/" aria-label="Athleta · Inicio" className="min-w-0 flex-1" onClick={() => setMobileMenuOpen(false)}>
+              <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" className="h-auto w-full max-w-44" />
+            </Link>
+            <button ref={closeMenuRef} type="button" aria-label="Cerrar menú" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setMobileMenuOpen(false)}><X aria-hidden="true" size={20} /></button>
+          </div>
+          <nav aria-label="Navegación móvil" className="min-w-0 space-y-1">{navigationLinks(() => setMobileMenuOpen(false))}</nav>
+        </div>
+      </> : null}
+      <section className="min-w-0 p-4 sm:p-5 md:p-8">{children}</section>
     </main>
   </AuthShell>;
 }
