@@ -131,3 +131,54 @@ it.each(['12:15', '12:45'])('shows historical fixed start %s and requires a new 
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
   await waitFor(() => expect(submitted).toMatchObject({ scheduleSlotId: 'window', startTime: '12:30' }));
 });
+
+const workspaceRoutine = { id: 'routine', personId, salaParticipationId: 'participation', status: 'ACTIVE', version: 1, days: [{ position: 1, name: 'Día de fuerza', exercises: [{ exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla' }, series: null }] }] };
+function routineSession(permissions: string[]) {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor', firstName: 'Profesor', lastName: 'Sintético' }, roles: ['PROFESSOR'], permissions, csrfToken: 'csrf', mustChangePassword: false } })));
+}
+function routineHandlers() {
+  let reads = 0;
+  server.use(
+    http.get(`http://localhost:3000/api/sala/people/${personId}/routines`, () => { reads++; return HttpResponse.json({ data: [workspaceRoutine] }); }),
+    http.get('http://localhost:3000/api/sala/exercise-definitions', () => HttpResponse.json({ data: [{ id: 'squat', name: 'Sentadilla', primaryMuscle: 'Piernas', isActive: true }] })),
+  );
+  return () => reads;
+}
+it('allows routine read permission to access the tab and see the routine without management', async () => {
+  navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ']); const reads = routineHandlers(); renderWorkspace();
+  expect(await screen.findByRole('link', { name: 'Rutina' })).toHaveAttribute('href', `/sala/people/${personId}?tab=routine`);
+  expect(await screen.findByText('Día de fuerza')).toBeInTheDocument();
+  expect(screen.getByText('Sentadilla')).toBeInTheDocument(); expect(reads()).toBe(1);
+  for (const name of ['Crear rutina', 'Editar rutina', 'Duplicar rutina']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument();
+});
+it.each(['summary', 'routine'])('hides routine access without read permission and avoids routine requests on %s', async (tab) => {
+  navigation.tab = tab; routineSession(['SALA_ROUTINE_MANAGE']); const reads = routineHandlers(); renderWorkspace();
+  await screen.findByText('Participación activa');
+  expect(screen.queryByRole('link', { name: 'Rutina' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /Consultar Rutina/ })).not.toBeInTheDocument();
+  expect(screen.queryByText('Día de fuerza')).not.toBeInTheDocument(); expect(reads()).toBe(0);
+});
+it('treats an Orval HTTP 409 as a mutation error and preserves the editor without success or refresh', async () => {
+  navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); const reads = routineHandlers();
+  let writes = 0;
+  server.use(http.post('http://localhost:3000/api/sala/routines', () => { writes++; return HttpResponse.json({ code: 'SALA_EXERCISE_INVALID', message: 'El ejercicio fue retirado.' }, { status: 409 }); }));
+  renderWorkspace(); await screen.findByText('Día de fuerza'); fireEvent.click(screen.getByRole('button', { name: 'Editar rutina' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar rutina' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('El ejercicio fue retirado.');
+  expect(writes).toBe(1); expect(reads()).toBe(1);
+  expect(screen.getByLabelText('Nombre del día 1')).toHaveValue('Día de fuerza');
+  expect(screen.queryByText('Rutina guardada correctamente.')).not.toBeInTheDocument();
+});
+it('preserves structured HTTP retirement errors so the panel displays impact before confirmation', async () => {
+  navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); routineHandlers();
+  const confirmations: boolean[] = [];
+  server.use(http.post('http://localhost:3000/api/sala/exercise-definitions/squat/retire', async ({ request }) => {
+    const body = await request.json() as { confirmActiveRoutineImpact: boolean }; confirmations.push(body.confirmActiveRoutineImpact);
+    return body.confirmActiveRoutineImpact ? HttpResponse.json({ data: { affectedActiveRoutines: 2 } }) : HttpResponse.json({ code: 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED', message: 'Confirmation required', details: { activeRoutines: 2 } }, { status: 409 });
+  }));
+  renderWorkspace(); await screen.findByText('Día de fuerza'); fireEvent.click(screen.getByText('Administrar ejercicios'));
+  fireEvent.click(await screen.findByRole('button', { name: 'Retirar' }));
+  expect(await screen.findByRole('alertdialog')).toHaveTextContent('2 Rutinas activas'); expect(confirmations).toEqual([false]);
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar retiro' })); await screen.findByText('Ejercicio retirado correctamente.'); expect(confirmations).toEqual([false, true]);
+});

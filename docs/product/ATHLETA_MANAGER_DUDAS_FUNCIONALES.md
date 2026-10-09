@@ -128,7 +128,7 @@ El resto de las dudas originales figura resuelto, no aplica o queda a criterio t
 | SAL-RUT-01 | RESUELTO | Todo ejercicio de una Rutina proviene del catálogo. Si no existe, Profesor/Admin general puede crearlo durante la carga y continuar. | §6.23 |
 | SAL-RUT-02 | RESUELTO | Editar Nombre, Músculo principal o Descripción actualiza el mismo Ejercicio y las Rutinas que lo utilizan muestran la definición actual. | §6.23 |
 | SAL-RUT-03 | RESUELTO | No. Si se retira un Ejercicio utilizado en Rutinas activas, previa advertencia se quita también de esas Rutinas. Las históricas no se modifican. | §6.23 |
-| SAL-RUT-04 | RESUELTO | Sí. Puede retirarse un Ejercicio usado en Rutinas activas; se informa cuántas serán afectadas y, al confirmar, se elimina de esas Rutinas activas. | §6.23 |
+| SAL-RUT-04 | RESUELTO | Sí. Puede retirarse un Ejercicio usado en Rutinas activas; se informa la cantidad de Rutinas activas distintas afectadas, no la cantidad de apariciones del Ejercicio. Al confirmar, se elimina de esas Rutinas activas; las históricas permanecen sin modificación. | §6.23 |
 | SAL-RUT-05 | RESUELTO | Solo el Ejercicio es obligatorio. Series, Repeticiones/Tiempo, Carga, Descanso y Observación son opcionales. | §6.21 |
 | SAL-RUT-06 | RESUELTO | Repeticiones y Tiempo son alternativas dentro de un mismo ejercicio. | §6.21 |
 | SAL-RUT-07 | RESUELTO | Tiempo, Carga y Descanso se expresan como texto breve incluyendo unidad/referencia. No existe catálogo de unidades. | §6.21 |

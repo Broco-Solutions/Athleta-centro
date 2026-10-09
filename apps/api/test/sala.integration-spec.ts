@@ -519,10 +519,63 @@ describe('Sala configuration API', () => {
     const plan = await prisma.salaPlan.create({ data: { name: 'Leave rollback', monthlyAmount: 1000 } }); const service = await sala.createServiceType({ name: 'Musculación', durationMinutes: 60 }); await prisma.salaPlanService.create({ data: { planId: plan.id, serviceTypeId: service.id } }); const slot = await sala.createSlot({ weekday: 'FRIDAY', startTime: '18:00', durationMinutes: 120 }); const professor = await users.create({ firstName: 'Prof', lastName: 'Leave rollback', email: `leave-rollback-${uniqueDni()}@sala.test`, roles: [Role.PROFESSOR] }); const dni = uniqueDni(); const person = await prisma.person.create({ data: { firstName: 'Leave', lastName: 'Rollback', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1991-01-01T00:00:00Z') } }); const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' }); const fixed = await sala.createFixed({ personId: person.id, salaParticipationId: participation.id, scheduleSlotId: slot.id, serviceTypeId: service.id, startDate: '2026-01-01' }); const reservation = await sala.createReservation({ personId: person.id, salaParticipationId: participation.id, scheduleSlotId: slot.id, serviceTypeId: service.id, startTime: '19:00', date: '2026-08-28', confirmOverbooking: true }); await expect(sala.leave(participation.id, true)).rejects.toThrow('SIMULATED_LEAVE_FAILURE'); expect((await prisma.salaParticipation.findUnique({ where: { id: participation.id } }))?.endDate).toBeNull(); expect((await prisma.fixedSalaBooking.findUnique({ where: { id: fixed.id } }))?.endDate).toBeNull(); expect((await prisma.oneOffReservation.findUnique({ where: { id: reservation.id } }))?.cancelledAt).toBeNull();
   });
   it('replaces routines transactionally, preserves history and enforces exercise rules', async () => {
-    const dni = uniqueDni(); const person = await prisma.person.create({ data: { firstName: 'Routine', lastName: 'Person', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1991-01-01T00:00:00Z') } }); const plan = await prisma.salaPlan.create({ data: { name: `Routine-${dni}`, monthlyAmount: 1000 } }); const professor = await users.create({ firstName: 'Routine', lastName: 'Professor', email: `routine-${dni}@sala.test`, roles: [Role.PROFESSOR] }); const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' }); const exercise = await sala.createExerciseDefinition({ name: `Sentadilla-${dni}`, primaryMuscle: 'Piernas' });
-    const first = await sala.replaceRoutine({ personId: person.id, salaParticipationId: participation.id, days: [{ exercises: [{ exerciseDefinitionId: exercise.id, series: '3', repetitions: '10' }] }] }); expect(first.status).toBe('ACTIVE');
-    const second = await sala.replaceRoutine({ personId: person.id, salaParticipationId: participation.id, days: [{ name: 'Día B', exercises: [{ exerciseDefinitionId: exercise.id, series: '4', duration: '30s' }] }] }); expect(second.status).toBe('ACTIVE'); expect(await prisma.routine.count({ where: { personId: person.id } })).toBe(2); expect(await prisma.routine.count({ where: { personId: person.id, status: 'ACTIVE' } })).toBe(1); await expect(sala.replaceRoutine({ personId: person.id, salaParticipationId: participation.id, days: [{ exercises: [{ exerciseDefinitionId: exercise.id, series: '1', repetitions: '1', duration: '1m' }] }] })).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_REPETITIONS_DURATION_EXCLUSIVE' } });
-    await expect(sala.retireExerciseDefinition(exercise.id, false)).rejects.toMatchObject({ response: { code: 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED' } }); await sala.retireExerciseDefinition(exercise.id, true); expect((await prisma.exerciseDefinition.findUnique({ where: { id: exercise.id } }))?.isActive).toBe(false); expect(await prisma.routineExercise.count({ where: { exerciseDefinitionId: exercise.id, routineDay: { routine: { status: 'ACTIVE' } } } })).toBe(0); expect(await prisma.routineExercise.count({ where: { exerciseDefinitionId: exercise.id, routineDay: { routine: { status: 'HISTORICAL' } } } })).toBe(1);
+    const dni = uniqueDni();
+    const person = await prisma.person.create({ data: { firstName: 'Routine', lastName: 'Person', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1991-01-01T00:00:00Z') } });
+    const plan = await prisma.salaPlan.create({ data: { name: `Routine-${dni}`, monthlyAmount: 1000 } });
+    const professor = await users.create({ firstName: 'Routine', lastName: 'Professor', email: `routine-${dni}@sala.test`, roles: [Role.PROFESSOR] });
+    const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' });
+    const exercise = await sala.createExerciseDefinition({ name: `Sentadilla-${dni}`, primaryMuscle: 'Piernas' });
+    const otherExercise = await sala.createExerciseDefinition({ name: `Plancha-${dni}`, primaryMuscle: 'Core' });
+    const input = { personId: person.id, salaParticipationId: participation.id, days: [
+      { name: 'Día 1', exercises: [
+        { exerciseDefinitionId: exercise.id, series: null, repetitions: '10', load: '40 kg', rest: '30 s', notes: 'Técnica controlada' },
+        { exerciseDefinitionId: otherExercise.id, duration: '45 s' },
+      ] },
+      { name: 'Día 2', exercises: [{ exerciseDefinitionId: exercise.id, series: '4', duration: '30 s', load: 'Peso corporal', rest: '1 min', notes: 'Sin dolor' }] },
+    ] };
+    const first = await sala.replaceRoutine(input);
+    expect(first.status).toBe('ACTIVE');
+    expect(first.days.map(day => day.position)).toEqual([1, 2]);
+    expect(first.days.map(day => day.exercises.map(entry => entry.position))).toEqual([[1, 2], [1]]);
+    expect(first.days[0]?.exercises[0]).toMatchObject({ series: null, repetitions: '10', duration: null, load: '40 kg', rest: '30 s', notes: 'Técnica controlada' });
+    expect(first.days[0]?.exercises[1]).toMatchObject({ series: null, repetitions: null, duration: '45 s', load: null, rest: null, notes: null });
+
+    await expect(sala.replaceRoutine(input, true)).rejects.toThrow('SIMULATED_ROUTINE_REPLACEMENT_FAILURE');
+    expect(await prisma.routine.findUnique({ where: { id: first.id } })).toMatchObject({ status: 'ACTIVE' });
+    expect(await prisma.routine.count({ where: { personId: person.id } })).toBe(1);
+    const second = await sala.replaceRoutine({ ...input, days: input.days.map(day => ({ ...day, name: `${day.name} editado` })) });
+    expect(second).toMatchObject({ status: 'ACTIVE', version: first.version + 1 });
+    expect(await prisma.routine.findUnique({ where: { id: first.id } })).toMatchObject({ status: 'HISTORICAL' });
+    expect(second.days.map(day => day.name)).toEqual(['Día 1 editado', 'Día 2 editado']);
+    expect(second.days.map(day => day.exercises.length)).toEqual([2, 1]);
+    await expect(sala.replaceRoutine({ ...input, days: [{ exercises: [{ exerciseDefinitionId: exercise.id, repetitions: '1', duration: '1m' }] }] })).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_REPETITIONS_DURATION_EXCLUSIVE' } });
+    expect(await prisma.routine.count({ where: { personId: person.id } })).toBe(2);
+    expect(await prisma.routine.count({ where: { personId: person.id, status: 'ACTIVE' } })).toBe(1);
+
+    const duplicate = await sala.duplicateRoutine(second.id);
+    expect(duplicate.id).not.toBe(second.id);
+    expect(duplicate).toMatchObject({ version: second.version + 1, status: 'ACTIVE' });
+    const functionalDays = (routine: typeof second) => routine.days.map(day => ({ name: day.name, position: day.position, exercises: day.exercises.map(entry => ({ exerciseDefinitionId: entry.exerciseDefinitionId, position: entry.position, series: entry.series, repetitions: entry.repetitions, duration: entry.duration, load: entry.load, rest: entry.rest, notes: entry.notes })) }));
+    expect(functionalDays(duplicate)).toEqual(functionalDays(second));
+    expect(await prisma.routine.findUnique({ where: { id: second.id } })).toMatchObject({ status: 'HISTORICAL' });
+    expect(await prisma.routine.count({ where: { personId: person.id, status: 'ACTIVE' } })).toBe(1);
+    const sourceIds = new Set(second.days.flatMap(day => [day.id, ...day.exercises.map(entry => entry.id)]));
+    expect(duplicate.days.flatMap(day => [day.id, ...day.exercises.map(entry => entry.id)]).some(id => sourceIds.has(id))).toBe(false);
+
+    const otherDni = uniqueDni();
+    const otherPerson = await prisma.person.create({ data: { firstName: 'Otra', lastName: 'Persona', dni: otherDni, normalizedDni: otherDni, phone: '351', birthDate: new Date('1991-01-01T00:00:00Z') } });
+    const otherParticipation = await sala.join({ personId: otherPerson.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' });
+    await sala.replaceRoutine({ personId: otherPerson.id, salaParticipationId: otherParticipation.id, days: [{ exercises: [{ exerciseDefinitionId: exercise.id }] }] });
+    await expect(sala.retireExerciseDefinition(exercise.id, false)).rejects.toMatchObject({ response: { code: 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED', details: { activeRoutines: 2 } } });
+    expect(await prisma.routineExercise.count({ where: { exerciseDefinitionId: exercise.id, routineDay: { routine: { status: 'ACTIVE' } } } })).toBe(3);
+    expect(await prisma.exerciseDefinition.findUnique({ where: { id: exercise.id } })).toMatchObject({ isActive: true });
+    const historicalBefore = await prisma.routineExercise.findMany({ where: { routineDay: { routine: { status: 'HISTORICAL' } } }, orderBy: { id: 'asc' } });
+    expect(await sala.retireExerciseDefinition(exercise.id, true)).toMatchObject({ affectedActiveRoutines: 2 });
+    expect(await prisma.exerciseDefinition.findUnique({ where: { id: exercise.id } })).toMatchObject({ isActive: false });
+    expect(await prisma.routineExercise.count({ where: { exerciseDefinitionId: exercise.id, routineDay: { routine: { status: 'ACTIVE' } } } })).toBe(0);
+    expect(await prisma.routineExercise.findMany({ where: { routineDay: { routine: { status: 'HISTORICAL' } } }, orderBy: { id: 'asc' } })).toEqual(historicalBefore);
+    expect((await sala.listRoutines(person.id)).find(routine => routine.id === first.id)?.days[0]?.exercises[0]?.exerciseDefinition.name).toBe(exercise.name);
+    expect((await sala.listExerciseDefinitions()).some(definition => definition.id === exercise.id)).toBe(false);
   });
   it('persists and lists physical test definitions', async () => {
     const test = await sala.createPhysicalTest({ name: `Catalog-${uniqueDni()}`, type: 'distance', description: 'Centimeters' });

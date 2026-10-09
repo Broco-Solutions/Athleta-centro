@@ -475,11 +475,12 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     return this.prisma.$transaction(async (tx) => {
       const exercise = await tx.exerciseDefinition.findUnique({ where: { id } });
       if (!exercise || !exercise.isActive) throw new NotFoundException({ code: 'SALA_EXERCISE_NOT_FOUND', message: 'Exercise not found' });
-      const activeUses = await tx.routineExercise.count({ where: { exerciseDefinitionId: id, routineDay: { routine: { status: RoutineStatus.ACTIVE } } } });
-      if (activeUses > 0 && !confirmActiveRoutineImpact) throw new ConflictException({ code: 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED', message: 'Confirmation is required because active routines are affected', details: { activeRoutineExercises: activeUses } });
-      if (activeUses > 0) await tx.routineExercise.deleteMany({ where: { exerciseDefinitionId: id, routineDay: { routine: { status: RoutineStatus.ACTIVE } } } });
+      const affectedDays = await tx.routineDay.findMany({ where: { routine: { status: RoutineStatus.ACTIVE }, exercises: { some: { exerciseDefinitionId: id } } }, select: { routineId: true }, distinct: ['routineId'] });
+      const activeRoutines = affectedDays.length;
+      if (activeRoutines > 0 && !confirmActiveRoutineImpact) throw new ConflictException({ code: 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED', message: 'Confirmation is required because active routines are affected', details: { activeRoutines } });
+      if (activeRoutines > 0) await tx.routineExercise.deleteMany({ where: { exerciseDefinitionId: id, routineDay: { routine: { status: RoutineStatus.ACTIVE } } } });
       const retired = await tx.exerciseDefinition.update({ where: { id }, data: { isActive: false } });
-      return { exercise: retired, affectedActiveRoutineExercises: activeUses };
+      return { exercise: retired, affectedActiveRoutines: activeRoutines };
     });
   }
   async listRoutines(personId: string) { return this.prisma.routine.findMany({ where: { personId }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } }, salaParticipation: { select: { id: true, startDate: true, endDate: true } } }, orderBy: { version: 'desc' } }); }
