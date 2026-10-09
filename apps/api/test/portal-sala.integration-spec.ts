@@ -21,6 +21,7 @@ describe('Portal Sala services from the current plan', () => {
   let planId: string;
   let windowId: string;
   let serviceIds: string[] = [];
+  let exerciseDefinitionIds: string[] = [];
   let paymentMethodId: string;
   let reservationNow: jest.SpyInstance<Date, []>;
   let operationalDate: jest.SpyInstance<string, []>;
@@ -52,10 +53,13 @@ describe('Portal Sala services from the current plan', () => {
       await prisma.fixedSalaBooking.deleteMany({ where: { personId } });
       await prisma.session.deleteMany({ where: { personId } });
       await prisma.salaCharge.deleteMany({ where: { personId } });
+      await prisma.routine.deleteMany({ where: { personId } });
       await prisma.salaParticipation.deleteMany({ where: { personId } });
       await prisma.portalCredential.deleteMany({ where: { personId } });
       await prisma.person.deleteMany({ where: { id: personId } });
     }
+    await prisma.exerciseDefinition.deleteMany({ where: { id: { in: exerciseDefinitionIds } } });
+    exerciseDefinitionIds = [];
     if (paymentMethodId) await prisma.paymentMethod.deleteMany({ where: { id: paymentMethodId } });
     if (planId) await prisma.salaPlan.deleteMany({ where: { id: planId } });
     await prisma.salaServiceType.deleteMany({ where: { id: { in: serviceIds } } });
@@ -91,6 +95,34 @@ describe('Portal Sala services from the current plan', () => {
     return { muscle, calisthenics, participation, cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string,
       body: { date, startDate: date, scheduleSlotId: window.id, startTime: '09:00' } };
   }
+
+  it('returns exercise definitions and all routine details in persisted position order', async () => {
+    const f = await fixture();
+    const squat = await sala.createExerciseDefinition({ name: `Sentadilla ${crypto.randomUUID()}`, primaryMuscle: 'Cuádriceps', description: 'Descenso controlado' });
+    exerciseDefinitionIds.push(squat.id);
+    const plank = await sala.createExerciseDefinition({ name: `Plancha ${crypto.randomUUID()}`, primaryMuscle: 'Abdominales' });
+    exerciseDefinitionIds.push(plank.id);
+    const timed = { exerciseDefinitionId: plank.id, series: '3', duration: '45 s', rest: '30 s' };
+    const repetitions = { exerciseDefinitionId: squat.id, series: '3', repetitions: '10', load: '40 kg', rest: '60 s', notes: 'Controlar técnica' };
+    const routine = await sala.replaceRoutine({ personId, salaParticipationId: f.participation.id, days: [
+      { name: 'Día 2', exercises: [timed] },
+      { name: 'Día 1', exercises: [timed, repetitions] },
+    ] });
+    // Persist an order different from insertion order for both days and exercises.
+    await prisma.routineDay.update({ where: { id: routine.days[0]!.id }, data: { position: 3 } });
+    await prisma.routineExercise.update({ where: { id: routine.days[1]!.exercises[0]!.id }, data: { position: 3 } });
+
+    const portal = await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
+    expect(portal.body.data.routine).toMatchObject({ id: routine.id, status: 'ACTIVE', days: [
+      { name: 'Día 1', position: 2, exercises: [
+        { position: 2, exerciseDefinition: { name: squat.name, description: 'Descenso controlado' }, series: '3', repetitions: '10', duration: null, load: '40 kg', rest: '60 s', notes: 'Controlar técnica' },
+        { position: 3, exerciseDefinition: { name: plank.name, description: null }, series: '3', repetitions: null, duration: '45 s', load: null, rest: '30 s', notes: null },
+      ] },
+      { name: 'Día 2', position: 3, exercises: [
+        { position: 1, exerciseDefinition: { name: plank.name, description: null }, series: '3', duration: '45 s', rest: '30 s' },
+      ] },
+    ] });
+  });
 
   async function payment(date: string) {
     const method = await prisma.paymentMethod.create({ data: { name: `Portal efectivo ${crypto.randomUUID()}` } });

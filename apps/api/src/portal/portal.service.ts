@@ -27,7 +27,20 @@ export class PortalService {
     const fixed = await this.prisma.fixedSalaBooking.findMany({ where: { personId: person.id }, include: { scheduleSlot: true, serviceType: true }, orderBy: { startDate: 'asc' } });
     const dates = Array.from({ length: 31 }, (_, index) => { const day = new Date(`${today}T00:00:00.000Z`); day.setUTCDate(day.getUTCDate() + index); return day.toISOString().slice(0, 10); });
     const fixedOccurrences = await this.salaService.fixedOccurrenceStates(person.id, dates);
-    const routine = await this.prisma.routine.findFirst({ where: { personId: person.id, status: 'ACTIVE' }, include: { days: { include: { exercises: true } } } });
+    const routine = await this.prisma.routine.findFirst({
+      where: { personId: person.id, status: 'ACTIVE' },
+      include: {
+        days: {
+          orderBy: { position: 'asc' },
+          include: {
+            exercises: {
+              orderBy: { position: 'asc' },
+              include: { exerciseDefinition: { select: { name: true, description: true } } },
+            },
+          },
+        },
+      },
+    });
     const evaluations = await this.prisma.physicalEvaluation.findMany({ where: { personId: person.id }, orderBy: { evaluationDate: 'desc' }, take: 20 });
     const [year, month] = today.split('-').map(Number) as [number, number, number];
     const payment = await this.prisma.salaPayment.findFirst({ where: { personId: person.id, year, month, reversal: { is: null } } });

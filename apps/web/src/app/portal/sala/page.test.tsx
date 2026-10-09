@@ -25,6 +25,31 @@ beforeEach(() => {
 afterEach(() => { server.resetHandlers(); vi.restoreAllMocks(); });
 afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 function renderPortalSala(): void { render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><PortalSala /></QueryClientProvider>); }
+
+it('shows exercise names, descriptions and only populated routine details', async () => {
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: {
+    reservations: [], fixed: [], evaluations: [], paymentState: 'PENDING',
+    routine: { days: [{ id: 'day-1', name: 'Día 1', exercises: [
+      { exerciseDefinition: { name: 'Sentadilla', description: 'Descenso controlado' }, series: '3', repetitions: '10', duration: null, load: '40 kg', rest: '60 s', notes: 'Controlar técnica' },
+      { exerciseDefinition: { name: 'Plancha', description: null }, series: '3', repetitions: null, duration: '45 s', load: null, rest: '30 s', notes: null },
+      { exerciseDefinition: { name: 'Movilidad', description: '' }, series: '', repetitions: '', duration: '', load: '', rest: '', notes: '' },
+    ] }] },
+  } })));
+  renderPortalSala();
+  await screen.findByRole('heading', { name: 'Día 1' });
+  const routine = within(document.getElementById('rutina')!);
+  expect(routine.getByText('Sentadilla · 3 series · 10 rep. · Carga 40 kg · Descanso 60 s · Observación Controlar técnica')).toBeInTheDocument();
+  expect(routine.getByText('Descenso controlado')).toBeInTheDocument();
+  expect(routine.getByText('Plancha · 3 series · Tiempo 45 s · Descanso 30 s')).toBeInTheDocument();
+  expect(routine.getByText('Movilidad')).toBeInTheDocument();
+  expect(routine.getAllByRole('listitem').map(item => item.textContent)).toEqual([
+    'Sentadilla · 3 series · 10 rep. · Carga 40 kg · Descanso 60 s · Observación Controlar técnicaDescenso controlado',
+    'Plancha · 3 series · Tiempo 45 s · Descanso 30 s',
+    'Movilidad',
+  ]);
+  expect(routine.queryByText(/Ejercicio ·|— series|— rep\.|undefined|null/)).not.toBeInTheDocument();
+});
+
 function fixedHandlers(state: { weekday: string; startTime: string; active: boolean }, onChange?: (body: Record<string, string>) => void, onAvailability?: (url: string) => void): void {
   server.use(
     http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: state.active ? [{ id: 'fixed-1', startDate: '2026-09-07', startTime: state.startTime, serviceType: { id: 'service', name: 'Rehabilitación', durationMinutes: 45 }, scheduleSlot: { id: 'window', weekday: state.weekday } }] : [], routine: null, evaluations: [], paymentState: 'PENDING' } })),
