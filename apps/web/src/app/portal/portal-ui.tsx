@@ -3,7 +3,8 @@ import React from 'react';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ArrowLeft, KeyRound, LogOut, Star } from 'lucide-react';
+import Image from 'next/image';
+import { ArrowLeft, KeyRound, LogOut } from 'lucide-react';
 import { formatOperationalTime } from '../../lib/operational-time';
 
 export class PortalApiError extends Error {
@@ -65,9 +66,7 @@ export function PortalFrame({ title, subtitle, action, backToHome = false, child
     <header className="bg-sidebar text-sidebar-foreground">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-4 sm:gap-6 sm:px-6 lg:px-8">
         <Link href="/portal" aria-label="Athleta · Inicio" className="shrink-0">
-          <span aria-hidden="true" className="flex justify-center gap-1 text-primary">{[0, 1, 2].map(star => <Star key={star} size={12} fill="currentColor" />)}</span>
-          <span className="block text-xl font-bold tracking-[0.22em]">ATHLETA</span>
-          <span className="hidden text-[8px] tracking-wider lg:block">CENTRO DE REHABILITACIÓN Y ENTRENAMIENTO</span>
+          <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-36 sm:w-44" />
         </Link>
         <div className="hidden flex-1 md:block"><PortalNav /></div>
         <div className="flex shrink-0 items-center gap-1 sm:gap-3"><Link href="/portal/change-pin" aria-label="Cambiar PIN" className="inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-sm sm:gap-2 sm:px-3"><KeyRound size={16} aria-hidden="true" /><span className="md:hidden">PIN</span><span className="hidden md:inline">Cambiar PIN</span></Link><PortalLogoutButton compactOnMobile /></div>

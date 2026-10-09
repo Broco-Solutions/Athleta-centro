@@ -3,7 +3,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, CalendarDays, ClipboardList, Dumbbell, Star, UserCog, Users, Wallet } from 'lucide-react';
+import Image from 'next/image';
+import { Activity, CalendarDays, ClipboardList, Dumbbell, UserCog, Users, Wallet } from 'lucide-react';
 import { currentSession } from './auth';
 import { AuthShell } from './auth-shell';
 
@@ -36,9 +37,7 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
     <main className="min-h-screen min-w-0 bg-background pt-14 md:ml-60">
       <aside className="flex min-w-0 items-center gap-4 overflow-x-auto bg-sidebar px-4 py-3 text-sidebar-foreground md:fixed md:inset-y-0 md:left-0 md:z-50 md:w-60 md:items-stretch md:flex-col md:gap-0 md:overflow-y-auto md:px-4 md:py-6">
         <Link href="/" aria-label="Athleta · Inicio" className="mr-2 shrink-0 text-center md:mb-10 md:mr-0">
-          <span aria-hidden="true" className="flex justify-center gap-1 text-primary">{[0, 1, 2].map((star) => <Star key={star} size={12} fill="currentColor" />)}</span>
-          <span className="block text-xl font-bold tracking-[0.22em]">ATHLETA</span>
-          <span className="hidden whitespace-nowrap text-[8px] tracking-[0.04em] md:block">CENTRO DE REHABILITACIÓN Y ENTRENAMIENTO</span>
+          <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-36 md:w-full" />
         </Link>
         <nav aria-label="Navegación principal" className="flex min-w-0 shrink-0 gap-1 md:block md:space-y-1">
           {visibleNavigation.map(({ href, label, icon: Icon }) => <Link key={label} aria-current={active === label ? 'page' : undefined} className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm ${active === label ? 'bg-primary font-semibold text-primary-foreground' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'}`} href={href}>
