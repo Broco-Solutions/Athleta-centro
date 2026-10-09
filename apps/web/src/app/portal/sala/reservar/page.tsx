@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarDays, Check, Circle, Minus } from 'lucide-react';
 import { PortalFrame, portalFetch, formatTime, today, bookingError } from '../../portal-ui';
@@ -43,6 +43,11 @@ export default function PortalReserve(): React.JSX.Element {
   const [date, setDate] = useState(currentDate);
   const [serviceId, setServiceId] = useState('');
   const [selection, setSelection] = useState('');
+  const [reservationNow, setReservationNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => setReservationNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
   const [calendar, setCalendar] = useState(false);
   const [message, setMessage] = useState('');
   const services = useQuery({ queryKey: ['portal', 'sala', 'services'], queryFn: () => portalFetch<Service[]>('sala/services') });
@@ -53,7 +58,12 @@ export default function PortalReserve(): React.JSX.Element {
     queryFn: async () => (await portalFetch<Slot[]>('sala/availability?date=' + date)).map(item => ({ ...item, startTime: formatTime(item.startTime), endTime: formatTime(item.endTime) })),
     enabled: Boolean(selectedService),
   });
-  const options = starts(availability.data ?? [], selectedService);
+  const options = starts(availability.data ?? [], selectedService).filter(item => {
+    if (date < currentDate) return false;
+    if (date > currentDate) return true;
+    return new Date(`${date}T${item.startTime}:00-03:00`).getTime()
+      + (selectedService?.durationMinutes ?? 0) * 60_000 - reservationNow >= 20 * 60_000;
+  });
   const selectedSlot = options.find(item => item.key === selection && item.available);
   const reserve = useMutation({
     mutationFn: async () => {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
@@ -35,6 +35,7 @@ beforeAll(() => {
 });
 beforeEach(() => {
   vi.spyOn(portalUi, 'today').mockReturnValue('2026-10-08');
+  vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-10-08T09:00:00-03:00').getTime());
   submitted = undefined; csrfHeader = null; availabilityCalls = 0;
   server.use(
     http.get(base + 'sala/services', () => HttpResponse.json({ data: [services[0]] })),
@@ -55,6 +56,57 @@ it('automatically selects the only plan service and offers complete half-hour st
   expect(screen.queryByRole('button', { name: /17:45–/ })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /18:30–/ })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeDisabled();
+});
+
+it('keeps an ongoing activity visible with exactly twenty minutes remaining', async () => {
+  vi.mocked(Date.now).mockReturnValue(new Date('2026-10-08T17:40:00-03:00').getTime());
+  renderReserve();
+  expect(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' })).toBeEnabled();
+});
+
+it('removes an activity with less than twenty minutes remaining while retaining later starts', async () => {
+  vi.mocked(Date.now).mockReturnValue(new Date('2026-10-08T17:40:00.001-03:00').getTime());
+  renderReserve();
+  expect(await screen.findByRole('button', { name: '17:30–18:30 Hay lugar' })).toBeEnabled();
+  expect(screen.queryByText('17:00–18:00')).not.toBeInTheDocument();
+});
+
+it('expires a selected activity on the local clock tick without requesting availability again', async () => {
+  vi.mocked(Date.now).mockRestore();
+  // Keep timeouts real so MSW and query notifications can settle normally.
+  vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+  vi.setSystemTime(new Date('2026-10-08T17:40:00-03:00'));
+  try {
+    renderReserve();
+    fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
+    expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeEnabled();
+    expect(screen.getByText(/ · 17:00–18:00/)).toBeInTheDocument();
+    expect(availabilityCalls).toBe(1);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+
+    expect(screen.queryByRole('button', { name: /17:00–18:00/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/17:00–18:00/)).not.toBeInTheDocument();
+    expect(screen.getByText(/ · Elegí un horario/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '17:30–18:30 Hay lugar' })).toBeEnabled();
+    expect(availabilityCalls).toBe(1);
+  } finally {
+    cleanup();
+    vi.useRealTimers();
+  }
+});
+
+it('retains tomorrow’s activities even when their equivalent time has passed today', async () => {
+  vi.mocked(Date.now).mockReturnValue(new Date('2026-10-08T20:00:00-03:00').getTime());
+  server.use(http.get(base + 'sala/availability', ({ request }) => {
+    const date = new URL(request.url).searchParams.get('date');
+    return HttpResponse.json({ data: blocks().map(block => ({ ...block, date })) });
+  }));
+  renderReserve();
+  await screen.findByText('No hay horarios disponibles para esta fecha.');
+  fireEvent.click(screen.getByRole('button', { name: /Mañana 09\/10/ }));
+  expect(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' })).toBeEnabled();
 });
 
 it('requires a manual service selection and only displays services supplied by the plan endpoint', async () => {
