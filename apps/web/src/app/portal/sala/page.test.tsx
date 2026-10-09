@@ -41,7 +41,7 @@ it('shows fixed bookings as the main Sala section and no persistent editor', asy
   expect(screen.getByRole('button', { name: 'Agregar turno fijo' })).toBeInTheDocument();
   expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   expect(screen.queryByRole('heading', { name: 'Elegí el servicio' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Reservar horario' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Reservar horario' })).toBeInTheDocument();
   for (const id of ['turnos-fijos', 'rutina', 'evaluaciones']) expect(document.getElementById(id)).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Volver a Inicio' })).toHaveAttribute('href', '/portal');
 });
@@ -205,4 +205,50 @@ it('shows registered payment without pending guidance', async () => {
   expect(await screen.findByText('Pago registrado')).toBeInTheDocument();
   expect(screen.queryByText('Pago pendiente')).not.toBeInTheDocument();
   expect(screen.queryByText('Con el pago pendiente podés reservar únicamente fechas del 1 al 15 inclusive.')).not.toBeInTheDocument();
+});
+
+async function openReservation(): Promise<HTMLElement> {
+  vi.spyOn(portalUi, 'today').mockReturnValue('2026-10-16');
+  vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-10-16T12:49:00Z').getTime());
+  renderPortalSala();
+  const open = await screen.findByRole('button', { name: 'Reservar horario' });
+  await waitFor(() => expect(open).toBeEnabled());
+  fireEvent.click(open);
+  return screen.findByRole('dialog', { name: 'Reserva puntual' });
+}
+it('restores reservation steps, date bounds and ongoing/future starts using the service duration', async () => {
+  const dialog = await openReservation();
+  expect(within(dialog).getByLabelText('Fecha de la reserva')).toHaveAttribute('min', '2026-10-16');
+  expect(within(dialog).getByLabelText('Fecha de la reserva')).toHaveAttribute('max', '2026-11-15');
+  await within(dialog).findByRole('button', { name: '09:30–10:15 Hay lugar' });
+  expect(within(dialog).queryByRole('button', { name: '09:00–09:45 Hay lugar' })).not.toBeInTheDocument();
+  expect(within(dialog).getByRole('button', { name: '10:00–10:45 Hay lugar' })).toBeInTheDocument();
+  expect(within(dialog).queryByRole('button', { name: /09:45–/ })).not.toBeInTheDocument();
+  fireEvent.change(within(dialog).getByLabelText('Fecha de la reserva'), { target: { value: '2026-10-17' } });
+  expect(await within(dialog).findByRole('button', { name: '09:00–09:45 Hay lugar' })).toBeInTheDocument();
+});
+it('creates an ongoing reservation through the existing endpoint with only the selected fields', async () => {
+  let submitted: Record<string, string> | undefined;
+  server.use(http.post('http://localhost:3000/api/portal/sala/reservations', async ({ request }) => { submitted = await request.json() as Record<string, string>; return HttpResponse.json({ data: {} }); }));
+  const dialog = await openReservation();
+  fireEvent.click(await within(dialog).findByRole('button', { name: '09:30–10:15 Hay lugar' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Confirmar reserva' }));
+  expect(await screen.findByText('Reserva creada.')).toBeInTheDocument();
+  expect(submitted).toEqual({ date: '2026-10-16', scheduleSlotId: 'window', serviceTypeId: 'service', startTime: '09:30' });
+});
+it.each([
+  ['PORTAL_SALA_TIME_PASSED', 'Ese horario ya finalizó. Elegí un horario actual o posterior.'],
+  ['PORTAL_SALA_PAYMENT_REQUIRED', 'Para reservar esta fecha necesitás tener abonado el mes correspondiente.'],
+])('shows the reservation rejection %s', async (code, message) => {
+  server.use(http.post('http://localhost:3000/api/portal/sala/reservations', () => HttpResponse.json({ code, message: 'Rechazado' }, { status: 400 })));
+  const dialog = await openReservation();
+  fireEvent.click(await within(dialog).findByRole('button', { name: '09:30–10:15 Hay lugar' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Confirmar reserva' }));
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent(message);
+});
+it('shows a cancelled future reservation without a cancel action', async () => {
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [{ id: 'cancelled', date: '2026-10-20', startTime: '09:30', cancelledAt: '2026-10-16T12:00:00Z', serviceType: { name: 'Rehabilitación' } }], fixed: [], evaluations: [], paymentState: 'PENDING' } })));
+  renderPortalSala();
+  expect(await screen.findByText('Rehabilitación · Cancelado')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Cancelar' })).not.toBeInTheDocument();
 });

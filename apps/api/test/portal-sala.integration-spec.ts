@@ -22,11 +22,13 @@ describe('Portal Sala services from the current plan', () => {
   let windowId: string;
   let serviceIds: string[] = [];
   let paymentMethodId: string;
+  let reservationNow: jest.SpyInstance<Date, []>;
   let operationalDate: jest.SpyInstance<string, []>;
 
   beforeEach(() => {
     // A local seam controls only Portal's date rules, leaving sessions and timers alone.
     operationalDate = jest.spyOn(app.get(PortalService) as unknown as { todayOperational(): string }, 'todayOperational').mockReturnValue('2026-10-16');
+    reservationNow = jest.spyOn(app.get(PortalService) as unknown as { reservationNow(): Date }, 'reservationNow').mockImplementation(() => new Date(`${operationalDate.getMockImplementation()?.()}T11:00:00Z`));
   });
 
   beforeAll(async () => {
@@ -41,6 +43,7 @@ describe('Portal Sala services from the current plan', () => {
   });
   afterEach(async () => {
     operationalDate.mockRestore();
+    reservationNow.mockRestore();
     if (personId) {
       await prisma.salaOccurrence.deleteMany({ where: { personId } });
       await prisma.salaPaymentReversal.deleteMany({ where: { payment: { personId } } });
@@ -234,6 +237,61 @@ describe('Portal Sala services from the current plan', () => {
     await prisma.salaParticipation.update({ where: { id: f.participation.id }, data: { endDate: new Date() } });
     const inactive = await request(app.getHttpServer()).get('/api/portal/sala/services').set('Cookie', f.cookie).expect(200);
     expect(inactive.body.data).toEqual([]);
+  });
+  it.each([
+    ['2026-10-15', '09:00', 400, 'PORTAL_DATE_OUT_OF_RANGE'],
+    ['2026-10-16', '09:00', 400, 'PORTAL_SALA_TIME_PASSED'],
+    ['2026-10-16', '09:30', 201, null],
+    ['2026-10-16', '10:00', 201, null],
+    ['2026-11-15', '09:00', 201, null],
+    ['2026-11-16', '09:00', 400, 'PORTAL_DATE_OUT_OF_RANGE'],
+  ])('applies Portal time bounds to %s at %s', async (date, startTime, status, code) => {
+    const f = await fixture(date as string);
+    await prisma.salaServiceType.update({ where: { id: f.muscle.id }, data: { durationMinutes: 45 } });
+    reservationNow.mockReturnValue(new Date('2026-10-16T12:49:00Z')); // 09:49 Buenos Aires
+    await payment(f.body.date);
+    f.body.startTime = startTime as string;
+    const result = await reserve(f).expect(status as number);
+    if (code) expect(result.body.code).toBe(code);
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(status === 201 ? 1 : 0);
+    if (status === 201) expect(result.body.data.serviceDurationMinutes).toBe(45);
+  });
+  it('rejects an activity at its exact end, including the legacy start fallback', async () => {
+    const f = await fixture('2026-10-16');
+    await payment(f.body.date);
+    reservationNow.mockReturnValue(new Date('2026-10-16T13:00:00Z'));
+    const result = await request(app.getHttpServer()).post('/api/portal/sala/reservations').set('Cookie', f.cookie).set('x-csrf-token', f.csrf)
+      .send({ date: f.body.date, scheduleSlotId: windowId, serviceTypeId: f.muscle.id }).expect(400);
+    expect(result.body.code).toBe('PORTAL_SALA_TIME_PASSED');
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
+  });
+  it('rejects past Portal availability while preserving internal retrospective availability', async () => {
+    const f = await fixture('2026-10-15');
+    const result = await request(app.getHttpServer()).get('/api/portal/sala/availability?date=2026-10-15').set('Cookie', f.cookie).expect(400);
+    expect(result.body.code).toBe('PORTAL_DATE_OUT_OF_RANGE');
+    expect(await sala.availability('2026-10-15')).not.toHaveLength(0);
+  });
+  it('keeps future active and cancelled reservations until their actual start, with historical fallback', async () => {
+    const f = await fixture('2026-10-16');
+    const active = await sala.createReservation({ personId, salaParticipationId: f.participation.id, scheduleSlotId: windowId, date: f.body.date, serviceTypeId: f.muscle.id, startTime: '10:00' });
+    const cancelled = await sala.createReservation({ personId, salaParticipationId: f.participation.id, scheduleSlotId: windowId, date: f.body.date, serviceTypeId: f.muscle.id, startTime: '09:00' });
+    await sala.cancelReservation(cancelled.id);
+    // The real activity start differs from the window start.
+    await prisma.oneOffReservation.update({ where: { id: cancelled.id }, data: { startTime: new Date('1970-01-01T09:30:00Z') } });
+    reservationNow.mockReturnValue(new Date('2026-10-16T12:15:00Z'));
+    const visible = await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
+    expect(visible.body.data.reservations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: active.id, cancelledAt: null }),
+      expect.objectContaining({ id: cancelled.id, cancelledAt: expect.any(String) }),
+    ]));
+    reservationNow.mockReturnValue(new Date('2026-10-16T12:30:00Z'));
+    const expired = await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
+    expect(expired.body.data.reservations.map((item: { id: string }) => item.id)).toEqual([active.id]);
+    await prisma.oneOffReservation.update({ where: { id: cancelled.id }, data: { startTime: null } });
+    reservationNow.mockReturnValue(new Date('2026-10-16T11:59:00Z'));
+    const legacy = await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
+    expect(legacy.body.data.reservations).toEqual(expect.arrayContaining([expect.objectContaining({ id: cancelled.id, startTime: expect.stringContaining('T09:00:00') })]));
+    expect((await prisma.oneOffReservation.findUniqueOrThrow({ where: { id: cancelled.id } })).cancelledAt).not.toBeNull();
   });
   it('uses Argentina midnight for the operational day and month', () => {
     operationalDate.mockRestore();

@@ -87,6 +87,7 @@ export function PortalFrame({ title, subtitle, action, backToHome = false, child
 
 export function bookingError(error: unknown): string {
   if (!(error instanceof PortalApiError)) return 'No pudimos reservar ese horario. Intentá nuevamente.';
+  if (error.code === 'PORTAL_SALA_TIME_PASSED') return 'Ese horario ya finalizó. Elegí un horario actual o posterior.';
   if (error.code === 'PORTAL_SALA_PAYMENT_REQUIRED') return 'Para reservar esta fecha necesitás tener abonado el mes correspondiente.';
   if (error.code === 'SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED' || error.code === 'SALA_CAPACITY_FULL') return 'No hay lugar disponible para ese horario.';
   if (error.code === 'SALA_RESERVATION_DUPLICATE' || error.code === 'SALA_BOOKING_OVERLAP' || error.code === 'SALA_OCCURRENCE_DUPLICATE') return 'Ya tenés una actividad reservada en ese horario. Elegí otro horario.';
