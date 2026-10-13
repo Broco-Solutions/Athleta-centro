@@ -30,8 +30,8 @@ function ProfessorHome({ firstName }: { firstName: string }): React.JSX.Element 
     { label: 'Cancelados / Ausentes', value: data?.cancelledOrAbsent, icon: UserX },
   ];
   const followUp = [
-    { label: 'Sin rutina activa', value: data?.withoutRoutine.count, icon: ClipboardList },
-    { label: 'Pago pendiente', value: data?.pendingPayment.count, icon: Wallet },
+    { label: 'Sin rutina activa', href: '/students?filter=without-routine', value: data?.withoutRoutine.count, icon: ClipboardList },
+    { label: 'Pago pendiente', href: '/students?filter=pending-payment', value: data?.pendingPayment.count, icon: Wallet },
   ];
   return <div className="mx-auto w-full max-w-6xl space-y-6 text-foreground">
     <header className="flex flex-wrap items-end justify-between gap-4">
@@ -55,7 +55,7 @@ function ProfessorHome({ firstName }: { firstName: string }): React.JSX.Element 
         <div className="flex justify-end border-t border-border px-4 py-2 sm:px-5"><Link href="/reservations" className="inline-flex min-h-10 items-center gap-2 text-sm font-medium hover:underline">Ver Reservas <ArrowRight size={16} aria-hidden="true"/></Link></div>
       </section>
       <section aria-labelledby="summary-title"><h2 id="summary-title" className="mb-3 text-lg font-semibold">Resumen del día</h2><div className="grid gap-3 sm:grid-cols-3">{metrics.map(({ label, value, icon: Icon }) => <div key={label} className="min-w-0 rounded-md border border-border bg-surface p-4 sm:p-5"><div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground"><Icon size={17} aria-hidden="true"/><span>{label}</span></div><p className="text-3xl font-semibold tabular-nums">{value ?? '—'}</p></div>)}</div></section>
-      <section aria-labelledby="followup-title"><h2 id="followup-title" className="mb-3 text-lg font-semibold">Seguimiento</h2><div className="grid gap-3 sm:grid-cols-2">{followUp.map(({ label, value, icon: Icon }) => <Link key={label} href="/sala?view=students" className="flex min-w-0 items-center gap-3 rounded-md border border-border bg-surface p-4 hover:bg-surface-muted sm:p-5"><span className="rounded-md bg-primary/15 p-2"><Icon size={18} aria-hidden="true"/></span><span className="min-w-0 flex-1 text-sm font-medium">{label}</span><span className="text-2xl font-semibold tabular-nums">{value ?? '—'}</span><ArrowRight size={16} aria-hidden="true" className="text-muted-foreground"/></Link>)}</div></section>
+      <section aria-labelledby="followup-title"><h2 id="followup-title" className="mb-3 text-lg font-semibold">Seguimiento</h2><div className="grid gap-3 sm:grid-cols-2">{followUp.map(({ label, href, value, icon: Icon }) => <Link key={label} href={href} className="flex min-w-0 items-center gap-3 rounded-md border border-border bg-surface p-4 hover:bg-surface-muted sm:p-5"><span className="rounded-md bg-primary/15 p-2"><Icon size={18} aria-hidden="true"/></span><span className="min-w-0 flex-1 text-sm font-medium">{label}</span><span className="text-2xl font-semibold tabular-nums">{value ?? '—'}</span><ArrowRight size={16} aria-hidden="true" className="text-muted-foreground"/></Link>)}</div></section>
     </div>}
   </div>;
 }

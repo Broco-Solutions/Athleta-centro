@@ -14,6 +14,14 @@ describe('effectivePermissions', () => {
     ]));
     expect(permissions.has('CLINICAL_HISTORY_READ')).toBe(false);
   });
+  it('lets Professor operate agenda and routines while reserving schedule configuration for Administration', () => {
+    const professor = effectivePermissions(InternalUserStatus.ACTIVE, [Role.PROFESSOR]);
+    expect(professor.has('SALA_AGENDA_MANAGE')).toBe(true);
+    expect(professor.has('SALA_ROUTINE_MANAGE')).toBe(true);
+    expect(professor.has('SALA_SCHEDULE_MANAGE')).toBe(false);
+    expect(effectivePermissions(InternalUserStatus.ACTIVE, [Role.ADMINISTRATIVE]).has('SALA_SCHEDULE_MANAGE')).toBe(true);
+    expect(effectivePermissions(InternalUserStatus.ACTIVE, [Role.GENERAL_ADMIN]).has('SALA_SCHEDULE_MANAGE')).toBe(true);
+  });
   it('returns no permissions for inactive users', () => { expect(effectivePermissions(InternalUserStatus.INACTIVE, [Role.GENERAL_ADMIN])).toEqual(new Set()); });
   it('keeps clinical history unavailable to operational-only roles', () => {
     expect(effectivePermissions(InternalUserStatus.ACTIVE, [Role.ADMINISTRATIVE]).has('CLINICAL_HISTORY_READ')).toBe(false);

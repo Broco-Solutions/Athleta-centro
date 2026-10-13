@@ -138,3 +138,22 @@ it('hides Rutinas for users with only routine read permission', async () => {
   renderShell({ permissions: ['SALA_ROUTINE_READ'] }); await screen.findByRole('link', { name: 'Sala' });
   expect(screen.queryByRole('link', { name: 'Rutinas' })).not.toBeInTheDocument();
 });
+
+it('gives pure Professor exactly Inicio, Reservas, Alumnos and Rutinas on desktop and mobile', async () => {
+  renderShell({ roles: ['PROFESSOR'], active: 'Alumnos', permissions: ['PEOPLE_READ', 'PEOPLE_CREATE', 'SALA_RELATION_READ', 'SALA_PARTICIPATION_MANAGE', 'SALA_AGENDA_MANAGE', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_MANAGE', 'EXPENSE_CREATE'] });
+  await screen.findByRole('link', { name: 'Alumnos' });
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
+  for (const name of ['Navegación principal', 'Navegación móvil']) {
+    const navigation = within(screen.getByRole('navigation', { name }));
+    expect(navigation.getAllByRole('link').map((link) => link.textContent)).toEqual(['Inicio', 'Reservas', 'Alumnos', 'Rutinas']);
+    expect(navigation.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual(['/', '/reservations', '/students', '/routines']);
+    expect(navigation.getByRole('link', { name: 'Alumnos' })).toHaveAttribute('aria-current', 'page');
+    for (const label of ['Personas', 'Sala', 'Equipo', 'Clínica', 'Finanzas']) expect(navigation.queryByRole('link', { name: label })).not.toBeInTheDocument();
+  }
+});
+it.each(['KINESIOLOGIST', 'ADMINISTRATIVE'])('preserves permission navigation for PROFESSOR + %s', async (role) => {
+  renderShell({ roles: ['PROFESSOR', role], permissions: ['PEOPLE_READ', 'SALA_ROUTINE_MANAGE', 'CLINIC_OPERATIONAL_READ'] });
+  await screen.findByRole('link', { name: 'Personas' });
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
+  for (const name of ['Navegación principal', 'Navegación móvil']) expect(within(screen.getByRole('navigation', { name })).getAllByRole('link').map((link) => link.textContent)).toEqual(['Inicio', 'Personas', 'Sala', 'Rutinas', 'Reservas', 'Clínica']);
+});

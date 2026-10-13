@@ -5,11 +5,12 @@ import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import SalaPage from './page';
 let searchParams = new URLSearchParams();
-vi.mock('next/navigation', () => ({ useSearchParams: () => searchParams }));
+const router = vi.hoisted(() => ({ replace: vi.fn() }));
+vi.mock('next/navigation', () => ({ useSearchParams: () => searchParams, useRouter: () => router }));
 const server = setupServer(); const nativeFetch = globalThis.fetch;
 const session = { user: { id: 'admin', firstName: 'Admin', lastName: 'User', email: 'admin@test.local' }, roles: ['ADMINISTRATIVE'], permissions: ['SALA_RELATION_READ', 'SALA_AGENDA_MANAGE', 'SALA_PARTICIPATION_MANAGE', 'PEOPLE_CREATE', 'PEOPLE_READ'], mustChangePassword: false, csrfToken: 'csrf' };
 beforeAll(() => { globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch; server.listen({ onUnhandledRequest: 'bypass' }); });
-beforeEach(() => { searchParams = new URLSearchParams(); server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: session })), http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: { data: [{ id: 'person', firstName: 'Ada', lastName: 'Sintética', dni: '20123456' }] } })), http.get('http://localhost:3000/api/sala/schedule', () => HttpResponse.json({ data: [{ id: 'slot', weekday: 'MONDAY', startTime: '09:00' }] })), http.get('http://localhost:3000/api/sala/availability', () => HttpResponse.json({ data: [{ slotId: 'slot', capacity: 1, reserved: 0, available: 1, isOverbooked: false, isClosed: false }] }))); });
+beforeEach(() => { router.replace.mockClear(); searchParams = new URLSearchParams(); server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: session })), http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: { data: [{ id: 'person', firstName: 'Ada', lastName: 'Sintética', dni: '20123456' }] } })), http.get('http://localhost:3000/api/sala/schedule', () => HttpResponse.json({ data: [{ id: 'slot', weekday: 'MONDAY', startTime: '09:00' }] })), http.get('http://localhost:3000/api/sala/availability', () => HttpResponse.json({ data: [{ slotId: 'slot', capacity: 1, reserved: 0, available: 1, isOverbooked: false, isClosed: false }] }))); });
 afterEach(() => server.resetHandlers()); afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 it('renders Sala with the daily agenda navigation', async () => { render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SalaPage /></QueryClientProvider>); expect(await screen.findByRole('heading', { name: 'Agenda' })).toBeInTheDocument(); expect(screen.getByRole('link', { name: 'Agenda' })).toBeInTheDocument(); expect(screen.getByRole('link', { name: 'Alumnos' })).toHaveAttribute('href', '/sala?view=students'); expect(screen.getByRole('link', { name: 'Configuración' })).toBeInTheDocument(); });
 
@@ -98,14 +99,14 @@ it('explains duplicate DNI and keeps the new student form open', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('Ya existe una Persona con ese DNI. Podés incorporarla a Sala como Persona existente.');
   expect(screen.getByLabelText('DNI')).toHaveValue('30.123-456');
 });
-it('hides global Sala navigation for clinical relation permissions and shows it to Professors', async () => {
+it('hides global Sala navigation for clinical relation permissions', async () => {
   server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: ['KINESIOLOGIST'], permissions: ['SALA_RELATION_READ', 'SALA_CLINICAL_INDICATION_CLOSE', 'CLINIC_OPERATIONAL_READ'] } })));
   renderStudents(); const nav = await screen.findByRole('navigation', { name: 'Navegación principal' });
   await within(nav).findByRole('link', { name: 'Clínica' });
   expect(within(nav).queryByRole('link', { name: 'Sala' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Nuevo alumno' })).not.toBeInTheDocument();
 });
-it('shows Sala navigation for an operational Professor', async () => {
+it('preserves Sala navigation for Administration', async () => {
   renderStudents(); expect(await within(await screen.findByRole('navigation', { name: 'Navegación principal' })).findByRole('link', { name: 'Sala' })).toBeVisible();
 });
 
@@ -148,16 +149,39 @@ it.each([true, false])('shows spontaneous incorporation only with agenda permiss
 it.each([['PROFESSOR'], ['PROFESSOR', 'KINESIOLOGIST'], ['GENERAL_ADMIN']])('preserves existing-person incorporation with roles %j', async (...roles) => {
   server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles } })));
   renderStudents();
-  expect(await screen.findByRole('button', { name: 'Incorporar Persona existente' })).toBeVisible();
   if (roles.length === 1 && roles[0] === 'PROFESSOR') {
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/students'));
+    expect(screen.queryByRole('button', { name: 'Incorporar Persona existente' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Nuevo alumno' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Nueva Persona' })).not.toBeInTheDocument();
-  } else expect(screen.getByRole('button', { name: 'Nuevo alumno' })).toBeVisible();
+  } else {
+    expect(await screen.findByRole('button', { name: 'Incorporar Persona existente' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Nuevo alumno' })).toBeVisible();
+  }
 });
 it.each([{ roles: ['PROFESSOR'], visible: false }, { roles: ['PROFESSOR', 'KINESIOLOGIST'], visible: true }])('applies provisional new-person visibility to spontaneous incorporation: $roles', async ({ roles, visible }) => {
   server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles } })), http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [] })));
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SalaPage /></QueryClientProvider>);
+  if (!visible) {
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/reservations'));
+    expect(screen.queryByRole('heading', { name: 'Agenda' })).not.toBeInTheDocument();
+    return;
+  }
   fireEvent.click(await screen.findByRole('button', { name: 'Incorporación espontánea' }));
   if (visible) expect(screen.getByRole('button', { name: 'Nueva Persona' })).toBeVisible();
   else expect(screen.queryByRole('button', { name: 'Nueva Persona' })).not.toBeInTheDocument();
+});
+
+
+it.each([['', '/reservations'], ['view=students', '/students']])('redirects old pure Professor links %s before rendering administrative agenda', async (query, target) => {
+  let peopleReads = 0;
+  searchParams = new URLSearchParams(query);
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: ['PROFESSOR'] } })),
+    http.get('http://localhost:3000/api/people', () => { peopleReads++; return HttpResponse.json({ data: [] }); }),
+  );
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SalaPage /></QueryClientProvider>);
+  expect(screen.queryByRole('heading', { name: 'Agenda' })).not.toBeInTheDocument();
+  await waitFor(() => expect(router.replace).toHaveBeenCalledWith(target));
+  expect(screen.queryByRole('heading', { name: 'Agenda' })).not.toBeInTheDocument();
+  expect(peopleReads).toBe(0);
 });

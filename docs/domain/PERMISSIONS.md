@@ -404,10 +404,11 @@ Permite administrar:
 Roles:
 
 ```text
-PROFESSOR
 ADMINISTRATIVE
 GENERAL_ADMIN
 ```
+
+El Profesor opera la agenda de Sala pero no administra su estructura. La configuración de grilla semanal, capacidades, cambios permanentes y excepciones corresponde a Administración.
 
 ---
 
@@ -2064,7 +2065,7 @@ aunque el modelo Prisma permita incluirlos fácilmente.
 | Conocer participación Sala | ✓ | ✓ | ✓ | ✓ |
 | Gestionar participación Sala | ✓ | — | ✓ | ✓ |
 | Gestionar agenda Sala | ✓ | — | ✓ | ✓ |
-| Configurar horarios Sala | ✓ | — | ✓ | ✓ |
+| Configurar horarios Sala | — | — | ✓ | ✓ |
 | Consultar Rutinas | ✓ | — | ✓ | ✓ |
 | Diseñar/modificar Rutinas | ✓ | — | — | ✓ |
 | Consultar Evaluaciones físicas | ✓ | — | ✓ | ✓ |
@@ -2152,7 +2153,6 @@ PROFESSOR
 ├── PORTAL_PIN_RESET
 ├── SALA_RELATION_READ
 ├── SALA_PARTICIPATION_MANAGE
-├── SALA_SCHEDULE_MANAGE
 ├── SALA_AGENDA_MANAGE
 ├── SALA_ROUTINE_READ
 ├── SALA_ROUTINE_MANAGE

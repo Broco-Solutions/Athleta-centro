@@ -166,3 +166,21 @@ export class SpontaneousStudentResponseDto {
   @ApiProperty({ type: Object }) occurrence!: object;
 }
 export class SpontaneousStudentEnvelopeDto { @ApiProperty({ type: () => SpontaneousStudentResponseDto }) data!: SpontaneousStudentResponseDto; }
+
+export class SalaStudentPlanDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String }) name!: string;
+}
+export class SalaStudentListItemDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String }) firstName!: string;
+  @ApiProperty({ type: String }) lastName!: string;
+  @ApiProperty({ type: String }) dni!: string;
+  @ApiProperty({ type: () => SalaStudentPlanDto }) plan!: SalaStudentPlanDto;
+  @ApiProperty({ type: () => SalaAgendaProfessionalDto }) professor!: SalaAgendaProfessionalDto;
+  @ApiProperty({ type: String, enum: ['ACTIVE', 'MISSING'] }) routineStatus!: 'ACTIVE' | 'MISSING';
+  @ApiProperty({ type: String, enum: ['PAID', 'PENDING'] }) paymentStatus!: 'PAID' | 'PENDING';
+}
+export class SalaStudentListEnvelopeDto {
+  @ApiProperty({ type: () => [SalaStudentListItemDto] }) data!: SalaStudentListItemDto[];
+}

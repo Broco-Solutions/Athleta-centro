@@ -69,7 +69,7 @@ it('opens the real-field modal, creates a test and refreshes the listing', async
 
 it.each([false, true])('shows plan administration only with its permission (manage=%s), while preserving schedules', async (manage) => {
   server.use(
-    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: [manage ? 'ADMINISTRATIVE' : 'PROFESSOR'], permissions: ['SALA_PARTICIPATION_MANAGE', 'SALA_SCHEDULE_MANAGE', ...(manage ? ['SALA_PLAN_CATALOG_MANAGE'] : [])] } })),
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: manage ? ['ADMINISTRATIVE'] : ['PROFESSOR', 'KINESIOLOGIST'], permissions: ['SALA_PARTICIPATION_MANAGE', 'SALA_SCHEDULE_MANAGE', ...(manage ? ['SALA_PLAN_CATALOG_MANAGE'] : [])] } })),
     http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'plan', name: 'Mensual', monthlyAmount: '1000', isSelectable: true, services: [] }] })),
   );
   renderPage(); fireEvent.click(await screen.findByText('Planes'));

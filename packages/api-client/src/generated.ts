@@ -272,6 +272,50 @@ export interface SalaProfessorListEnvelopeDto {
   data: SalaProfessorOptionDto[];
 }
 
+export interface SalaStudentPlanDto {
+  id: string;
+  name: string;
+}
+
+export interface SalaAgendaProfessionalDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
+export type SalaStudentListItemDtoRoutineStatus = typeof SalaStudentListItemDtoRoutineStatus[keyof typeof SalaStudentListItemDtoRoutineStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SalaStudentListItemDtoRoutineStatus = {
+  ACTIVE: 'ACTIVE',
+  MISSING: 'MISSING',
+} as const;
+
+export type SalaStudentListItemDtoPaymentStatus = typeof SalaStudentListItemDtoPaymentStatus[keyof typeof SalaStudentListItemDtoPaymentStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SalaStudentListItemDtoPaymentStatus = {
+  PAID: 'PAID',
+  PENDING: 'PENDING',
+} as const;
+
+export interface SalaStudentListItemDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dni: string;
+  plan: SalaStudentPlanDto;
+  professor: SalaAgendaProfessionalDto;
+  routineStatus: SalaStudentListItemDtoRoutineStatus;
+  paymentStatus: SalaStudentListItemDtoPaymentStatus;
+}
+
+export interface SalaStudentListEnvelopeDto {
+  data: SalaStudentListItemDto[];
+}
+
 export interface CreateSalaStudentDto {
   firstName: string;
   lastName: string;
@@ -417,12 +461,6 @@ export interface SalaAgendaPersonDto {
   firstName: string;
   lastName: string;
   dni: string;
-}
-
-export interface SalaAgendaProfessionalDto {
-  id: string;
-  firstName: string;
-  lastName: string;
 }
 
 export interface SalaAgendaServiceDto {
@@ -2511,6 +2549,45 @@ export const listSalaProfessors = async ( options?: RequestInit): Promise<listSa
 
   const data: listSalaProfessorsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listSalaProfessorsResponse
+}
+
+
+
+export type listSalaStudentsResponse200 = {
+  data: SalaStudentListEnvelopeDto
+  status: 200
+}
+
+export type listSalaStudentsResponseSuccess = (listSalaStudentsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listSalaStudentsResponse = (listSalaStudentsResponseSuccess)
+
+export const getListSalaStudentsUrl = () => {
+
+
+
+
+  return `/api/sala/students`
+}
+
+export const listSalaStudents = async ( options?: RequestInit): Promise<listSalaStudentsResponse> => {
+
+  const res = await fetch(getListSalaStudentsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSalaStudentsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSalaStudentsResponse
 }
 
 

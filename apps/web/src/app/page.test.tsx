@@ -26,7 +26,8 @@ it('shows operational Sala information and changes from today to tomorrow in Arg
   expect(screen.getByText('+ 4 alumnos')).toBeVisible();
   expect(screen.getByText('0')).toBeVisible();
   expect(screen.getByRole('link', { name: 'Ver Reservas' })).toHaveAttribute('href', '/reservations');
-  expect(screen.getByRole('link', { name: /Sin rutina activa/ })).toHaveAttribute('href', '/sala?view=students');
+  expect(screen.getByRole('link', { name: /Sin rutina activa/ })).toHaveAttribute('href', '/students?filter=without-routine');
+  expect(screen.getByRole('link', { name: /Pago pendiente/ })).toHaveAttribute('href', '/students?filter=pending-payment');
   expect(getSalaDashboard).toHaveBeenCalledWith({ date: '2026-10-31' }, { credentials: 'include' });
   fireEvent.click(screen.getByRole('button', { name: 'Mañana' }));
   expect(await screen.findByText('Marta Sintética')).toBeVisible();
@@ -36,7 +37,7 @@ it('shows operational Sala information and changes from today to tomorrow in Arg
 it.each([['ADMINISTRATIVE'], ['KINESIOLOGIST'], ['PROFESSOR', 'KINESIOLOGIST']])('preserves general Home for roles %j', async (...roles) => {
   vi.mocked(currentSession).mockResolvedValue({ ...session, roles });
   renderPage(); expect(await screen.findByRole('heading', { name: 'Bienvenido a Athleta' })).toBeVisible();
-  expect(screen.getByText('Personas')).toBeVisible(); expect(screen.queryByText('Próximos horarios')).not.toBeInTheDocument(); expect(getSalaDashboard).not.toHaveBeenCalled();
+  expect(screen.getByRole('link', { name: 'Personas' })).toBeVisible(); expect(screen.queryByText('Próximos horarios')).not.toBeInTheDocument(); expect(getSalaDashboard).not.toHaveBeenCalled();
 });
 it('keeps the upcoming empty state and zero counters visible', async () => {
   vi.mocked(getSalaDashboard).mockResolvedValue({ status: 200, headers: new Headers(), data: { data: { ...summary, upcoming: [], expected: 0, attended: 0, cancelledOrAbsent: 0, pendingPayment: { count: 0, personIds: [] } } } });
@@ -49,5 +50,5 @@ it('keeps loading and errors localized inside the workspace', async () => {
   expect(screen.getByRole('button', { name: 'Mañana' })).toBeEnabled();
   rendered.unmount(); vi.mocked(getSalaDashboard).mockRejectedValue(new Error('technical details'));
   renderPage(); await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('No pudimos cargar el resumen de Sala.'));
-  expect(screen.queryByText('technical details')).not.toBeInTheDocument(); expect(screen.getByText('Personas')).toBeVisible();
+  expect(screen.queryByText('technical details')).not.toBeInTheDocument(); expect(screen.getByRole('link', { name: 'Alumnos' })).toBeVisible();
 });

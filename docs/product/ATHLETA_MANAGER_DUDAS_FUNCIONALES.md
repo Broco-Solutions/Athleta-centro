@@ -475,10 +475,10 @@ Los registros históricos existentes con inicio :15 o :45 se conservan y no se r
 
 Estado: **PENDIENTE**.
 
-La definición histórica permite que Profesor cree Personas e incorpore nuevos Alumnos. Esta capacidad queda pendiente de validación funcional con Athleta.
+En la experiencia actual del Profesor puro no se muestra ninguna acción para crear una nueva Persona/Alumno. El listado Alumnos es de consulta y seguimiento de participantes activos.
 
-Mientras no se cierre la decisión, la experiencia visual de un Profesor puro (único rol efectivo `PROFESSOR`) no debe ofrecer acciones para crear una Persona/Alumno nuevo. Puede continuar incorporando una Persona existente cuando posee `SALA_PARTICIPATION_MANAGE`.
+La autorización `PEOPLE_CREATE` permanece temporalmente en backend hasta validar con Athleta si el Profesor debe poder resolver altas de forma autónoma. Puede continuar incorporando una Persona existente cuando posee `SALA_PARTICIPATION_MANAGE`. Los roles combinados conservan la suma natural de sus capacidades.
 
-Esto NO elimina todavía `PEOPLE_CREATE` del rol Profesor ni constituye una decisión definitiva de autorización backend. Los roles combinados conservan la suma natural de sus capacidades.
+### Alcance de Alumnos — RESUELTO, 2026-10-13
 
-Fundamento: la creación de nuevas Personas se percibe actualmente como una tarea posiblemente administrativa. Debe confirmarse con Athleta si el Profesor necesita resolver altas de forma autónoma.
+El Profesor ve todos los alumnos activos de Sala. Profesor principal es información de organización y seguimiento, no un límite de acceso. Se muestra con nombre y apellido en desktop y mobile. No existe una duda pendiente de “mis alumnos vs todos”; PROF-01 continúa siendo la única duda de alta del Profesor. Véase la [navegación aprobada](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md).

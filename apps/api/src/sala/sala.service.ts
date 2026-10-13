@@ -3,7 +3,7 @@ import { FinancialAdjustmentKind, Prisma, Role, RoutineStatus, SalaChargeKind, S
 import { PeopleService } from '../people/people.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceCatalogService } from '../finance/finance.service';
-import type { SalaDashboardDto, SalaDashboardPersonDto, JoinSpontaneousSalaDto, CreateSpontaneousSalaStudentDto, RegisterSalaPlanPaymentsDto, SalaPaymentDto, CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, RoutineTemplateDto, RoutineDayDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
+import type { SalaStudentListItemDto, SalaDashboardDto, SalaDashboardPersonDto, JoinSpontaneousSalaDto, CreateSpontaneousSalaStudentDto, RegisterSalaPlanPaymentsDto, SalaPaymentDto, CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, RoutineTemplateDto, RoutineDayDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
 const SALA_DEFAULT_DURATION_MINUTES = 60;
 const eligibleProfessorWhere = { status: InternalUserStatus.ACTIVE, roles: { some: { role: Role.PROFESSOR } } } satisfies Prisma.InternalUserWhereInput;
 const planServicesInclude = {
@@ -555,6 +555,30 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
   async retirePhysicalTest(id: string) { try { return await this.prisma.physicalTestDefinition.update({ where: { id }, data: { isActive: false } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_PHYSICAL_TEST_NOT_FOUND', message: 'Physical test not found' }); throw error; } }
   async listPhysicalEvaluations(personId: string) { return this.prisma.physicalEvaluation.findMany({ where: { personId }, include: { professor: { select: { id: true, firstName: true, lastName: true } }, results: { include: { testDefinition: true } } }, orderBy: { evaluationDate: 'desc' } }); }
   async createPhysicalEvaluation(input: PhysicalEvaluationDto, actorId: string) { return this.prisma.$transaction(async (tx) => { const participation = await tx.salaParticipation.findFirst({ where: { id: input.salaParticipationId, personId: input.personId, endDate: null }, select: { id: true } }); if (!participation) throw new BadRequestException({ code: 'SALA_ACTIVE_PARTICIPATION_REQUIRED', message: 'An active Sala participation is required' }); const professor = await tx.internalUser.findUnique({ where: { id: input.professorId }, include: { roles: true } }); if (!professor || professor.status !== InternalUserStatus.ACTIVE || !professor.roles.some((role) => role.role === Role.PROFESSOR)) throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Professor is not eligible' }); const ids = input.results.map((result) => result.testDefinitionId); const tests = await tx.physicalTestDefinition.count({ where: { id: { in: ids }, isActive: true } }); if (tests !== new Set(ids).size) throw new BadRequestException({ code: 'SALA_PHYSICAL_TEST_INVALID', message: 'Every result must reference an active physical test' }); return tx.physicalEvaluation.create({ data: { personId: input.personId, salaParticipationId: input.salaParticipationId, professorId: input.professorId, evaluationDate: this.date(input.evaluationDate), createdBy: actorId, results: { create: input.results.map((result) => ({ testDefinitionId: result.testDefinitionId, resultText: result.resultText.trim() })) } }, include: { results: { include: { testDefinition: true } } } }); }); }
+  async listStudents(): Promise<SalaStudentListItemDto[]> {
+    const today = this.todayOperational();
+    const year = Number(today.slice(0, 4));
+    const month = Number(today.slice(5, 7));
+    const participations = await this.prisma.salaParticipation.findMany({
+      where: { endDate: null },
+      orderBy: [{ person: { lastName: 'asc' } }, { person: { firstName: 'asc' } }],
+      select: {
+        person: { select: {
+          id: true, firstName: true, lastName: true, dni: true,
+          salaPayments: { where: { year, month, reversal: null }, select: { id: true }, take: 1 },
+        } },
+        plan: { select: { id: true, name: true } },
+        mainProfessor: { select: { id: true, firstName: true, lastName: true } },
+        routines: { where: { status: RoutineStatus.ACTIVE }, select: { id: true }, take: 1 },
+      },
+    });
+    return participations.map(({ person, plan, mainProfessor, routines }) => ({
+      id: person.id, firstName: person.firstName, lastName: person.lastName, dni: person.dni,
+      plan, professor: mainProfessor,
+      routineStatus: routines.length ? 'ACTIVE' : 'MISSING',
+      paymentStatus: person.salaPayments.length ? 'PAID' : 'PENDING',
+    }));
+  }
   async dashboard(date: string): Promise<SalaDashboardDto> {
     const agenda = await this.agenda(date);
     const entries = agenda.flatMap((group) => group.people);

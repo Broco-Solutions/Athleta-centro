@@ -163,6 +163,22 @@ Cada horario muestra hora, cantidad de alumnos previstos, hasta 3 nombres y orig
 
 Se mantienen INI-01 (Alumnos esperados: presencias planificadas FIXED + ONE_OFF, sin espontáneos) e INI-02 (Asistencias: ATTENDED, incluyendo espontáneos). Los indicadores corresponden a la fecha seleccionada.
 
-Sin rutina activa cuenta Personas con participación activa (`endDate === null`) sin Routine ACTIVE; una rutina histórica no cuenta como activa. Pago pendiente cuenta participantes actuales sin Pago válido y no revertido del mes calendario actual de Argentina, independientemente de Hoy/Mañana. Solo muestra cantidades, sin plazos, importes, deuda histórica ni bloqueos. Ambas cards llevan a `/sala?view=students`, sin filtros específicos en este bloque.
+Sin rutina activa cuenta Personas con participación activa (`endDate === null`) sin Routine ACTIVE; una rutina histórica no cuenta como activa. Pago pendiente cuenta participantes actuales sin Pago válido y no revertido del mes calendario actual de Argentina, independientemente de Hoy/Mañana. Solo muestra cantidades, sin plazos, importes, deuda histórica ni bloqueos. Ambas cards llevan a `/students?filter=without-routine` y `/students?filter=pending-payment`, respectivamente, según la navegación aprobada el 2026-10-13.
 
-PROF-01 permanece **PENDIENTE**: se ocultan provisoriamente las acciones visuales de nueva Persona/Alumno para Profesor puro, preservando la incorporación de Personas existentes y `PEOPLE_CREATE` en backend. INI-06 e INI-07 siguen pendientes y corresponden a Clínica. La configuración y navegación de Sala se trabajarán en un bloque posterior.
+PROF-01 permanece **PENDIENTE**: se ocultan provisoriamente las acciones visuales de nueva Persona/Alumno para Profesor puro, preservando la incorporación de Personas existentes y `PEOPLE_CREATE` en backend. INI-06 e INI-07 siguen pendientes y corresponden a Clínica. La navegación definitiva del Profesor se documenta a continuación.
+
+## Navegación y seguimiento del Profesor puro — 2026-10-13
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+Una cuenta cuyo único rol sea `PROFESSOR` utiliza exclusivamente **Inicio → Reservas → Alumnos → Rutinas**, con rutas `/`, `/reservations`, `/students` y `/routines`. Los roles combinados conservan la navegación basada en permisos.
+
+- **Reservas** es la única agenda operativa general del Profesor: turnos fijos, reservas puntuales, asistencia e incorporación espontánea de Personas existentes.
+- **Alumnos** muestra todos los participantes activos de Sala (`endDate === null`), sin limitar por Profesor principal. Muestra explícitamente el Profesor principal con nombre y apellido, Plan, Rutina activa y Pago válido del mes actual de Argentina. Profesor principal organiza responsabilidad y seguimiento, no limita acceso; el Profesor puede abrir cualquier alumno.
+- **Rutinas** conserva su sección independiente para preestablecidas y ejercicios.
+- **Sala** no se presenta como sección al Profesor. La configuración de horarios, capacidades, cambios permanentes y excepciones corresponde a Administración; se retira únicamente `SALA_SCHEDULE_MANAGE` del rol Profesor.
+- **Personas** no se presenta como módulo al Profesor.
+
+La ficha técnica continúa reutilizando internamente las rutas/modelos existentes de Sala, pero esa implementación no debe determinar el lenguaje de navegación visible: para Profesor puro la ficha utiliza contexto **Alumnos** y vuelve a `/students`. Los enlaces antiguos `/sala` y `/sala?view=students` redirigen a Reservas y Alumnos, respectivamente.
+
+**PROF-01 permanece PENDIENTE**. No se ofrece alta nueva de Persona/Alumno en la experiencia del Profesor. `PEOPLE_CREATE` permanece temporalmente en backend hasta validar su autonomía con Athleta; se conserva incorporación de Personas existentes según permisos.

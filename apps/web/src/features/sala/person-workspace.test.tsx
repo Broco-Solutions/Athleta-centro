@@ -247,3 +247,19 @@ it.each([false, true])('uses the generated template list and routine replacement
   else { await screen.findByText('Rutina asignada correctamente.'); await waitFor(() => expect(reads()).toBe(2)); }
   expect(templateReads).toBe(1); expect(writes).toEqual([{ personId, salaParticipationId: 'participation', days: [{ name: 'Modelo', exercises: [{ exerciseDefinitionId: 'squat', series: '4', repetitions: '10', duration: null, load: null, rest: null, notes: null }] }] }]);
 });
+
+it('integrates pure Professor student detail into Alumnos without the administrative Person link', async () => {
+  renderWorkspace();
+  await screen.findByText('Participación activa');
+  const breadcrumb = within(screen.getByRole('navigation', { name: 'Breadcrumb' }));
+  expect(breadcrumb.getByRole('link', { name: 'Alumnos' })).toHaveAttribute('href', '/students');
+  expect(within(screen.getByRole('navigation', { name: 'Navegación principal' })).getByRole('link', { name: 'Alumnos' })).toHaveAttribute('aria-current', 'page');
+  expect(screen.queryByRole('link', { name: 'Ver ficha de Persona' })).not.toBeInTheDocument();
+});
+it('preserves Sala and the Person link for other roles', async () => {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'admin', firstName: 'Admin', lastName: 'Sintético' }, roles: ['ADMINISTRATIVE'], permissions: ['PEOPLE_READ', 'SALA_RELATION_READ', 'SALA_AGENDA_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })));
+  renderWorkspace();
+  await screen.findByText('Participación activa');
+  expect(within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByRole('link', { name: 'Sala' })).toHaveAttribute('href', '/sala');
+  expect(screen.getByRole('link', { name: 'Ver ficha de Persona' })).toHaveAttribute('href', `/people/${personId}`);
+});

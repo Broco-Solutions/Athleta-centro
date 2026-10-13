@@ -31,7 +31,7 @@ describe('Sala configuration API', () => {
     expect(override.body.data.capacityOverride).toBe(4);
   });
   it('rejects non-positive capacities and overlapping slots', async () => {
-    const authn = await session(Role.PROFESSOR);
+    const authn = await session(Role.ADMINISTRATIVE);
     await request(app.getHttpServer()).patch('/api/sala/configuration').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ capacity: 0 }).expect(400);
     await request(app.getHttpServer()).post('/api/sala/schedule').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ weekday: 'TUESDAY', startTime: '09:00', durationMinutes: 60, specificCapacity: 0 }).expect(400);
     await request(app.getHttpServer()).post('/api/sala/schedule').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ weekday: 'TUESDAY', startTime: '09:00', durationMinutes: 60 }).expect(201);
@@ -1113,6 +1113,81 @@ describe('Sala configuration API', () => {
       expect(result.body.data.upcoming[0].people).toHaveLength(3);
       const empty = await request(app.getHttpServer()).get('/api/sala/dashboard?date=2026-10-15').set('Cookie', f.authn.cookie).expect(200);
       expect(empty.body.data).toMatchObject({ expected: 0, attended: 0, cancelledOrAbsent: 0, upcoming: [] });
+    });
+  });
+
+  it('denies Professor structural configuration while allowing agenda reads', async () => {
+    const authn = await session(Role.PROFESSOR);
+    await request(app.getHttpServer()).patch('/api/sala/configuration').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ capacity: 12 }).expect(403);
+    await request(app.getHttpServer()).post('/api/sala/schedule').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ weekday: 'MONDAY', startTime: '09:00', durationMinutes: 60 }).expect(403);
+    await request(app.getHttpServer()).get('/api/sala/agenda?date=2026-10-13').set('Cookie', authn.cookie).expect(200);
+  });
+
+  describe('active Sala students projection', () => {
+    beforeEach(() => {
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'clearImmediate', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance', 'queueMicrotask', 'hrtime'] });
+      // UTC November, but still October in operational Argentina.
+      jest.setSystemTime(new Date('2026-11-01T02:30:00Z'));
+    });
+    afterEach(() => jest.useRealTimers());
+    async function studentsFixture() {
+      const authn = await session(Role.PROFESSOR);
+      const professor = await prisma.internalUser.findFirstOrThrow({ where: { email: 'professor@sala.test' } });
+      const other = await users.create({ firstName: 'Otro', lastName: 'Profesor sintético', email: 'other@students.test', roles: [Role.PROFESSOR] });
+      const plan = await prisma.salaPlan.create({ data: { name: '3 veces', monthlyAmount: 1000 } });
+      const names = [['Zoe', 'Zulu'], ['Bruno', 'Alfa'], ['Ana', 'Alfa'], ['Lucía', 'Beta'], ['Finalizado', 'Aardvark']];
+      const students: { person: Person; participation: SalaParticipation }[] = [];
+      for (const [index, [firstName, lastName]] of names.entries()) {
+        const dni = `8700000${index}`;
+        const person = await prisma.person.create({ data: { firstName: firstName!, lastName: lastName!, dni, normalizedDni: dni, phone: '3515550000', email: 'synthetic@students.test', birthDate: new Date('1990-01-01') } });
+        const participation = await prisma.salaParticipation.create({ data: { personId: person.id, mainProfessorId: index % 2 ? other.id : professor.id, planId: plan.id, startDate: new Date('2026-01-01'), ...(index === 4 ? { endDate: new Date('2026-10-01') } : {}) } });
+        students.push({ person, participation });
+      }
+      await prisma.routine.create({ data: { personId: students[0]!.person.id, salaParticipationId: students[0]!.participation.id, version: 1, status: 'ACTIVE' } });
+      await prisma.routine.create({ data: { personId: students[1]!.person.id, salaParticipationId: students[1]!.participation.id, version: 1, status: 'HISTORICAL' } });
+      const method = await prisma.paymentMethod.create({ data: { name: `Students ${randomUUID()}` } });
+      const pay = (index: number, month: number) => prisma.salaPayment.create({ data: { personId: students[index]!.person.id, year: 2026, month, amount: 1000, paidAt: new Date('2026-10-01'), registeredById: professor.id, paymentMethodId: method.id, operationId: randomUUID() } });
+      await pay(0, 10);
+      const reversed = await pay(1, 10);
+      await prisma.salaPaymentReversal.create({ data: { paymentId: reversed.id, registeredById: professor.id, operationId: randomUUID(), reason: 'Reversión sintética' } });
+      // Student 2 has no payment at all; student 3 only has a next-month payment.
+      await pay(3, 11);
+      return { authn, professor, other, plan, students };
+    }
+    it('returns every active participant across Professors, in surname/name order and with only the exact DTO fields', async () => {
+      const f = await studentsFixture();
+      const result = await request(app.getHttpServer()).get('/api/sala/students').set('Cookie', f.authn.cookie).expect(200);
+      expect(result.body.data.map((row: { id: string }) => row.id)).toEqual([2, 1, 3, 0].map(index => f.students[index]!.person.id));
+      for (const row of result.body.data) {
+        const index = f.students.findIndex(student => student.person.id === row.id);
+        const professor = index % 2 ? f.other : f.professor;
+        expect(row.professor).toEqual({ id: professor.id, firstName: professor.firstName, lastName: professor.lastName });
+        expect(row.plan).toEqual({ id: f.plan.id, name: '3 veces' });
+        expect(Object.keys(row).sort()).toEqual(['dni', 'firstName', 'id', 'lastName', 'paymentStatus', 'plan', 'professor', 'routineStatus']);
+        expect(row.dni).toBe(f.students[index]!.person.dni);
+      }
+      expect(Object.keys(result.body)).toEqual(['data']);
+    });
+    it('counts only ACTIVE routines of that participation and current operational-month non-reversed payments', async () => {
+      const f = await studentsFixture();
+      const result = await request(app.getHttpServer()).get('/api/sala/students').set('Cookie', f.authn.cookie).expect(200);
+      const statuses = new Map<string, { routineStatus: string; paymentStatus: string }>(result.body.data.map((row: { id: string; routineStatus: string; paymentStatus: string }) => [row.id, row]));
+      expect(statuses.get(f.students[0]!.person.id)).toMatchObject({ routineStatus: 'ACTIVE', paymentStatus: 'PAID' });
+      for (const index of [1, 2, 3]) expect(statuses.get(f.students[index]!.person.id)).toMatchObject({ routineStatus: 'MISSING', paymentStatus: 'PENDING' });
+      // An ACTIVE routine tied to a former participation cannot make the current participation active.
+      const previous = await prisma.salaParticipation.create({ data: { personId: f.students[2]!.person.id, mainProfessorId: f.professor.id, planId: f.plan.id, startDate: new Date('2025-01-01'), endDate: new Date('2025-12-31') } });
+      await prisma.routine.create({ data: { personId: f.students[2]!.person.id, salaParticipationId: previous.id, version: 1, status: 'ACTIVE' } });
+      const after = await request(app.getHttpServer()).get('/api/sala/students').set('Cookie', f.authn.cookie).expect(200);
+      expect(after.body.data.find((row: { id: string }) => row.id === f.students[2]!.person.id).routineStatus).toBe('MISSING');
+    });
+    it('returns an empty list and denies clinical relation-only and support actors', async () => {
+      const professor = await session(Role.PROFESSOR);
+      const result = await request(app.getHttpServer()).get('/api/sala/students').set('Cookie', professor.cookie).expect(200);
+      expect(result.body).toEqual({ data: [] });
+      for (const role of [Role.KINESIOLOGIST, Role.BROCO_SUPPORT]) {
+        const denied = await session(role);
+        await request(app.getHttpServer()).get('/api/sala/students').set('Cookie', denied.cookie).expect(403);
+      }
     });
   });
 
