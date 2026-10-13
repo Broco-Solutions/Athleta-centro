@@ -37,6 +37,12 @@ Las siguientes 16 decisiones son las expresamente aprobadas para esta consolidac
 
 ## Decisiones aprobadas posteriormente
 
+### SAL-RUT-10 — Rutinas preestablecidas
+
+Fecha: **2026-10-09**. Estado: **RESUELTO**. Fuente: **Definición aprobada 2026-10-09**.
+
+Profesor y Administrador general pueden crear, editar y eliminar Rutinas preestablecidas compartidas por Athleta. Al definir la Rutina de un Alumno pueden crearla desde cero o utilizar una preestablecida. Al seleccionar una preestablecida se muestra primero una vista detallada en modo lectura. Desde allí pueden asignarla tal como está o elegir Editar para personalizar una copia antes de guardarla. En ambos casos, la Rutina resultante del Alumno es independiente: modificarla no altera la preestablecida y modificar o eliminar posteriormente la preestablecida no altera Rutinas ya asignadas. Las preestablecidas no pertenecen a un Profesor específico y no utilizan estados Activo/Inactivo.
+
 Definiciones aprobadas el **2026-10-07** para los Bloques 1 y 2 de Planes y Servicios de Sala y las reservas puntuales del Portal.
 
 | ID / Tema | Decisión que estaba en disputa | Decisión finalmente adoptada | Regla funcional vigente | Evidencia en la implementación |

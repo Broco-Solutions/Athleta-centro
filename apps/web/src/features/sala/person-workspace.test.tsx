@@ -232,3 +232,18 @@ it('rejects an unexpected successful creation body without a created entity', as
   expect(scope.getByLabelText('Nombre del ejercicio')).toHaveValue('Peso muerto');
   expect(scope.queryByRole('option', { name: 'Peso muerto · Piernas' })).not.toBeInTheDocument();
 });
+
+it.each([false, true])('uses the generated template list and routine replacement endpoint for assignment (reject=%s)', async (reject) => {
+  navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); const reads = routineHandlers();
+  let templateReads = 0; const writes: unknown[] = [];
+  server.use(
+    http.get('http://localhost:3000/api/sala/routine-templates', () => { templateReads++; return HttpResponse.json({ data: [{ id: 'template', name: 'Preestablecida', days: [{ id: 'template-day', position: 1, name: 'Modelo', exercises: [{ id: 'template-entry', exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla', isActive: true }, series: '4', repetitions: '10' }] }] }] }); }),
+    http.post('http://localhost:3000/api/sala/routines', async ({ request }) => { expect(request.headers.get('x-csrf-token')).toBe('csrf'); writes.push(await request.json()); return reject ? HttpResponse.json({ code: 'SALA_EXERCISE_INVALID', message: 'Ejercicio retirado' }, { status: 400 }) : HttpResponse.json({ data: {} }); }),
+  );
+  renderWorkspace(); await screen.findByText('Día de fuerza'); fireEvent.click(screen.getByRole('button', { name: 'Usar preestablecida' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Preestablecida' }));
+  expect(screen.queryByRole('button', { name: 'Guardar rutina' })).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Asignar rutina' }));
+  if (reject) { expect(await screen.findByRole('alert')).toHaveTextContent('Ejercicio retirado'); expect(screen.queryByText('Rutina asignada correctamente.')).not.toBeInTheDocument(); expect(reads()).toBe(1); }
+  else { await screen.findByText('Rutina asignada correctamente.'); await waitFor(() => expect(reads()).toBe(2)); }
+  expect(templateReads).toBe(1); expect(writes).toEqual([{ personId, salaParticipationId: 'participation', days: [{ name: 'Modelo', exercises: [{ exerciseDefinitionId: 'squat', series: '4', repetitions: '10', duration: null, load: null, rest: null, notes: null }] }] }]);
+});

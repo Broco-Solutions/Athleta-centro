@@ -134,6 +134,7 @@ El resto de las dudas originales figura resuelto, no aplica o queda a criterio t
 | SAL-RUT-07 | RESUELTO | Tiempo, Carga y Descanso se expresan como texto breve incluyendo unidad/referencia. No existe catálogo de unidades. | §6.21 |
 | SAL-RUT-08 | RESUELTO | Sí. Duplicar precarga días, ejercicios, valores y observaciones y crea una nueva Rutina independiente. | §6.22 |
 | SAL-RUT-09 | RESUELTO | Sí. Un Alumno puede permanecer sin Rutina activa indefinidamente; se identifica para seguimiento pero no existe bloqueo ni plazo obligatorio. | §6.20 |
+| SAL-RUT-10 | RESUELTO | Profesor y Administrador general pueden crear, editar y eliminar Rutinas preestablecidas compartidas por Athleta. Al definir la Rutina de un Alumno pueden crearla desde cero o utilizar una preestablecida. Al seleccionar una preestablecida se muestra primero una vista detallada en modo lectura. Desde allí pueden asignarla tal como está o elegir Editar para personalizar una copia antes de guardarla. En ambos casos, la Rutina resultante del Alumno es independiente: modificarla no altera la preestablecida y modificar o eliminar posteriormente la preestablecida no altera Rutinas ya asignadas. Las preestablecidas no pertenecen a un Profesor específico y no utilizan estados Activo/Inactivo. | Definición aprobada 2026-10-09 |
 
 ---
 

@@ -730,6 +730,27 @@ La estrategia final de snapshot del ejercicio depende de la definición funciona
 
 ---
 
+### RoutineTemplate → RoutineTemplateDay → RoutineTemplateExercise (SAL-RUT-10)
+
+`RoutineTemplate` es un aggregate independiente, global y compartido por Athleta.
+No pertenece a una Persona ni a un Profesor. Contiene `id`, `name` obligatorio
+(`VarChar(120)`, sin unicidad), `createdAt`, `updatedAt` y días.
+
+`RoutineTemplateDay` contiene `routineTemplateId`, `position`, nombre opcional y
+Ejercicios; tiene unicidad `(routineTemplateId, position)`.
+`RoutineTemplateExercise` contiene `routineTemplateDayId`, `exerciseDefinitionId`,
+`position` y los mismos campos opcionales de `RoutineExercise`: Series,
+Repeticiones o Tiempo, Carga, Descanso (80 caracteres) y Observaciones (500).
+Tiene unicidad `(routineTemplateDayId, position)` y FK `RESTRICT` al catálogo de
+Ejercicios. Los hijos se eliminan en cascada junto con la preestablecida.
+
+Al asignar se copia el contenido: no queda vínculo ni FK entre `Routine` y
+`RoutineTemplate`. Las Rutinas de Alumno continúan usando
+`Routine → RoutineDay → RoutineExercise` y el lifecycle `ACTIVE/HISTORICAL`.
+Editar o eliminar la preestablecida no altera las Rutinas ya asignadas.
+
+---
+
 ## 41. FixedSalaBooking
 
 No tendrá enum de estado.

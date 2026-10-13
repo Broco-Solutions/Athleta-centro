@@ -127,3 +127,14 @@ describe('WorkspaceShell', () => {
     expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
   });
 });
+
+it('shows Rutinas immediately after Sala for routine managers', async () => {
+  renderShell({ permissions: ['SALA_ROUTINE_MANAGE'], active: 'Rutinas' });
+  const link = await screen.findByRole('link', { name: 'Rutinas' });
+  expect(link).toHaveAttribute('href', '/routines'); expect(link).toHaveAttribute('aria-current', 'page');
+  expect(within(screen.getByRole('navigation', { name: 'Navegación principal' })).getAllByRole('link').map((item) => item.textContent)).toEqual(['Inicio', 'Sala', 'Rutinas']);
+});
+it('hides Rutinas for users with only routine read permission', async () => {
+  renderShell({ permissions: ['SALA_ROUTINE_READ'] }); await screen.findByRole('link', { name: 'Sala' });
+  expect(screen.queryByRole('link', { name: 'Rutinas' })).not.toBeInTheDocument();
+});

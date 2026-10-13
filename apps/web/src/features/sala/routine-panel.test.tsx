@@ -286,3 +286,87 @@ it('selects immediately while catalog refetch is pending and supports optional d
   finishRefetch([deadlift]);
   await waitFor(() => expect(day(1).getByLabelText('Ejercicio')).toHaveValue('deadlift'));
 });
+
+const template = {
+  id: 'template', name: 'Fuerza general', days: [
+    { id: 'template-day-1', position: 1, name: 'Modelo fuerza', exercises: [{ id: 'template-entry-1', position: 1, exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla', isActive: true }, series: '4', repetitions: '10', load: '60 kg', rest: '90 s', notes: 'Técnica' }] },
+    { id: 'template-day-2', position: 2, name: 'Modelo core', exercises: [{ id: 'template-entry-2', exerciseDefinitionId: 'plank', exerciseDefinition: { name: 'Plancha', isActive: true }, duration: '45 s' }] },
+  ],
+};
+async function previewTemplate() {
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Usar preestablecida' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Usar preestablecida' }));
+  fireEvent.click(await screen.findByRole('button', { name: template.name }));
+  await screen.findByRole('button', { name: 'Asignar rutina' });
+}
+it.each([false, true])('previews all content and assigns an independent copy without opening the editor (active=%s)', async (hasActive) => {
+  const { api } = renderPanel(hasActive ? [routine] : []);
+  api.templates.mockResolvedValue([template]); await previewTemplate();
+  expect(screen.getByText('Modelo fuerza')).toBeInTheDocument(); expect(screen.getByText('Modelo core')).toBeInTheDocument();
+  expect(screen.getByText('Sentadilla · 4 series · 10 rep. · Carga 60 kg · Descanso 90 s · Observación Técnica')).toBeInTheDocument();
+  expect(screen.getAllByText('Plancha · Tiempo 45 s').length).toBeGreaterThan(0);
+  expect(screen.queryByLabelText('Nombre del día 1')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Guardar rutina' })).not.toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: 'Vista previa de preestablecida' })).getByRole('button', { name: 'Editar' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Asignar rutina' }));
+  await screen.findByText('Rutina asignada correctamente.');
+  const payload = hasActive ? api.replace.mock.calls[0]![1] : api.create.mock.calls[0]![0];
+  expect(payload).toEqual({ personId: 'person', salaParticipationId: 'participation', days: [
+    { name: 'Modelo fuerza', exercises: [{ exerciseDefinitionId: 'squat', series: '4', repetitions: '10', duration: null, load: '60 kg', rest: '90 s', notes: 'Técnica' }] },
+    { name: 'Modelo core', exercises: [{ exerciseDefinitionId: 'plank', series: null, repetitions: null, duration: '45 s', load: null, rest: null, notes: null }] },
+  ] });
+  expect(payload).not.toHaveProperty('routineTemplateId');
+  expect(api.replace).toHaveBeenCalledTimes(hasActive ? 1 : 0); expect(api.create).toHaveBeenCalledTimes(hasActive ? 0 : 1);
+  if (hasActive) expect(api.replace.mock.calls[0]![0]).toBe('routine');
+  expect(screen.queryByRole('button', { name: 'Guardar rutina' })).not.toBeInTheDocument();
+});
+it('personalizes every template day without changing the original template', async () => {
+  const { api } = renderPanel(); api.templates.mockResolvedValue([template]);
+  const original = structuredClone(template); await previewTemplate();
+  fireEvent.click(within(screen.getByRole('region', { name: 'Vista previa de preestablecida' })).getByRole('button', { name: 'Editar' }));
+  expect(screen.getByText('Personalizar rutina')).toBeInTheDocument();
+  expect(day(1).getByLabelText('Nombre del día 1')).toHaveValue('Modelo fuerza');
+  expect(day(2).getByLabelText('Nombre del día 2')).toHaveValue('Modelo core');
+  fireEvent.click(day(1).getByRole('button', { name: 'Editar' }));
+  change(day(1), 'Series', '3'); change(day(1), 'Repeticiones', '8');
+  fireEvent.click(day(1).getByRole('button', { name: 'Guardar ejercicio' }));
+  await waitFor(() => expect(day(1).getByText(/3 series · 8 rep/)).toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar rutina' }));
+  await screen.findByText('Rutina guardada correctamente.');
+  expect(api.replace.mock.calls[0]![1].days[0]?.exercises[0]).toMatchObject({ series: '3', repetitions: '8' });
+  expect(api.replace.mock.calls[0]![1].days).toHaveLength(2);
+  expect(template).toEqual(original);
+});
+it('explains the empty template list and preserves creation from scratch', async () => {
+  renderPanel([]); await waitFor(() => expect(screen.getByRole('button', { name: 'Usar preestablecida' })).toBeEnabled()); fireEvent.click(screen.getByRole('button', { name: 'Usar preestablecida' }));
+  await screen.findByText('No hay rutinas preestablecidas disponibles. Podés crear la rutina desde cero.');
+  fireEvent.click(screen.getByRole('button', { name: 'Crear desde cero' }));
+  expect(day(1).getByLabelText('Nombre del día 1')).toHaveValue('Día 1');
+  expect(day(1).queryByRole('listitem')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Guardar rutina' })).toBeInTheDocument();
+});
+it('blocks direct assignment of retired entries but permits replacement in the editor', async () => {
+  const { api } = renderPanel([]);
+  api.templates.mockResolvedValue([{ ...template, days: [{ ...template.days[0]!, exercises: [{ ...template.days[0]!.exercises[0]!, exerciseDefinition: { name: 'Sentadilla', isActive: false } }] }] }]);
+  await previewTemplate(); expect(screen.getByText(/Sentadilla · No disponible/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Asignar rutina' })).toBeDisabled();
+  expect(screen.getByText('Esta rutina contiene ejercicios que ya no están disponibles. Editala para reemplazarlos o quitarlos.')).toBeInTheDocument();
+  fireEvent.click(within(screen.getByRole('region', { name: 'Vista previa de preestablecida' })).getByRole('button', { name: 'Editar' }));
+  fireEvent.click(day(1).getByRole('button', { name: 'Editar' }));
+  change(day(1), 'Ejercicio', 'plank'); fireEvent.click(day(1).getByRole('button', { name: 'Guardar ejercicio' }));
+  await waitFor(() => expect(day(1).getByText(/Plancha · 4 series/)).toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar rutina' }));
+  await waitFor(() => expect(api.create).toHaveBeenCalled());
+  expect(api.create.mock.calls[0]![0].days[0]?.exercises[0]?.exerciseDefinitionId).toBe('plank');
+});
+it('reports assignment failure without success and allows retry', async () => {
+  const { api } = renderPanel([]); api.templates.mockResolvedValue([template]); api.create.mockRejectedValueOnce(new Error('Ejercicio no disponible'));
+  await previewTemplate(); fireEvent.click(screen.getByRole('button', { name: 'Asignar rutina' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Ejercicio no disponible');
+  expect(screen.queryByText('Rutina asignada correctamente.')).not.toBeInTheDocument(); expect(api.list).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Asignar rutina' })); await screen.findByText('Rutina asignada correctamente.');
+});
+it('does not request templates for read-only users', async () => {
+  const { api } = renderPanel([routine], false); await screen.findByText('Fuerza');
+  expect(screen.queryByRole('button', { name: 'Usar preestablecida' })).not.toBeInTheDocument(); expect(api.templates).not.toHaveBeenCalled();
+});
