@@ -182,3 +182,19 @@ Una cuenta cuyo único rol sea `PROFESSOR` utiliza exclusivamente **Inicio → R
 La ficha técnica continúa reutilizando internamente las rutas/modelos existentes de Sala, pero esa implementación no debe determinar el lenguaje de navegación visible: para Profesor puro la ficha utiliza contexto **Alumnos** y vuelve a `/students`. Los enlaces antiguos `/sala` y `/sala?view=students` redirigen a Reservas y Alumnos, respectivamente.
 
 **PROF-01 permanece PENDIENTE**. No se ofrece alta nueva de Persona/Alumno en la experiencia del Profesor. `PEOPLE_CREATE` permanece temporalmente en backend hasta validar su autonomía con Athleta; se conserva incorporación de Personas existentes según permisos.
+
+
+## Profesor — Gestión de Pagos de Sala — 2026-10-13
+
+**Estado: CONFIRMADO.**
+
+Se ratifica la definición funcional vigente: el Profesor puede consultar y administrar Pagos de Sala.
+
+La simplificación de su panel no elimina esta capacidad.
+
+En la ficha del Alumno:
+
+- el Resumen muestra solamente el estado actual del Pago;
+- la gestión completa se realiza desde una sección Pagos claramente accesible.
+
+Esto permite mantener el dashboard enfocado sin esconder la operación económica que el Profesor debe poder resolver.
