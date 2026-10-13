@@ -198,3 +198,13 @@ En la ficha del Alumno:
 - la gestión completa se realiza desde una sección Pagos claramente accesible.
 
 Esto permite mantener el dashboard enfocado sin esconder la operación económica que el Profesor debe poder resolver.
+
+## Profesor — Reutilización de Rutinas y catálogo de ejercicios — 2026-10-13
+
+**Estado: CONFIRMADO / RESUELTO.**
+
+En la ficha del Alumno, el catálogo de ejercicios no se muestra como una acción principal de la sección Rutina. **Administrar ejercicios** se ofrece únicamente mientras el Profesor está creando, editando o personalizando una Rutina.
+
+La Rutina activa se modifica mediante **Editar rutina** y no ofrece una acción **Duplicar rutina**. Las Rutinas históricas pueden reutilizarse mediante **Usar nuevamente**. Esta acción crea una nueva versión activa a partir del contenido histórico. Si existe una Rutina activa, la Rutina actual pasa al historial.
+
+Antes de ejecutar **Usar nuevamente** se requiere confirmación explícita.

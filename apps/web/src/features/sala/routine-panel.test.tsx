@@ -130,18 +130,60 @@ it('prevents simultaneous repetitions and time without discarding values and val
   await waitFor(() => expect(day(1).queryByRole('alert')).not.toBeInTheDocument());
 });
 
-it('duplicates a visible routine using its ID, refreshes and reports success', async () => {
-  const { api } = renderPanel(); await screen.findByText('Fuerza');
-  fireEvent.click(screen.getByRole('button', { name: 'Duplicar rutina' }));
-  expect(await screen.findByText('Rutina duplicada correctamente.')).toBeInTheDocument();
-  expect(api.duplicate).toHaveBeenCalledWith('routine', expect.any(Object));
+it('keeps the active routine editable without a reuse action', async () => {
+  renderPanel(); await screen.findByText('Fuerza');
+  const activeArticle = screen.getByRole('heading', { name: 'Rutina v2' }).closest('article')!;
+  expect(screen.getByRole('button', { name: 'Editar rutina' })).toBeInTheDocument();
+  expect(within(activeArticle).queryByRole('button', { name: 'Usar nuevamente' })).not.toBeInTheDocument();
+  expect(within(activeArticle).queryByRole('button', { name: 'Duplicar rutina' })).not.toBeInTheDocument();
+});
+it('asks before reusing a historical routine, then activates it and refreshes', async () => {
+  const historical = { ...routine, id: 'historical', status: 'HISTORICAL' as const, version: 1 };
+  const { api } = renderPanel([routine, historical]); await screen.findAllByText('Fuerza');
+  fireEvent.click(screen.getByText('Rutinas históricas (1)'));
+  const historicalArticle = screen.getByRole('heading', { name: 'Rutina v1' }).closest('article')!;
+  expect(within(historicalArticle).getByRole('button', { name: 'Usar nuevamente' })).toBeInTheDocument();
+  expect(within(historicalArticle).queryByRole('button', { name: 'Duplicar rutina' })).not.toBeInTheDocument();
+  fireEvent.click(within(historicalArticle).getByRole('button', { name: 'Usar nuevamente' }));
+  const dialog = await screen.findByRole('alertdialog', { name: 'Usar nuevamente esta rutina' });
+  expect(dialog).toHaveTextContent('Esta rutina pasará a ser la rutina activa del alumno.');
+  expect(dialog).toHaveTextContent('La rutina actual quedará en el historial.');
+  expect(api.duplicate).not.toHaveBeenCalled();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Usar nuevamente' }));
+  expect(await screen.findByText('Rutina activada correctamente.')).toBeInTheDocument();
+  expect(api.duplicate).toHaveBeenCalledWith('historical', expect.any(Object));
   await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2));
 });
-it('reports duplication errors without success or invalidation', async () => {
-  const { api } = renderPanel(); api.duplicate.mockRejectedValue(new Error('No se puede duplicar'));
-  await screen.findByText('Fuerza'); fireEvent.click(screen.getByRole('button', { name: 'Duplicar rutina' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('No se puede duplicar');
-  expect(screen.queryByText('Rutina duplicada correctamente.')).not.toBeInTheDocument(); expect(api.list).toHaveBeenCalledTimes(1);
+it('omits the active routine notice when reusing history without an active routine', async () => {
+  const historical = { ...routine, id: 'historical', status: 'HISTORICAL' as const, version: 1 };
+  const { api } = renderPanel([historical]); await screen.findByText('Fuerza'); fireEvent.click(screen.getByText('Rutinas históricas (1)'));
+  fireEvent.click(screen.getByRole('button', { name: 'Usar nuevamente' }));
+  const dialog = await screen.findByRole('alertdialog');
+  expect(dialog).toHaveTextContent('Esta rutina pasará a ser la rutina activa del alumno.');
+  expect(dialog).not.toHaveTextContent('La rutina actual quedará en el historial.');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Usar nuevamente' }));
+  await screen.findByText('Rutina activada correctamente.'); expect(api.duplicate).toHaveBeenCalledWith('historical', expect.any(Object));
+});
+it('cancels historical reuse without calling the API or showing success', async () => {
+  const historical = { ...routine, id: 'historical', status: 'HISTORICAL' as const, version: 1 };
+  const { api } = renderPanel([routine, historical]); await screen.findAllByText('Fuerza'); fireEvent.click(screen.getByText('Rutinas históricas (1)'));
+  fireEvent.click(screen.getByRole('button', { name: 'Usar nuevamente' }));
+  const dialog = await screen.findByRole('alertdialog'); fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Rutina v1' })).toBeInTheDocument();
+  expect(api.duplicate).not.toHaveBeenCalled(); expect(screen.queryByText('Rutina activada correctamente.')).not.toBeInTheDocument();
+});
+it('preserves the confirmation context and reports reuse errors without success or invalidation', async () => {
+  const historical = { ...routine, id: 'historical', status: 'HISTORICAL' as const, version: 1 };
+  const { api } = renderPanel([routine, historical]); api.duplicate.mockRejectedValue(new Error('Participación activa requerida'));
+  await screen.findAllByText('Fuerza'); fireEvent.click(screen.getByText('Rutinas históricas (1)'));
+  fireEvent.click(screen.getByRole('button', { name: 'Usar nuevamente' }));
+  const dialog = await screen.findByRole('alertdialog'); fireEvent.click(within(dialog).getByRole('button', { name: 'Usar nuevamente' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Participación activa requerida');
+  expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  expect(screen.queryByText('Rutina activada correctamente.')).not.toBeInTheDocument();
+  expect(api.list).toHaveBeenCalledTimes(1);
+  fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancelar' }));
 });
 it('creates a catalog exercise and clears the form while keeping the routine editor open', async () => {
   const { api } = renderPanel(); await startEditing(); openCatalog(); fillCatalog();
@@ -184,7 +226,7 @@ it('allows read-only users to see active and historical routines without managem
   const { api } = renderPanel([routine, { ...routine, id: 'old', version: 1, status: 'HISTORICAL' }], false);
   await screen.findAllByText('Fuerza'); fireEvent.click(screen.getByText('Rutinas históricas (1)'));
   expect(screen.getByText('Rutina v1')).toBeInTheDocument();
-  for (const name of ['Crear desde cero', 'Usar preestablecida', 'Editar rutina', 'Duplicar rutina']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  for (const name of ['Crear desde cero', 'Usar preestablecida', 'Editar rutina', 'Usar nuevamente', 'Duplicar rutina']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
   expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument(); expect(api.exercises).not.toHaveBeenCalled();
 });
 
@@ -325,6 +367,7 @@ it.each([false, true])('previews all content and assigns an independent copy wit
   expect(screen.getByText('Modelo fuerza')).toBeInTheDocument(); expect(screen.getByText('Modelo core')).toBeInTheDocument();
   expect(screen.getByText('Sentadilla · 4 series · 10 rep. · Carga 60 kg · Descanso 90 s · Observación Técnica')).toBeInTheDocument();
   expect(screen.getAllByText('Plancha · Tiempo 45 s').length).toBeGreaterThan(0);
+  expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Nombre del día 1')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Guardar rutina' })).not.toBeInTheDocument();
   expect(within(screen.getByRole('region', { name: 'Vista previa de preestablecida' })).getByRole('button', { name: 'Editar' })).toBeEnabled();

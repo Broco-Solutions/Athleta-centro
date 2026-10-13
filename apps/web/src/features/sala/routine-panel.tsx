@@ -31,6 +31,7 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
   const [editing, setEditing] = useState(false);
   const [days, setDays] = useState<EditingDay[]>(() => [newDay()]);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [routineToReuse, setRoutineToReuse] = useState<Routine | null>(null);
   const [catalogId, setCatalogId] = useState<string | null>(null);
   const [newExercise, setNewExercise] = useState({ name: '', primaryMuscle: '', description: '' });
   const [retirement, setRetirement] = useState<{ id: string; activeRoutines: number } | null>(null);
@@ -64,7 +65,10 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
     },
     onSuccess: async () => { setSelectingTemplate(false); setSelectedTemplate(null); setFeedback('Rutina asignada correctamente.'); await refreshRoutines(); },
   });
-  const duplicate = useMutation({ mutationFn: (id: string) => api.duplicate(id, options), onSuccess: async () => { setFeedback('Rutina duplicada correctamente.'); await refreshRoutines(); } });
+  const reuseRoutine = useMutation({
+    mutationFn: (id: string) => api.duplicate(id, options),
+    onSuccess: async () => { setRoutineToReuse(null); setFeedback('Rutina activada correctamente.'); await refreshRoutines(); },
+  });
   const exerciseMutation = useMutation({
     mutationFn: () => catalogId ? api.updateExercise(catalogId, newExercise, options) : api.createExercise(newExercise, options),
     onSuccess: async () => { setFeedback(catalogId ? 'Ejercicio actualizado correctamente.' : 'Ejercicio creado correctamente.'); setCatalogId(null); setNewExercise({ name: '', primaryMuscle: '', description: '' }); await refreshCatalog(); },
@@ -85,17 +89,18 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
     setEditing(true);
   };
   const retireNeedsConfirmation = (retire.error as (Error & { code?: string }) | null)?.code === 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED';
-  const actionErrors = [mutation.error, assign.error, duplicate.error, exerciseMutation.error, retireNeedsConfirmation ? null : retire.error].filter(Boolean);
+  const actionErrors = [mutation.error, assign.error, reuseRoutine.error, exerciseMutation.error, retireNeedsConfirmation ? null : retire.error].filter(Boolean);
   const catalogBusy = exerciseMutation.isPending || retire.isPending;
   return <section aria-labelledby="routine-heading" className="mt-4 rounded-md border bg-surface-muted p-4">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 id="routine-heading" className="font-semibold">Rutina</h3><p className="text-sm text-muted-foreground">Planificación de entrenamiento vigente e histórica.</p></div>{canManage && participationId ? <div className="flex flex-wrap gap-2"><Button type="button" variant="secondary" onClick={startEditing} disabled={routines.isLoading || routines.isError || editing || duplicate.isPending || assign.isPending}>{active ? 'Editar rutina' : 'Crear desde cero'}</Button><Button type="button" variant="secondary" disabled={routines.isLoading || routines.isError || editing || duplicate.isPending || assign.isPending} onClick={() => { setSelectingTemplate(true); setSelectedTemplate(null); setFeedback(null); assign.reset(); }}>Usar preestablecida</Button></div> : null}</div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 id="routine-heading" className="font-semibold">Rutina</h3><p className="text-sm text-muted-foreground">Planificación de entrenamiento vigente e histórica.</p></div>{canManage && participationId ? <div className="flex flex-wrap gap-2"><Button type="button" variant="secondary" onClick={startEditing} disabled={routines.isLoading || routines.isError || editing || Boolean(routineToReuse) || reuseRoutine.isPending || assign.isPending}>{active ? 'Editar rutina' : 'Crear desde cero'}</Button><Button type="button" variant="secondary" disabled={routines.isLoading || routines.isError || editing || Boolean(routineToReuse) || reuseRoutine.isPending || assign.isPending} onClick={() => { setSelectingTemplate(true); setSelectedTemplate(null); setFeedback(null); assign.reset(); }}>Usar preestablecida</Button></div> : null}</div>
     {feedback ? <p role="status" className="mt-3 text-sm">{feedback}</p> : null}
     {actionErrors.map((error, index) => <p role="alert" key={index} className="mt-3 text-sm text-red-700">{errorMessage(error)}</p>)}
     {routines.isLoading ? <p role="status" className="mt-3 text-sm text-muted-foreground">Cargando rutina…</p> : null}
     {routines.isError ? <p role="alert" className="mt-3 text-sm text-red-700">{errorMessage(routines.error)}</p> : null}
     {!routines.isLoading && !routines.isError && !active ? <p className="mt-3 text-sm text-muted-foreground">No hay una rutina activa.</p> : null}
-    {active ? <RoutineSummary routine={active} definitions={definitions.data ?? []} onDuplicate={canManage && participationId && !editing ? () => { setFeedback(null); duplicate.mutate(active.id); } : undefined} duplicating={duplicate.isPending}/> : null}
-    {historical.length > 0 ? <details className="mt-4"><summary className="cursor-pointer text-sm font-medium">Rutinas históricas ({historical.length})</summary><div className="mt-2 grid gap-2">{historical.map((routine) => <RoutineSummary key={routine.id} routine={routine} definitions={definitions.data ?? []} onDuplicate={canManage && participationId && !editing ? () => { setFeedback(null); duplicate.mutate(routine.id); } : undefined} duplicating={duplicate.isPending}/>)}</div></details> : null}
+    {active ? <RoutineSummary routine={active} definitions={definitions.data ?? []} reusing={reuseRoutine.isPending}/> : null}
+    {historical.length > 0 ? <details className="mt-4"><summary className="cursor-pointer text-sm font-medium">Rutinas históricas ({historical.length})</summary><div className="mt-2 grid gap-2">{historical.map((routine) => <RoutineSummary key={routine.id} routine={routine} definitions={definitions.data ?? []} onReuse={canManage && participationId && !editing && !selectingTemplate && !routineToReuse ? () => { setFeedback(null); reuseRoutine.reset(); setRoutineToReuse(routine); } : undefined} reusing={reuseRoutine.isPending}/>)}</div></details> : null}
+    {routineToReuse ? <div role="alertdialog" aria-modal="true" aria-labelledby="reuse-routine-title" className="mt-4 rounded-md border bg-white p-4"><h4 id="reuse-routine-title" className="font-semibold">Usar nuevamente esta rutina</h4><p className="mt-2 text-sm">Esta rutina pasará a ser la rutina activa del alumno.</p>{active ? <p className="text-sm">La rutina actual quedará en el historial.</p> : null}<div className="mt-4 flex justify-end gap-2"><Button type="button" variant="secondary" disabled={reuseRoutine.isPending} onClick={() => { setRoutineToReuse(null); reuseRoutine.reset(); }}>Cancelar</Button><Button type="button" disabled={reuseRoutine.isPending} onClick={() => reuseRoutine.mutate(routineToReuse.id)}>{reuseRoutine.isPending ? 'Activando…' : 'Usar nuevamente'}</Button></div></div> : null}
     {canManage && selectingTemplate ? <div className="mt-4 rounded-md border bg-white p-4">
       {selectedTemplate ? <div role="region" aria-label="Vista previa de preestablecida"><h4 className="font-semibold">{selectedTemplate.name} — {selectedTemplate.days.length} días</h4><RoutineContentSummary days={selectedTemplate.days}/>
         {selectedTemplate.days.some((day) => day.exercises.some((exercise) => exercise.exerciseDefinition?.isActive === false)) ? <p className="mt-3 text-sm">Esta rutina contiene ejercicios que ya no están disponibles. Editala para reemplazarlos o quitarlos.</p> : null}
@@ -115,6 +120,6 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
   </section>;
 }
 
-function RoutineSummary({ routine, definitions, onDuplicate, duplicating }: { routine: Routine; definitions: ExerciseDefinition[]; onDuplicate?: (() => void) | undefined; duplicating: boolean }): React.JSX.Element {
-  return <article className="mt-3 rounded-md border bg-white p-3"><div className="flex flex-wrap items-center justify-between gap-3"><h4 className="font-medium">Rutina v{routine.version}</h4><span className={routine.status === 'ACTIVE' ? 'rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-800' : 'rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700'}>{routine.status === 'ACTIVE' ? 'Activa' : 'Histórica'}</span>{onDuplicate ? <Button type="button" variant="secondary" disabled={duplicating} onClick={onDuplicate}>Duplicar rutina</Button> : null}</div><RoutineContentSummary days={routine.days} definitions={definitions}/></article>;
+function RoutineSummary({ routine, definitions, onReuse, reusing }: { routine: Routine; definitions: ExerciseDefinition[]; onReuse?: (() => void) | undefined; reusing: boolean }): React.JSX.Element {
+  return <article className="mt-3 rounded-md border bg-white p-3"><div className="flex flex-wrap items-center justify-between gap-3"><h4 className="font-medium">Rutina v{routine.version}</h4><span className={routine.status === 'ACTIVE' ? 'rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-800' : 'rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700'}>{routine.status === 'ACTIVE' ? 'Activa' : 'Histórica'}</span>{onReuse ? <Button type="button" variant="secondary" disabled={reusing} onClick={onReuse}>Usar nuevamente</Button> : null}</div><RoutineContentSummary days={routine.days} definitions={definitions}/></article>;
 }

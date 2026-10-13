@@ -157,7 +157,7 @@ it('allows routine read permission to access the tab and see the routine without
   expect(await screen.findByRole('link', { name: 'Rutina' })).toHaveAttribute('href', `/sala/people/${personId}?tab=routine`);
   expect(await screen.findByText('Día de fuerza')).toBeInTheDocument();
   expect(screen.getByText('Sentadilla')).toBeInTheDocument(); expect(reads()).toBe(1);
-  for (const name of ['Crear rutina', 'Editar rutina', 'Duplicar rutina']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  for (const name of ['Crear desde cero', 'Crear rutina', 'Editar rutina', 'Usar nuevamente', 'Duplicar rutina']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
   expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument();
 });
 it.each(['summary', 'routine'])('hides routine access without read permission and avoids routine requests on %s', async (tab) => {
