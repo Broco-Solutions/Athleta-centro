@@ -157,3 +157,18 @@ it.each(['KINESIOLOGIST', 'ADMINISTRATIVE'])('preserves permission navigation fo
   fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
   for (const name of ['Navegación principal', 'Navegación móvil']) expect(within(screen.getByRole('navigation', { name })).getAllByRole('link').map((link) => link.textContent)).toEqual(['Inicio', 'Personas', 'Sala', 'Rutinas', 'Reservas', 'Clínica']);
 });
+
+it.each([{ roles: ['GENERAL_ADMIN'] }, { roles: ['GENERAL_ADMIN', 'PROFESSOR'] }])('uses General Admin navigation for roles %j on desktop and mobile', async ({ roles }) => {
+  renderShell({ roles, permissions: ['PEOPLE_READ', 'SALA_RELATION_READ', 'SALA_ROUTINE_MANAGE', 'CLINIC_OPERATIONAL_READ', 'FINANCE_OPERATIONAL_READ', 'TEAM_READ'] });
+  const expectedLabels = ['Inicio', 'Personas', 'Agenda', 'Sala', 'Clínica', 'Finanzas', 'Equipo'];
+  const expectedHrefs = ['/', '/people', '/reservations', '/sala', '/clinic', '/finance', '/team'];
+  await screen.findByRole('link', { name: 'Agenda' });
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
+  for (const name of ['Navegación principal', 'Navegación móvil']) {
+    const nav = within(screen.getByRole('navigation', { name }));
+    const links = nav.getAllByRole('link');
+    expect(links.map((link) => link.textContent)).toEqual(expectedLabels);
+    expect(links.map((link) => link.getAttribute('href'))).toEqual(expectedHrefs);
+    for (const label of ['Reservas', 'Alumnos', 'Rutinas']) expect(nav.queryByRole('link', { name: label })).not.toBeInTheDocument();
+  }
+});

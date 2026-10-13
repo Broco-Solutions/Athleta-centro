@@ -108,7 +108,13 @@ it.each(['reservations', 'fixed'])('offers only half-hour starts and submits dis
     await waitFor(() => expect(submit).toBeEnabled());
     fireEvent.click(submit);
     await waitFor(() => expect(submitted).toHaveLength(index + 1));
-    expect(submitted[index]).toMatchObject({ scheduleSlotId: 'window', startTime, serviceTypeId: 'muscle' });
+    if (tab === 'reservations') {
+      expect(submitted[index]).toEqual({ personId, salaParticipationId: 'participation', scheduleSlotId: 'window', serviceTypeId: 'muscle', startTime, date: expect.any(String) });
+      expect(submitted[index]).not.toHaveProperty('startDate');
+    } else {
+      expect(submitted[index]).toEqual({ personId, salaParticipationId: 'participation', scheduleSlotId: 'window', serviceTypeId: 'muscle', startTime, startDate: expect.any(String) });
+      expect(submitted[index]).not.toHaveProperty('date');
+    }
   }
 });
 it.each(['12:15', '12:45'])('shows historical fixed start %s and requires a new half-hour selection', async startTime => {
@@ -129,7 +135,8 @@ it.each(['12:15', '12:45'])('shows historical fixed start %s and requires a new 
   fireEvent.change(booking().getByLabelText('Horario'), { target: { value: 'window:12:30' } });
   await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
-  await waitFor(() => expect(submitted).toMatchObject({ scheduleSlotId: 'window', startTime: '12:30' }));
+  await waitFor(() => expect(submitted).toEqual({ personId, salaParticipationId: 'participation', scheduleSlotId: 'window', serviceTypeId: 'muscle', startTime: '12:30', startDate: expect.any(String), id: 'historical' }));
+  expect(submitted).not.toHaveProperty('date');
 });
 
 function booking() {

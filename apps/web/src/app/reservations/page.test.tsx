@@ -39,6 +39,7 @@ it('reuses spontaneous incorporation for an existing person and refreshes operat
   let submitted: unknown;
   server.use(http.post('http://localhost:3000/api/sala/occurrences/spontaneous', async ({ request }) => { submitted = await request.json(); return HttpResponse.json({ data: {} }, { status: 201 }); }));
   const { invalidate } = renderPage();
+  expect(await screen.findByRole('link', { name: 'Reservas' })).toHaveAttribute('aria-current', 'page');
   await screen.findByRole('button', { name: 'Incorporación espontánea' });
   expect(agendaReads).toBe(0); expect(peopleReads).toBe(0);
   fireEvent.click(screen.getByRole('button', { name: 'Incorporación espontánea' }));
@@ -53,6 +54,15 @@ it('reuses spontaneous incorporation for an existing person and refreshes operat
   expect(submitted).toMatchObject({ personId: person.id, date: today(), serviceTypeId: 'service', startTime: '09:00', scheduleSlotId: 'window' });
   for (const queryKey of [['reservations', today()], ['sala', 'agenda', today()], ['sala-dashboard']]) expect(invalidate).toHaveBeenCalledWith({ queryKey });
   expect(timelineReads).toBeGreaterThan(1);
+});
+it('shows Agenda as the active context for General Admin', async () => {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: ['GENERAL_ADMIN'] } })));
+  renderPage();
+  const active = await screen.findByRole('link', { name: 'Agenda' });
+  expect(active).toHaveAttribute('href', '/reservations');
+  expect(active).toHaveAttribute('aria-current', 'page');
+  expect(await screen.findByRole('heading', { name: 'Agenda' })).toBeVisible();
+  expect(screen.getByText('Turnos de Sala y Clínica organizados por horario.')).toBeVisible();
 });
 it('does not add the Professor-specific action to combined roles', async () => {
   server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: ['PROFESSOR', 'KINESIOLOGIST'] } })));

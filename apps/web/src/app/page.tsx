@@ -3,8 +3,8 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, CalendarClock, CheckCircle2, ClipboardList, Users, UserX, Wallet } from 'lucide-react';
-import { getSalaDashboard } from '@athleta/api-client';
+import { ArrowRight, CalendarClock, CheckCircle2, ClipboardList, Dumbbell, Users, UserX, Wallet } from 'lucide-react';
+import { getReservationsTimeline, getSalaDashboard } from '@athleta/api-client';
 import { WorkspaceShell } from '../features/auth/workspace-shell';
 import { currentSession } from '../features/auth/auth';
 import { todayOperational } from '../features/sala/student-onboarding';
@@ -60,8 +60,57 @@ function ProfessorHome({ firstName }: { firstName: string }): React.JSX.Element 
   </div>;
 }
 
+type ClinicalBooking = { source: string; status: string };
+type TimelineResponse = { date: string; startTime: string; endTime: string; rows: { kind: string; bookings: ClinicalBooking[] }[] };
+type FinanceTotals = { salaIncome: string; clinicalIncome: string; totalIncome: string; expenses: string; net: string };
+function unwrapTimeline(value: unknown): TimelineResponse {
+  const body = (value as { data?: TimelineResponse | { data?: TimelineResponse } }).data;
+  return (body && 'rows' in body ? body : (body as { data: TimelineResponse }).data) as TimelineResponse;
+}
+function monthStart(date: string): string { return `${date.slice(0, 7)}-01`; }
+function formatArs(value?: string): string {
+  if (value === undefined) return '—';
+  try { return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(BigInt(value)); }
+  catch { return `ARS ${value}`; }
+}
+async function getExecutiveTotals(from: string, to: string): Promise<FinanceTotals> {
+  const params = new URLSearchParams({ from, to });
+  const response = await fetch(`/api/finance/executive-totals?${params.toString()}`, { credentials: 'include' });
+  if (!response.ok) throw new Error('Finance request failed');
+  const body = await response.json() as { data?: FinanceTotals | { data?: FinanceTotals } };
+  const result = body.data;
+  if (result && 'totalIncome' in result) return result;
+  if (result?.data) return result.data;
+  throw new Error('Finance response invalid');
+}
+
+function GeneralAdminHome({ firstName }: { firstName: string }): React.JSX.Element {
+  const date = todayOperational();
+  const from = monthStart(date);
+  const sala = useQuery({ queryKey: ['sala-dashboard', date], queryFn: async () => {
+    const response = await getSalaDashboard({ date }, { credentials: 'include' });
+    if (response.status !== 200) throw new Error('Sala request failed');
+    return response.data.data;
+  } });
+  const clinic = useQuery({ queryKey: ['reservations', date], queryFn: async () => unwrapTimeline(await getReservationsTimeline({ date }, { credentials: 'include' })) });
+  const finance = useQuery({ queryKey: ['finance', 'executive-totals', from, date], queryFn: () => getExecutiveTotals(from, date) });
+  const clinicBookings = clinic.data?.rows.flatMap((row) => row.bookings).filter((booking) => booking.source === 'CLINIC') ?? [];
+  const attended = clinicBookings.filter((booking) => booking.status === 'ATTENDED').length;
+  const pending = clinicBookings.filter((booking) => booking.status === 'SCHEDULED').length;
+  return <div className="mx-auto w-full max-w-6xl space-y-6 text-foreground">
+    <header><p className="mb-1 text-sm font-medium text-muted-foreground">Resumen general de Athleta</p><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Hola, {firstName}</h1></header>
+    <section aria-labelledby="today-operation-title"><h2 id="today-operation-title" className="mb-3 text-lg font-semibold">Operación de hoy</h2><div className="grid gap-4 lg:grid-cols-2">
+      <article className="rounded-md border border-border bg-surface p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold">Sala</h3><p className="mt-1 text-sm text-muted-foreground">Actividad del día</p></div><Dumbbell size={20} aria-hidden="true" className="text-muted-foreground"/></div>{sala.isError ? <p role="alert" className="mt-4 text-sm text-muted-foreground">No pudimos cargar la actividad de Sala.</p> : <div aria-busy={sala.isPending} className="mt-4 grid grid-cols-3 gap-2">{[['Alumnos esperados', sala.data?.expected], ['Asistencias', sala.data?.attended], ['Cancelados / Ausentes', sala.data?.cancelledOrAbsent]].map(([label, value]) => <div key={String(label)} className="rounded-md border border-border p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{sala.isPending ? '…' : value}</p></div>)}</div>}<Link href="/reservations" className="mt-4 inline-flex min-h-10 items-center gap-2 text-sm font-medium hover:underline">Ver Agenda <ArrowRight size={16} aria-hidden="true"/></Link></article>
+      <article className="rounded-md border border-border bg-surface p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold">Clínica</h3><p className="mt-1 text-sm text-muted-foreground">Turnos clínicos del día</p></div><CalendarClock size={20} aria-hidden="true" className="text-muted-foreground"/></div>{clinic.isError ? <p role="alert" className="mt-4 text-sm text-muted-foreground">No pudimos cargar la actividad de Clínica.</p> : <div aria-busy={clinic.isPending} className="mt-4 grid grid-cols-3 gap-2">{[['Turnos del día', clinic.data ? clinicBookings.length : undefined], ['Atendidos', clinic.data ? attended : undefined], ['Pendientes', clinic.data ? pending : undefined]].map(([label, value]) => <div key={String(label)} className="rounded-md border border-border p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{clinic.isPending ? '…' : value}</p></div>)}</div>}<Link href="/reservations" className="mt-4 inline-flex min-h-10 items-center gap-2 text-sm font-medium hover:underline">Ver Agenda <ArrowRight size={16} aria-hidden="true"/></Link></article>
+    </div></section>
+    <section aria-labelledby="followup-title"><h2 id="followup-title" className="mb-3 text-lg font-semibold">Seguimiento</h2><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-md border border-border bg-surface p-4"><p className="text-sm text-muted-foreground">Sin rutina activa</p>{sala.isError ? <p role="alert" className="mt-2 text-sm text-muted-foreground">No pudimos cargar la actividad de Sala.</p> : <p className="mt-2 text-2xl font-semibold tabular-nums">{sala.isPending ? '…' : sala.data.withoutRoutine.count}</p>}</div><div className="rounded-md border border-border bg-surface p-4"><p className="text-sm text-muted-foreground">Pago pendiente</p>{sala.isError ? <p role="alert" className="mt-2 text-sm text-muted-foreground">No pudimos cargar la actividad de Sala.</p> : <p className="mt-2 text-2xl font-semibold tabular-nums">{sala.isPending ? '…' : sala.data.pendingPayment.count}</p>}</div></div><Link href="/sala?view=students" className="mt-3 inline-flex min-h-10 items-center gap-2 text-sm font-medium hover:underline">Ver alumnos de Sala <ArrowRight size={16} aria-hidden="true"/></Link></section>
+    <section aria-labelledby="finance-title" className="rounded-md border border-border bg-surface p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 id="finance-title" className="text-lg font-semibold">Finanzas del mes</h2><p className="mt-1 text-sm text-muted-foreground">Del {from} al {date}</p></div><Wallet size={20} aria-hidden="true" className="text-muted-foreground"/></div>{finance.isError ? <p role="alert" className="mt-4 text-sm text-muted-foreground">No pudimos cargar el resumen financiero.</p> : <div aria-busy={finance.isPending} className="mt-4 grid gap-3 sm:grid-cols-3">{[['Ingresos', finance.data?.totalIncome], ['Gastos', finance.data?.expenses], ['Resultado', finance.data?.net]].map(([label, value]) => <div key={String(label)} className="rounded-md border border-border p-4"><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-xl font-semibold tabular-nums">{finance.isPending ? '…' : formatArs(value as string | undefined)}</p></div>)}</div>}<Link href="/finance" className="mt-4 inline-flex min-h-10 items-center gap-2 text-sm font-medium hover:underline">Ver Finanzas <ArrowRight size={16} aria-hidden="true"/></Link></section>
+  </div>;
+}
+
 export default function HomePage(): React.JSX.Element {
   const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false });
   const isProfessorOnly = session.data?.roles.length === 1 && session.data.roles.includes('PROFESSOR');
-  return <WorkspaceShell active="Inicio">{session.isPending ? <p role="status" className="text-sm text-muted-foreground">Cargando…</p> : isProfessorOnly ? <ProfessorHome firstName={session.data!.user.firstName}/> : <><header className="mb-6 sm:mb-8"><p className="mb-1 text-sm font-medium text-muted-foreground">Resumen operativo</p><h1 className="m-0 text-2xl font-semibold tracking-tight sm:text-3xl">Bienvenido a Athleta</h1></header><div className="w-full max-w-3xl rounded-md border bg-surface p-4 sm:p-6"><h2 className="mt-0 text-lg font-semibold">Workspace operativo</h2><p className="mb-0 text-sm leading-6 text-muted-foreground">Gestioná Personas desde la navegación principal.</p></div></>}</WorkspaceShell>;
+  const isGeneralAdmin = session.data?.roles.includes('GENERAL_ADMIN') ?? false;
+  return <WorkspaceShell active="Inicio">{session.isPending ? <p role="status" className="text-sm text-muted-foreground">Cargando…</p> : isGeneralAdmin ? <GeneralAdminHome firstName={session.data!.user.firstName}/> : isProfessorOnly ? <ProfessorHome firstName={session.data!.user.firstName}/> : <><header className="mb-6 sm:mb-8"><p className="mb-1 text-sm font-medium text-muted-foreground">Resumen operativo</p><h1 className="m-0 text-2xl font-semibold tracking-tight sm:text-3xl">Bienvenido a Athleta</h1></header><div className="w-full max-w-3xl rounded-md border bg-surface p-4 sm:p-6"><h2 className="mt-0 text-lg font-semibold">Workspace operativo</h2><p className="mb-0 text-sm leading-6 text-muted-foreground">Gestioná Personas desde la navegación principal.</p></div></>}</WorkspaceShell>;
 }

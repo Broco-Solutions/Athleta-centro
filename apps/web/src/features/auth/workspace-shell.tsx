@@ -37,6 +37,16 @@ const professorNavigation = [
   { href: '/routines', label: 'Rutinas', icon: ClipboardList },
 ];
 
+const generalAdminNavigation = [
+  { href: '/', label: 'Inicio', icon: Activity },
+  { href: '/people', label: 'Personas', icon: Users },
+  { href: '/reservations', label: 'Agenda', icon: CalendarDays },
+  { href: '/sala', label: 'Sala', icon: Dumbbell },
+  { href: '/clinic', label: 'Clínica', icon: ClipboardList },
+  { href: '/finance', label: 'Finanzas', icon: Wallet },
+  { href: '/team', label: 'Equipo', icon: UserCog },
+];
+
 export function WorkspaceShell({ children, active }: { children: React.ReactNode; active: string }): React.JSX.Element {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const closeMenuRef = React.useRef<HTMLButtonElement>(null);
@@ -44,7 +54,8 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
   const permissions = session.data?.permissions ?? [];
   const roles = session.data?.roles ?? [];
   const isProfessorOnly = roles.length === 1 && roles.includes('PROFESSOR');
-  const visibleNavigation = isProfessorOnly ? professorNavigation : navigation.filter((item) => item.canAccess(permissions));
+  const isGeneralAdmin = roles.includes('GENERAL_ADMIN');
+  const visibleNavigation = isGeneralAdmin ? generalAdminNavigation : isProfessorOnly ? professorNavigation : navigation.filter((item) => item.canAccess(permissions));
 
   React.useEffect(() => {
     if (!mobileMenuOpen) return;

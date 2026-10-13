@@ -224,3 +224,24 @@ En la ficha del Alumno, el catálogo de ejercicios no se muestra como una acció
 La Rutina activa se modifica mediante **Editar rutina** y no ofrece una acción **Duplicar rutina**. Las Rutinas históricas pueden reutilizarse mediante **Usar nuevamente**. Esta acción crea una nueva versión activa a partir del contenido histórico. Si existe una Rutina activa, la Rutina actual pasa al historial.
 
 Antes de ejecutar **Usar nuevamente** se requiere confirmación explícita.
+
+## Interfaces compartidas por roles — 2026-10-13
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+Una misma funcionalidad de Athleta utiliza una única interfaz compartida entre
+los roles que pueden acceder a ella. Profesor, Administrativo, Administrador
+general, Kinesiólogo y Osteópata no reciben versiones visuales independientes
+de Pagos, Rutinas, Evaluaciones, Turnos, Historia Clínica u otras
+funcionalidades comunes. Las diferencias entre perfiles se resuelven
+principalmente mediante navegación, permisos, visibilidad de información y
+acciones habilitadas. Cuando se modifica el diseño de una funcionalidad
+compartida, el cambio debe reflejarse para todos los perfiles que utilizan esa
+funcionalidad. Solo se admiten experiencias diferentes cuando el problema
+operativo es realmente distinto, como Inicio por perfil o el Portal externo.
+
+El Administrador general utiliza la navegación **Inicio → Personas → Agenda →
+Sala → Clínica → Finanzas → Equipo**, con rutas `/`, `/people`, `/reservations`,
+`/sala`, `/clinic`, `/finance` y `/team`. Su Inicio resume la operación diaria
+de Sala y Clínica, el seguimiento de Sala y las Finanzas del mes. Agenda reúne
+los turnos de Sala y Clínica bajo una interfaz transversal compartida.
