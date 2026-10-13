@@ -3,7 +3,7 @@ import { FinancialAdjustmentKind, Prisma, Role, RoutineStatus, SalaChargeKind, S
 import { PeopleService } from '../people/people.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceCatalogService } from '../finance/finance.service';
-import type { JoinSpontaneousSalaDto, CreateSpontaneousSalaStudentDto, RegisterSalaPlanPaymentsDto, SalaPaymentDto, CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, RoutineTemplateDto, RoutineDayDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
+import type { SalaDashboardDto, SalaDashboardPersonDto, JoinSpontaneousSalaDto, CreateSpontaneousSalaStudentDto, RegisterSalaPlanPaymentsDto, SalaPaymentDto, CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, RoutineTemplateDto, RoutineDayDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
 const SALA_DEFAULT_DURATION_MINUTES = 60;
 const eligibleProfessorWhere = { status: InternalUserStatus.ACTIVE, roles: { some: { role: Role.PROFESSOR } } } satisfies Prisma.InternalUserWhereInput;
 const planServicesInclude = {
@@ -555,6 +555,44 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
   async retirePhysicalTest(id: string) { try { return await this.prisma.physicalTestDefinition.update({ where: { id }, data: { isActive: false } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_PHYSICAL_TEST_NOT_FOUND', message: 'Physical test not found' }); throw error; } }
   async listPhysicalEvaluations(personId: string) { return this.prisma.physicalEvaluation.findMany({ where: { personId }, include: { professor: { select: { id: true, firstName: true, lastName: true } }, results: { include: { testDefinition: true } } }, orderBy: { evaluationDate: 'desc' } }); }
   async createPhysicalEvaluation(input: PhysicalEvaluationDto, actorId: string) { return this.prisma.$transaction(async (tx) => { const participation = await tx.salaParticipation.findFirst({ where: { id: input.salaParticipationId, personId: input.personId, endDate: null }, select: { id: true } }); if (!participation) throw new BadRequestException({ code: 'SALA_ACTIVE_PARTICIPATION_REQUIRED', message: 'An active Sala participation is required' }); const professor = await tx.internalUser.findUnique({ where: { id: input.professorId }, include: { roles: true } }); if (!professor || professor.status !== InternalUserStatus.ACTIVE || !professor.roles.some((role) => role.role === Role.PROFESSOR)) throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Professor is not eligible' }); const ids = input.results.map((result) => result.testDefinitionId); const tests = await tx.physicalTestDefinition.count({ where: { id: { in: ids }, isActive: true } }); if (tests !== new Set(ids).size) throw new BadRequestException({ code: 'SALA_PHYSICAL_TEST_INVALID', message: 'Every result must reference an active physical test' }); return tx.physicalEvaluation.create({ data: { personId: input.personId, salaParticipationId: input.salaParticipationId, professorId: input.professorId, evaluationDate: this.date(input.evaluationDate), createdBy: actorId, results: { create: input.results.map((result) => ({ testDefinitionId: result.testDefinitionId, resultText: result.resultText.trim() })) } }, include: { results: { include: { testDefinition: true } } } }); }); }
+  async dashboard(date: string): Promise<SalaDashboardDto> {
+    const agenda = await this.agenda(date);
+    const entries = agenda.flatMap((group) => group.people);
+    const today = this.todayOperational();
+    const now = new Date();
+    const year = Number(today.slice(0, 4));
+    const month = Number(today.slice(5, 7));
+    const [withoutRoutine, pendingPayment] = await Promise.all([
+      this.prisma.salaParticipation.findMany({
+        where: { endDate: null, person: { routines: { none: { status: RoutineStatus.ACTIVE } } } },
+        select: { personId: true }, orderBy: { personId: 'asc' },
+      }),
+      this.prisma.salaParticipation.findMany({
+        where: { endDate: null, person: { salaPayments: { none: { year, month, reversal: null } } } },
+        select: { personId: true }, orderBy: { personId: 'asc' },
+      }),
+    ]);
+    const upcomingByTime = new Map<string, SalaDashboardPersonDto[]>();
+    for (const entry of entries) {
+      if (entry.origin !== SalaOccurrenceOrigin.FIXED && entry.origin !== SalaOccurrenceOrigin.ONE_OFF) continue;
+      if (entry.status === SalaOccurrenceStatus.CANCELLED) continue;
+      if (date === today && this.operationalStart(date, this.time(entry.startTime)) < now) continue;
+      const people = upcomingByTime.get(entry.startTime) ?? [];
+      people.push({ id: entry.person.id, firstName: entry.person.firstName, lastName: entry.person.lastName, origin: entry.origin });
+      upcomingByTime.set(entry.startTime, people);
+    }
+    const followUp = (rows: { personId: string }[]) => ({ count: rows.length, personIds: rows.map((row) => row.personId) });
+    return {
+      date,
+      expected: entries.filter((entry) => entry.origin === SalaOccurrenceOrigin.FIXED || entry.origin === SalaOccurrenceOrigin.ONE_OFF).length,
+      attended: entries.filter((entry) => entry.status === SalaOccurrenceStatus.ATTENDED).length,
+      cancelledOrAbsent: entries.filter((entry) => entry.status === SalaOccurrenceStatus.CANCELLED || entry.status === SalaOccurrenceStatus.ABSENT).length,
+      upcoming: [...upcomingByTime.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(0, 3)
+        .map(([startTime, people]) => ({ startTime, total: people.length, people: people.slice(0, 3) })),
+      withoutRoutine: followUp(withoutRoutine),
+      pendingPayment: followUp(pendingPayment),
+    };
+  }
   async agenda(date: string) {
     const day = this.date(date);
     const personSelect = { id: true, firstName: true, lastName: true, dni: true } as const;

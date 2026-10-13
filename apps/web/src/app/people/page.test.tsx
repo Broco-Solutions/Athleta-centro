@@ -7,7 +7,7 @@ import PeoplePage from './page';
 import { PersonIdentity } from './[id]/clinic-actions';
 
 const server = setupServer(); const nativeFetch = globalThis.fetch;
-const session = { user: { id: 'u1', firstName: 'Test', lastName: 'User', email: 'user@test.local' }, roles: ['PROFESSOR'], permissions: ['PEOPLE_READ', 'PEOPLE_CREATE', 'PEOPLE_UPDATE_GENERAL'], mustChangePassword: false, csrfToken: 'csrf-test' };
+const session = { user: { id: 'u1', firstName: 'Test', lastName: 'User', email: 'user@test.local' }, roles: ['ADMINISTRATIVE'], permissions: ['PEOPLE_READ', 'PEOPLE_CREATE', 'PEOPLE_UPDATE_GENERAL'], mustChangePassword: false, csrfToken: 'csrf-test' };
 const person = { id: '10000000-0000-4000-8000-000000000001', firstName: 'Ana', lastName: 'Sintética', dni: '20.123.456', phone: '3515550101', birthDate: '1992-03-10', email: null, emergencyContactName: null, emergencyContactPhone: null, socialWorkId: null, affiliateNumber: null, status: 'INACTIVE', contexts: [], hasSalaParticipation: false, isClinicalPatient: false };
 function renderPage(): void { const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }); render(<QueryClientProvider client={client}><PeoplePage /></QueryClientProvider>); }
 beforeAll(() => { globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch; server.listen({ onUnhandledRequest: 'error' }); });
@@ -403,4 +403,18 @@ it.each([true, false])('shows Sala relationship without management actions or ca
   await screen.findByText(active ? 'Mensual' : 'Sin participación activa en Sala.');
   for (const name of ['Incorporar a Sala', 'Dar de baja']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Cambiar Plan')).not.toBeInTheDocument(); expect(screen.queryByLabelText('Cambiar Profesor')).not.toBeInTheDocument(); expect(catalogReads).toBe(0);
+});
+
+it.each([
+  { roles: ['PROFESSOR'], visible: false },
+  { roles: ['ADMINISTRATIVE'], visible: true },
+  { roles: ['GENERAL_ADMIN'], visible: true },
+  { roles: ['KINESIOLOGIST'], visible: true },
+  { roles: ['OSTEOPATH'], visible: true },
+  { roles: ['PROFESSOR', 'KINESIOLOGIST'], visible: true },
+])('applies provisional creation visibility only to pure Professor: $roles', async ({ roles, visible }) => {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles } })));
+  renderPage(); await screen.findByRole('button', { name: /Cerrar sesión/ });
+  if (visible) expect(await screen.findByRole('button', { name: /Nueva Persona/ })).toBeVisible();
+  else expect(screen.queryByRole('button', { name: /Nueva Persona/ })).not.toBeInTheDocument();
 });

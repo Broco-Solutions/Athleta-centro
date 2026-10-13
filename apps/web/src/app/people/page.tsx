@@ -52,6 +52,9 @@ function SalaParticipationPanel({ personId }: { personId: string }): React.JSX.E
 }
 function JoinSalaForm({ plans, professors, onJoin, pending }: { plans: CatalogPlan[]; professors: CatalogUser[]; onJoin: (planId: string, professorId: string) => void; pending: boolean }): React.JSX.Element { const [plan, setPlan] = useState(''); const [professor, setProfessor] = useState(''); return <div className="grid gap-3 sm:grid-cols-3"><label className="text-sm">Plan<select className={fieldClass} value={plan} onChange={(event) => setPlan(event.target.value)}><option value="">Seleccionar</option>{plans.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label className="text-sm">Profesor principal<select className={fieldClass} value={professor} onChange={(event) => setProfessor(event.target.value)}><option value="">Seleccionar</option>{professors.map((item) => <option key={item.id} value={item.id}>{item.lastName}, {item.firstName}</option>)}</select></label><Button type="button" disabled={!plan || !professor || pending} onClick={() => onJoin(plan, professor)}>Incorporar a Sala</Button></div>; }
 export default function PeoplePage(): React.JSX.Element {
+  const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false });
+  const isProfessorOnly = session.data?.roles.length === 1 && session.data.roles.includes('PROFESSOR');
+  const canCreate = !isProfessorOnly && (session.data?.permissions.includes('PEOPLE_CREATE') ?? false);
   const [search, setSearch] = useState(''); const [page, setPage] = useState(1); const [editing, setEditing] = useState<PersonResponseDto | null | undefined>();
   const [createdNotice, setCreatedNotice] = useState<CreatedPersonNotice | null>(null);
   const [updatedNotice, setUpdatedNotice] = useState(false);
@@ -59,7 +62,7 @@ export default function PeoplePage(): React.JSX.Element {
   const openForm = (person: PersonResponseDto | null) => { setCreatedNotice(null); setCreatedPinCopied(false); setUpdatedNotice(false); setEditing(person); };
   const copyCreatedPin = async () => { if (!createdNotice) return; try { await navigator.clipboard.writeText(createdNotice.pin); setCreatedPinCopied(true); } catch { setCreatedPinCopied(false); } };
   const people = useQuery({ queryKey: ['people', search, page], queryFn: () => fetchPeople({ ...(search ? { search } : {}), page, pageSize: 10 }), placeholderData: (previous) => previous });
-  return <WorkspaceShell active="Personas"><header className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><p className="mb-1 text-sm font-medium text-muted-foreground">Identidad transversal</p><h1 className="m-0 text-3xl font-semibold">Personas</h1></div><Button onClick={() => openForm(null)}><UserPlus size={17} /> Nueva Persona</Button></header>
+  return <WorkspaceShell active="Personas"><header className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><p className="mb-1 text-sm font-medium text-muted-foreground">Identidad transversal</p><h1 className="m-0 text-3xl font-semibold">Personas</h1></div>{canCreate && <Button onClick={() => openForm(null)}><UserPlus size={17} /> Nueva Persona</Button>}</header>
     {createdNotice && <div role="dialog" aria-modal="true" aria-labelledby="created-person-title" className="fixed inset-0 z-30 grid place-items-center bg-black/50 p-4"><div className="w-full max-w-md rounded-md bg-white p-6 text-center shadow-lg">
       <h3 id="created-person-title" className="text-lg font-semibold">Persona guardada correctamente</h3>
       <p className="mt-2 text-sm">{createdNotice.firstName} {createdNotice.lastName}</p>

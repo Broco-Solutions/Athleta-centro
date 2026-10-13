@@ -4,7 +4,7 @@ import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { Test } from '@nestjs/testing';
 import { ValidationPipe, type INestApplication } from '@nestjs/common';
-import { Role, type SalaWeekday } from '@prisma/client';
+import { Role, type Person, type SalaParticipation, type SalaWeekday } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { AuthService } from '../src/auth/auth.service';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -1010,6 +1010,109 @@ describe('Sala configuration API', () => {
       await post('/join', denied, { ...f.input, planId: f.plan.id, mainProfessorId: f.professor.id }).expect(403);
       await post('/create-student', denied, { scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, startTime: '09:00', date: today(), planId: f.plan.id, mainProfessorId: f.professor.id, firstName: 'Nueva', lastName: 'Sintética', dni: '30123458', phone: '3515550000', birthDate: '1990-01-01' }).expect(403);
       expect(await prisma.salaOccurrence.count()).toBe(0);
+    });
+  });
+
+  describe('Sala dashboard projection', () => {
+    beforeEach(() => {
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'clearImmediate', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance', 'queueMicrotask', 'hrtime'] });
+      jest.setSystemTime(new Date('2026-10-13T11:30:00Z'));
+    });
+    afterEach(() => jest.useRealTimers());
+    async function dashboardFixture() {
+      const authn = await session(Role.PROFESSOR);
+      const professor = await prisma.internalUser.findFirstOrThrow({ where: { email: 'professor@sala.test' } });
+      const service = await sala.createServiceType({ name: 'Dashboard funcional', durationMinutes: 30 });
+      const plan = await sala.createPlan({ name: 'Dashboard plan', monthlyAmount: 1000, serviceTypeIds: [service.id] });
+      const slot = await sala.createSlot({ weekday: 'TUESDAY', startTime: '09:00', durationMinutes: 240, specificCapacity: 20 });
+      const nextSlot = await sala.createSlot({ weekday: 'WEDNESDAY', startTime: '09:00', durationMinutes: 240, specificCapacity: 20 });
+      const students: { person: Person; participation: SalaParticipation }[] = [];
+      for (let index = 0; index < 7; index++) {
+        const dni = `8800000${index}`;
+        const person = await prisma.person.create({ data: { firstName: `Alumno ${index}`, lastName: 'Sintético', dni, normalizedDni: dni, phone: '3515550000', birthDate: new Date('1990-01-01') } });
+        const participation = await prisma.salaParticipation.create({ data: { personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: new Date('2026-01-01'), ...(index === 6 ? { endDate: new Date('2026-10-01') } : {}) } });
+        students.push({ person, participation });
+      }
+      const time = (hour: number) => new Date(Date.UTC(1970, 0, 1, hour));
+      for (const window of [slot, nextSlot]) {
+        const date = window.id === slot.id ? '2026-10-13' : '2026-10-14';
+        for (let index = 0; index < 6; index++) {
+          const student = students[index]!;
+          const startTime = time(index < 3 ? 9 : index + 7);
+          if (index === 0) {
+            await prisma.fixedSalaBooking.create({ data: { personId: student.person.id, salaParticipationId: student.participation.id, scheduleSlotId: window.id, serviceTypeId: service.id, serviceDurationMinutes: 30, startTime, startDate: new Date('2026-01-01') } });
+          } else {
+            const reservation = await prisma.oneOffReservation.create({ data: { personId: student.person.id, salaParticipationId: student.participation.id, scheduleSlotId: window.id, serviceTypeId: service.id, serviceDurationMinutes: 30, startTime, date: new Date(date), ...(index === 1 ? { cancelledAt: new Date() } : {}) } });
+            if (window.id === slot.id && (index === 2 || index === 3)) await prisma.salaOccurrence.create({ data: { personId: student.person.id, scheduleSlotId: window.id, oneOffReservationId: reservation.id, date: new Date(date), startTime, serviceTypeId: service.id, serviceDurationMinutes: 30, origin: 'ONE_OFF', status: index === 2 ? 'ABSENT' : 'ATTENDED' } });
+          }
+        }
+      }
+      await prisma.salaOccurrence.create({ data: { personId: students[0]!.person.id, scheduleSlotId: slot.id, date: new Date('2026-10-13'), startTime: new Date('1970-01-01T09:15:00Z'), serviceTypeId: service.id, serviceDurationMinutes: 30, origin: 'SPONTANEOUS', status: 'ATTENDED' } });
+      await prisma.routine.create({ data: { personId: students[0]!.person.id, salaParticipationId: students[0]!.participation.id, version: 1, status: 'ACTIVE' } });
+      await prisma.routine.create({ data: { personId: students[1]!.person.id, salaParticipationId: students[1]!.participation.id, version: 1, status: 'HISTORICAL' } });
+      const method = await prisma.paymentMethod.create({ data: { name: `Dashboard ${randomUUID()}` } });
+      const pay = (index: number, month: number) => prisma.salaPayment.create({ data: { personId: students[index]!.person.id, year: 2026, month, paidAt: new Date('2026-09-30'), amount: 1000, paymentMethodId: method.id, registeredById: professor.id, operationId: randomUUID() } });
+      const payment = await pay(0, 10);
+      await pay(1, 9);
+      return { authn, professor, students, payment };
+    }
+    it('authorizes Professor and derives all counters, three upcoming times and minimal personal data from the agenda', async () => {
+      const f = await dashboardFixture();
+      const result = await request(app.getHttpServer()).get('/api/sala/dashboard?date=2026-10-13').set('Cookie', f.authn.cookie).expect(200);
+      expect(result.body.data).toMatchObject({ date: '2026-10-13', expected: 6, attended: 2, cancelledOrAbsent: 2, withoutRoutine: { count: 5 }, pendingPayment: { count: 5 } });
+      expect(result.body.data.upcoming.map((slot: { startTime: string }) => slot.startTime)).toEqual(['09:00', '10:00', '11:00']);
+      expect(result.body.data.upcoming[0]).toMatchObject({ total: 2 });
+      const upcomingPeople = result.body.data.upcoming.flatMap((slot: { people: { id: string }[] }) => slot.people);
+      expect(upcomingPeople.map((person: { id: string }) => person.id)).not.toContain(f.students[1]!.person.id);
+      expect(Object.keys(upcomingPeople[0]).sort()).toEqual(['firstName', 'id', 'lastName', 'origin']);
+      expect(Object.keys(result.body.data).sort()).toEqual(['attended', 'cancelledOrAbsent', 'date', 'expected', 'pendingPayment', 'upcoming', 'withoutRoutine']);
+      expect(result.body.data.withoutRoutine.personIds).toContain(f.students[1]!.person.id);
+      expect(result.body.data.withoutRoutine.personIds).not.toContain(f.students[0]!.person.id);
+      expect(result.body.data.withoutRoutine.personIds).not.toContain(f.students[6]!.person.id);
+      expect(result.body.data.pendingPayment.personIds).not.toContain(f.students[0]!.person.id);
+      expect(result.body.data.pendingPayment.personIds).toContain(f.students[1]!.person.id);
+      expect(result.body.data.pendingPayment.personIds).not.toContain(f.students[6]!.person.id);
+      await request(app.getHttpServer()).get('/api/sala/dashboard?date=not-a-date').set('Cookie', f.authn.cookie).expect(400);
+      const denied = await session(Role.BROCO_SUPPORT);
+      await request(app.getHttpServer()).get('/api/sala/dashboard?date=2026-10-13').set('Cookie', denied.cookie).expect(403);
+    });
+    it('filters elapsed starts only for today, keeps the first three tomorrow and treats reversed payments as pending', async () => {
+      const f = await dashboardFixture();
+      jest.setSystemTime(new Date('2026-10-13T12:00:00Z'));
+      const exact = await request(app.getHttpServer()).get('/api/sala/dashboard?date=2026-10-13').set('Cookie', f.authn.cookie).expect(200);
+      expect(exact.body.data.upcoming[0].startTime).toBe('09:00');
+      jest.setSystemTime(new Date('2026-10-13T12:15:00Z'));
+      const today = await request(app.getHttpServer()).get('/api/sala/dashboard?date=2026-10-13').set('Cookie', f.authn.cookie).expect(200);
+      expect(today.body.data.upcoming.map((slot: { startTime: string }) => slot.startTime)).toEqual(['10:00', '11:00', '12:00']);
+      const tomorrow = await request(app.getHttpServer()).get('/api/sala/dashboard?date=2026-10-14').set('Cookie', f.authn.cookie).expect(200);
+      expect(tomorrow.body.data.upcoming.map((slot: { startTime: string }) => slot.startTime)).toEqual(['09:00', '10:00', '11:00']);
+      await prisma.salaPaymentReversal.create({ data: { paymentId: f.payment.id, operationId: randomUUID(), reason: 'Error sintético', registeredById: f.professor.id } });
+      const reversed = await request(app.getHttpServer()).get('/api/sala/dashboard?date=2026-10-14').set('Cookie', f.authn.cookie).expect(200);
+      expect(reversed.body.data.pendingPayment.count).toBe(6);
+      expect(reversed.body.data.pendingPayment.personIds).toContain(f.students[0]!.person.id);
+      // UTC already crossed into November; operational Argentina is still in October.
+      jest.setSystemTime(new Date('2026-11-01T02:30:00Z'));
+      const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: f.professor.email, password: 'ValidPass1!' }).expect(200);
+      f.authn.cookie = login.headers['set-cookie'][0] as string;
+      const monthBoundary = await request(app.getHttpServer()).get('/api/sala/dashboard?date=2026-11-01').set('Cookie', f.authn.cookie).expect(200);
+      expect(monthBoundary.body.data.pendingPayment.count).toBe(6);
+      await prisma.salaPaymentReversal.deleteMany();
+      const october = await request(app.getHttpServer()).get('/api/sala/dashboard?date=2026-11-01').set('Cookie', f.authn.cookie).expect(200);
+      expect(october.body.data.pendingPayment.count).toBe(5);
+      jest.setSystemTime(new Date('2026-11-01T03:00:00Z'));
+      const november = await request(app.getHttpServer()).get('/api/sala/dashboard?date=2026-11-01').set('Cookie', f.authn.cookie).expect(200);
+      expect(november.body.data.pendingPayment.count).toBe(6);
+    });
+    it('limits names to three while preserving total expected students and returns zero/empty summaries', async () => {
+      const f = await dashboardFixture();
+      const window = await prisma.salaScheduleSlot.findFirstOrThrow({ where: { weekday: 'WEDNESDAY' } });
+      await prisma.oneOffReservation.updateMany({ where: { scheduleSlotId: window.id }, data: { startTime: new Date('1970-01-01T09:00:00Z') } });
+      const result = await request(app.getHttpServer()).get('/api/sala/dashboard?date=2026-10-14').set('Cookie', f.authn.cookie).expect(200);
+      expect(result.body.data.upcoming).toHaveLength(1);
+      expect(result.body.data.upcoming[0].total).toBe(5);
+      expect(result.body.data.upcoming[0].people).toHaveLength(3);
+      const empty = await request(app.getHttpServer()).get('/api/sala/dashboard?date=2026-10-15').set('Cookie', f.authn.cookie).expect(200);
+      expect(empty.body.data).toMatchObject({ expected: 0, attended: 0, cancelledOrAbsent: 0, upcoming: [] });
     });
   });
 

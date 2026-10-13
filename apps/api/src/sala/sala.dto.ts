@@ -57,6 +57,33 @@ export class SalaAgendaServiceDto { @ApiProperty({ type: String }) name!: string
 export class SalaAgendaEntryDto { @ApiProperty({ type: String, format: 'uuid' }) personId!: string; @ApiProperty({ type: () => SalaAgendaPersonDto }) person!: SalaAgendaPersonDto; @ApiProperty({ enum: ['FIXED', 'ONE_OFF', 'SPONTANEOUS'], type: String }) origin!: string; @ApiProperty({ enum: [...Object.values(SalaOccurrenceStatus), 'PENDING_PAYMENT'], type: String }) status!: SalaOccurrenceStatus | 'PENDING_PAYMENT'; @ApiProperty({ type: Boolean }) isMaterialized!: boolean; @ApiPropertyOptional({ type: Boolean }) cancelledForNonPayment?: boolean; @ApiProperty({ type: String, format: 'uuid' }) sourceId!: string; @ApiProperty({ type: String, example: '09:00' }) startTime!: string; @ApiProperty({ type: Number, minimum: 15, multipleOf: 15 }) durationMinutes!: number; @ApiPropertyOptional({ type: () => SalaAgendaProfessionalDto, nullable: true }) professional?: SalaAgendaProfessionalDto | null; @ApiPropertyOptional({ type: () => SalaAgendaServiceDto, nullable: true }) service?: SalaAgendaServiceDto | null; }
 export class SalaAgendaSlotDto { @ApiProperty({ type: String, description: 'Derived 15-minute slot identifier' }) id!: string; @ApiProperty({ type: String, format: 'uuid' }) scheduleSlotId!: string; @ApiProperty({ type: String }) weekday!: string; @ApiProperty({ type: String, example: '12:00' }) startTime!: string; @ApiProperty({ type: Number, enum: [15] }) durationMinutes!: number; }
 export class SalaAgendaGroupDto { @ApiProperty({ type: () => SalaAgendaSlotDto }) slot!: SalaAgendaSlotDto; @ApiProperty({ type: Number }) capacity!: number; @ApiProperty({ type: Number }) reserved!: number; @ApiProperty({ type: Number }) available!: number; @ApiProperty({ type: Boolean }) isOverbooked!: boolean; @ApiProperty({ type: Boolean }) isClosed!: boolean; @ApiProperty({ type: () => [SalaAgendaEntryDto] }) people!: SalaAgendaEntryDto[]; }
+export class SalaDashboardQueryDto {
+  @ApiProperty({ type: String, format: 'date' }) @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) date!: string;
+}
+export class SalaDashboardPersonDto extends SalaAgendaProfessionalDto {
+  @ApiProperty({ type: String, enum: ['FIXED', 'ONE_OFF'] }) origin!: 'FIXED' | 'ONE_OFF';
+}
+export class SalaDashboardUpcomingDto {
+  @ApiProperty({ type: String, example: '09:00' }) startTime!: string;
+  @ApiProperty({ type: Number }) total!: number;
+  @ApiProperty({ type: () => [SalaDashboardPersonDto], maxItems: 3 }) people!: SalaDashboardPersonDto[];
+}
+export class SalaDashboardFollowUpDto {
+  @ApiProperty({ type: Number }) count!: number;
+  @ApiProperty({ type: [String], format: 'uuid' }) personIds!: string[];
+}
+export class SalaDashboardDto {
+  @ApiProperty({ type: String, format: 'date' }) date!: string;
+  @ApiProperty({ type: Number }) expected!: number;
+  @ApiProperty({ type: Number }) attended!: number;
+  @ApiProperty({ type: Number }) cancelledOrAbsent!: number;
+  @ApiProperty({ type: () => [SalaDashboardUpcomingDto], maxItems: 3 }) upcoming!: SalaDashboardUpcomingDto[];
+  @ApiProperty({ type: () => SalaDashboardFollowUpDto }) withoutRoutine!: SalaDashboardFollowUpDto;
+  @ApiProperty({ type: () => SalaDashboardFollowUpDto }) pendingPayment!: SalaDashboardFollowUpDto;
+}
+export class SalaDashboardEnvelopeDto {
+  @ApiProperty({ type: () => SalaDashboardDto }) data!: SalaDashboardDto;
+}
 export class SalaAgendaResponseDto { @ApiProperty({ type: [SalaAgendaGroupDto] }) data!: SalaAgendaGroupDto[]; }
 export class ExerciseDefinitionDto {
   @ApiProperty({ type: String, maxLength: 120 }) @IsString() @MinLength(1) @MaxLength(120) name!: string;

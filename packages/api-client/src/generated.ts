@@ -352,6 +352,49 @@ export interface OneOffReservationDto {
   confirmOverbooking?: boolean;
 }
 
+export type SalaDashboardPersonDtoOrigin = typeof SalaDashboardPersonDtoOrigin[keyof typeof SalaDashboardPersonDtoOrigin];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SalaDashboardPersonDtoOrigin = {
+  FIXED: 'FIXED',
+  ONE_OFF: 'ONE_OFF',
+} as const;
+
+export interface SalaDashboardPersonDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+  origin: SalaDashboardPersonDtoOrigin;
+}
+
+export interface SalaDashboardUpcomingDto {
+  startTime: string;
+  total: number;
+  /** @maxItems 3 */
+  people: SalaDashboardPersonDto[];
+}
+
+export interface SalaDashboardFollowUpDto {
+  count: number;
+  personIds: string[];
+}
+
+export interface SalaDashboardDto {
+  date: string;
+  expected: number;
+  attended: number;
+  cancelledOrAbsent: number;
+  /** @maxItems 3 */
+  upcoming: SalaDashboardUpcomingDto[];
+  withoutRoutine: SalaDashboardFollowUpDto;
+  pendingPayment: SalaDashboardFollowUpDto;
+}
+
+export interface SalaDashboardEnvelopeDto {
+  data: SalaDashboardDto;
+}
+
 export type SalaAgendaSlotDtoDurationMinutes = typeof SalaAgendaSlotDtoDurationMinutes[keyof typeof SalaAgendaSlotDtoDurationMinutes];
 
 
@@ -1393,6 +1436,10 @@ export type ChangeSalaPlan200 = {
 };
 
 export type GetSalaAvailabilityParams = {
+date: string;
+};
+
+export type GetSalaDashboardParams = {
 date: string;
 };
 
@@ -2990,6 +3037,52 @@ export const cancelSalaReservation = async (id: string, options?: RequestInit): 
 
   const data: cancelSalaReservationResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as cancelSalaReservationResponse
+}
+
+
+
+export type getSalaDashboardResponse200 = {
+  data: SalaDashboardEnvelopeDto
+  status: 200
+}
+
+export type getSalaDashboardResponseSuccess = (getSalaDashboardResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getSalaDashboardResponse = (getSalaDashboardResponseSuccess)
+
+export const getGetSalaDashboardUrl = (params: GetSalaDashboardParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/sala/dashboard?${stringifiedParams}` : `/api/sala/dashboard`
+}
+
+export const getSalaDashboard = async (params: GetSalaDashboardParams, options?: RequestInit): Promise<getSalaDashboardResponse> => {
+
+  const res = await fetch(getGetSalaDashboardUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSalaDashboardResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSalaDashboardResponse
 }
 
 

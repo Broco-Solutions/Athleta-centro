@@ -144,3 +144,20 @@ it.each([true, false])('shows spontaneous incorporation only with agenda permiss
   if (allowed) expect(await screen.findByRole('button', { name: 'Incorporación espontánea' })).toBeVisible();
   else { await screen.findByRole('button', { name: /Cerrar sesión/ }); expect(screen.queryByRole('button', { name: 'Incorporación espontánea' })).not.toBeInTheDocument(); }
 });
+
+it.each([['PROFESSOR'], ['PROFESSOR', 'KINESIOLOGIST'], ['GENERAL_ADMIN']])('preserves existing-person incorporation with roles %j', async (...roles) => {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles } })));
+  renderStudents();
+  expect(await screen.findByRole('button', { name: 'Incorporar Persona existente' })).toBeVisible();
+  if (roles.length === 1 && roles[0] === 'PROFESSOR') {
+    expect(screen.queryByRole('button', { name: 'Nuevo alumno' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nueva Persona' })).not.toBeInTheDocument();
+  } else expect(screen.getByRole('button', { name: 'Nuevo alumno' })).toBeVisible();
+});
+it.each([{ roles: ['PROFESSOR'], visible: false }, { roles: ['PROFESSOR', 'KINESIOLOGIST'], visible: true }])('applies provisional new-person visibility to spontaneous incorporation: $roles', async ({ roles, visible }) => {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles } })), http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [] })));
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SalaPage /></QueryClientProvider>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Incorporación espontánea' }));
+  if (visible) expect(screen.getByRole('button', { name: 'Nueva Persona' })).toBeVisible();
+  else expect(screen.queryByRole('button', { name: 'Nueva Persona' })).not.toBeInTheDocument();
+});

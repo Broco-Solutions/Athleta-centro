@@ -21,8 +21,7 @@ Los siguientes puntos continúan pendientes después de la consolidación histó
 
 | ID | Tema pendiente |
 |---|---|
-| INI-03 | Presentación exacta de Cancelados/Ausentes en Sala: total combinado o valores separados. |
-| INI-04 | Criterio exacto de “Próximos horarios” de Sala. |
+| PROF-01 | Alta de Persona/Alumno por Profesor: validar autonomía de altas con Athleta. |
 | INI-06 | Label visible exacto de la tarjeta de Atendidos/Atenciones. |
 | INI-07 | Comportamiento visual de la tarjeta Atendidos al seleccionar Mañana. |
 | CAT-04 | Si los catálogos permiten nombres duplicados; los mecanismos actuales no son uniformes y no constituyen aprobación de una regla global. |
@@ -328,8 +327,8 @@ El resto de las dudas originales figura resuelto, no aplica o queda a criterio t
 |---|---|---|---|
 | INI-01 | RESUELTO | “Alumnos esperados” cuenta únicamente presencias planificadas por **Turnos fijos y reservas puntuales**. | §6.16, §9.3 |
 | INI-02 | RESUELTO | Una incorporación espontánea marcada Asistió aumenta **Asistencias registradas**, pero no Alumnos esperados. | §6.16, §9.3 |
-| INI-03 | PENDIENTE | Se define la tarjeta “Cancelados/Ausentes”, pero no se aclara si visualmente muestra un total combinado o dos subtotales. | §9.3 |
-| INI-04 | PENDIENTE | El bloque incluye “Próximos horarios”, pero no se fija cantidad/horizonte exacto. | §9.3 |
+| INI-03 | RESUELTO | Cancelados / Ausentes se presenta como una sola tarjeta con el total combinado de CANCELLED + ABSENT, sin subtotales. | Definición aprobada 2026-10-13; [Registro INI-03](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md) |
+| INI-04 | RESUELTO | Próximos horarios muestra como máximo 3 horarios, en orden ascendente por hora. Hoy: solo horarios cuyo inicio todavía no pasó. Mañana: los primeros 3 horarios con actividad prevista del día siguiente. No incluye cancelados. | Definición aprobada 2026-10-13; [Registro INI-04](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md) |
 | INI-05 | RESUELTO | “Próximos Turnos” muestra hasta **5** Turnos Agendados de la fecha seleccionada, ordenados por hora. En Hoy solo los que aún no comenzaron; en Mañana los primeros Agendados del día siguiente. | §9.4 |
 | INI-06 | PENDIENTE | El documento usa “Turnos Atendidos” y también “Atendidos hoy”; no fija un único label final de UI. | §9.4 |
 | INI-07 | PENDIENTE | El selector permite Hoy/Mañana, pero no se especifica si la tarjeta Atendidos debe ocultarse, mostrarse en cero o adaptarse cuando se selecciona Mañana. | §9.2–§9.4 |
@@ -471,3 +470,15 @@ La regla de inicio cada 30 minutos se aplica tanto al Portal como a la operació
 La Incorporación espontánea no está sujeta a esta restricción y conserva la granularidad operativa de 15 minutos porque representa una llegada real.
 
 Los registros históricos existentes con inicio :15 o :45 se conservan y no se reescriben automáticamente; una nueva creación o modificación debe respetar :00/:30.
+
+## PROF-01 — Alta de Persona/Alumno por Profesor
+
+Estado: **PENDIENTE**.
+
+La definición histórica permite que Profesor cree Personas e incorpore nuevos Alumnos. Esta capacidad queda pendiente de validación funcional con Athleta.
+
+Mientras no se cierre la decisión, la experiencia visual de un Profesor puro (único rol efectivo `PROFESSOR`) no debe ofrecer acciones para crear una Persona/Alumno nuevo. Puede continuar incorporando una Persona existente cuando posee `SALA_PARTICIPATION_MANAGE`.
+
+Esto NO elimina todavía `PEOPLE_CREATE` del rol Profesor ni constituye una decisión definitiva de autorización backend. Los roles combinados conservan la suma natural de sus capacidades.
+
+Fundamento: la creación de nuevas Personas se percibe actualmente como una tarea posiblemente administrativa. Debe confirmarse con Athleta si el Profesor necesita resolver altas de forma autónoma.

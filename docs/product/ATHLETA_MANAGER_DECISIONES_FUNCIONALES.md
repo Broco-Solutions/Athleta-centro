@@ -144,3 +144,25 @@ Estado: **RESUELTO / ALINEADO**. Definición aprobada 2026-10-09.
 El Portal no permite crear Reservas puntuales para fechas pasadas. En el día actual una actividad puede reservarse únicamente si, en el instante de la reserva, quedan **al menos 20 minutos de actividad**. **20 minutos exactos son válidos**; con menos de 20 minutos el horario deja de ofrecerse y el backend rechaza la creación. Las fechas futuras mantienen la ventana POR-SAL-05 de hoy a hoy+30 inclusive.
 
 La validación compara el fin real de la actividad con el instante actual en `America/Argentina/Buenos_Aires`, usando el inicio elegido y la duración real del Servicio resueltos por Sala dentro de la transacción de creación. Un inicio que ya ocurrió sigue siendo válido si quedan 20 minutos o más hasta ese fin. El error `PORTAL_SALA_TIME_PASSED` rechaza horarios con menos de 20 minutos restantes. El Portal actualiza las opciones con un reloj local cada minuto mientras la pantalla o el flujo de Reserva permanece abierto y toma el instante actual al abrirlo, sin polling al backend. Availability del Portal rechaza fechas anteriores a hoy. La restricción aplica únicamente a Reservas puntuales creadas por el Alumno desde Portal; no afecta la operación interna retrospectiva ni Turnos fijos. POR-SAL-08 continúa vigente.
+
+## Inicio operativo del Profesor — decisiones aprobadas 2026-10-13
+
+Para una cuenta cuyo único rol efectivo sea `PROFESSOR`, Inicio se orienta exclusivamente a la operación de Sala: bienvenida breve, Hoy/Mañana, Próximos horarios como bloque principal, Resumen del día y Seguimiento. Otros roles y roles combinados conservan por ahora el Inicio general. Se mantiene sidebar oscuro, workspace claro, cards blancas y amarillo como acento; sin gráficos, tendencias ni widgets configurables.
+
+### INI-03 — Cancelados / Ausentes
+
+Estado: **RESUELTO**. Se presenta como una sola tarjeta con el total combinado `CANCELLED + ABSENT`, sin tarjetas separadas ni subtotales en esta primera versión.
+
+### INI-04 — Próximos horarios
+
+Estado: **RESUELTO**. Muestra como máximo 3 horarios, en orden ascendente por hora. Hoy incluye solo horarios cuyo inicio todavía no pasó, usando la hora operativa de Argentina. Mañana muestra los primeros 3 horarios con actividad prevista del día siguiente. No hay Semana ni otros días.
+
+Cada horario muestra hora, cantidad de alumnos previstos, hasta 3 nombres y origen (Turno fijo/Reserva); si hay más, muestra `+ N alumnos`. No incluye personas canceladas. El acceso sigue llamándose Reservas y lleva a `/reservations`.
+
+### Indicadores y seguimiento de Sala
+
+Se mantienen INI-01 (Alumnos esperados: presencias planificadas FIXED + ONE_OFF, sin espontáneos) e INI-02 (Asistencias: ATTENDED, incluyendo espontáneos). Los indicadores corresponden a la fecha seleccionada.
+
+Sin rutina activa cuenta Personas con participación activa (`endDate === null`) sin Routine ACTIVE; una rutina histórica no cuenta como activa. Pago pendiente cuenta participantes actuales sin Pago válido y no revertido del mes calendario actual de Argentina, independientemente de Hoy/Mañana. Solo muestra cantidades, sin plazos, importes, deuda histórica ni bloqueos. Ambas cards llevan a `/sala?view=students`, sin filtros específicos en este bloque.
+
+PROF-01 permanece **PENDIENTE**: se ocultan provisoriamente las acciones visuales de nueva Persona/Alumno para Profesor puro, preservando la incorporación de Personas existentes y `PEOPLE_CREATE` en backend. INI-06 e INI-07 siguen pendientes y corresponden a Clínica. La configuración y navegación de Sala se trabajarán en un bloque posterior.
