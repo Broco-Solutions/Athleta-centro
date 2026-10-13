@@ -185,7 +185,7 @@ it('preserves structured HTTP retirement errors so the panel displays impact bef
     const body = await request.json() as { confirmActiveRoutineImpact: boolean }; confirmations.push(body.confirmActiveRoutineImpact);
     return body.confirmActiveRoutineImpact ? HttpResponse.json({ data: { affectedActiveRoutines: 2 } }) : HttpResponse.json({ code: 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED', message: 'Confirmation required', details: { activeRoutines: 2 } }, { status: 409 });
   }));
-  renderWorkspace(); await screen.findByText('Día de fuerza'); fireEvent.click(screen.getByText('Administrar ejercicios'));
+  renderWorkspace(); await screen.findByText('Día de fuerza'); fireEvent.click(screen.getByRole('button', { name: 'Editar rutina' })); fireEvent.click(screen.getByText('Administrar ejercicios'));
   fireEvent.click(await screen.findByRole('button', { name: 'Retirar' }));
   expect(await screen.findByRole('alertdialog')).toHaveTextContent('2 Rutinas activas'); expect(confirmations).toEqual([false]);
   fireEvent.click(screen.getByRole('button', { name: 'Confirmar retiro' })); await screen.findByText('Ejercicio retirado correctamente.'); expect(confirmations).toEqual([false, true]);
