@@ -183,6 +183,22 @@ La ficha técnica continúa reutilizando internamente las rutas/modelos existent
 
 **PROF-01 permanece PENDIENTE**. No se ofrece alta nueva de Persona/Alumno en la experiencia del Profesor. `PEOPLE_CREATE` permanece temporalmente en backend hasta validar su autonomía con Athleta; se conserva incorporación de Personas existentes según permisos.
 
+## Profesor — Presentación de Reservas
+
+Estado: **CONFIRMADO / RESUELTO**. Fecha: **2026-10-13**.
+
+Reservas es la única agenda operativa general del Profesor.
+
+Para Profesor puro se presenta como una agenda vertical agrupada por hora de inicio, priorizando Alumno, Servicio, origen y estado.
+
+No se utiliza una timeline horizontal de intervalos de 15 minutos para este rol.
+
+En la fecha actual se distinguen horarios anteriores de actividades en curso y próximas.
+
+Turno fijo, Reserva puntual e Incorporación espontánea se muestran dentro de la misma agenda. El origen es información secundaria y no genera pantallas separadas.
+
+La vista transversal de Sala + Clínica puede conservar la timeline actual para otros perfiles hasta que se defina su experiencia específica.
+
 
 ## Profesor — Gestión de Pagos de Sala — 2026-10-13
 

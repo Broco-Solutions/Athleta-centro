@@ -47,8 +47,7 @@ export default function ReservationsPage(): React.JSX.Element {
     ]);
   };
   return <WorkspaceShell active="Reservas"><div className="mx-auto max-w-7xl space-y-5">
-    {isProfessorOnly && canManageAgenda ? <div className="flex justify-end"><Button onClick={() => setSpontaneousOpen(true)}>Incorporación espontánea</Button></div> : null}
-    <ReservationsTimeline date={date} onDateChange={(next) => { setSpontaneousOpen(false); setDate(next); }} csrfToken={session.data?.csrfToken ?? ''} isProfessorOnly={isProfessorOnly} />
+    <ReservationsTimeline date={date} onDateChange={(next) => { setSpontaneousOpen(false); setDate(next); }} csrfToken={session.data?.csrfToken ?? ''} isProfessorOnly={isProfessorOnly} headerAction={isProfessorOnly && canManageAgenda ? <Button className="w-full sm:w-auto" onClick={() => setSpontaneousOpen(true)}>Incorporación espontánea</Button> : undefined} />
     {spontaneousOpen && (agenda.isPending || people.isPending) ? <p role="status">Cargando incorporación espontánea…</p> : null}
     {spontaneousOpen && (agenda.isError || people.isError) ? <p role="alert">No se pudo preparar la incorporación espontánea. <Button variant="secondary" onClick={() => { void agenda.refetch(); void people.refetch(); }}>Reintentar</Button><Button variant="ghost" onClick={() => setSpontaneousOpen(false)}>Cerrar</Button></p> : null}
     {spontaneousOpen && isProfessorOnly && canManageAgenda && agenda.isSuccess && people.isSuccess ? <SpontaneousModal key={date} date={date} groups={agenda.data} people={people.data} initialSlotId="" csrfToken={session.data?.csrfToken ?? ''} canManageParticipation={session.data?.permissions.includes('SALA_PARTICIPATION_MANAGE') ?? false} canCreatePerson={false} onSaved={() => { void refresh(); }} onClose={() => setSpontaneousOpen(false)} /> : null}
