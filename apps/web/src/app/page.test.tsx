@@ -14,7 +14,7 @@ function renderPage(): void { render(<QueryClientProvider client={new QueryClien
 beforeEach(() => {
   vi.mocked(currentSession).mockResolvedValue(session);
   vi.mocked(getSalaDashboard).mockImplementation(async (params) => ({ status: 200, headers: new Headers(), data: { data: { ...summary, date: params.date, upcoming: [{ ...summary.upcoming[0]!, people: [{ ...summary.upcoming[0]!.people[0]!, firstName: params.date === '2026-11-01' ? 'Marta' : 'Ana' }] }] } } }));
-  vi.mocked(getReservationsTimeline).mockResolvedValue({ status: 200, headers: new Headers(), data: { date: '2026-10-31', startTime: '08:00', endTime: '18:00', rows: [{ kind: 'PROFESSIONAL', bookings: [{ id: 'clinic-attended', source: 'CLINIC', status: 'ATTENDED' }, { id: 'clinic-scheduled-1', source: 'CLINIC', status: 'SCHEDULED' }, { id: 'clinic-scheduled-2', source: 'CLINIC', status: 'SCHEDULED' }, { id: 'clinic-cancelled', source: 'CLINIC', status: 'CANCELLED' }, { id: 'sala-attended', source: 'SALA', status: 'ATTENDED' }] }] } } as never);
+  vi.mocked(getReservationsTimeline).mockResolvedValue({ status: 200, headers: new Headers(), data: { data: { date: '2026-10-31', startTime: '08:00', endTime: '18:00', rows: [{ kind: 'PROFESSIONAL', bookings: [{ id: 'clinic-attended', source: 'CLINIC', status: 'ATTENDED' }, { id: 'clinic-scheduled-1', source: 'CLINIC', status: 'SCHEDULED' }, { id: 'clinic-scheduled-2', source: 'CLINIC', status: 'SCHEDULED' }, { id: 'clinic-cancelled', source: 'CLINIC', status: 'CANCELLED' }, { id: 'sala-attended', source: 'SALA', status: 'ATTENDED' }] }] } } } as never);
   // 02:30 UTC is still October 31 in Argentina, regardless of host timezone.
   vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-11-01T02:30:00Z'));
 });

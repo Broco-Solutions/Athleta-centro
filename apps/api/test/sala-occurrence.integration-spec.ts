@@ -7,6 +7,8 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthService } from '../src/auth/auth.service';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { ReservationsService } from '../src/reservations/reservations.service';
+import { IndicationService } from '../src/clinic/indication.service';
 import { SalaService } from '../src/sala/sala.service';
 import { InternalUserService } from '../src/team/internal-user.service';
 
@@ -16,6 +18,8 @@ describe('SalaOccurrence persistence and API', () => {
   let sala: SalaService;
   let users: InternalUserService;
   let auth: AuthService;
+  let reservations: ReservationsService;
+  let indications: IndicationService;
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -28,9 +32,13 @@ describe('SalaOccurrence persistence and API', () => {
     sala = app.get(SalaService);
     users = app.get(InternalUserService);
     auth = app.get(AuthService);
+    reservations = app.get(ReservationsService);
+    indications = app.get(IndicationService);
   });
 
   afterEach(async () => {
+    jest.restoreAllMocks();
+    await prisma.salaClinicalIndication.deleteMany();
     await prisma.salaOccurrence.deleteMany();
     await prisma.oneOffReservation.deleteMany();
     await prisma.fixedSalaBooking.deleteMany();
@@ -61,7 +69,7 @@ describe('SalaOccurrence persistence and API', () => {
     await prisma.salaPlanService.create({ data: { planId: plan.id, serviceTypeId: service.id } });
     const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' });
     const slot = await sala.createSlot({ weekday, startTime: '09:00', durationMinutes: windowDuration, specificCapacity: 5 });
-    return { actor, person, participation, slot, service, date };
+    return { actor, professor, person, participation, slot, service, date };
   }
 
   it('projects past fixed bookings as RESERVED and materializes manual corrections with audit data', async () => {
@@ -114,6 +122,72 @@ describe('SalaOccurrence persistence and API', () => {
       expect.objectContaining({ sourceId: first.id, status: 'ATTENDED' }),
       expect.objectContaining({ sourceId: second.id, status: 'ABSENT' }),
     ]));
+  });
+
+  it('preserves both exact activities through the shared Reservations projection and HTTP envelope', async () => {
+    const f = await setup('2026-08-27', 'THURSDAY', 120);
+    const first = await sala.createReservation({ personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, date: f.date, startTime: '09:00' });
+    const second = await sala.createReservation({ personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, date: f.date, startTime: '10:00' });
+    const timeline = await reservations.list(f.date, f.professor.id);
+    const bookings = timeline.rows.flatMap((row) => row.bookings);
+    expect(bookings).toHaveLength(2);
+    expect(bookings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sourceId: first.id, startTime: '09:00', scheduleSlotId: f.slot.id, origin: 'ONE_OFF', status: 'RESERVED', cancelledForNonPayment: false, hasClinicalIndication: false }),
+      expect.objectContaining({ sourceId: second.id, startTime: '10:00', scheduleSlotId: f.slot.id, origin: 'ONE_OFF', status: 'RESERVED' }),
+    ]));
+    await auth.provisionCredential(f.professor.id, 'ValidPass1!');
+    await prisma.internalCredential.update({ where: { internalUserId: f.professor.id }, data: { mustChangePassword: false } });
+    const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: f.professor.email, password: 'ValidPass1!' }).expect(200);
+    const response = await request(app.getHttpServer()).get(`/api/reservations?date=${f.date}`).set('Cookie', login.headers['set-cookie'][0] as string).expect(200);
+    expect(response.body).toEqual({ data: timeline });
+  });
+
+  it('projects active indications in one bulk call only for authorized Sala readers', async () => {
+    const f = await setup('2026-08-27', 'THURSDAY', 120);
+    for (const startTime of ['09:00', '10:00']) await sala.createReservation({ personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, date: f.date, startTime });
+    await prisma.salaClinicalIndication.createMany({ data: [
+      { personId: f.person.id, responsibleProfessionalId: f.professor.id, trainingCondition: 'RESTRICTED', instructions: 'Synthetic private instructions', affectedArea: 'Synthetic area' },
+      { personId: f.person.id, responsibleProfessionalId: f.professor.id, trainingCondition: 'NO_RESTRICTIONS' },
+    ] });
+    const bulk = jest.spyOn(indications, 'activePersonIds');
+    const professorBookings = (await reservations.list(f.date, f.professor.id)).rows.flatMap((row) => row.bookings);
+    expect(professorBookings).toHaveLength(2);
+    expect(professorBookings.every((booking) => 'hasClinicalIndication' in booking && booking.hasClinicalIndication === true)).toBe(true);
+    expect(bulk).toHaveBeenCalledTimes(1);
+    expect(bulk).toHaveBeenCalledWith([f.person.id]);
+    await expect(bulk.mock.results[0]?.value).resolves.toEqual([f.person.id]);
+    bulk.mockClear();
+    const administrativeBookings = (await reservations.list(f.date, f.actor.id)).rows.flatMap((row) => row.bookings);
+    expect(bulk).not.toHaveBeenCalled();
+    for (const booking of administrativeBookings) expect(booking).not.toHaveProperty('hasClinicalIndication');
+    for (const booking of [...professorBookings, ...administrativeBookings]) {
+      for (const field of ['affectedArea', 'instructions', 'treatmentId', 'responsibleProfessional', 'responsibleProfessionalId']) expect(booking).not.toHaveProperty(field);
+    }
+    expect(JSON.stringify(professorBookings)).not.toContain('Synthetic private instructions');
+    await prisma.salaClinicalIndication.updateMany({ data: { status: 'CLOSED' } });
+    expect((await reservations.list(f.date, f.professor.id)).rows.flatMap((row) => row.bookings)).toEqual(expect.arrayContaining([expect.objectContaining({ hasClinicalIndication: false })]));
+    const clinicalActor = await users.create({ firstName: 'Clinical', lastName: 'Synthetic', email: `clinical-${randomUUID()}@athleta.test`, roles: [Role.KINESIOLOGIST] });
+    bulk.mockClear();
+    await reservations.list(f.date, clinicalActor.id);
+    expect(bulk).not.toHaveBeenCalled();
+  });
+
+  it('preserves pending payment and the persisted nonpayment cancellation marker in Reservations', async () => {
+    const date = '2099-08-27';
+    const weekday = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'][new Date(`${date}T00:00:00Z`).getUTCDay()] as SalaWeekday;
+    const f = await setup(date, weekday);
+    const fixed = await sala.createFixed({ personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, startDate: date });
+    const pending = await reservations.list(date, f.professor.id);
+    expect(pending.rows[0]?.bookings).toEqual([expect.objectContaining({ sourceId: fixed.id, startTime: '09:00', status: 'PENDING_PAYMENT', cancelledForNonPayment: false })]);
+    await prisma.salaOccurrence.create({ data: { personId: f.person.id, scheduleSlotId: f.slot.id, date: new Date(`${date}T00:00:00Z`), startTime: new Date('1970-01-01T09:00:00Z'), fixedSalaBookingId: fixed.id, origin: 'FIXED', status: 'CANCELLED', cancelledForNonPaymentAt: new Date() } });
+    const cancelled = await reservations.list(date, f.professor.id);
+    expect(cancelled.rows[0]?.bookings).toEqual([expect.objectContaining({ sourceId: fixed.id, startTime: '09:00', status: 'CANCELLED', cancelledForNonPayment: true })]);
+  });
+
+  it('avoids a database indication query for an empty list of people', async () => {
+    const query = jest.spyOn(prisma.salaClinicalIndication, 'findMany');
+    expect(await indications.activePersonIds([])).toEqual([]);
+    expect(query).not.toHaveBeenCalled();
   });
 
   it('uses explicit occurrence state as the authority over a one-off planning source', async () => {

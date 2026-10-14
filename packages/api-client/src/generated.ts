@@ -1366,6 +1366,7 @@ export const ReservationBookingDtoStatus = {
   ATTENDED: 'ATTENDED',
   ABSENT: 'ABSENT',
   CANCELLED: 'CANCELLED',
+  PENDING_PAYMENT: 'PENDING_PAYMENT',
 } as const;
 
 export type ReservationBookingDtoOrigin = typeof ReservationBookingDtoOrigin[keyof typeof ReservationBookingDtoOrigin];
@@ -1397,6 +1398,9 @@ export interface ReservationBookingDto {
   /** @nullable */
   professional?: ReservationBookingDtoProfessional;
   scheduleSlotId?: string;
+  sourceId?: string;
+  cancelledForNonPayment?: boolean;
+  hasClinicalIndication?: boolean;
 }
 
 export type ReservationRowDtoKind = typeof ReservationRowDtoKind[keyof typeof ReservationRowDtoKind];
@@ -1425,6 +1429,10 @@ export interface ReservationsResponseDto {
   startTime: string;
   endTime: string;
   rows: ReservationRowDto[];
+}
+
+export interface ReservationsEnvelopeDto {
+  data: ReservationsResponseDto;
 }
 
 export type InternalLoginBody = {
@@ -8892,17 +8900,17 @@ export const portalControllerCancel = async (id: string, options?: RequestInit):
 
 
 
-export type getReservationsTimelineResponseDefault = {
-  data: ReservationsResponseDto
-  status: number
+export type getReservationsTimelineResponse200 = {
+  data: ReservationsEnvelopeDto
+  status: 200
 }
 
-;
-export type getReservationsTimelineResponseError = (getReservationsTimelineResponseDefault) & {
+export type getReservationsTimelineResponseSuccess = (getReservationsTimelineResponse200) & {
   headers: Headers;
 };
+;
 
-export type getReservationsTimelineResponse = (getReservationsTimelineResponseError)
+export type getReservationsTimelineResponse = (getReservationsTimelineResponseSuccess)
 
 export const getGetReservationsTimelineUrl = (params: GetReservationsTimelineParams,) => {
   const normalizedParams = new URLSearchParams();

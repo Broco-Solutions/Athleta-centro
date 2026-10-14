@@ -60,13 +60,7 @@ function ProfessorHome({ firstName }: { firstName: string }): React.JSX.Element 
   </div>;
 }
 
-type ClinicalBooking = { source: string; status: string };
-type TimelineResponse = { date: string; startTime: string; endTime: string; rows: { kind: string; bookings: ClinicalBooking[] }[] };
 type FinanceTotals = { salaIncome: string; clinicalIncome: string; totalIncome: string; expenses: string; net: string };
-function unwrapTimeline(value: unknown): TimelineResponse {
-  const body = (value as { data?: TimelineResponse | { data?: TimelineResponse } }).data;
-  return (body && 'rows' in body ? body : (body as { data: TimelineResponse }).data) as TimelineResponse;
-}
 function monthStart(date: string): string { return `${date.slice(0, 7)}-01`; }
 function formatArs(value?: string): string {
   if (value === undefined) return '—';
@@ -92,7 +86,7 @@ function GeneralAdminHome({ firstName }: { firstName: string }): React.JSX.Eleme
     if (response.status !== 200) throw new Error('Sala request failed');
     return response.data.data;
   } });
-  const clinic = useQuery({ queryKey: ['reservations', date], queryFn: async () => unwrapTimeline(await getReservationsTimeline({ date }, { credentials: 'include' })) });
+  const clinic = useQuery({ queryKey: ['reservations', date], queryFn: async () => { const response = await getReservationsTimeline({ date }, { credentials: 'include' }); if (response.status >= 400) throw new Error('No se pudieron cargar las reservas.'); return response.data.data; } });
   const finance = useQuery({ queryKey: ['finance', 'executive-totals', from, date], queryFn: () => getExecutiveTotals(from, date) });
   const clinicBookings = clinic.data?.rows.flatMap((row) => row.bookings).filter((booking) => booking.source === 'CLINIC') ?? [];
   const attended = clinicBookings.filter((booking) => booking.status === 'ATTENDED').length;

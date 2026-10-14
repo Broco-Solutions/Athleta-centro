@@ -53,6 +53,7 @@ export function SalaReservationsAgenda({ csrfToken, isProfessorOnly, canManageAg
   };
   return <>
     <ReservationsTimeline
+      canManageSalaAgenda={canManageAgenda}
       date={date}
       onDateChange={(next) => { setSpontaneousOpen(false); setDate(next); }}
       csrfToken={csrfToken}
