@@ -770,16 +770,42 @@ export interface RetireExerciseDefinitionDto {
   confirmActiveRoutineImpact?: boolean;
 }
 
+export interface PhysicalTestDefinitionResponseDto {
+  id: string;
+  name: string;
+  type: string;
+  /** @nullable */
+  description: string | null;
+  isActive: boolean;
+}
+
+export interface PhysicalTestDefinitionListEnvelopeDto {
+  data: PhysicalTestDefinitionResponseDto[];
+}
+
+export type PhysicalTestDefinitionDtoType = typeof PhysicalTestDefinitionDtoType[keyof typeof PhysicalTestDefinitionDtoType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PhysicalTestDefinitionDtoType = {
+  STRENGTH: 'STRENGTH',
+  MOBILITY: 'MOBILITY',
+  OTHER: 'OTHER',
+} as const;
+
 export interface PhysicalTestDefinitionDto {
   /** @maxLength 120 */
   name: string;
-  /** @maxLength 80 */
-  type: string;
+  type: PhysicalTestDefinitionDtoType;
   /**
    * @maxLength 500
    * @nullable
    */
   description?: string | null;
+}
+
+export interface PhysicalTestDefinitionEnvelopeDto {
+  data: PhysicalTestDefinitionResponseDto;
 }
 
 export interface PhysicalTestResultDto {
@@ -788,11 +814,48 @@ export interface PhysicalTestResultDto {
   resultText: string;
 }
 
+export interface CorrectPhysicalEvaluationDto {
+  /** @nullable */
+  observation?: string | null;
+  /** @minItems 1 */
+  results: PhysicalTestResultDto[];
+}
+
+export interface PhysicalTestResultResponseDto {
+  id: string;
+  testDefinitionId: string;
+  resultText: string;
+  testDefinition: PhysicalTestDefinitionResponseDto;
+}
+
+export interface PhysicalEvaluationResponseDto {
+  id: string;
+  personId: string;
+  salaParticipationId: string;
+  professorId: string;
+  evaluationDate: string;
+  /** @nullable */
+  observation: string | null;
+  professor: SalaProfessorOptionDto;
+  results: PhysicalTestResultResponseDto[];
+}
+
+export interface PhysicalEvaluationEnvelopeDto {
+  data: PhysicalEvaluationResponseDto;
+}
+
+export interface PhysicalEvaluationListEnvelopeDto {
+  data: PhysicalEvaluationResponseDto[];
+}
+
 export interface PhysicalEvaluationDto {
   personId: string;
   salaParticipationId: string;
   professorId: string;
   evaluationDate: string;
+  /** @nullable */
+  observation?: string | null;
+  /** @minItems 1 */
   results: PhysicalTestResultDto[];
 }
 
@@ -4204,7 +4267,7 @@ export const retireSalaExerciseDefinition = async (id: string,
 
 
 export type listSalaPhysicalTestDefinitionsResponse200 = {
-  data: void
+  data: PhysicalTestDefinitionListEnvelopeDto
   status: 200
 }
 
@@ -4243,7 +4306,7 @@ export const listSalaPhysicalTestDefinitions = async ( options?: RequestInit): P
 
 
 export type createSalaPhysicalTestDefinitionResponse201 = {
-  data: void
+  data: PhysicalTestDefinitionEnvelopeDto
   status: 201
 }
 
@@ -4283,7 +4346,7 @@ export const createSalaPhysicalTestDefinition = async (physicalTestDefinitionDto
 
 
 export type retireSalaPhysicalTestDefinitionResponse201 = {
-  data: void
+  data: PhysicalTestDefinitionEnvelopeDto
   status: 201
 }
 
@@ -4321,8 +4384,90 @@ export const retireSalaPhysicalTestDefinition = async (id: string, options?: Req
 
 
 
+export type updateSalaPhysicalTestDefinitionResponse200 = {
+  data: PhysicalTestDefinitionEnvelopeDto
+  status: 200
+}
+
+export type updateSalaPhysicalTestDefinitionResponseSuccess = (updateSalaPhysicalTestDefinitionResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateSalaPhysicalTestDefinitionResponse = (updateSalaPhysicalTestDefinitionResponseSuccess)
+
+export const getUpdateSalaPhysicalTestDefinitionUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/physical-test-definitions/${id}`
+}
+
+export const updateSalaPhysicalTestDefinition = async (id: string,
+    physicalTestDefinitionDto: PhysicalTestDefinitionDto, options?: RequestInit): Promise<updateSalaPhysicalTestDefinitionResponse> => {
+
+  const res = await fetch(getUpdateSalaPhysicalTestDefinitionUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      physicalTestDefinitionDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateSalaPhysicalTestDefinitionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateSalaPhysicalTestDefinitionResponse
+}
+
+
+
+export type correctSalaPhysicalEvaluationResponse200 = {
+  data: PhysicalEvaluationEnvelopeDto
+  status: 200
+}
+
+export type correctSalaPhysicalEvaluationResponseSuccess = (correctSalaPhysicalEvaluationResponse200) & {
+  headers: Headers;
+};
+;
+
+export type correctSalaPhysicalEvaluationResponse = (correctSalaPhysicalEvaluationResponseSuccess)
+
+export const getCorrectSalaPhysicalEvaluationUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/physical-evaluations/${id}`
+}
+
+export const correctSalaPhysicalEvaluation = async (id: string,
+    correctPhysicalEvaluationDto: CorrectPhysicalEvaluationDto, options?: RequestInit): Promise<correctSalaPhysicalEvaluationResponse> => {
+
+  const res = await fetch(getCorrectSalaPhysicalEvaluationUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      correctPhysicalEvaluationDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: correctSalaPhysicalEvaluationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as correctSalaPhysicalEvaluationResponse
+}
+
+
+
 export type listPersonPhysicalEvaluationsResponse200 = {
-  data: void
+  data: PhysicalEvaluationListEnvelopeDto
   status: 200
 }
 
@@ -4361,7 +4506,7 @@ export const listPersonPhysicalEvaluations = async (personId: string, options?: 
 
 
 export type createSalaPhysicalEvaluationResponse201 = {
-  data: void
+  data: PhysicalEvaluationEnvelopeDto
   status: 201
 }
 

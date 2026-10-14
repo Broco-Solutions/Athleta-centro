@@ -41,7 +41,7 @@ export class PortalService {
         },
       },
     });
-    const evaluations = await this.prisma.physicalEvaluation.findMany({ where: { personId: person.id }, orderBy: { evaluationDate: 'desc' }, take: 20 });
+    const evaluations = await this.prisma.physicalEvaluation.findMany({ where: { personId: person.id }, select: { id: true, evaluationDate: true, results: { select: { resultText: true, testDefinition: { select: { id: true, name: true } } }, orderBy: { id: 'asc' } } }, orderBy: [{ evaluationDate: 'asc' }, { id: 'asc' }] });
     const [year, month] = today.split('-').map(Number) as [number, number, number];
     const payment = await this.prisma.salaPayment.findFirst({ where: { personId: person.id, year, month, reversal: { is: null } } });
     return { reservations, fixed, fixedOccurrences, routine, evaluations, paymentState: payment ? 'PAID' : 'PENDING' };

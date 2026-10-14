@@ -59,12 +59,12 @@ it('opens the real-field modal, creates a test and refreshes the listing', async
   fireEvent.click(screen.getByRole('button', { name: 'Crear primer test' }));
   const dialog = await screen.findByRole('dialog', { name: 'Nuevo test físico' });
   fireEvent.change(within(dialog).getByLabelText('Nombre del test físico'), { target: { value: 'Sentadilla' } });
-  fireEvent.change(within(dialog).getByLabelText('Tipo del test físico'), { target: { value: 'repeticiones' } });
+  fireEvent.change(within(dialog).getByLabelText('Tipo del test físico'), { target: { value: 'STRENGTH' } });
   fireEvent.change(within(dialog).getByLabelText('Descripción del test físico'), { target: { value: 'Cantidad en un minuto' } });
   fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Nuevo test físico' })).not.toBeInTheDocument());
   expect(await screen.findByText('Sentadilla')).toBeInTheDocument();
-  expect(screen.getByText(/repeticiones · Cantidad en un minuto/)).toBeInTheDocument();
+  expect(screen.getByText(/Fuerza · Cantidad en un minuto/)).toBeInTheDocument();
 });
 
 it.each([false, true])('shows plan administration only with its permission (manage=%s), while preserving schedules', async (manage) => {

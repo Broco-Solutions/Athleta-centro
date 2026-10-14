@@ -1,6 +1,6 @@
 import { CreatePersonDto, PersonResponseDto } from '../people/person.dto';
 import { Type } from 'class-transformer';
-import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsIn, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, IntersectionType, PickType } from '@nestjs/swagger';
 import { SalaOccurrenceStatus, SalaScheduleExceptionType, SalaWeekday } from '@prisma/client';
 
@@ -115,9 +115,9 @@ export class ReplaceRoutineDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() salaParticipationId!: string;
   @ApiProperty({ type: () => [RoutineDayDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RoutineDayDto) days!: RoutineDayDto[];
 }
-export class PhysicalTestDefinitionDto { @ApiProperty({ type: String, maxLength: 120 }) @IsString() @MinLength(1) @MaxLength(120) name!: string; @ApiProperty({ type: String, maxLength: 80 }) @IsString() @MinLength(1) @MaxLength(80) type!: string; @ApiPropertyOptional({ type: String, maxLength: 500, nullable: true }) @IsOptional() @IsString() @MaxLength(500) description?: string | null; }
+export class PhysicalTestDefinitionDto { @ApiProperty({ type: String, maxLength: 120 }) @IsString() @MinLength(1) @MaxLength(120) name!: string; @ApiProperty({ enum: ['STRENGTH', 'MOBILITY', 'OTHER'] }) @IsIn(['STRENGTH', 'MOBILITY', 'OTHER']) type!: 'STRENGTH' | 'MOBILITY' | 'OTHER'; @ApiPropertyOptional({ type: String, maxLength: 500, nullable: true }) @IsOptional() @IsString() @MaxLength(500) description?: string | null; }
 export class PhysicalTestResultDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() testDefinitionId!: string; @ApiProperty({ type: String, maxLength: 500 }) @IsString() @MinLength(1) @MaxLength(500) resultText!: string; }
-export class PhysicalEvaluationDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() salaParticipationId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() professorId!: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) evaluationDate!: string; @ApiProperty({ type: () => [PhysicalTestResultDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => PhysicalTestResultDto) results!: PhysicalTestResultDto[]; }
+export class PhysicalEvaluationDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() salaParticipationId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() professorId!: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) evaluationDate!: string; @ApiPropertyOptional({ type: String, nullable: true }) @IsOptional() @IsString() observation?: string | null; @ApiProperty({ type: () => [PhysicalTestResultDto], minItems: 1 }) @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => PhysicalTestResultDto) results!: PhysicalTestResultDto[]; }
 export class SalaPaymentAllocationDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() chargeId!: string; @ApiProperty({ type: String, pattern: '^\\d+$' }) @IsString() @Matches(/^\d+$/) amount!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() operationId!: string; }
 export class SalaPlanPaymentPeriodDto {
   @ApiProperty({ type: Number }) @Type(() => Number) @IsInt() year!: number;
@@ -210,3 +210,35 @@ export class BulkChangeProfessorDto extends BulkLeaveSalaDto {
 }
 export class BulkSalaActionResultDto { @ApiProperty({ type: Number, minimum: 0 }) affected!: number; }
 export class BulkSalaActionEnvelopeDto { @ApiProperty({ type: () => BulkSalaActionResultDto }) data!: BulkSalaActionResultDto; }
+
+export class CorrectPhysicalEvaluationDto {
+  @ApiPropertyOptional({ type: String, nullable: true }) @IsOptional() @IsString() observation?: string | null;
+  @ApiProperty({ type: () => [PhysicalTestResultDto], minItems: 1 }) @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => PhysicalTestResultDto) results!: PhysicalTestResultDto[];
+}
+export class PhysicalTestDefinitionResponseDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String }) name!: string;
+  @ApiProperty({ type: String }) type!: string;
+  @ApiProperty({ type: String, nullable: true }) description!: string | null;
+  @ApiProperty({ type: Boolean }) isActive!: boolean;
+}
+export class PhysicalTestDefinitionEnvelopeDto { @ApiProperty({ type: () => PhysicalTestDefinitionResponseDto }) data!: PhysicalTestDefinitionResponseDto; }
+export class PhysicalTestDefinitionListEnvelopeDto { @ApiProperty({ type: () => [PhysicalTestDefinitionResponseDto] }) data!: PhysicalTestDefinitionResponseDto[]; }
+export class PhysicalTestResultResponseDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) testDefinitionId!: string;
+  @ApiProperty({ type: String }) resultText!: string;
+  @ApiProperty({ type: () => PhysicalTestDefinitionResponseDto }) testDefinition!: PhysicalTestDefinitionResponseDto;
+}
+export class PhysicalEvaluationResponseDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) personId!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) salaParticipationId!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) professorId!: string;
+  @ApiProperty({ type: String, format: 'date' }) evaluationDate!: string;
+  @ApiProperty({ type: String, nullable: true }) observation!: string | null;
+  @ApiProperty({ type: () => SalaProfessorOptionDto }) professor!: SalaProfessorOptionDto;
+  @ApiProperty({ type: () => [PhysicalTestResultResponseDto] }) results!: PhysicalTestResultResponseDto[];
+}
+export class PhysicalEvaluationEnvelopeDto { @ApiProperty({ type: () => PhysicalEvaluationResponseDto }) data!: PhysicalEvaluationResponseDto; }
+export class PhysicalEvaluationListEnvelopeDto { @ApiProperty({ type: () => [PhysicalEvaluationResponseDto] }) data!: PhysicalEvaluationResponseDto[]; }

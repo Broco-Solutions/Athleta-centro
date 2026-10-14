@@ -675,12 +675,12 @@ describe('Sala configuration API', () => {
     expect((await sala.listExerciseDefinitions()).some(definition => definition.id === exercise.id)).toBe(false);
   });
   it('persists and lists physical test definitions', async () => {
-    const test = await sala.createPhysicalTest({ name: `Catalog-${uniqueDni()}`, type: 'distance', description: 'Centimeters' });
+    const test = await sala.createPhysicalTest({ name: `Catalog-${uniqueDni()}`, type: 'MOBILITY', description: 'Centimeters' });
     expect(await prisma.physicalTestDefinition.findUnique({ where: { id: test.id } })).toMatchObject({ id: test.id, isActive: true });
-    expect(await sala.listPhysicalTests()).toEqual(expect.arrayContaining([expect.objectContaining({ id: test.id, name: test.name, type: 'distance' })]));
+    expect(await sala.listPhysicalTests()).toEqual(expect.arrayContaining([expect.objectContaining({ id: test.id, name: test.name, type: 'MOBILITY' })]));
   });
   it('keeps physical test definitions separate from evaluation results and validates the professor', async () => {
-    const dni = uniqueDni(); const person = await prisma.person.create({ data: { firstName: 'Eval', lastName: 'Person', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1991-01-01T00:00:00Z') } }); const plan = await prisma.salaPlan.create({ data: { name: `Eval-${dni}`, monthlyAmount: 1000 } }); const professor = await users.create({ firstName: 'Eval', lastName: 'Professor', email: `eval-${dni}@sala.test`, roles: [Role.PROFESSOR] }); const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' }); const test = await sala.createPhysicalTest({ name: `Flex-${dni}`, type: 'distance' }); const evaluation = await sala.createPhysicalEvaluation({ personId: person.id, salaParticipationId: participation.id, professorId: professor.id, evaluationDate: '2026-08-27', results: [{ testDefinitionId: test.id, resultText: '25 cm' }] }, professor.id); expect(evaluation.results).toHaveLength(1); expect(await prisma.physicalEvaluation.findUnique({ where: { id: evaluation.id } })).toMatchObject({ id: evaluation.id, personId: person.id, salaParticipationId: participation.id }); expect(await prisma.physicalTestResult.findFirst({ where: { evaluationId: evaluation.id, testDefinitionId: test.id } })).toMatchObject({ resultText: '25 cm' }); const listed = await sala.listPhysicalEvaluations(person.id); expect(listed).toHaveLength(1); expect(listed[0]?.results).toEqual(expect.arrayContaining([expect.objectContaining({ testDefinitionId: test.id, resultText: '25 cm' })])); await sala.retirePhysicalTest(test.id); await expect(sala.createPhysicalEvaluation({ personId: person.id, salaParticipationId: participation.id, professorId: professor.id, evaluationDate: '2026-08-28', results: [{ testDefinitionId: test.id, resultText: '26 cm' }] }, professor.id)).rejects.toMatchObject({ response: { code: 'SALA_PHYSICAL_TEST_INVALID' } });
+    const dni = uniqueDni(); const person = await prisma.person.create({ data: { firstName: 'Eval', lastName: 'Person', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1991-01-01T00:00:00Z') } }); const plan = await prisma.salaPlan.create({ data: { name: `Eval-${dni}`, monthlyAmount: 1000 } }); const professor = await users.create({ firstName: 'Eval', lastName: 'Professor', email: `eval-${dni}@sala.test`, roles: [Role.PROFESSOR] }); const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' }); const test = await sala.createPhysicalTest({ name: `Flex-${dni}`, type: 'MOBILITY' }); const evaluation = await sala.createPhysicalEvaluation({ personId: person.id, salaParticipationId: participation.id, professorId: professor.id, evaluationDate: '2026-08-27', results: [{ testDefinitionId: test.id, resultText: '25 cm' }] }, professor.id); expect(evaluation.results).toHaveLength(1); expect(await prisma.physicalEvaluation.findUnique({ where: { id: evaluation.id } })).toMatchObject({ id: evaluation.id, personId: person.id, salaParticipationId: participation.id }); expect(await prisma.physicalTestResult.findFirst({ where: { evaluationId: evaluation.id, testDefinitionId: test.id } })).toMatchObject({ resultText: '25 cm' }); const listed = await sala.listPhysicalEvaluations(person.id); expect(listed).toHaveLength(1); expect(listed[0]?.results).toEqual(expect.arrayContaining([expect.objectContaining({ testDefinitionId: test.id, resultText: '25 cm' })])); await sala.retirePhysicalTest(test.id); await expect(sala.createPhysicalEvaluation({ personId: person.id, salaParticipationId: participation.id, professorId: professor.id, evaluationDate: '2026-08-28', results: [{ testDefinitionId: test.id, resultText: '26 cm' }] }, professor.id)).rejects.toMatchObject({ response: { code: 'SALA_PHYSICAL_TEST_INVALID' } });
   });
   async function planPaymentFixture() {
     const authn = await session(Role.ADMINISTRATIVE);
@@ -1337,6 +1337,65 @@ describe('Sala configuration API', () => {
       await f.post('bulk-leave', { participationIds }).expect(400);
       await f.post('bulk-change-professor', { participationIds, mainProfessorId: f.other.id }).expect(400);
     });
+  });
+  async function physicalFixture() {
+    const dni = uniqueDni();
+    const person = await prisma.person.create({ data: { firstName: 'Evaluación', lastName: 'Sintética', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1991-01-01') } });
+    const plan = await prisma.salaPlan.create({ data: { name: `Eval-${dni}`, monthlyAmount: 1000 } });
+    const professor = await users.create({ firstName: 'Profesor', lastName: 'Sintético', email: `eval-${dni}@sala.test`, roles: [Role.PROFESSOR] });
+    const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' });
+    const a = await sala.createPhysicalTest({ name: `A-${dni}`, type: 'MOBILITY' });
+    const b = await sala.createPhysicalTest({ name: `B-${dni}`, type: 'OTHER' });
+    return { professor, a, b, input: { personId: person.id, salaParticipationId: participation.id, professorId: professor.id, evaluationDate: '2026-08-20', observation: ' Inicial ', results: [{ testDefinitionId: a.id, resultText: ' 40 cm ' }] } };
+  }
+  it.each([Role.PROFESSOR, Role.GENERAL_ADMIN])('completes catalog and evaluations via HTTP for %s', async role => {
+    const authn = await session(role); const f = await physicalFixture();
+    const call = (method: 'post' | 'patch', path: string, body: object) => request(app.getHttpServer())[method](`/api/sala/${path}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(body);
+    for (const type of ['STRENGTH', 'MOBILITY', 'OTHER']) {
+      await call('post', 'physical-test-definitions', { name: type, type }).expect(201);
+    }
+    await call('post', 'physical-test-definitions', { name: 'Invalid', type: 'NUMERIC' }).expect(400);
+    await call('patch', `physical-test-definitions/${f.a.id}`, { name: 'Nombre B', type: 'STRENGTH', description: ' Descripción B ' }).expect(200).expect(({ body }: { body: { data: { isActive?: boolean }; code?: string } }) => expect(body.data).toEqual({ id: f.a.id, name: 'Nombre B', type: 'STRENGTH', description: 'Descripción B', isActive: true }));
+    await call('patch', `physical-test-definitions/${f.a.id}`, { name: f.b.name, type: 'MOBILITY' }).expect(409).expect(({ body }: { body: { data: { isActive?: boolean }; code?: string } }) => expect(body.code).toBe('SALA_PHYSICAL_TEST_DUPLICATE'));
+    await call('patch', `physical-test-definitions/${randomUUID()}`, { name: 'Missing', type: 'OTHER' }).expect(404);
+    await call('post', 'physical-test-definitions', { name: f.b.name, type: 'OTHER' }).expect(409).expect(({ body }: { body: { data: { isActive?: boolean }; code?: string } }) => expect(body.code).toBe('SALA_PHYSICAL_TEST_DUPLICATE'));
+    await call('post', 'physical-evaluations', { ...f.input, results: [] }).expect(400);
+    const created = await call('post', 'physical-evaluations', { ...f.input, results: [{ testDefinitionId: f.a.id, resultText: '170° derecho' }, { testDefinitionId: f.a.id, resultText: '160° izquierdo' }, { testDefinitionId: f.b.id, resultText: '48 cm' }] }).expect(201);
+    const id: string = created.body.data.id;
+    expect(created.body.data).toMatchObject({ evaluationDate: '2026-08-20', professorId: f.professor.id, observation: 'Inicial', professor: { id: f.professor.id } });
+    expect(created.body.data).not.toHaveProperty('createdBy');
+    const original = await prisma.physicalEvaluation.findUniqueOrThrow({ where: { id } });
+    const originalResults = await prisma.physicalTestResult.findMany({ where: { evaluationId: id } });
+    expect(originalResults).toHaveLength(3); expect(new Set(originalResults.map(result => result.testDefinitionId)).size).toBe(2);
+    const corrected = await call('patch', `physical-evaluations/${id}`, { observation: ' Revisado ', results: [{ testDefinitionId: f.a.id, resultText: '42 cm' }, { testDefinitionId: f.b.id, resultText: 'Positivo' }] }).expect(200);
+    expect(corrected.body.data).toMatchObject({ id, evaluationDate: '2026-08-20', professorId: f.professor.id, observation: 'Revisado' });
+    expect(await prisma.physicalEvaluation.count({ where: { personId: f.input.personId } })).toBe(1);
+    expect(await prisma.physicalEvaluation.findUniqueOrThrow({ where: { id } })).toMatchObject({ createdBy: original.createdBy, evaluationDate: original.evaluationDate, professorId: original.professorId });
+    expect(await prisma.physicalTestResult.count({ where: { id: { in: originalResults.map(result => result.id) } } })).toBe(0);
+    await call('patch', `physical-evaluations/${id}`, { results: [], observation: 'Invalid' }).expect(400);
+    for (const extra of [{ evaluationDate: '2026-10-14' }, { professorId: f.professor.id }, { personId: f.input.personId }]) await call('patch', `physical-evaluations/${id}`, { results: [{ testDefinitionId: f.a.id, resultText: '42 cm' }], ...extra }).expect(400);
+    await call('post', `physical-test-definitions/${f.a.id}/retire`, {}).expect(201).expect(({ body }: { body: { data: { isActive?: boolean }; code?: string } }) => expect(body.data.isActive).toBe(false));
+    expect((await sala.listPhysicalTests()).some(test => test.id === f.a.id)).toBe(false);
+    await call('patch', `physical-evaluations/${id}`, { observation: null, results: [{ testDefinitionId: f.a.id, resultText: '44 cm' }] }).expect(200);
+    const other = await sala.createPhysicalEvaluation({ ...f.input, results: [{ testDefinitionId: f.b.id, resultText: 'Positivo' }] }, f.professor.id);
+    await call('patch', `physical-evaluations/${other.id}`, { results: [{ testDefinitionId: f.a.id, resultText: 'Introducción inválida' }] }).expect(400).expect(({ body }: { body: { data: { isActive?: boolean }; code?: string } }) => expect(body.code).toBe('SALA_PHYSICAL_TEST_INVALID'));
+    await call('post', 'physical-evaluations', f.input).expect(400);
+    // A failed correction leaves both observation and results persisted unchanged.
+    const before = await prisma.physicalEvaluation.findUniqueOrThrow({ where: { id }, include: { results: true } });
+    await expect(sala.correctPhysicalEvaluation(id, { observation: 'No persistir', results: [{ testDefinitionId: f.a.id, resultText: 'x'.repeat(501) }] })).rejects.toThrow();
+    expect(await prisma.physicalEvaluation.findUniqueOrThrow({ where: { id }, include: { results: true } })).toEqual(before);
+    await prisma.salaParticipation.update({ where: { id: f.input.salaParticipationId }, data: { endDate: new Date('2026-09-01') } });
+    const historical = await request(app.getHttpServer()).get(`/api/sala/people/${f.input.personId}/physical-evaluations`).set('Cookie', authn.cookie).expect(200);
+    expect(historical.body.data.find((item: { id: string }) => item.id === id).results[0]).toMatchObject({ resultText: '44 cm', testDefinition: { id: f.a.id, isActive: false } });
+    await call('patch', `physical-test-definitions/${f.a.id}`, { name: 'Retirado editado', type: 'OTHER' }).expect(200).expect(({ body }: { body: { data: { isActive?: boolean }; code?: string } }) => expect(body.data.isActive).toBe(false));
+    await call('patch', `physical-evaluations/${id}`, { results: [{ testDefinitionId: f.a.id, resultText: '46 cm' }] }).expect(200);
+  });
+  it('keeps administrative physical evaluation access read-only', async () => {
+    const authn = await session(Role.ADMINISTRATIVE); const f = await physicalFixture(); const e = await sala.createPhysicalEvaluation(f.input, f.professor.id);
+    for (const path of ['physical-test-definitions', `people/${f.input.personId}/physical-evaluations`]) await request(app.getHttpServer()).get(`/api/sala/${path}`).set('Cookie', authn.cookie).expect(200);
+    for (const [method, path, body] of [
+      ['post', 'physical-test-definitions', { name: 'No', type: 'OTHER' }], ['patch', `physical-test-definitions/${f.a.id}`, { name: 'No', type: 'OTHER' }], ['post', `physical-test-definitions/${f.a.id}/retire`, {}], ['post', 'physical-evaluations', f.input], ['patch', `physical-evaluations/${e.id}`, { results: f.input.results }],
+    ] as const) await request(app.getHttpServer())[method](`/api/sala/${path}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(body).expect(403);
   });
 
 });

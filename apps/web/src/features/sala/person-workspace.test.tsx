@@ -468,13 +468,13 @@ it('reuses the panel cache keys and updates the dashboard after payment invalida
 });
 it.each([['ADMINISTRATIVE'], ['GENERAL_ADMIN'], ['KINESIOLOGIST'], ['OSTEOPATH'], ['PROFESSOR', 'KINESIOLOGIST']])('preserves the existing sections for roles %s', async (...roles) => {
   navigation.tab = 'summary';
-  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'staff', firstName: 'Staff', lastName: 'Demo' }, roles, permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })),
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'staff', firstName: 'Staff', lastName: 'Demo' }, roles, permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_MANAGE', ...(roles.some(role => ['ADMINISTRATIVE', 'GENERAL_ADMIN', 'PROFESSOR'].includes(role)) ? ['SALA_PHYSICAL_EVALUATION_READ'] : [])], csrfToken: 'csrf', mustChangePassword: false } })),
     http.get(`http://localhost:3000/api/sala/people/${personId}/payments`, () => HttpResponse.json({ data: [] })),
     http.get('http://localhost:3000/api/finance/payment-methods', () => HttpResponse.json({ data: [] })),
   );
   renderWorkspace(); await screen.findByText('Workspace Sala');
   const tabs = within(screen.getByRole('navigation', { name: 'Secciones del alumno en Sala' }));
-  expect(tabs.getAllByRole('link').map(link => link.textContent)).toEqual(['Resumen', 'Reservas', 'Turno fijo', 'Rutina', 'Evaluaciones físicas']);
+  expect(tabs.getAllByRole('link').map(link => link.textContent)).toEqual(['Resumen', 'Reservas', 'Turno fijo', 'Rutina', ...(roles.some(role => ['ADMINISTRATIVE', 'GENERAL_ADMIN', 'PROFESSOR'].includes(role)) ? ['Evaluaciones físicas'] : [])]);
   expect(await screen.findByRole('heading', { name: 'Pagos de Sala' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Ver ficha de Persona' })).toBeInTheDocument();
 });
@@ -560,4 +560,33 @@ it.each(['objective', 'professor', 'plan', 'leave'])('keeps the %s dialog open a
   const dialog = within(screen.getByRole('dialog')); await waitFor(() => expect(dialog.getByRole('button', { name: action === 'leave' ? 'Dar de baja' : 'Guardar' })).toBeEnabled());
   fireEvent.click(dialog.getByRole('button', { name: action === 'leave' ? 'Dar de baja' : 'Guardar' }));
   expect(await dialog.findByRole('alert')).toHaveTextContent('No se pudo completar la operación'); expect(screen.getByRole('dialog')).toBeInTheDocument();
+});
+
+it.each([
+  { role: 'PROFESSOR', manage: true, active: true },
+  { role: 'ADMINISTRATIVE', manage: false, active: true },
+  { role: 'PROFESSOR', manage: true, active: false },
+])('keeps physical history and permission-based actions for $role (active=$active)', async ({ role, manage, active }) => {
+  navigation.tab = 'evaluations';
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor' }, roles: [role], permissions: ['SALA_PHYSICAL_EVALUATION_READ', ...(manage ? ['SALA_PHYSICAL_EVALUATION_MANAGE', 'SALA_PHYSICAL_TEST_CATALOG_MANAGE'] : [])], csrfToken: 'csrf', mustChangePassword: false } })),
+    http.get(`http://localhost:3000/api/sala/participations/person/${personId}`, () => HttpResponse.json({ data: active ? [{ id: 'participation', endDate: null }] : [{ id: 'old', endDate: '2026-09-01' }] })),
+    http.get('http://localhost:3000/api/sala/physical-test-definitions', () => HttpResponse.json({ data: [] })),
+    http.get(`http://localhost:3000/api/sala/people/${personId}/physical-evaluations`, () => HttpResponse.json({ data: [{ id: 'evaluation', evaluationDate: '2026-08-20', professor: { firstName: 'Profesor', lastName: 'Sintético' }, observation: 'Control previo', results: [{ id: 'result', resultText: '48 cm', testDefinition: { id: 'test', name: 'Salto', isActive: true } }] }] })),
+  );
+  renderWorkspace();
+  expect(await screen.findByText('Salto: 48 cm')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: role === 'PROFESSOR' ? 'Evaluaciones' : 'Evaluaciones físicas' })).toBeInTheDocument();
+  if (manage) {
+    expect(screen.getByRole('button', { name: 'Corregir' })).toBeEnabled();
+    if (active) await waitFor(() => expect(screen.getByRole('button', { name: 'Nueva evaluación física' })).toBeEnabled());
+    else expect(screen.getByRole('button', { name: 'Nueva evaluación física' })).toBeDisabled();
+  } else {
+    for (const name of ['Nueva evaluación física', 'Corregir', 'Administrar tests']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  }
+});
+it('hides evaluations without physical read permission even on a direct tab URL', async () => {
+  navigation.tab = 'evaluations'; renderWorkspace(); await screen.findByText('Participación activa');
+  expect(screen.queryByRole('link', { name: /Evaluaciones/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Evaluaciones físicas' })).not.toBeInTheDocument();
 });

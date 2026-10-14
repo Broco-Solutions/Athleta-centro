@@ -768,6 +768,7 @@ model PhysicalEvaluation {
   salaParticipationId String               @map("sala_participation_id") @db.Uuid
   professorId         String               @map("professor_id") @db.Uuid
   evaluationDate      DateTime             @map("evaluation_date") @db.Date
+  observation         String?
   createdBy           String               @map("created_by") @db.Uuid
   createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)

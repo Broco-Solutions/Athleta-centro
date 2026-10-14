@@ -2469,3 +2469,7 @@ Si existe una intervención de emergencia, deberá reconciliarse y documentarse 
 28. Los Read Models no son tablas de verdad.
 29. Las migraciones son versionadas y explícitas.
 30. Las definiciones funcionales pendientes deben permanecer explícitamente bloqueadas.
+
+## Evaluaciones físicas de Sala — cierre 2026-10-14
+
+`PhysicalEvaluation.observation` es texto nullable, opcional e interno de Sala. Los Results son composición de la Evaluación y puede existir más de un Result para el mismo Test, sin unicidad entre evaluación y definición. Un Test retirado continúa referenciado por los Results históricos. `PhysicalTestDefinition.isActive` es el mecanismo técnico de retiro, no un estado funcional visible. La edición modifica la definición actual, sin snapshot de Test. La corrección reemplaza directamente Results y Observación, conservando Fecha y Profesor.

@@ -336,3 +336,11 @@ Cobertura en `apps/api/test/sala.integration-spec.ts`,
 
 **PROF-01 permanece PENDIENTE**. No se agrega alta de Persona/Alumno para Profesor
 puro ni se modifica `PEOPLE_CREATE`. No se implementan acciones masivas adicionales.
+
+## Cierre de Evaluaciones físicas de Sala — 2026-10-14
+
+Consolidación de §§6.26–6.29 y §10.9: una Evaluación contiene uno o más Results abiertos, con el mismo Test repetible y Observación general opcional. La corrección es directa, sin versionado ni trazabilidad adicional, y preserva Fecha y Profesor. Profesor y Administrador general gestionan; Administrativo consulta.
+
+El catálogo permite crear, editar y retirar Tests de Fuerza, Movilidad u Otra. Puede crearse un Test inline durante la carga de la Evaluación. El Portal consulta Results agrupados cronológicamente por Test, sin gráficos, cálculos ni Observación interna.
+
+Criterio técnico necesario para preservar historia: al corregir una Evaluación puede conservarse un Test ya usado aunque luego haya sido retirado; un Test retirado no puede agregarse como nuevo Result. CAT-04 continúa pendiente y no cambia la política existente de nombres duplicados.

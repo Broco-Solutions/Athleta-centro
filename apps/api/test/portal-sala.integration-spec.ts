@@ -23,6 +23,7 @@ describe('Portal Sala services from the current plan', () => {
   let serviceIds: string[] = [];
   let exerciseDefinitionIds: string[] = [];
   let paymentMethodId: string;
+  let physicalTestIds: string[] = [];
   let reservationNow: jest.SpyInstance<Date, []>;
   let operationalDate: jest.SpyInstance<string, []>;
 
@@ -54,12 +55,16 @@ describe('Portal Sala services from the current plan', () => {
       await prisma.session.deleteMany({ where: { personId } });
       await prisma.salaCharge.deleteMany({ where: { personId } });
       await prisma.routine.deleteMany({ where: { personId } });
+      await prisma.physicalTestResult.deleteMany({ where: { evaluation: { personId } } });
+      await prisma.physicalEvaluation.deleteMany({ where: { personId } });
       await prisma.salaParticipation.deleteMany({ where: { personId } });
       await prisma.portalCredential.deleteMany({ where: { personId } });
       await prisma.person.deleteMany({ where: { id: personId } });
     }
     await prisma.exerciseDefinition.deleteMany({ where: { id: { in: exerciseDefinitionIds } } });
     exerciseDefinitionIds = [];
+    await prisma.physicalTestDefinition.deleteMany({ where: { id: { in: physicalTestIds } } });
+    physicalTestIds = [];
     if (paymentMethodId) await prisma.paymentMethod.deleteMany({ where: { id: paymentMethodId } });
     if (planId) await prisma.salaPlan.deleteMany({ where: { id: planId } });
     await prisma.salaServiceType.deleteMany({ where: { id: { in: serviceIds } } });
@@ -95,6 +100,28 @@ describe('Portal Sala services from the current plan', () => {
     return { muscle, calisthenics, participation, cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string,
       body: { date, startDate: date, scheduleSlotId: window.id, startTime: '09:00' } };
   }
+
+  it('returns all physical results chronologically with only the Portal projection', async () => {
+    const f = await fixture();
+    const a = await sala.createPhysicalTest({ name: `Fuerza-${personId}`, type: 'STRENGTH' });
+    const b = await sala.createPhysicalTest({ name: `Movilidad-${personId}`, type: 'MOBILITY' });
+    physicalTestIds = [a.id, b.id];
+    for (const date of ['2026-10-01', '2026-08-01', '2026-09-01']) await sala.createPhysicalEvaluation({ personId, salaParticipationId: f.participation.id, professorId, evaluationDate: date, observation: 'Nota interna del Profesor', results: [{ testDefinitionId: a.id, resultText: '80 kg' }, { testDefinitionId: a.id, resultText: '85 kg' }, { testDefinitionId: b.id, resultText: '35°' }] }, professorId);
+    // No arbitrary twenty-evaluation truncation.
+    for (let index = 0; index < 20; index++) await sala.createPhysicalEvaluation({ personId, salaParticipationId: f.participation.id, professorId, evaluationDate: '2026-10-14', results: [{ testDefinitionId: a.id, resultText: '90 kg' }] }, professorId);
+    await sala.retirePhysicalTest(a.id);
+    const response = await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
+    const evaluations = response.body.data.evaluations;
+    expect(evaluations).toHaveLength(23);
+    expect(evaluations.slice(0, 3).map((item: { evaluationDate: string }) => item.evaluationDate.slice(0, 10))).toEqual(['2026-08-01', '2026-09-01', '2026-10-01']);
+    expect(evaluations[0].results).toHaveLength(3);
+    expect(evaluations[0].results).toEqual(expect.arrayContaining([expect.objectContaining({ resultText: '80 kg', testDefinition: { id: a.id, name: a.name } }), expect.objectContaining({ resultText: '35°', testDefinition: { id: b.id, name: b.name } })]));
+    for (const evaluation of evaluations) {
+      expect(Object.keys(evaluation).sort()).toEqual(['evaluationDate', 'id', 'results']);
+      for (const result of evaluation.results) expect(Object.keys(result).sort()).toEqual(['resultText', 'testDefinition']);
+    }
+    for (const forbidden of ['observation', 'createdBy', 'professorId', 'Nota interna del Profesor']) expect(JSON.stringify(evaluations)).not.toContain(forbidden);
+  });
 
   it('returns exercise definitions and all routine details in persisted position order', async () => {
     const f = await fixture();

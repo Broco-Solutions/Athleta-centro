@@ -3,7 +3,13 @@ import { FinancialAdjustmentKind, Prisma, Role, RoutineStatus, SalaChargeKind, S
 import { PeopleService } from '../people/people.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceCatalogService } from '../finance/finance.service';
-import type { SalaStudentListItemDto, SalaDashboardDto, SalaDashboardPersonDto, JoinSpontaneousSalaDto, CreateSpontaneousSalaStudentDto, RegisterSalaPlanPaymentsDto, SalaPaymentDto, CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, RoutineTemplateDto, RoutineDayDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
+import type { SalaStudentListItemDto, SalaDashboardDto, SalaDashboardPersonDto, JoinSpontaneousSalaDto, CreateSpontaneousSalaStudentDto, RegisterSalaPlanPaymentsDto, SalaPaymentDto, CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, CorrectPhysicalEvaluationDto, PhysicalTestResultDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, RoutineTemplateDto, RoutineDayDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
+const physicalTestSelect = { id: true, name: true, type: true, description: true, isActive: true } satisfies Prisma.PhysicalTestDefinitionSelect;
+const physicalEvaluationSelect = {
+  id: true, personId: true, salaParticipationId: true, professorId: true, evaluationDate: true, observation: true,
+  professor: { select: { id: true, firstName: true, lastName: true } },
+  results: { select: { id: true, testDefinitionId: true, resultText: true, testDefinition: { select: physicalTestSelect } }, orderBy: { id: 'asc' } },
+} satisfies Prisma.PhysicalEvaluationSelect;
 const SALA_DEFAULT_DURATION_MINUTES = 60;
 const eligibleProfessorWhere = { status: InternalUserStatus.ACTIVE, roles: { some: { role: Role.PROFESSOR } } } satisfies Prisma.InternalUserWhereInput;
 const planServicesInclude = {
@@ -621,11 +627,68 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     if (!participation) throw new BadRequestException({ code: 'SALA_ACTIVE_PARTICIPATION_REQUIRED', message: 'An active Sala participation is required' });
     return this.replaceRoutine({ personId: source.personId, salaParticipationId: participation.id, days: source.days.map((day) => ({ name: day.name, exercises: day.exercises.map((exercise) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, series: exercise.series, repetitions: exercise.repetitions, duration: exercise.duration, load: exercise.load, rest: exercise.rest, notes: exercise.notes })) })) });
   }
-  async listPhysicalTests() { return this.prisma.physicalTestDefinition.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } }); }
-  async createPhysicalTest(input: PhysicalTestDefinitionDto) { try { return await this.prisma.physicalTestDefinition.create({ data: { name: input.name.trim(), type: input.type.trim(), description: this.optionalText(input.description) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_PHYSICAL_TEST_DUPLICATE', message: 'Physical test already exists' }); throw error; } }
-  async retirePhysicalTest(id: string) { try { return await this.prisma.physicalTestDefinition.update({ where: { id }, data: { isActive: false } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_PHYSICAL_TEST_NOT_FOUND', message: 'Physical test not found' }); throw error; } }
-  async listPhysicalEvaluations(personId: string) { return this.prisma.physicalEvaluation.findMany({ where: { personId }, include: { professor: { select: { id: true, firstName: true, lastName: true } }, results: { include: { testDefinition: true } } }, orderBy: { evaluationDate: 'desc' } }); }
-  async createPhysicalEvaluation(input: PhysicalEvaluationDto, actorId: string) { return this.prisma.$transaction(async (tx) => { const participation = await tx.salaParticipation.findFirst({ where: { id: input.salaParticipationId, personId: input.personId, endDate: null }, select: { id: true } }); if (!participation) throw new BadRequestException({ code: 'SALA_ACTIVE_PARTICIPATION_REQUIRED', message: 'An active Sala participation is required' }); const professor = await tx.internalUser.findUnique({ where: { id: input.professorId }, include: { roles: true } }); if (!professor || professor.status !== InternalUserStatus.ACTIVE || !professor.roles.some((role) => role.role === Role.PROFESSOR)) throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Professor is not eligible' }); const ids = input.results.map((result) => result.testDefinitionId); const tests = await tx.physicalTestDefinition.count({ where: { id: { in: ids }, isActive: true } }); if (tests !== new Set(ids).size) throw new BadRequestException({ code: 'SALA_PHYSICAL_TEST_INVALID', message: 'Every result must reference an active physical test' }); return tx.physicalEvaluation.create({ data: { personId: input.personId, salaParticipationId: input.salaParticipationId, professorId: input.professorId, evaluationDate: this.date(input.evaluationDate), createdBy: actorId, results: { create: input.results.map((result) => ({ testDefinitionId: result.testDefinitionId, resultText: result.resultText.trim() })) } }, include: { results: { include: { testDefinition: true } } } }); }); }
+  async listPhysicalTests() {
+    return this.prisma.physicalTestDefinition.findMany({ where: { isActive: true }, select: physicalTestSelect, orderBy: { name: 'asc' } });
+  }
+  private physicalTestData(input: PhysicalTestDefinitionDto) {
+    if (!['STRENGTH', 'MOBILITY', 'OTHER'].includes(input.type)) throw new BadRequestException({ code: 'SALA_PHYSICAL_TEST_TYPE_INVALID', message: 'Tipo de test inválido.' });
+    return { name: input.name.trim(), type: input.type, description: this.optionalText(input.description) };
+  }
+  private physicalTestError(error: unknown): never {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2002') throw new ConflictException({ code: 'SALA_PHYSICAL_TEST_DUPLICATE', message: 'Ya existe un test con ese nombre.' });
+      if (error.code === 'P2025') throw new NotFoundException({ code: 'SALA_PHYSICAL_TEST_NOT_FOUND', message: 'No se encontró el test.' });
+    }
+    throw error;
+  }
+  async createPhysicalTest(input: PhysicalTestDefinitionDto) {
+    const data = this.physicalTestData(input);
+    try { return await this.prisma.physicalTestDefinition.create({ data, select: physicalTestSelect }); }
+    catch (error) { this.physicalTestError(error); }
+  }
+  async updatePhysicalTest(id: string, input: PhysicalTestDefinitionDto) {
+    const data = this.physicalTestData(input);
+    try { return await this.prisma.physicalTestDefinition.update({ where: { id }, data, select: physicalTestSelect }); }
+    catch (error) { this.physicalTestError(error); }
+  }
+  async retirePhysicalTest(id: string) {
+    try { return await this.prisma.physicalTestDefinition.update({ where: { id }, data: { isActive: false }, select: physicalTestSelect }); }
+    catch (error) { this.physicalTestError(error); }
+  }
+  private physicalEvaluationResponse(evaluation: Prisma.PhysicalEvaluationGetPayload<{ select: typeof physicalEvaluationSelect }>) {
+    return { ...evaluation, evaluationDate: evaluation.evaluationDate.toISOString().slice(0, 10) };
+  }
+  async listPhysicalEvaluations(personId: string) {
+    const evaluations = await this.prisma.physicalEvaluation.findMany({ where: { personId }, select: physicalEvaluationSelect, orderBy: [{ evaluationDate: 'desc' }, { id: 'asc' }] });
+    return evaluations.map(evaluation => this.physicalEvaluationResponse(evaluation));
+  }
+  private async physicalResults(tx: Prisma.TransactionClient, results: PhysicalTestResultDto[], previousIds: string[] = []) {
+    if (!results.length || results.some(result => !result.resultText.trim())) throw new BadRequestException({ code: 'SALA_PHYSICAL_RESULTS_REQUIRED', message: 'Ingresá al menos un test con su resultado.' });
+    const ids = [...new Set(results.map(result => result.testDefinitionId))];
+    const count = await tx.physicalTestDefinition.count({ where: { id: { in: ids }, OR: [{ isActive: true }, { id: { in: previousIds } }] } });
+    if (count !== ids.length) throw new BadRequestException({ code: 'SALA_PHYSICAL_TEST_INVALID', message: 'El test no está disponible para esta evaluación.' });
+    return results.map(result => ({ testDefinitionId: result.testDefinitionId, resultText: result.resultText.trim() }));
+  }
+  async createPhysicalEvaluation(input: PhysicalEvaluationDto, actorId: string) {
+    return this.prisma.$transaction(async tx => {
+      const participation = await tx.salaParticipation.findFirst({ where: { id: input.salaParticipationId, personId: input.personId, endDate: null }, select: { id: true } });
+      if (!participation) throw new BadRequestException({ code: 'SALA_ACTIVE_PARTICIPATION_REQUIRED', message: 'An active Sala participation is required' });
+      const professor = await tx.internalUser.findUnique({ where: { id: input.professorId }, include: { roles: true } });
+      if (!professor || professor.status !== InternalUserStatus.ACTIVE || !professor.roles.some(role => role.role === Role.PROFESSOR)) throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Professor is not eligible' });
+      const results = await this.physicalResults(tx, input.results);
+      const evaluation = await tx.physicalEvaluation.create({ data: { personId: input.personId, salaParticipationId: input.salaParticipationId, professorId: input.professorId, evaluationDate: this.date(input.evaluationDate), createdBy: actorId, observation: this.optionalText(input.observation), results: { create: results } }, select: physicalEvaluationSelect });
+      return this.physicalEvaluationResponse(evaluation);
+    });
+  }
+  async correctPhysicalEvaluation(id: string, input: CorrectPhysicalEvaluationDto) {
+    return this.prisma.$transaction(async tx => {
+      const previous = await tx.physicalEvaluation.findUnique({ where: { id }, select: { results: { select: { testDefinitionId: true } } } });
+      if (!previous) throw new NotFoundException({ code: 'SALA_PHYSICAL_EVALUATION_NOT_FOUND', message: 'No se encontró la evaluación.' });
+      const results = await this.physicalResults(tx, input.results, previous.results.map(result => result.testDefinitionId));
+      const evaluation = await tx.physicalEvaluation.update({ where: { id }, data: { observation: this.optionalText(input.observation), results: { deleteMany: {}, create: results } }, select: physicalEvaluationSelect });
+      return this.physicalEvaluationResponse(evaluation);
+    });
+  }
   async listStudents(): Promise<SalaStudentListItemDto[]> {
     const today = this.todayOperational();
     const year = Number(today.slice(0, 4));

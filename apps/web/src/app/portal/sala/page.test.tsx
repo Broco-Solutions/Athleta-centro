@@ -316,3 +316,19 @@ it('shows a cancelled future reservation without a cancel action', async () => {
   expect(await screen.findByText('Rehabilitación · Cancelado')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Cancelar' })).not.toBeInTheDocument();
 });
+
+it('groups physical results by test chronologically, preserving repeated results and hiding internal observation', async () => {
+  const strength = { id: 'strength', name: 'Test Fuerza' }; const mobility = { id: 'mobility', name: 'Movilidad' };
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, paymentState: 'PENDING', evaluations: [
+    { id: 'oct', evaluationDate: '2026-10-01', observation: 'Nota interna del Profesor', professor: { firstName: 'Secreto' }, results: [{ testDefinition: strength, resultText: '90 kg' }] },
+    { id: 'aug', evaluationDate: '2026-08-01', results: [{ testDefinition: strength, resultText: '80 kg' }, { testDefinition: strength, resultText: '81 kg' }] },
+    { id: 'sep', evaluationDate: '2026-09-01', results: [{ testDefinition: strength, resultText: '85 kg' }] },
+    { id: 'mob', evaluationDate: '2026-08-15', results: [{ testDefinition: mobility, resultText: '35°' }] },
+  ] } })));
+  renderPortalSala(); await screen.findByRole('heading', { name: 'Test Fuerza' });
+  const section = document.getElementById('evaluaciones')!;
+  const strengthGroup = screen.getByRole('heading', { name: 'Test Fuerza' }).closest('article')!;
+  expect(within(strengthGroup).getAllByRole('listitem').map(item => item.textContent)).toEqual(['01/08/2026 · 80 kg', '01/08/2026 · 81 kg', '01/09/2026 · 85 kg', '01/10/2026 · 90 kg']);
+  expect(within(screen.getByRole('heading', { name: 'Movilidad' }).closest('article')!).getByText('15/08/2026 · 35°')).toBeInTheDocument();
+  expect(section.querySelector('canvas, svg')).toBeNull(); expect(section.textContent).not.toMatch(/Nota interna|Secreto|%|mejora|tendencia/i);
+});
