@@ -445,7 +445,7 @@ describe('Portal Sala services from the current plan', () => {
     const method = await prisma.paymentMethod.create({ data: { name: `Portal manual ${crypto.randomUUID()}` } });
     paymentMethodId = method.id;
     const [year, month] = f.body.date.split('-').map(Number);
-    const registered = await sala.registerPlanPayments({ personId, paidAt: '2020-01-01', paymentMethodId, periods: [{ year: year!, month: month!, operationId: crypto.randomUUID() }] }, professorId);
+    const registered = await sala.registerPlanPayments({ personId, paidAt: '2020-01-01', paymentMethodId, periods: [{ year: year!, month: month!, amount: '20000', operationId: crypto.randomUUID() }] }, professorId);
     expect(registered.payments[0]!.amount.toString()).toBe('20000');
     await reserve(f).expect(201);
     expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);

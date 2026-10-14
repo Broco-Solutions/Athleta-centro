@@ -148,8 +148,8 @@ async function findBookingOption(options: { name: string }) {
 }
 
 const workspaceRoutine = { id: 'routine', personId, salaParticipationId: 'participation', status: 'ACTIVE', version: 1, days: [{ position: 1, name: 'Día de fuerza', exercises: [{ exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla' }, series: null }] }] };
-function routineSession(permissions: string[]) {
-  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor', firstName: 'Profesor', lastName: 'Sintético' }, roles: ['PROFESSOR'], permissions, csrfToken: 'csrf', mustChangePassword: false } })));
+function routineSession(permissions: string[], roles = ['PROFESSOR']) {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor', firstName: 'Profesor', lastName: 'Sintético' }, roles, permissions, csrfToken: 'csrf', mustChangePassword: false } })));
 }
 function routineHandlers() {
   let reads = 0;
@@ -279,7 +279,7 @@ it('preserves Sala and the Person link for other roles', async () => {
   expect(screen.getByRole('link', { name: 'Ver ficha de Persona' })).toHaveAttribute('href', `/people/${personId}`);
 });
 
-const professorPermissions = ['SALA_RELATION_READ', 'SALA_AGENDA_MANAGE', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE', 'SALA_PHYSICAL_EVALUATION_READ', 'SALA_PHYSICAL_EVALUATION_MANAGE', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_MANAGE', 'SALA_CLINICAL_INDICATION_READ'];
+const professorPermissions = ['SALA_RELATION_READ', 'SALA_AGENDA_MANAGE', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE', 'SALA_PHYSICAL_EVALUATION_READ', 'SALA_PHYSICAL_EVALUATION_MANAGE', 'SALA_PAYMENT_READ', 'SALA_CLINICAL_INDICATION_READ'];
 const dashboardDate = new Date('2026-10-14T01:30:00Z'); // Still October 13 in Argentina.
 function dashboardHandlers() {
   navigation.tab = 'summary';
@@ -303,12 +303,12 @@ it('shows the Professor header, exact tabs and four explicit dashboard actions',
   expect(screen.getByText('Participación activa')).toBeInTheDocument();
   expect(within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByRole('link', { name: 'Alumnos' })).toHaveAttribute('href', '/students');
   const tabs = within(screen.getByRole('navigation', { name: 'Secciones del alumno en Sala' }));
-  expect(tabs.getAllByRole('link').map(link => link.textContent)).toEqual(['Resumen', 'Rutina', 'Evaluaciones', 'Turnos', 'Pagos']);
+  expect(tabs.getAllByRole('link').map(link => link.textContent)).toEqual(['Resumen', 'Rutina', 'Evaluaciones', 'Turnos']);
   expect(await screen.findByText('Activa')).toBeInTheDocument();
   expect(screen.getByText('1 día')).toBeInTheDocument();
   expect(await screen.findByText('Última: 02/10/2026')).toBeInTheDocument();
   expect(await screen.findByText('Pago pendiente')).toBeInTheDocument();
-  for (const [label, tab] of [['Ver / editar rutina', 'routine'], ['Gestionar turnos', 'turns'], ['Ver evaluaciones', 'evaluations'], ['Gestionar pagos', 'payments']] as const) {
+  for (const [label, tab] of [['Ver / editar rutina', 'routine'], ['Gestionar turnos', 'turns'], ['Ver evaluaciones', 'evaluations']] as const) {
     expect(screen.getByRole('link', { name: label })).toHaveAttribute('href', `/sala/people/${personId}?tab=${tab}`);
   }
   expect(screen.queryByLabelText('Mes/Año')).not.toBeInTheDocument();
@@ -352,7 +352,7 @@ it.each([null, { id: 'reversal' }])('shows current-month payment only when not r
     { id: 'current', year: 2026, month: 10, reversal }, { id: 'other-year', year: 2025, month: 10 }, { id: 'other-month', year: 2026, month: 9 },
   ] })));
   renderWorkspace();
-  expect(await screen.findByText(reversal ? 'Pago pendiente' : 'Al día')).toBeInTheDocument();
+  expect(await screen.findByText(reversal ? 'Pago pendiente' : 'Pago registrado')).toBeInTheDocument();
   expect(screen.getByText('octubre 2026')).toBeInTheDocument();
 });
 it('keeps dashboard queries independent on HTTP errors and does not turn failures into empty states', async () => {
@@ -407,29 +407,13 @@ it.each(['turns', 'reservations', 'fixed'])('combines both existing booking sect
   expect(screen.getAllByRole('button', { name: 'Crear turno fijo' })).toHaveLength(1);
   expect(screen.getByRole('link', { name: 'Turnos' })).toHaveAttribute('aria-current', 'page');
 });
-it('preserves full Professor multi-month payment registration and reversal in Pagos', async () => {
-  dashboardHandlers(); navigation.tab = 'payments';
-  let rows = [{ id: 'payment', year: 2026, month: 9, paidAt: '2026-09-01', amount: '25000', paymentMethod: { name: 'Efectivo' }, reversal: null as { id: string } | null }];
-  const registered: unknown[] = []; const reversed: unknown[] = [];
-  server.use(
-    http.get(`http://localhost:3000/api/sala/people/${personId}/payments`, () => HttpResponse.json({ data: rows })),
-    http.get('http://localhost:3000/api/finance/payment-methods', () => HttpResponse.json({ data: [{ id: 'cash', name: 'Efectivo', isSelectable: true }] })),
-    http.post('http://localhost:3000/api/sala/payments/plan-months', async ({ request }) => { registered.push(await request.json()); expect(request.headers.get('x-csrf-token')).toBe('csrf'); return HttpResponse.json({ data: {} }, { status: 201 }); }),
-    http.post('http://localhost:3000/api/sala/payments/payment/reverse', async ({ request }) => { reversed.push(await request.json()); rows = rows.map(row => ({ ...row, reversal: { id: 'reversal' } })); return HttpResponse.json({ data: {} }); }),
-  );
-  renderWorkspace();
-  await screen.findByLabelText('Mes/Año');
-  await screen.findByRole('option', { name: 'Efectivo' });
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Agregar mes' })).toBeEnabled());
-  for (const month of ['2026-10', '2026-11']) { fireEvent.change(screen.getByLabelText('Mes/Año'), { target: { value: month } }); fireEvent.click(screen.getByRole('button', { name: 'Agregar mes' })); }
-  fireEvent.change(screen.getByLabelText('Medio de pago'), { target: { value: 'cash' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Registrar pago' }));
-  expect(await screen.findByText('Pagos registrados correctamente.')).toBeInTheDocument();
-  expect(registered).toEqual([expect.objectContaining({ personId, paymentMethodId: 'cash', periods: [expect.objectContaining({ year: 2026, month: 10, operationId: expect.any(String) }), expect.objectContaining({ year: 2026, month: 11, operationId: expect.any(String) })] })]);
-  fireEvent.click(screen.getByRole('button', { name: 'Revertir' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Revertir pago' }));
-  await waitFor(() => expect(reversed).toEqual([expect.objectContaining({ reason: 'Corrección de pago', operationId: expect.any(String) })]));
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Revertir' })).not.toBeInTheDocument());
+it('keeps the Professor payment card informational even for the old payments URL', async () => {
+  dashboardHandlers(); navigation.tab = 'payments'; renderWorkspace();
+  expect(await screen.findByText('Pago pendiente')).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Pago' })).toBeVisible();
+  for (const name of ['Pagos', 'Gestionar pagos', 'Registrar pago', 'Ver pago']) expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Mes/Año')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Revertir' })).not.toBeInTheDocument();
 });
 
 it('shows the header and other cards while a dashboard query is still loading', async () => {
@@ -464,7 +448,7 @@ it('reuses the panel cache keys and updates the dashboard after payment invalida
   expect(client.getQueryData(['sala', 'payments', personId])).toEqual([]);
   server.use(http.get(`http://localhost:3000/api/sala/people/${personId}/payments`, () => HttpResponse.json({ data: [{ id: 'paid', year: 2026, month: 10, reversal: null }] })));
   await client.invalidateQueries({ queryKey: ['sala', 'payments', personId] });
-  expect(await screen.findByText('Al día')).toBeInTheDocument();
+  expect(await screen.findByText('Pago registrado')).toBeInTheDocument();
 });
 it.each([['ADMINISTRATIVE'], ['GENERAL_ADMIN'], ['KINESIOLOGIST'], ['OSTEOPATH'], ['PROFESSOR', 'KINESIOLOGIST']])('preserves the existing sections for roles %s', async (...roles) => {
   navigation.tab = 'summary';
@@ -475,7 +459,7 @@ it.each([['ADMINISTRATIVE'], ['GENERAL_ADMIN'], ['KINESIOLOGIST'], ['OSTEOPATH']
   renderWorkspace(); await screen.findByText('Workspace Sala');
   const tabs = within(screen.getByRole('navigation', { name: 'Secciones del alumno en Sala' }));
   expect(tabs.getAllByRole('link').map(link => link.textContent)).toEqual(['Resumen', 'Reservas', 'Turno fijo', 'Rutina', ...(roles.some(role => ['ADMINISTRATIVE', 'GENERAL_ADMIN', 'PROFESSOR'].includes(role)) ? ['Evaluaciones físicas'] : [])]);
-  expect(await screen.findByRole('heading', { name: 'Pagos de Sala' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Pago' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Ver ficha de Persona' })).toBeInTheDocument();
 });
 
@@ -589,4 +573,17 @@ it('hides evaluations without physical read permission even on a direct tab URL'
   navigation.tab = 'evaluations'; renderWorkspace(); await screen.findByText('Participación activa');
   expect(screen.queryByRole('link', { name: /Evaluaciones/ })).not.toBeInTheDocument();
   expect(screen.queryByRole('heading', { name: 'Evaluaciones físicas' })).not.toBeInTheDocument();
+});
+
+it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('shows contextual Finance actions in the %s workspace', async role => {
+  dashboardHandlers();
+  routineSession([...professorPermissions, 'SALA_PAYMENT_MANAGE'], [role]);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><SalaPersonWorkspace personId={personId}/></QueryClientProvider>);
+  expect(await screen.findByRole('link', { name: 'Registrar pago' })).toHaveAttribute('href', `/finance?view=income&personId=${personId}`);
+  expect(screen.queryByLabelText('Mes/Año')).not.toBeInTheDocument();
+  server.use(http.get(`http://localhost:3000/api/sala/people/${personId}/payments`, () => HttpResponse.json({ data: [{ year: 2026, month: 10, reversal: null }] })));
+  await client.invalidateQueries({ queryKey: ['sala', 'payments', personId] });
+  expect(await screen.findByText('Pago registrado')).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Ver pago' })).toHaveAttribute('href', `/finance?view=income&personId=${personId}`);
 });

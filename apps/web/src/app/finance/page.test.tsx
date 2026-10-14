@@ -11,7 +11,7 @@ vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(n
 
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
-const session = { user: { id: 'admin', firstName: 'Admin', lastName: 'Test' }, roles: ['GENERAL_ADMIN'], permissions: ['FINANCE_OPERATIONAL_READ', 'FINANCE_EXECUTIVE_READ', 'PAYMENT_METHOD_CATALOG_MANAGE'], csrfToken: 'csrf', mustChangePassword: false };
+const session = { user: { id: 'admin', firstName: 'Admin', lastName: 'Test' }, roles: ['GENERAL_ADMIN'], permissions: ['FINANCE_OPERATIONAL_READ', 'FINANCE_EXECUTIVE_READ', 'PAYMENT_METHOD_CATALOG_MANAGE', 'SALA_PAYMENT_MANAGE'], csrfToken: 'csrf', mustChangePassword: false };
 
 beforeAll(() => {
   globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch;
@@ -61,4 +61,37 @@ describe('Finance views', () => {
     expect(screen.queryByRole('link', { name: 'Nuevo ingreso clínico' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Gastos' })).toHaveAttribute('aria-current', 'page');
   });
+});
+
+it('loads selected Persona and Sala payments before filtered income', async () => {
+  navigation.search = 'view=income&personId=person-1';
+  let requestedPerson: string | null = null;
+  server.use(
+    http.get('http://localhost:3000/api/people/person-1', () => HttpResponse.json({ data: { id: 'person-1', firstName: 'Lucía', lastName: 'Ejemplo', dni: '88000002' } })),
+    http.get('http://localhost:3000/api/sala/participations/person/person-1', () => HttpResponse.json({ data: [{ endDate: null, plan: { id: 'plan', name: '2 veces', monthlyAmount: '10000' } }] })),
+    http.get('http://localhost:3000/api/sala/people/person-1/payments', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/finance/income', ({ request }) => { requestedPerson = new URL(request.url).searchParams.get('personId'); return HttpResponse.json({ data: [] }); }),
+  );
+  renderPage();
+  expect(await screen.findByText('Lucía Ejemplo')).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Pago de Sala' })).toBeVisible();
+  expect(screen.getByText('DNI 88000002')).toBeVisible();
+  expect(await screen.findByLabelText('Fecha de cobro')).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Volver a la ficha de Sala' })).toHaveAttribute('href', '/sala/people/person-1');
+  expect(requestedPerson).toBe('person-1');
+});
+it.each([['invalid', 400], ['missing', 404]])('keeps Finance usable when Persona is %s', async (personId, status) => {
+  navigation.search = `view=income&personId=${personId}`;
+  server.use(http.get(`http://localhost:3000/api/people/${personId}`, () => HttpResponse.json({ message: 'Persona inválida' }, { status })));
+  renderPage();
+  expect(await screen.findByRole('alert')).toHaveTextContent('La Persona seleccionada no existe o no pudo cargarse.');
+  expect(screen.getByRole('heading', { name: 'Ingresos' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Registrar pago' })).not.toBeInTheDocument();
+});
+it('does not load a payment context without management permission', async () => {
+  navigation.search = 'view=income&personId=person-1';
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: ['FINANCE_OPERATIONAL_READ'] } })));
+  renderPage();
+  expect(await screen.findByRole('heading', { name: 'Ingresos' })).toBeVisible();
+  expect(screen.queryByRole('heading', { name: 'Pago de Sala' })).not.toBeInTheDocument();
 });

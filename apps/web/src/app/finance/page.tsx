@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { WorkspaceShell } from '../../features/auth/workspace-shell';
+import { getPerson, listPersonSalaParticipations } from '@athleta/api-client';
+import { SalaPaymentPanel } from '../../features/finance/sala-payment-panel';
 import { currentSession } from '../../features/auth/auth';
 
 type Method = { id: string; name: string; isSelectable: boolean };
@@ -17,6 +19,7 @@ export default function FinancePage(): React.JSX.Element {
 
 function FinancePageContent(): React.JSX.Element {
   const params = useSearchParams();
+  const personId = params.get('personId');
   const requestedView = params.get('view');
   const view: FinanceView = requestedView === 'income' || requestedView === 'expenses' ? requestedView : 'summary';
   const active = view === 'income' ? 'finance-income' : view === 'expenses' ? 'finance-expenses' : 'finance-summary';
@@ -30,8 +33,23 @@ function FinancePageContent(): React.JSX.Element {
   const [message, setMessage] = useState('');
   const methods = useQuery<Method[]>({ queryKey: ['finance', 'payment-methods'], queryFn: () => get('payment-methods'), enabled: view === 'summary' && (read || canCatalog) });
   const totals = useQuery({ queryKey: ['finance', 'totals'], queryFn: () => get(permissions.includes('FINANCE_EXECUTIVE_READ') ? 'executive-totals' : 'totals'), enabled: view === 'summary' && read });
-  const income = useQuery({ queryKey: ['finance', 'income'], queryFn: () => get('income'), enabled: view === 'income' && read });
+  const income = useQuery({ queryKey: ['finance', 'income', personId], queryFn: () => get(personId ? `income?personId=${encodeURIComponent(personId)}` : 'income'), enabled: view === 'income' && read });
   const expenses = useQuery({ queryKey: ['finance', 'expenses'], queryFn: () => get('expenses'), enabled: view === 'expenses' && (read || permissions.includes('EXPENSE_HISTORY_READ')) });
+
+  const selectedPaymentContext = view === 'income' && Boolean(personId) && permissions.includes('SALA_PAYMENT_MANAGE');
+  const person = useQuery({ queryKey: ['person', personId], enabled: selectedPaymentContext, retry: false, queryFn: async () => {
+    const response = await getPerson(personId!, { credentials: 'include' });
+    if (response.status >= 400 || !response.data?.data?.id) throw new Error('La Persona seleccionada no existe o no pudo cargarse.');
+    return response.data.data;
+  } });
+  const participations = useQuery({ queryKey: ['sala-participations', personId], enabled: selectedPaymentContext && person.isSuccess, queryFn: async () => {
+    const response = await listPersonSalaParticipations(personId!, { credentials: 'include' });
+    if (response.status >= 400) throw new Error('No se pudo cargar la participación de Sala.');
+    const body: unknown = response.data;
+    const rows = (body as { data?: unknown })?.data;
+    if (!Array.isArray(rows)) throw new Error('No se pudo cargar la participación de Sala.');
+    return rows as Array<{ endDate: string | null; plan: { id: string; name: string; monthlyAmount: string } }>;
+  } });
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -53,6 +71,16 @@ function FinancePageContent(): React.JSX.Element {
       <section aria-label="Indicadores financieros" className="grid gap-4 md:grid-cols-5">{indicatorRows.slice(0, permissions.includes('FINANCE_EXECUTIVE_READ') ? 5 : 4).map(([label, key]) => <article className="rounded border bg-white p-4" key={key}><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold">$ {String(totalsData?.[key] ?? '0')}</p></article>)}</section>
       <PaymentMethods methods={methods.data ?? []} canCatalog={canCatalog} name={name} editing={editing} message={message} onName={setName} onSave={save} onEdit={(method) => { setEditing(method.id); setName(method.name); }} onRetire={(method) => { void retire(method); }} onCancelEdit={() => { setEditing(null); setName(''); }} />
     </> : null}
+    {selectedPaymentContext ? <section className="space-y-3">
+      <h2 className="text-xl font-semibold">Pago de Sala</h2>
+      {person.isPending ? <p role="status">Cargando Persona…</p> : null}
+      {person.isError || participations.isError ? <p role="alert">{person.error?.message ?? participations.error?.message}</p> : null}
+      {person.isSuccess ? <><p className="font-semibold">{person.data.firstName} {person.data.lastName}</p><p>DNI {person.data.dni}</p>
+        <Link className="inline-block text-sm underline" href={`/sala/people/${personId}`}>Volver a la ficha de Sala</Link>
+        {participations.isSuccess ? <SalaPaymentPanel key={personId} personId={personId!} csrfToken={session.data?.csrfToken ?? ''} canManage activePlan={participations.data.find(item => !item.endDate)?.plan}/> : null}
+      </> : null}
+    </section> : null}
+    {view === 'income' && income.isError ? <p role="alert">No se pudieron cargar los ingresos para este contexto.</p> : null}
     {view === 'income' && read ? <Data title="Ingresos" value={income.data} action={<Link className="text-sm underline" href="/finance/clinical-income/new">Nuevo ingreso clínico</Link>} /> : null}
     {view === 'expenses' && (read || permissions.includes('EXPENSE_HISTORY_READ')) ? <Data title="Gastos" value={expenses.data} /> : null}
   </main></WorkspaceShell>;

@@ -525,7 +525,7 @@ GENERAL_ADMIN
 
 # 24. SALA_PAYMENT_READ
 
-Permite consultar pagos de Sala dentro del contexto operativo.
+Permite consultar el estado mensual de Pagos de Sala dentro del contexto operativo. El Profesor ve Pago registrado / Pago pendiente y no registra ni revierte.
 
 Roles:
 
@@ -542,15 +542,13 @@ GENERAL_ADMIN
 Permite:
 
 - registrar;
-- corregir;
-- eliminar;
+- revertir;
 
-Pagos de Sala.
+Pagos de Sala desde Finanzas. Sala muestra el estado mensual y acceso contextual.
 
 Roles:
 
 ```text
-PROFESSOR
 ADMINISTRATIVE
 GENERAL_ADMIN
 ```
@@ -2071,7 +2069,7 @@ aunque el modelo Prisma permita incluirlos fácilmente.
 | Consultar Evaluaciones físicas | ✓ | — | ✓ | ✓ |
 | Gestionar Evaluaciones físicas | ✓ | — | — | ✓ |
 | Consultar pagos Sala | ✓ | — | ✓ | ✓ |
-| Gestionar pagos Sala | ✓ | — | ✓ | ✓ |
+| Registrar / revertir pagos Sala | — | — | ✓ | ✓ |
 | Ver indicación segura para Sala | ✓ | Acceso clínico | Según contexto | ✓ |
 | Cerrar Indicación | ✓ | ✓ | ✓ | ✓ |
 
@@ -2159,7 +2157,6 @@ PROFESSOR
 ├── SALA_PHYSICAL_EVALUATION_READ
 ├── SALA_PHYSICAL_EVALUATION_MANAGE
 ├── SALA_PAYMENT_READ
-├── SALA_PAYMENT_MANAGE
 ├── SALA_CLINICAL_INDICATION_READ
 ├── SALA_CLINICAL_INDICATION_CLOSE
 ├── SALA_EXERCISE_CATALOG_MANAGE

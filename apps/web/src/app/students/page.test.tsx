@@ -42,10 +42,10 @@ it('shows all students, full Professor names, plan and follow-up states without 
   expect(row.getByText('Ramiro Demostración', { exact: false })).toBeInTheDocument();
   expect(row.getByText('2 veces', { exact: false })).toBeInTheDocument();
   expect(row.getByText('Sin rutina')).toBeInTheDocument();
-  expect(row.getByText('Pendiente')).toBeInTheDocument();
+  expect(row.getByText('Pago pendiente')).toBeInTheDocument();
   expect(list().getAllByText('Federico Sintético', { exact: false })).toHaveLength(2);
   expect(list().getAllByText('Activa')).toHaveLength(2);
-  expect(list().getByText('Al día')).toBeInTheDocument();
+  expect(list().getByText('Pago registrado')).toBeInTheDocument();
   expect(row.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/student-2');
   expect(screen.queryByText('Nueva Persona')).not.toBeInTheDocument();
   expect(screen.queryByText('Nuevo alumno')).not.toBeInTheDocument();
@@ -154,4 +154,20 @@ it('keeps bulk dialog and selection on failure', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Dar de baja de Sala' })); fireEvent.click(screen.getByRole('button', { name: 'Dar de baja' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo completar la operación');
   expect(screen.getByRole('dialog')).toBeInTheDocument(); expect(screen.getByText('1 alumnos seleccionados')).toBeInTheDocument();
+});
+
+it('shows only payment states to Professor', async () => {
+  renderPage(); await screen.findByText('Ana Alumna');
+  expect(list().getByText('Pago registrado')).toBeVisible();
+  expect(list().getAllByText('Pago pendiente')).toHaveLength(2);
+  expect(screen.queryByRole('link', { name: 'Registrar pago' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Ver pago' })).not.toBeInTheDocument();
+});
+it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('links %s to contextual Finance and preserves Ver ficha', async role => {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'admin' }, roles: [role], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })));
+  renderPage(); await screen.findByText('Ana Alumna');
+  const pending = within(list().getByText('Lucía Ejemplo').closest('tr')!);
+  expect(pending.getByRole('link', { name: 'Registrar pago' })).toHaveAttribute('href', '/finance?view=income&personId=student-2');
+  expect(pending.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/student-2');
+  expect(list().getByRole('link', { name: 'Ver pago' })).toHaveAttribute('href', '/finance?view=income&personId=student-1');
 });

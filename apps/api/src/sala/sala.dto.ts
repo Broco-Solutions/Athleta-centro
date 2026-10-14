@@ -123,6 +123,8 @@ export class SalaPlanPaymentPeriodDto {
   @ApiProperty({ type: Number }) @Type(() => Number) @IsInt() year!: number;
   @ApiProperty({ type: Number, minimum: 1, maximum: 12 }) @Type(() => Number) @IsInt() @Min(1) @Max(12) month!: number;
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() operationId!: string;
+  @ApiProperty({ type: String, pattern: '^\\d+$' }) @IsString() @Matches(/^\d+$/) amount!: string;
+  @ApiPropertyOptional({ type: String, maxLength: 300 }) @IsOptional() @IsString() @MaxLength(300) adjustmentReason?: string;
 }
 export class RegisterSalaPlanPaymentsDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string;

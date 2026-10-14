@@ -159,7 +159,7 @@ it('hides Rutinas for users with only routine read permission', async () => {
 });
 
 it('gives pure Professor exactly Inicio, Reservas, Alumnos and Rutinas on desktop and mobile', async () => {
-  renderShell({ roles: ['PROFESSOR'], active: 'sala-students', permissions: ['PEOPLE_READ', 'PEOPLE_CREATE', 'SALA_RELATION_READ', 'SALA_PARTICIPATION_MANAGE', 'SALA_AGENDA_MANAGE', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_MANAGE', 'EXPENSE_CREATE'] });
+  renderShell({ roles: ['PROFESSOR'], active: 'sala-students', permissions: ['PEOPLE_READ', 'PEOPLE_CREATE', 'SALA_RELATION_READ', 'SALA_PARTICIPATION_MANAGE', 'SALA_AGENDA_MANAGE', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE', 'SALA_PAYMENT_READ', 'EXPENSE_CREATE'] });
   await screen.findByRole('link', { name: 'Alumnos' });
   fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
   for (const name of ['Navegación principal', 'Navegación móvil']) {

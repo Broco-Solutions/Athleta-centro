@@ -1,6 +1,15 @@
 import { InternalUserStatus, Role } from '@prisma/client';
 import { effectivePermissions } from './permissions';
 describe('effectivePermissions', () => {
+  it('reserves payment management for Administration, preserving role unions', () => {
+    const professor = effectivePermissions(InternalUserStatus.ACTIVE, [Role.PROFESSOR]);
+    expect(professor.has('SALA_PAYMENT_READ')).toBe(true);
+    expect(professor.has('SALA_PAYMENT_MANAGE')).toBe(false);
+    for (const role of [Role.ADMINISTRATIVE, Role.GENERAL_ADMIN]) {
+      expect(effectivePermissions(InternalUserStatus.ACTIVE, [role]).has('SALA_PAYMENT_MANAGE')).toBe(true);
+    }
+    expect(effectivePermissions(InternalUserStatus.ACTIVE, [Role.PROFESSOR, Role.ADMINISTRATIVE]).has('SALA_PAYMENT_MANAGE')).toBe(true);
+  });
   it('unions role capabilities only for active users', () => {
     const permissions = effectivePermissions(InternalUserStatus.ACTIVE, [Role.PROFESSOR, Role.ADMINISTRATIVE]);
     expect([...permissions]).toEqual(expect.arrayContaining([

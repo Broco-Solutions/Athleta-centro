@@ -51,6 +51,11 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     return this.prisma.$transaction(async (tx) => {
       await this.lockPaymentPerson(tx, input.personId);
       await this.assertPaymentMethodSelectable(tx, input.paymentMethodId);
+      const existing = await tx.salaPayment.findUnique({ where: { operationId: input.operationId } });
+      if (!existing) {
+        const participation = await tx.salaParticipation.findFirst({ where: { personId: input.personId, endDate: null }, include: { plan: true } });
+        if (participation) this.validatePaymentAdjustment(paymentAmount, participation.plan.monthlyAmount, input.adjustmentReason);
+      }
       return this.createPaymentWithinTransaction(tx, input, paymentAmount, actorId);
     });
   }
@@ -73,7 +78,7 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
       await this.assertPaymentMethodSelectable(tx, input.paymentMethodId);
       const participation = await tx.salaParticipation.findFirst({ where: { personId: input.personId, endDate: null }, include: { plan: true } });
       if (!participation) throw new BadRequestException({ code: 'SALA_PARTICIPATION_REQUIRED', message: 'Se necesita una participación activa de Sala para registrar pagos.' });
-      const monthlyAmount = this.positiveMoney(participation.plan.monthlyAmount.toString(), 'SALA_PAYMENT_AMOUNT_INVALID');
+      const proposedAmount = participation.plan.monthlyAmount;
       const existingOperations = await tx.salaPayment.findMany({ where: { operationId: { in: [...operations] } } });
       for (const existing of existingOperations) {
         const period = input.periods.find((item) => item.operationId === existing.operationId)!;
@@ -88,12 +93,20 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
       }
       const payments = [];
       for (const period of input.periods) {
-        payments.push(await this.createPaymentWithinTransaction(tx, { ...period, personId: input.personId, paidAt: input.paidAt, paymentMethodId: input.paymentMethodId, amount: monthlyAmount.toString() }, monthlyAmount, actorId));
+        const existing = existingOperations.find(payment => payment.operationId === period.operationId);
+        const amount = existing?.amount ?? this.positiveMoney(period.amount, 'SALA_PAYMENT_AMOUNT_INVALID');
+        if (!existing) this.validatePaymentAdjustment(amount, proposedAmount, period.adjustmentReason);
+        payments.push(await this.createPaymentWithinTransaction(tx, { ...period, personId: input.personId, paidAt: input.paidAt, paymentMethodId: input.paymentMethodId }, amount, actorId));
       }
       // Retried operations keep their originally recorded amounts, even if the Plan price changed.
-      const totalAmount = existingOperations.length ? payments.reduce((total, payment) => total.plus(payment.amount), new Prisma.Decimal(0)) : monthlyAmount.times(input.periods.length);
-      return { payments, plan: { id: participation.plan.id, name: participation.plan.name, monthlyAmount: monthlyAmount.toString() }, months: payments.length, totalAmount: totalAmount.toString() };
+      const totalAmount = payments.reduce((total, payment) => total.plus(payment.amount), new Prisma.Decimal(0));
+      return { payments, plan: { id: participation.plan.id, name: participation.plan.name, monthlyAmount: proposedAmount.toString() }, months: payments.length, totalAmount: totalAmount.toString() };
     });
+  }
+  private validatePaymentAdjustment(amount: Prisma.Decimal, proposedAmount: Prisma.Decimal, reason?: string): void {
+    if (!amount.equals(proposedAmount) && !reason?.trim()) {
+      throw new BadRequestException({ code: 'SALA_PAYMENT_ADJUSTMENT_REASON_REQUIRED', message: 'Indicá un motivo de ajuste cuando el importe difiere del precio actual del Plan.' });
+    }
   }
   private async lockPaymentPerson(tx: Prisma.TransactionClient, personId: string): Promise<void> {
     const lockPersonId = personId.toLowerCase();
@@ -117,7 +130,12 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
   }
   private async createPaymentWithinTransaction(tx: Prisma.TransactionClient, input: SalaPaymentDto, paymentAmount: Prisma.Decimal, actorId: string) {
     const existing = await tx.salaPayment.findUnique({ where: { operationId: input.operationId }, include: { paymentMethod: true, allocations: true, reversal: true } });
-    if (existing) return existing;
+    if (existing) {
+      if (existing.personId !== input.personId.toLowerCase() || existing.year !== input.year || existing.month !== input.month) {
+        throw new ConflictException({ code: 'SALA_PAYMENT_OPERATION_CONFLICT', message: 'El operationId ya pertenece a otro pago.' });
+      }
+      return existing;
+    }
     const paid = await tx.salaPayment.findFirst({ where: { personId: input.personId, year: input.year, month: input.month, reversal: null }, select: { id: true } });
     if (paid) this.paymentAlreadyExists(input.year, input.month);
     const person = await tx.person.findUnique({ where: { id: input.personId }, select: { id: true } });

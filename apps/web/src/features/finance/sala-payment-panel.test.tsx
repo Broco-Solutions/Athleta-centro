@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
-import { PaymentPanel } from './payment-panel';
+import { SalaPaymentPanel } from './sala-payment-panel';
 
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
@@ -30,7 +30,7 @@ afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 
 function renderPanel(canManage = true, plan: typeof activePlan | undefined = activePlan) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(<QueryClientProvider client={client}><PaymentPanel personId={personId} csrfToken="csrf" canManage={canManage} activePlan={plan} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><SalaPaymentPanel personId={personId} csrfToken="csrf" canManage={canManage} activePlan={plan} /></QueryClientProvider>);
   return client;
 }
 async function addPeriod(value = '2026-10') {
@@ -43,26 +43,27 @@ async function selectMethod() {
   fireEvent.change(screen.getByLabelText('Medio de pago'), { target: { value: methodId } });
 }
 
-it('shows the current Plan and monthly value without an editable amount or Plan selector', async () => {
+it('proposes the current Plan price and an editable amount', async () => {
   renderPanel();
   expect(screen.getByText(/Plan actual:/)).toHaveTextContent('Plan Base');
-  expect(screen.getByText(/Valor mensual:/)).toHaveTextContent('$20.000');
-  expect(screen.queryByLabelText('Importe')).not.toBeInTheDocument();
+  expect(screen.getByText(/Precio actual del Plan:/)).toHaveTextContent('$20.000');
   expect(screen.queryByRole('combobox', { name: /Plan/ })).not.toBeInTheDocument();
   await addPeriod();
   expect(screen.getByText('Octubre 2026')).toBeInTheDocument();
-  expect(screen.getByText('Total: 1 × $20.000 = $20.000')).toBeInTheDocument();
+  expect(screen.getByLabelText('Importe Octubre 2026')).toHaveValue('20000');
+  expect(screen.queryByLabelText(/Motivo de ajuste/)).not.toBeInTheDocument();
+  expect(screen.getByText('Total: $20.000')).toBeInTheDocument();
 });
 it('selects several months, prevents repeats, shows their total and allows removal', async () => {
   renderPanel();
   for (const value of ['2026-10', '2026-11', '2026-12']) await addPeriod(value);
-  expect(screen.getByText('Total: 3 × $20.000 = $60.000')).toBeInTheDocument();
+  expect(screen.getByText('Total: $60.000')).toBeInTheDocument();
   await addPeriod('2026-10');
   expect(screen.getByRole('alert')).toHaveTextContent('Ese mes ya está seleccionado.');
   expect(screen.getAllByRole('button', { name: /^Quitar / })).toHaveLength(3);
   fireEvent.click(screen.getByRole('button', { name: 'Quitar Noviembre 2026' }));
   expect(screen.queryByText('Noviembre 2026')).not.toBeInTheDocument();
-  expect(screen.getByText('Total: 2 × $20.000 = $40.000')).toBeInTheDocument();
+  expect(screen.getByText('Total: $40.000')).toBeInTheDocument();
 });
 it('allows past and future months without requiring consecutive periods', async () => {
   renderPanel();
@@ -86,7 +87,7 @@ it('allows a reversed month to be selected and does not offer another reversal',
   await addPeriod();
   expect(screen.getByRole('button', { name: 'Quitar Octubre 2026' })).toBeInTheDocument();
 });
-it('sends one batch without client prices, uses Buenos Aires date and clears the form after success', async () => {
+it('sends independent period amounts in one batch, uses Buenos Aires date and clears the form after success', async () => {
   vi.setSystemTime(new Date('2026-10-08T01:00:00Z'));
   let submitted: Record<string, unknown> | undefined;
   let csrf: string | null = null;
@@ -100,7 +101,7 @@ it('sends one batch without client prices, uses Buenos Aires date and clears the
   await selectMethod();
   fireEvent.click(screen.getByRole('button', { name: 'Registrar pago' }));
   expect(await screen.findByRole('status')).toHaveTextContent('Pagos registrados correctamente.');
-  expect(submitted).toEqual({ personId, paidAt: '2026-10-07', paymentMethodId: methodId, periods: [10, 11, 12].map((month) => ({ year: 2026, month, operationId: expect.stringMatching(/^[0-9a-f-]{36}$/) })) });
+  expect(submitted).toEqual({ personId, paidAt: '2026-10-07', paymentMethodId: methodId, periods: [10, 11, 12].map((month) => ({ year: 2026, month, amount: '20000', adjustmentReason: '', operationId: expect.stringMatching(/^[0-9a-f-]{36}$/) })) });
   expect(new Set((submitted!.periods as Array<{ operationId: string }>).map((period) => period.operationId)).size).toBe(3);
   expect(csrf).toBe('csrf');
   expect(screen.queryByRole('button', { name: /^Quitar / })).not.toBeInTheDocument();
@@ -127,11 +128,14 @@ it('keeps reversal available for valid payments and refreshes their history', as
     http.get(paymentsUrl, () => HttpResponse.json({ data: [{ ...payment, reversal: reversed ? { id: 'reversal' } : null }] })),
     http.post(`${baseUrl}/api/sala/payments/payment/reverse`, async ({ request }) => { submitted = await request.json(); reversed = true; return HttpResponse.json({ data: {} }, { status: 201 }); }),
   );
-  renderPanel();
+  const client = renderPanel(); const invalidation = vi.spyOn(client, 'invalidateQueries');
   fireEvent.click(await screen.findByRole('button', { name: 'Revertir' }));
+  expect(screen.getByRole('button', { name: 'Revertir pago' })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Motivo de reversión'), { target: { value: 'Cobro duplicado' } });
   fireEvent.click(screen.getByRole('button', { name: 'Revertir pago' }));
   await screen.findByText('Octubre 2026 · $20.000 · Efectivo · Revertido');
-  expect(submitted).toEqual({ reason: 'Corrección de pago', operationId: expect.any(String) });
+  expect(submitted).toEqual({ reason: 'Cobro duplicado', operationId: expect.stringMatching(/^[0-9a-f-]{36}$/) });
+  for (const queryKey of [['sala', 'payments', personId], ['sala', 'students'], ['finance', 'income'], ['finance', 'totals']]) expect(invalidation).toHaveBeenCalledWith({ queryKey });
   expect(screen.queryByRole('button', { name: 'Revertir' })).not.toBeInTheDocument();
 });
 it('keeps payments read-only without SALA_PAYMENT_MANAGE', async () => {
@@ -143,7 +147,7 @@ it('keeps payments read-only without SALA_PAYMENT_MANAGE', async () => {
   expect(screen.queryByRole('button', { name: 'Revertir' })).not.toBeInTheDocument();
 });
 it('requires an active participation and Plan to register payments', () => {
-  render(<QueryClientProvider client={new QueryClient()}><PaymentPanel personId={personId} csrfToken="csrf" canManage /></QueryClientProvider>);
+  render(<QueryClientProvider client={new QueryClient()}><SalaPaymentPanel personId={personId} csrfToken="csrf" canManage /></QueryClientProvider>);
   expect(screen.getByText('Se necesita una participación activa de Sala para registrar pagos.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Registrar pago' })).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Mes/Año')).not.toBeInTheDocument();
@@ -154,4 +158,42 @@ it.each([{ methods: [] }, { methods: [{ id: methodId, name: 'Retirado', isSelect
   expect(await screen.findByText('No hay medios de pago configurados.')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Registrar pago' })).toBeDisabled();
   expect(screen.queryByRole('option', { name: 'Retirado' })).not.toBeInTheDocument();
+});
+
+it('validates each amount and its adjustment reason and sends the actual total with a past cash date', async () => {
+  vi.setSystemTime(new Date('2026-10-08T01:00:00Z'));
+  let submitted: unknown;
+  server.use(http.post(planPaymentsUrl, async ({ request }) => { submitted = await request.json(); return HttpResponse.json({ data: {} }, { status: 201 }); }));
+  const client = renderPanel(); const invalidation = vi.spyOn(client, 'invalidateQueries');
+  expect(screen.getByLabelText('Fecha de cobro')).toHaveValue('2026-10-07');
+  expect(screen.getByLabelText('Fecha de cobro')).toHaveAttribute('max', '2026-10-07');
+  await addPeriod('2026-10'); await addPeriod('2026-11'); await selectMethod();
+  const amount = screen.getByLabelText('Importe Noviembre 2026');
+  for (const value of ['0', '-1', '1.5', '']) {
+    fireEvent.change(amount, { target: { value } });
+    expect(screen.getByRole('button', { name: 'Registrar pago' })).toBeDisabled();
+  }
+  fireEvent.change(amount, { target: { value: '9000' } });
+  expect(screen.getByLabelText('Importe Octubre 2026')).toHaveValue('20000');
+  expect(screen.getByText('Total: $29.000')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Registrar pago' })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Motivo de ajuste Noviembre 2026'), { target: { value: 'Descuento' } });
+  fireEvent.change(screen.getByLabelText('Fecha de cobro'), { target: { value: '2026-10-08' } });
+  expect(screen.getByRole('button', { name: 'Registrar pago' })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Fecha de cobro'), { target: { value: '2026-09-30' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Registrar pago' }));
+  await screen.findByRole('status');
+  expect(submitted).toEqual({ personId, paidAt: '2026-09-30', paymentMethodId: methodId, periods: [
+    { year: 2026, month: 10, amount: '20000', adjustmentReason: '', operationId: expect.any(String) },
+    { year: 2026, month: 11, amount: '9000', adjustmentReason: 'Descuento', operationId: expect.any(String) },
+  ] });
+  for (const queryKey of [['sala', 'payments', personId], ['sala', 'students'], ['finance', 'income'], ['finance', 'totals']]) expect(invalidation).toHaveBeenCalledWith({ queryKey });
+});
+it('no longer requires a reason when the amount returns to the Plan price', async () => {
+  renderPanel(); await addPeriod(); await selectMethod();
+  fireEvent.change(screen.getByLabelText('Importe Octubre 2026'), { target: { value: '9000' } });
+  expect(screen.getByRole('button', { name: 'Registrar pago' })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Importe Octubre 2026'), { target: { value: '20000' } });
+  expect(screen.queryByLabelText(/Motivo de ajuste/)).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Registrar pago' })).toBeEnabled();
 });

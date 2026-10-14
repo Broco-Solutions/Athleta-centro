@@ -891,6 +891,10 @@ export interface SalaPlanPaymentPeriodDto {
    */
   month: number;
   operationId: string;
+  /** @pattern ^\d+$ */
+  amount: string;
+  /** @maxLength 300 */
+  adjustmentReason?: string;
 }
 
 export interface RegisterSalaPlanPaymentsDto {
