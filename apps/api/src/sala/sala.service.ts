@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, ConflictException, Injectable, Logger, NotFoundException, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
 import { FinancialAdjustmentKind, Prisma, Role, RoutineStatus, SalaChargeKind, SalaOccurrenceOrigin, SalaOccurrenceStatus, SalaScheduleExceptionType, InternalUserStatus, SalaWeekday } from '@prisma/client';
 import { PeopleService } from '../people/people.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -358,7 +358,78 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_ACTIVE_PARTICIPATION_EXISTS', message: 'Person already has an active Sala participation' }); throw error; }
   }
   async listParticipations(personId: string) { return this.prisma.salaParticipation.findMany({ where: { personId }, orderBy: { startDate: 'desc' }, include: { plan: true, mainProfessor: true } }); }
-  async leave(id: string, failureAfterMutations = false, actorId?: string) { return this.prisma.$transaction(async (tx) => { const current = await tx.salaParticipation.findFirst({ where: { id, endDate: null } }); if (!current) throw new NotFoundException({ code: 'SALA_ACTIVE_PARTICIPATION_NOT_FOUND', message: 'Active participation not found' }); const now = new Date(); const today = this.date(this.todayOperational()); await tx.fixedSalaBooking.updateMany({ where: { salaParticipationId: id, OR: [{ endDate: null }, { endDate: { gt: today } }] }, data: { endDate: today } }); await tx.oneOffReservation.updateMany({ where: { salaParticipationId: id, date: { gte: today }, cancelledAt: null }, data: { cancelledAt: now } }); await tx.salaOccurrence.updateMany({ where: { personId: current.personId, date: { gte: today }, status: { not: SalaOccurrenceStatus.CANCELLED } }, data: { status: SalaOccurrenceStatus.CANCELLED, ...(actorId ? { lastModifiedBy: actorId } : {}) } }); await tx.routine.updateMany({ where: { salaParticipationId: id, status: RoutineStatus.ACTIVE }, data: { status: RoutineStatus.HISTORICAL } }); await tx.salaClinicalIndication.updateMany({ where: { personId: current.personId, status: 'ACTIVE' }, data: { status: 'CLOSED', closedAt: now, ...(actorId ? { closedById: actorId } : {}) } }); if (failureAfterMutations) throw new Error('SIMULATED_LEAVE_FAILURE'); return tx.salaParticipation.update({ where: { id }, data: { endDate: today }, include: { plan: true, mainProfessor: true } }); }); }
+  async leave(id: string, failureAfterMutations = false, actorId?: string) {
+    return this.prisma.$transaction((tx) => this.leaveInTransaction(tx, id, failureAfterMutations, actorId));
+  }
+  private async leaveInTransaction(tx: Prisma.TransactionClient, id: string, failureAfterMutations = false, actorId?: string) {
+    await this.lockParticipations(tx, [id]);
+    const current = await tx.salaParticipation.findFirst({ where: { id, endDate: null } });
+    if (!current) throw new NotFoundException({ code: 'SALA_ACTIVE_PARTICIPATION_NOT_FOUND', message: 'Active participation not found' });
+    const now = new Date();
+    const today = this.date(this.todayOperational());
+    await tx.fixedSalaBooking.updateMany({ where: { salaParticipationId: id, OR: [{ endDate: null }, { endDate: { gt: today } }] }, data: { endDate: today } });
+    await tx.oneOffReservation.updateMany({ where: { salaParticipationId: id, date: { gte: today }, cancelledAt: null }, data: { cancelledAt: now } });
+    await tx.salaOccurrence.updateMany({ where: { personId: current.personId, date: { gte: today }, status: { not: SalaOccurrenceStatus.CANCELLED } }, data: { status: SalaOccurrenceStatus.CANCELLED, ...(actorId ? { lastModifiedBy: actorId } : {}) } });
+    await tx.routine.updateMany({ where: { salaParticipationId: id, status: RoutineStatus.ACTIVE }, data: { status: RoutineStatus.HISTORICAL } });
+    await tx.salaClinicalIndication.updateMany({ where: { personId: current.personId, status: 'ACTIVE' }, data: { status: 'CLOSED', closedAt: now, ...(actorId ? { closedById: actorId } : {}) } });
+    if (failureAfterMutations) throw new Error('SIMULATED_LEAVE_FAILURE');
+    return tx.salaParticipation.update({ where: { id }, data: { endDate: today }, include: { plan: true, mainProfessor: true } });
+  }
+
+  private async lockParticipations(tx: Prisma.TransactionClient, ids: string[]) {
+    if (!ids.length) throw new BadRequestException({ code: 'SALA_PARTICIPATION_IDS_REQUIRED', message: 'Seleccioná al menos una participación.' });
+    await tx.$queryRaw`SELECT id FROM sala_participations WHERE id IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`))}) ORDER BY id FOR UPDATE`;
+  }
+  private async assertActiveParticipations(tx: Prisma.TransactionClient, ids: string[]) {
+    const count = await tx.salaParticipation.count({ where: { id: { in: ids }, endDate: null } });
+    if (count !== ids.length) throw new NotFoundException({ code: 'SALA_ACTIVE_PARTICIPATION_NOT_FOUND', message: 'Active participation not found' });
+  }
+  async updateObjective(participationId: string, objective: string | null | undefined, actorId: string) {
+    const actor = await this.prisma.internalUser.findUnique({ where: { id: actorId }, select: { roles: true } });
+    if (!actor?.roles.some(({ role }) => role === Role.PROFESSOR || role === Role.GENERAL_ADMIN)) {
+      throw new ForbiddenException({ code: 'SALA_OBJECTIVE_FORBIDDEN', message: 'No tenés permiso para modificar el Objetivo.' });
+    }
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockParticipations(tx, [participationId]);
+      await this.assertActiveParticipations(tx, [participationId]);
+      return tx.salaParticipation.update({ where: { id: participationId }, data: { objective: objective?.trim() || null }, select: { objective: true } });
+    });
+  }
+  async leaveImpact(participationId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockParticipations(tx, [participationId]);
+      await this.assertActiveParticipations(tx, [participationId]);
+      const current = await tx.salaParticipation.findUniqueOrThrow({ where: { id: participationId }, select: { personId: true } });
+      const today = this.date(this.todayOperational());
+      const [fixedBookings, futureReservations, activeRoutines, activeClinicalIndications] = await Promise.all([
+        tx.fixedSalaBooking.count({ where: { salaParticipationId: participationId, OR: [{ endDate: null }, { endDate: { gt: today } }] } }),
+        tx.oneOffReservation.count({ where: { salaParticipationId: participationId, date: { gte: today }, cancelledAt: null } }),
+        tx.routine.count({ where: { salaParticipationId: participationId, status: RoutineStatus.ACTIVE } }),
+        tx.salaClinicalIndication.count({ where: { personId: current.personId, status: 'ACTIVE' } }),
+      ]);
+      return { fixedBookings, futureReservations, activeRoutines, activeClinicalIndications };
+    });
+  }
+  async bulkChangeProfessor(participationIds: string[], mainProfessorId: string) {
+    const ids = [...new Set(participationIds.map((id) => id.toLowerCase()))];
+    return this.prisma.$transaction(async (tx) => {
+      const professor = await tx.internalUser.findFirst({ where: { id: mainProfessorId, ...eligibleProfessorWhere }, select: { id: true } });
+      if (!professor) throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Professor is not eligible' });
+      await this.lockParticipations(tx, ids);
+      await this.assertActiveParticipations(tx, ids);
+      const result = await tx.salaParticipation.updateMany({ where: { id: { in: ids }, endDate: null }, data: { mainProfessorId } });
+      return { affected: result.count };
+    });
+  }
+  async bulkLeave(participationIds: string[], actorId: string) {
+    const ids = [...new Set(participationIds.map((id) => id.toLowerCase()))].sort();
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockParticipations(tx, ids);
+      await this.assertActiveParticipations(tx, ids);
+      for (const id of ids) await this.leaveInTransaction(tx, id, false, actorId);
+      return { affected: ids.length };
+    });
+  }
   async changeProfessor(id: string, mainProfessorId: string) { const professor = await this.prisma.internalUser.findUnique({ where: { id: mainProfessorId }, include: { roles: true } }); if (!professor || professor.status !== InternalUserStatus.ACTIVE || !professor.roles.some((role) => role.role === Role.PROFESSOR)) throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Professor is not eligible' }); return this.prisma.salaParticipation.update({ where: { id }, data: { mainProfessorId }, include: { plan: true, mainProfessor: true } }); }
   async changePlan(id: string, planId: string) {
     const plan = await this.prisma.salaPlan.findUnique({ where: { id: planId } });
@@ -563,22 +634,36 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
       where: { endDate: null },
       orderBy: [{ person: { lastName: 'asc' } }, { person: { firstName: 'asc' } }],
       select: {
+        id: true, startDate: true,
         person: { select: {
           id: true, firstName: true, lastName: true, dni: true,
-          salaPayments: { where: { year, month, reversal: null }, select: { id: true }, take: 1 },
         } },
         plan: { select: { id: true, name: true } },
         mainProfessor: { select: { id: true, firstName: true, lastName: true } },
         routines: { where: { status: RoutineStatus.ACTIVE }, select: { id: true }, take: 1 },
       },
     });
-    return participations.map(({ person, plan, mainProfessor, routines }) => ({
-      id: person.id, firstName: person.firstName, lastName: person.lastName, dni: person.dni,
-      plan, professor: mainProfessor,
-      routineStatus: routines.length ? 'ACTIVE' : 'MISSING',
-      paymentStatus: person.salaPayments.length ? 'PAID' : 'PENDING',
-    }));
+    const firstMonth = participations.reduce((min, item) => Math.min(min, item.startDate.getUTCFullYear() * 12 + item.startDate.getUTCMonth()), year * 12 + month - 1);
+    const payments = await this.prisma.salaPayment.findMany({
+      where: { personId: { in: participations.map((item) => item.person.id) }, reversal: null,
+        AND: [{ OR: [{ year: { gt: Math.floor(firstMonth / 12) } }, { year: Math.floor(firstMonth / 12), month: { gte: firstMonth % 12 + 1 } }] }, { OR: [{ year: { lt: year } }, { year, month: { lte: month } }] }] },
+      select: { personId: true, year: true, month: true },
+    });
+    const paidMonths = new Set(payments.map((payment) => `${payment.personId}:${payment.year * 12 + payment.month - 1}`));
+    const currentMonth = year * 12 + month - 1;
+    return participations.map(({ id, startDate, person, plan, mainProfessor, routines }) => {
+      const startMonth = startDate.getUTCFullYear() * 12 + startDate.getUTCMonth();
+      let unpaidConsecutiveMonths = 0;
+      for (let cursor = currentMonth; cursor >= startMonth && !paidMonths.has(`${person.id}:${cursor}`); cursor--) unpaidConsecutiveMonths++;
+      return {
+        id: person.id, participationId: id, participationStartDate: startDate.toISOString().slice(0, 10), unpaidConsecutiveMonths,
+        firstName: person.firstName, lastName: person.lastName, dni: person.dni, plan, professor: mainProfessor,
+        routineStatus: routines.length ? 'ACTIVE' : 'MISSING',
+        paymentStatus: paidMonths.has(`${person.id}:${currentMonth}`) ? 'PAID' : 'PENDING',
+      };
+    });
   }
+
   async dashboard(date: string): Promise<SalaDashboardDto> {
     const agenda = await this.agenda(date);
     const entries = agenda.flatMap((group) => group.people);

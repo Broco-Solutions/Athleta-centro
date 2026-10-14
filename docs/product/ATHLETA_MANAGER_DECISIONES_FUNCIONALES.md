@@ -276,3 +276,63 @@ transversal principal de Administrativo y Administrador general.
 
 Clínica conserva por ahora una única entrada `/clinic`. Su estructura definitiva
 de navegación queda **PENDIENTE DE DEFINICIÓN FUNCIONAL**.
+
+
+## Objetivo de Sala y reingreso — 2026-10-14
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+El Objetivo es una referencia breve y opcional de entrenamiento, de hasta 500
+caracteres y sin información clínica. Pertenece a la participación actual de
+Sala. Profesor y Administrador general pueden modificarlo; Administrativo lo
+consulta. Los roles combinados conservan la capacidad de Profesor.
+
+Al dar de baja, el Objetivo histórico permanece asociado a esa participación.
+El reingreso crea una participación nueva con Objetivo vacío, sin copiar el
+anterior. No se incorpora historial específico de modificaciones.
+
+Evidencia: `apps/api/prisma/schema.prisma` (`SalaParticipation.objective`),
+`apps/api/src/sala/sala.service.ts` (`updateObjective`, `join`, `leave`) y
+`apps/web/src/features/sala/participation-management.tsx`. La autorización por
+roles se valida en backend; el Portal no expone el Objetivo.
+
+### Seguimiento y acciones de Alumnos — Bloque 1A + 1B
+
+`/students` es la única interfaz principal de seguimiento para todos los perfiles
+habilitados. Los enlaces antiguos `/sala?view=students` redirigen allí. Conserva
+búsqueda por Nombre/DNI, Sin rutina y Pago pendiente. Mis alumnos aparece para
+cuentas con rol Profesor y filtra por Profesor principal actual, sin restringir
+el acceso a otros Alumnos. Los filtros se combinan.
+
+Meses consecutivos sin pago ofrece 1+, 2+, 3+ y 6+. La racha comienza en el mes
+operativo actual de Argentina, se detiene en el primer mes con `SalaPayment`
+válido sin reversión y nunca cuenta meses anteriores al mes de incorporación de
+la participación actual. El mes de incorporación cuenta si no tiene Pago válido;
+un Pago válido del mismo Mes/Año sigue siendo válido al reingresar. Se calcula
+sin consultas por Alumno. Es seguimiento manual, sin deuda derivada ni bloqueos
+ni consecuencias automáticas.
+
+La selección utiliza IDs de participación activa y sólo incluye Alumnos
+visibles por búsqueda y filtros. Las únicas acciones masivas son Cambiar profesor
+principal y Dar de baja de Sala; ambas son transaccionales y fallan completas si
+una participación no es válida. El cambio de Profesor sólo modifica la referencia
+actual, sin alterar Plan, Rutinas, Evaluaciones, Pagos, Turnos ni autorías.
+
+La ficha reutiliza la misma gestión de Objetivo, Profesor, Plan y Baja para los
+roles habilitados. La baja individual muestra previamente conteos operativos de
+Turnos fijos, Reservas futuras, Rutinas activas e Indicaciones activas; no expone
+contenido clínico. La baja individual y masiva reutilizan la misma lógica vigente.
+Las reglas temporales existentes de baja se conservan: este bloque no resuelve
+PER-07. Cambio de Plan reutiliza su endpoint y reglas actuales e invalida los
+Servicios del Alumno para nuevas operaciones.
+
+Evidencia: `apps/api/src/sala/sala.service.ts` (`listStudents`, `leaveImpact`,
+`bulkChangeProfessor`, `bulkLeave`, `leaveInTransaction`), `sala.controller.ts`,
+`sala.dto.ts`, `apps/web/src/app/students/page.tsx`,
+`apps/web/src/features/sala/person-workspace.tsx` y `participation-management.tsx`.
+Cobertura en `apps/api/test/sala.integration-spec.ts`,
+`apps/web/src/app/students/page.test.tsx` y
+`apps/web/src/features/sala/person-workspace.test.tsx`.
+
+**PROF-01 permanece PENDIENTE**. No se agrega alta de Persona/Alumno para Profesor
+puro ni se modifica `PEOPLE_CREATE`. No se implementan acciones masivas adicionales.

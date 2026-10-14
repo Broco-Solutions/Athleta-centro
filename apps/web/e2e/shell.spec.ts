@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 
-function fixture(kind: 'normal' | 'temporary' | 'inactive' | 'people' | 'team' | 'sala' | 'occurrence' | 'multislot' | 'clinic' | 'service' | 'portal-reset' | 'portal-fixed-edit' | 'physical-evaluation'): void { execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/e2e-fixture.ts', kind], { cwd: '../..', stdio: 'inherit' }); }
+function fixture(kind: 'normal' | 'temporary' | 'inactive' | 'people' | 'team' | 'sala' | 'occurrence' | 'multislot' | 'clinic' | 'service' | 'portal-reset' | 'portal-fixed-edit' | 'physical-evaluation' | 'student-follow-up'): void { execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/e2e-fixture.ts', kind], { cwd: '../..', stdio: 'inherit' }); }
 async function login(page: import('@playwright/test').Page, email: string, password = 'ValidPass1!'): Promise<void> { await page.goto('/login'); await page.getByLabel('Email').fill(email); await page.getByLabel('Contraseña').fill(password); await page.getByRole('button', { name: /Ingresar/ }).click(); }
 
 test('redirects unauthenticated visitors to login through the Next-to-API rewrite', async ({ page }) => { await page.goto('/'); await expect(page).toHaveURL(/\/login$/); });
@@ -60,7 +60,7 @@ test('manages a standard team account through explicit lifecycle actions', async
 test('manages Sala participation periods from a Person', async ({ page }) => {
   fixture('sala'); await login(page, 'e2e.sala@athleta.test'); await page.getByRole('link', { name: 'Personas' }).click(); await page.getByLabel('Buscar Personas').fill('40999777'); await page.getByText('SalaE2E, Persona').click();
   await expect(page.getByText('Participación en Sala')).toBeVisible(); await page.getByLabel('Plan').selectOption({ label: 'Plan E2E' }); await page.getByLabel('Profesor principal').selectOption({ label: 'E2E, Profesor' }); await page.getByRole('button', { name: 'Incorporar a Sala' }).click();
-  await expect(page.getByText('Plan actual')).toBeVisible(); await page.getByLabel('Cambiar Plan').selectOption({ label: 'Plan E2E' }); page.once('dialog', (dialog) => dialog.accept()); await page.getByRole('button', { name: 'Dar de baja' }).click(); await expect(page.getByRole('button', { name: 'Dar de baja' })).toBeHidden(); await expect(page.getByText(/Historial/)).toBeVisible();
+  await expect(page.getByText('Plan actual')).toBeVisible(); await expect(page.getByText('Sin objetivo definido.')).toBeVisible(); await expect(page.getByRole('heading', { name: 'Objetivo', exact: true }).locator('..').getByRole('button', { name: 'Editar', exact: true })).toBeHidden(); await page.getByRole('button', { name: 'Dar de baja de Sala', exact: true }).click(); const impact = page.getByRole('dialog', { name: 'Dar de baja de Sala' }); await expect(impact.getByText('La Persona y la información histórica se conservan.')).toBeVisible(); await expect(impact.getByRole('button', { name: 'Dar de baja', exact: true })).toBeEnabled(); await impact.getByRole('button', { name: 'Dar de baja', exact: true }).click(); await expect(impact).toBeHidden(); await expect(page.getByText(/Historial/)).toBeVisible();
   await page.getByLabel('Plan').selectOption({ label: 'Plan E2E' }); await page.getByLabel('Profesor principal').selectOption({ label: 'E2E, Profesor' }); await page.getByRole('button', { name: 'Incorporar a Sala' }).click(); await expect(page.getByText('Plan actual')).toBeVisible();
 });
 test('operates lazy Sala occurrences and manual attendance corrections', async ({ page }) => {
@@ -200,4 +200,43 @@ test('renders the unified Reservations timeline with Sala and active professiona
   await expect(page.getByTestId('reservations-timeline').getByText('Sala', { exact: true })).toBeVisible();
   await expect.poll(async () => page.getByTestId('reservations-timeline').locator('div.sticky p.font-medium').count()).toBeGreaterThan(1);
   await expect(page.getByText(':15', { exact: true })).toHaveCount(0);
+});
+
+
+test('completes student follow-up, individual management and the two atomic bulk actions', async ({ page }) => {
+  fixture('student-follow-up'); await login(page, 'e2e.student-follow-up@athleta.test');
+  await page.getByRole('link', { name: 'Alumnos', exact: true }).click();
+  await page.getByLabel('Buscar por nombre o DNI').fill('FollowUpE2E');
+  await expect(page.getByRole('link', { name: 'Ver ficha' })).toHaveCount(3);
+  await expect(page.getByRole('button', { name: 'Nuevo alumno' })).toBeHidden();
+  await page.getByRole('button', { name: 'Mis alumnos', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Ver ficha' })).toHaveCount(2);
+  await page.getByLabel('Meses consecutivos sin pago').selectOption('1');
+  await page.getByRole('button', { name: 'Sin rutina', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Ver ficha' })).toHaveCount(2);
+  await page.getByRole('link', { name: 'Ver ficha' }).first().click();
+  await page.getByRole('button', { name: 'Editar', exact: true }).click();
+  const objective = page.getByRole('dialog', { name: 'Editar Objetivo' });
+  await objective.getByLabel('Objetivo').fill('Mejorar fuerza general'); await objective.getByRole('button', { name: 'Guardar' }).click();
+  await expect(objective).toBeHidden(); await expect(page.getByText('Mejorar fuerza general', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Cambiar profesor principal', exact: true }).click();
+  const professor = page.getByRole('dialog', { name: 'Cambiar profesor principal' });
+  await professor.getByLabel('Nuevo profesor').selectOption({ label: 'Otro FollowUpE2E' }); await professor.getByRole('button', { name: 'Guardar' }).click(); await expect(professor).toBeHidden();
+  await expect(page.getByText(/Profesor principal: Otro FollowUpE2E/)).toBeVisible();
+  await page.getByRole('button', { name: 'Cambiar Plan', exact: true }).click();
+  const plan = page.getByRole('dialog', { name: 'Cambiar Plan' }); await plan.getByLabel('Nuevo Plan').selectOption({ label: 'Nuevo FollowUpE2E' }); await plan.getByRole('button', { name: 'Guardar' }).click(); await expect(plan).toBeHidden();
+  await expect(page.getByText(/Nuevo FollowUpE2E · Profesor principal/)).toBeVisible();
+  await page.getByRole('button', { name: 'Dar de baja de Sala', exact: true }).click(); const leave = page.getByRole('dialog', { name: 'Dar de baja de Sala' });
+  await expect(leave.getByRole('button', { name: 'Dar de baja', exact: true })).toBeEnabled(); await leave.getByRole('button', { name: 'Dar de baja', exact: true }).click(); await expect(leave).toBeHidden(); await expect(page.getByText('Sin participación activa', { exact: true }).first()).toBeVisible();
+  await page.getByRole('link', { name: 'Alumnos', exact: true }).first().click(); await page.getByLabel('Buscar por nombre o DNI').fill('FollowUpE2E');
+  await expect(page.getByRole('link', { name: 'Ver ficha' })).toHaveCount(2); await page.getByLabel('Seleccionar todos los alumnos filtrados').check();
+  await page.getByRole('button', { name: 'Cambiar profesor principal', exact: true }).click(); const bulkProfessor = page.getByRole('dialog', { name: 'Cambiar profesor principal' });
+  await expect(bulkProfessor.getByText('2 alumnos seleccionados')).toBeVisible(); await bulkProfessor.getByLabel('Nuevo profesor').selectOption({ label: 'Otro FollowUpE2E' });
+  const changed = page.waitForResponse(response => response.url().endsWith('/participations/bulk-change-professor') && response.request().method() === 'POST');
+  await bulkProfessor.getByRole('button', { name: 'Cambiar profesor', exact: true }).click(); expect((await changed).status()).toBe(200); await expect(bulkProfessor).toBeHidden();
+  await expect(page.getByLabel('Seleccionar todos los alumnos filtrados')).not.toBeChecked();
+  await page.getByLabel('Seleccionar todos los alumnos filtrados').check(); await page.getByRole('button', { name: 'Dar de baja de Sala', exact: true }).click();
+  const bulkLeave = page.getByRole('dialog', { name: 'Dar de baja de Sala' }); await expect(bulkLeave.getByText('Se dará de baja de Sala a 2 alumnos.')).toBeVisible();
+  const left = page.waitForResponse(response => response.url().endsWith('/participations/bulk-leave') && response.request().method() === 'POST');
+  await bulkLeave.getByRole('button', { name: 'Dar de baja', exact: true }).click(); expect((await left).status()).toBe(200); await expect(bulkLeave).toBeHidden(); await expect(page.getByRole('link', { name: 'Ver ficha' })).toHaveCount(0);
 });

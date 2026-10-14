@@ -418,3 +418,21 @@ it.each([
   if (visible) expect(await screen.findByRole('button', { name: /Nueva Persona/ })).toBeVisible();
   else expect(screen.queryByRole('button', { name: /Nueva Persona/ })).not.toBeInTheDocument();
 });
+
+it('reuses the Sala Objective dialog without submitting the surrounding Person form', async () => {
+  let objective = 'Mejorar fuerza'; let objectiveWrites = 0; let personWrites = 0;
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: ['GENERAL_ADMIN'], permissions: [...session.permissions, 'SALA_RELATION_READ'] } })),
+    http.get(`http://localhost:3000/api/sala/participations/person/${person.id}`, () => HttpResponse.json({ data: [{ id: 'participation', startDate: '2026-10-01', endDate: null, objective, plan: { name: 'Mensual' } }] })),
+    http.patch('http://localhost:3000/api/sala/participations/participation/objective', async ({ request }) => { const body = await request.json() as { objective: string }; objective = body.objective; objectiveWrites++; return HttpResponse.json({ data: { objective } }); }),
+    http.patch(`http://localhost:3000/api/people/${person.id}`, () => { personWrites++; return HttpResponse.json({ data: person }); }),
+  );
+  renderPage(); fireEvent.click(await screen.findByText('Sintética, Ana')); await screen.findByText('Mejorar fuerza');
+  const objectiveSection = screen.getByRole('heading', { name: 'Objetivo' }).parentElement!;
+  fireEvent.click(within(objectiveSection).getByRole('button', { name: 'Editar' }));
+  const dialog = within(screen.getByRole('dialog', { name: 'Editar Objetivo' }));
+  fireEvent.change(dialog.getByLabelText('Objetivo'), { target: { value: 'Preparar carrera' } }); fireEvent.click(dialog.getByRole('button', { name: 'Guardar' }));
+  await screen.findByText('Preparar carrera'); await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Editar Objetivo' })).not.toBeInTheDocument());
+  expect(objectiveWrites).toBe(1); expect(personWrites).toBe(0);
+  expect(screen.getByRole('heading', { name: 'Editar Persona' })).toBeInTheDocument();
+});

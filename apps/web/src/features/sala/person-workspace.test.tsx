@@ -478,3 +478,86 @@ it.each([['ADMINISTRATIVE'], ['GENERAL_ADMIN'], ['KINESIOLOGIST'], ['OSTEOPATH']
   expect(await screen.findByRole('heading', { name: 'Pagos de Sala' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Ver ficha de Persona' })).toBeInTheDocument();
 });
+
+function managementFixture(roles = ['PROFESSOR']) {
+  navigation.tab = 'summary'; let reads = 0;
+  const state = { active: true, objective: 'Mejorar fuerza general' as string | null, mainProfessorId: 'professor', planId: 'base' };
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor', firstName: 'Profesor', lastName: 'Sintético' }, roles, permissions: ['SALA_RELATION_READ', 'SALA_PARTICIPATION_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })),
+    http.get(`http://localhost:3000/api/sala/participations/person/${personId}`, () => { reads++; return HttpResponse.json({ data: [{ id: 'participation', endDate: state.active ? null : '2026-10-14', ...state, mainProfessor: { id: state.mainProfessorId, firstName: state.mainProfessorId === 'professor' ? 'Federico' : 'Ramiro', lastName: 'Sintético' }, plan: { id: state.planId, name: state.planId === 'base' ? 'Plan Base' : 'Plan 3 veces', monthlyAmount: '1000' } }] }); }),
+    http.get('http://localhost:3000/api/sala/professors', () => HttpResponse.json({ data: [{ id: 'professor', firstName: 'Federico', lastName: 'Sintético' }, { id: 'other', firstName: 'Ramiro', lastName: 'Sintético' }] })),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'base', name: 'Plan Base', isSelectable: true }, { id: 'other', name: 'Plan 3 veces', isSelectable: true }, { id: 'retired', name: 'Plan retirado', isSelectable: false }] })),
+  );
+  return { state, reads: () => reads };
+}
+it.each([['PROFESSOR'], ['GENERAL_ADMIN']])('allows Objective editing with roles %j and refetches the participation', async (...roles) => {
+  const fixture = managementFixture(roles); let submitted: unknown;
+  server.use(http.patch('http://localhost:3000/api/sala/participations/participation/objective', async ({ request }) => { submitted = await request.json(); fixture.state.objective = 'Preparar carrera'; return HttpResponse.json({ data: { objective: fixture.state.objective } }); }));
+  renderWorkspace(); await screen.findByText('Mejorar fuerza general'); fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+  const dialog = within(screen.getByRole('dialog', { name: 'Editar Objetivo' }));
+  expect(dialog.getByRole('textbox', { name: 'Objetivo' })).toHaveAttribute('maxlength', '500');
+  fireEvent.change(dialog.getByRole('textbox', { name: 'Objetivo' }), { target: { value: 'Preparar carrera' } });
+  fireEvent.click(dialog.getByRole('button', { name: 'Guardar' })); await screen.findByText('Preparar carrera');
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(submitted).toEqual({ objective: 'Preparar carrera' }); expect(fixture.reads()).toBe(2);
+});
+it('shows Administrative Objective read-only and the empty state', async () => {
+  const fixture = managementFixture(['ADMINISTRATIVE']); fixture.state.objective = null;
+  renderWorkspace(); expect(await screen.findByText('Sin objetivo definido.')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
+});
+it('shows the existing Objective to Administrative without an Edit action', async () => {
+  managementFixture(['ADMINISTRATIVE']); renderWorkspace(); await screen.findByText('Mejorar fuerza general');
+  expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
+});
+it('changes Professor through the existing endpoint and refreshes current participation', async () => {
+  const fixture = managementFixture(); let submitted: unknown;
+  server.use(http.post('http://localhost:3000/api/sala/participations/participation/change-professor', async ({ request }) => { submitted = await request.json(); fixture.state.mainProfessorId = 'other'; return HttpResponse.json({ data: {} }, { status: 201 }); }));
+  renderWorkspace(); fireEvent.click(await screen.findByRole('button', { name: 'Cambiar profesor principal' }));
+  await screen.findByRole('option', { name: 'Ramiro Sintético' }); const dialog = within(screen.getByRole('dialog'));
+  expect(dialog.getByText('Profesor principal actual: Federico Sintético')).toBeInTheDocument();
+  fireEvent.change(dialog.getByLabelText('Nuevo profesor'), { target: { value: 'professor' } }); expect(dialog.getByRole('button', { name: 'Guardar' })).toBeDisabled();
+  fireEvent.change(dialog.getByLabelText('Nuevo profesor'), { target: { value: 'other' } }); fireEvent.click(dialog.getByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(submitted).toEqual({ mainProfessorId: 'other' }); expect(fixture.reads()).toBe(2);
+  expect(screen.getByText(/Profesor principal: Ramiro Sintético/)).toBeInTheDocument();
+});
+it('changes Plan through the existing endpoint and invalidates person services', async () => {
+  const fixture = managementFixture(); let submitted: unknown;
+  server.use(http.post('http://localhost:3000/api/sala/participations/participation/change-plan', async ({ request }) => { submitted = await request.json(); fixture.state.planId = 'other'; return HttpResponse.json({ data: {} }, { status: 201 }); }));
+  renderWorkspace(); fireEvent.click(await screen.findByRole('button', { name: 'Cambiar Plan' }));
+  await screen.findByRole('option', { name: 'Plan 3 veces' });
+  expect(screen.queryByRole('option', { name: 'Plan Base' })).not.toBeInTheDocument(); expect(screen.queryByRole('option', { name: 'Plan retirado' })).not.toBeInTheDocument();
+  const before = personServicesRequests;
+  fireEvent.change(screen.getByLabelText('Nuevo Plan'), { target: { value: 'other' } }); fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(submitted).toEqual({ planId: 'other' }); expect(fixture.reads()).toBe(2); expect(personServicesRequests).toBeGreaterThan(before);
+});
+it('obtains leave impact, confirms once and keeps the inactive student workspace open', async () => {
+  const fixture = managementFixture(); let impactReads = 0; let calls = 0;
+  server.use(
+    http.get('http://localhost:3000/api/sala/participations/participation/leave-impact', () => { impactReads++; return HttpResponse.json({ data: { fixedBookings: 2, futureReservations: 1, activeRoutines: 1, activeClinicalIndications: 1 } }); }),
+    http.post('http://localhost:3000/api/sala/participations/participation/leave', () => { calls++; fixture.state.active = false; return HttpResponse.json({ data: {} }, { status: 201 }); }),
+  );
+  renderWorkspace(); fireEvent.click(await screen.findByRole('button', { name: 'Dar de baja de Sala' }));
+  const dialog = within(screen.getByRole('dialog')); await dialog.findByText('Turnos fijos a finalizar: 2');
+  expect(dialog.getByText('Reservas futuras a cancelar: 1')).toBeInTheDocument(); expect(dialog.getByText('Indicaciones activas para Sala a cerrar: 1')).toBeInTheDocument();
+  fireEvent.click(dialog.getByRole('button', { name: 'Dar de baja' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(await screen.findByText('Sin participación activa')).toBeInTheDocument(); expect(impactReads).toBe(1); expect(calls).toBe(1);
+  expect(screen.getByRole('heading', { name: 'Alumno Sintético' })).toBeInTheDocument();
+});
+it.each(['objective', 'professor', 'plan', 'leave'])('keeps the %s dialog open and reports mutation failures', async (action) => {
+  managementFixture();
+  const path = action === 'professor' ? 'change-professor' : action === 'plan' ? 'change-plan' : action;
+  server.use(
+    http.patch(`http://localhost:3000/api/sala/participations/participation/${path}`, () => HttpResponse.json({}, { status: 403 })),
+    http.post(`http://localhost:3000/api/sala/participations/participation/${path}`, () => HttpResponse.json({}, { status: 409 })),
+    http.get('http://localhost:3000/api/sala/participations/participation/leave-impact', () => HttpResponse.json({ data: { fixedBookings: 0, futureReservations: 0, activeRoutines: 0, activeClinicalIndications: 0 } })),
+  );
+  renderWorkspace(); fireEvent.click(await screen.findByRole('button', { name: action === 'objective' ? 'Editar' : action === 'professor' ? 'Cambiar profesor principal' : action === 'plan' ? 'Cambiar Plan' : 'Dar de baja de Sala' }));
+  if (action === 'professor' || action === 'plan') { await screen.findByRole('option', { name: action === 'professor' ? 'Ramiro Sintético' : 'Plan 3 veces' }); fireEvent.change(screen.getByLabelText(action === 'professor' ? 'Nuevo profesor' : 'Nuevo Plan'), { target: { value: 'other' } }); }
+  const dialog = within(screen.getByRole('dialog')); await waitFor(() => expect(dialog.getByRole('button', { name: action === 'leave' ? 'Dar de baja' : 'Guardar' })).toBeEnabled());
+  fireEvent.click(dialog.getByRole('button', { name: action === 'leave' ? 'Dar de baja' : 'Guardar' }));
+  expect(await dialog.findByRole('alert')).toHaveTextContent('No se pudo completar la operación'); expect(screen.getByRole('dialog')).toBeInTheDocument();
+});

@@ -180,7 +180,7 @@ it('preserves permission navigation for PROFESSOR + KINESIOLOGIST', async () => 
 it.each([{ roles: ['GENERAL_ADMIN'] }, { roles: ['GENERAL_ADMIN', 'PROFESSOR'] }])('uses General Admin grouped navigation for roles %j on desktop and mobile', async ({ roles }) => {
   renderShell({ roles, permissions: ['PEOPLE_READ', 'SALA_RELATION_READ', 'SALA_AGENDA_MANAGE', 'SALA_PARTICIPATION_MANAGE', 'SALA_SCHEDULE_MANAGE', 'SALA_ROUTINE_MANAGE', 'CLINIC_OPERATIONAL_READ', 'FINANCE_OPERATIONAL_READ', 'TEAM_READ'] });
   const expectedLabels = ['Resumen', 'Personas', 'Agenda', 'Alumnos', 'Rutinas', 'Configuración', 'Clínica', 'Resumen', 'Ingresos', 'Gastos', 'Equipo'];
-  const expectedHrefs = ['/', '/people', '/sala', '/sala?view=students', '/routines', '/sala/configuration', '/clinic', '/finance', '/finance?view=income', '/finance?view=expenses', '/team'];
+  const expectedHrefs = ['/', '/people', '/sala', '/students', '/routines', '/sala/configuration', '/clinic', '/finance', '/finance?view=income', '/finance?view=expenses', '/team'];
   await screen.findByRole('link', { name: 'Agenda' });
   fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
   for (const name of ['Navegación principal', 'Navegación móvil']) {

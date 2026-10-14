@@ -611,6 +611,17 @@ ENDED  = endDate IS NOT NULL
 
 ---
 
+### Objetivo de Sala
+
+`SalaParticipation.objective` es nullable, `VARCHAR(500)`, breve y opcional.
+Pertenece a la participación concreta, no a `Person`, y es una referencia interna
+de entrenamiento sin contenido clínico. El texto se guarda con `trim()`; vacío o
+sólo espacios se normaliza a `NULL`. No tiene historial de modificaciones.
+
+La baja conserva el Objetivo en la participación histórica. El reingreso crea
+una participación nueva con `objective = NULL`, sin copiar el Objetivo anterior.
+La migración `20261014143000_sala_student_follow_up` agrega únicamente esta columna.
+
 ## 35. Una participación activa
 
 PostgreSQL deberá impedir más de una participación activa para la misma Persona.

@@ -13,7 +13,7 @@ import { SalaService } from '../src/sala/sala.service';
 
 describe('Sala configuration API', () => {
   let app: INestApplication; let prisma: PrismaService; let users: InternalUserService; let auth: AuthService; let sala: SalaService;
-  async function cleanSalaFixtures() { await prisma.salaPaymentReversal.deleteMany(); await prisma.salaPaymentAllocation.deleteMany(); await prisma.salaPayment.deleteMany(); await prisma.clinicalPatient.deleteMany(); await prisma.physicalTestResult.deleteMany(); await prisma.physicalEvaluation.deleteMany(); await prisma.physicalTestDefinition.deleteMany(); await prisma.routineExercise.deleteMany(); await prisma.routineDay.deleteMany(); await prisma.routine.deleteMany(); await prisma.routineTemplate.deleteMany(); await prisma.exerciseDefinition.deleteMany(); await prisma.salaOccurrence.deleteMany(); await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaServiceType.deleteMany(); await prisma.salaCharge.deleteMany(); await prisma.salaBillingConfiguration.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.salaScheduleException.deleteMany(); await prisma.salaScheduleSlot.deleteMany(); await prisma.salaPlan.deleteMany(); await prisma.salaConfiguration.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); await prisma.portalCredential.deleteMany(); await prisma.person.deleteMany(); }
+  async function cleanSalaFixtures() { await prisma.salaClinicalIndication.deleteMany(); await prisma.salaPaymentReversal.deleteMany(); await prisma.salaPaymentAllocation.deleteMany(); await prisma.salaPayment.deleteMany(); await prisma.clinicalPatient.deleteMany(); await prisma.physicalTestResult.deleteMany(); await prisma.physicalEvaluation.deleteMany(); await prisma.physicalTestDefinition.deleteMany(); await prisma.routineExercise.deleteMany(); await prisma.routineDay.deleteMany(); await prisma.routine.deleteMany(); await prisma.routineTemplate.deleteMany(); await prisma.exerciseDefinition.deleteMany(); await prisma.salaOccurrence.deleteMany(); await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaServiceType.deleteMany(); await prisma.salaCharge.deleteMany(); await prisma.salaBillingConfiguration.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.salaScheduleException.deleteMany(); await prisma.salaScheduleSlot.deleteMany(); await prisma.salaPlan.deleteMany(); await prisma.salaConfiguration.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); await prisma.portalCredential.deleteMany(); await prisma.person.deleteMany(); }
   beforeAll(async () => { app = (await Test.createTestingModule({ imports: [AppModule] }).compile()).createNestApplication(); app.use(cookieParser()); app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })); app.setGlobalPrefix('api'); await app.init(); prisma = app.get(PrismaService); users = app.get(InternalUserService); auth = app.get(AuthService); sala = app.get(SalaService); await cleanSalaFixtures(); });
   afterEach(cleanSalaFixtures);
   afterAll(() => app.close());
@@ -1163,7 +1163,7 @@ describe('Sala configuration API', () => {
         const professor = index % 2 ? f.other : f.professor;
         expect(row.professor).toEqual({ id: professor.id, firstName: professor.firstName, lastName: professor.lastName });
         expect(row.plan).toEqual({ id: f.plan.id, name: '3 veces' });
-        expect(Object.keys(row).sort()).toEqual(['dni', 'firstName', 'id', 'lastName', 'paymentStatus', 'plan', 'professor', 'routineStatus']);
+        expect(Object.keys(row).sort()).toEqual(['dni', 'firstName', 'id', 'lastName', 'participationId', 'participationStartDate', 'paymentStatus', 'plan', 'professor', 'routineStatus', 'unpaidConsecutiveMonths']);
         expect(row.dni).toBe(f.students[index]!.person.dni);
       }
       expect(Object.keys(result.body)).toEqual(['data']);
@@ -1188,6 +1188,154 @@ describe('Sala configuration API', () => {
         const denied = await session(role);
         await request(app.getHttpServer()).get('/api/sala/students').set('Cookie', denied.cookie).expect(403);
       }
+    });
+  });
+  describe('Sala student follow-up and management', () => {
+    beforeEach(() => { jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] }); jest.setSystemTime(new Date('2026-11-01T02:30:00Z')); });
+    afterEach(() => jest.useRealTimers());
+    async function followUpFixture(role: Role = Role.PROFESSOR) {
+      const authn = await session(role);
+      const actor = await prisma.internalUser.findFirstOrThrow({ where: { email: `${role.toLowerCase()}@sala.test` } });
+      const professor = role === Role.PROFESSOR ? actor : await users.create({ firstName: 'Profesor', lastName: 'Sintético', email: 'follow-up-prof@sala.test', roles: [Role.PROFESSOR] });
+      const other = await users.create({ firstName: 'Otro', lastName: 'Profesor', email: 'follow-up-other@sala.test', roles: [Role.PROFESSOR] });
+      const plan = await prisma.salaPlan.create({ data: { name: 'Seguimiento', monthlyAmount: 1000 } });
+      const students: { person: Person; participation: SalaParticipation }[] = [];
+      for (let index = 0; index < 3; index++) {
+        const dni = `8600000${index}`;
+        const person = await prisma.person.create({ data: { firstName: `Alumno ${index}`, lastName: 'Sintético', dni, normalizedDni: dni, phone: '3515550000', birthDate: new Date('1990-01-01') } });
+        const participation = await sala.join({ personId: person.id, mainProfessorId: professor.id, planId: plan.id, startDate: index === 0 ? '2026-10-01' : '2026-07-01' });
+        students.push({ person, participation });
+      }
+      const method = await prisma.paymentMethod.create({ data: { name: `Follow-up ${randomUUID()}` } });
+      const pay = (index: number, month: number, year = 2026) => prisma.salaPayment.create({ data: { personId: students[index]!.person.id, year, month, amount: 1000, paidAt: new Date('2026-10-01'), registeredById: actor.id, paymentMethodId: method.id, operationId: randomUUID() } });
+      const post = (path: string, body: object) => request(app.getHttpServer()).post(`/api/sala/participations/${path}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(body);
+      return { authn, actor, professor, other, plan, students, pay, post };
+    }
+    async function associated(f: Awaited<ReturnType<typeof followUpFixture>>, index: number) {
+      const student = f.students[index]!;
+      let slot = await prisma.salaScheduleSlot.findFirst();
+      slot ??= await sala.createSlot({ weekday: 'MONDAY', startTime: '09:00', durationMinutes: 120 });
+      const base = { personId: student.person.id, salaParticipationId: student.participation.id, scheduleSlotId: slot.id };
+      const fixed = await prisma.fixedSalaBooking.create({ data: { ...base, startDate: new Date('2026-10-01') } });
+      const reservation = await prisma.oneOffReservation.create({ data: { ...base, date: new Date('2026-11-02') } });
+      const routine = await prisma.routine.create({ data: { personId: student.person.id, salaParticipationId: student.participation.id, status: 'ACTIVE', version: 1 } });
+      const indication = await prisma.salaClinicalIndication.create({ data: { personId: student.person.id, responsibleProfessionalId: f.actor.id, trainingCondition: 'RESTRICTED', affectedArea: 'Dato privado sintético', instructions: 'Instrucción privada sintética' } });
+      return { fixed, reservation, routine, indication };
+    }
+    it('counts the current unpaid streak within this participation and stops at the first valid month', async () => {
+      const f = await followUpFixture();
+      let rows = await sala.listStudents();
+      expect(rows.find(row => row.id === f.students[0]!.person.id)).toMatchObject({ participationId: f.students[0]!.participation.id, participationStartDate: '2026-10-01', unpaidConsecutiveMonths: 1, paymentStatus: 'PENDING' });
+      expect(rows.find(row => row.id === f.students[1]!.person.id)?.unpaidConsecutiveMonths).toBe(4);
+      await f.pay(1, 9);
+      await f.pay(2, 10);
+      rows = await sala.listStudents();
+      expect(rows.find(row => row.id === f.students[1]!.person.id)?.unpaidConsecutiveMonths).toBe(1);
+      expect(rows.find(row => row.id === f.students[2]!.person.id)).toMatchObject({ unpaidConsecutiveMonths: 0, paymentStatus: 'PAID' });
+      const payment = await f.pay(0, 10);
+      await prisma.salaPaymentReversal.create({ data: { paymentId: payment.id, reason: 'Sintético', registeredById: f.actor.id, operationId: randomUUID() } });
+      expect((await sala.listStudents()).find(row => row.id === f.students[0]!.person.id)?.unpaidConsecutiveMonths).toBe(1);
+    });
+    it('does not carry old unpaid months on reentry and keeps a valid same-month payment', async () => {
+      const f = await followUpFixture();
+      for (const index of [1, 2]) {
+        await sala.leave(f.students[index]!.participation.id);
+        await sala.join({ personId: f.students[index]!.person.id, mainProfessorId: f.professor.id, planId: f.plan.id, startDate: '2026-10-31' });
+      }
+      await f.pay(2, 10);
+      const rows = await sala.listStudents();
+      expect(rows.find(row => row.id === f.students[1]!.person.id)?.unpaidConsecutiveMonths).toBe(1);
+      expect(rows.find(row => row.id === f.students[2]!.person.id)?.unpaidConsecutiveMonths).toBe(0);
+    });
+    it.each([Role.PROFESSOR, Role.GENERAL_ADMIN])('%s can save, edit and clear Objective with optional nullable validation', async (role) => {
+      const f = await followUpFixture(role); const id = f.students[0]!.participation.id;
+      const patch = (body: object) => request(app.getHttpServer()).patch(`/api/sala/participations/${id}/objective`).set('Cookie', f.authn.cookie).set('x-csrf-token', f.authn.csrf).send(body);
+      for (const objective of ['  Mejorar fuerza  ', 'Preparar carrera', '', '   ', null, undefined]) {
+        const response = await patch(objective === undefined ? {} : { objective }).expect(200);
+        expect(response.body.data.objective).toBe(objective?.trim() || null);
+        expect((await prisma.salaParticipation.findUniqueOrThrow({ where: { id } })).objective).toBe(objective?.trim() || null);
+      }
+      await patch({ objective: 'x'.repeat(501) }).expect(400);
+      await patch({ objective: 12 }).expect(400);
+      await sala.leave(id);
+      await patch({ objective: 'Cerrada' }).expect(404);
+    });
+    it('denies pure Administrative Objective writes but allows combined Professor roles', async () => {
+      const f = await followUpFixture(Role.ADMINISTRATIVE); const id = f.students[0]!.participation.id;
+      const patch = () => request(app.getHttpServer()).patch(`/api/sala/participations/${id}/objective`).set('Cookie', f.authn.cookie).set('x-csrf-token', f.authn.csrf).send({ objective: 'Mejorar fuerza' });
+      const denied = await patch().expect(403); expect(denied.body.code).toBe('SALA_OBJECTIVE_FORBIDDEN');
+      expect((await prisma.salaParticipation.findUniqueOrThrow({ where: { id } })).objective).toBeNull();
+      await prisma.internalUserRole.create({ data: { internalUserId: f.actor.id, role: Role.PROFESSOR } });
+      await patch().expect(200);
+      const read = await request(app.getHttpServer()).get(`/api/sala/participations/person/${f.students[0]!.person.id}`).set('Cookie', f.authn.cookie).expect(200);
+      expect(read.body.data[0].objective).toBe('Mejorar fuerza');
+    });
+    it('preserves the historical Objective and starts a new participation empty', async () => {
+      const f = await followUpFixture(); const student = f.students[0]!;
+      await sala.updateObjective(student.participation.id, 'Mejorar fuerza', f.actor.id);
+      await sala.leave(student.participation.id);
+      const next = await sala.join({ personId: student.person.id, mainProfessorId: f.professor.id, planId: f.plan.id, startDate: '2026-10-31' });
+      expect(next.objective).toBeNull(); expect(next.id).not.toBe(student.participation.id);
+      expect((await prisma.salaParticipation.findUniqueOrThrow({ where: { id: student.participation.id } })).objective).toBe('Mejorar fuerza');
+    });
+    it('reports only operational counts for the same elements LeaveSala affects', async () => {
+      const f = await followUpFixture(Role.ADMINISTRATIVE); await associated(f, 0);
+      const id = f.students[0]!.participation.id;
+      const result = await request(app.getHttpServer()).get(`/api/sala/participations/${id}/leave-impact`).set('Cookie', f.authn.cookie).expect(200);
+      expect(result.body).toEqual({ data: { fixedBookings: 1, futureReservations: 1, activeRoutines: 1, activeClinicalIndications: 1 } });
+      await sala.leave(id); await request(app.getHttpServer()).get(`/api/sala/participations/${id}/leave-impact`).set('Cookie', f.authn.cookie).expect(404);
+    });
+    it('changes exactly selected professors with deduplication and preserves other records', async () => {
+      const f = await followUpFixture(); const records = await associated(f, 0); await f.pay(0, 10);
+      const ids = f.students.slice(0, 2).map(item => item.participation.id);
+      const before = await prisma.salaParticipation.findMany({ orderBy: { id: 'asc' } });
+      const routines = await prisma.routine.findMany(); const payments = await prisma.salaPayment.findMany(); const fixed = await prisma.fixedSalaBooking.findMany();
+      expect((await f.post('bulk-change-professor', { participationIds: [...ids, ids[0]], mainProfessorId: f.other.id }).expect(200)).body).toEqual({ data: { affected: 2 } });
+      const after = await prisma.salaParticipation.findMany({ orderBy: { id: 'asc' } });
+      for (const prior of before) expect(after.find(row => row.id === prior.id)).toMatchObject({ ...prior, mainProfessorId: ids.includes(prior.id) ? f.other.id : f.professor.id, updatedAt: expect.any(Date) });
+      expect(await prisma.routine.findMany()).toEqual(routines); expect(await prisma.salaPayment.findMany()).toEqual(payments); expect(await prisma.fixedSalaBooking.findMany()).toEqual(fixed);
+      expect((await prisma.routine.findUniqueOrThrow({ where: { id: records.routine.id } })).status).toBe('ACTIVE');
+    });
+    it('rejects invalid or ended selections and invalid/inactive professors without updates', async () => {
+      const f = await followUpFixture(); const ids = f.students.slice(0, 2).map(item => item.participation.id);
+      await f.post('bulk-change-professor', { participationIds: [ids[0], randomUUID()], mainProfessorId: f.other.id }).expect(404);
+      for (const mainProfessorId of [randomUUID(), f.other.id, f.actor.id]) {
+        if (mainProfessorId === f.other.id) await prisma.internalUser.update({ where: { id: f.other.id }, data: { status: 'INACTIVE' } });
+        if (mainProfessorId === f.actor.id) await prisma.internalUserRole.deleteMany({ where: { internalUserId: f.actor.id } });
+        await expect(sala.bulkChangeProfessor(ids, mainProfessorId)).rejects.toThrow('Professor is not eligible');
+      }
+      expect(await prisma.salaParticipation.count({ where: { mainProfessorId: f.professor.id } })).toBe(3);
+      await sala.leave(ids[1]!);
+      await prisma.internalUser.update({ where: { id: f.other.id }, data: { status: 'ACTIVE' } });
+      await expect(sala.bulkChangeProfessor(ids, f.other.id)).rejects.toThrow('Active participation not found');
+      expect((await prisma.salaParticipation.findUniqueOrThrow({ where: { id: ids[0]! } })).mainProfessorId).toBe(f.professor.id);
+    });
+    it('bulk leaves atomically with the individual lifecycle and preserves history', async () => {
+      const f = await followUpFixture(); const records = [await associated(f, 0), await associated(f, 1)];
+      const ids = f.students.slice(0, 2).map(item => item.participation.id);
+      await f.post('bulk-leave', { participationIds: [ids[0], randomUUID()] }).expect(404);
+      for (const id of ids) expect((await prisma.salaParticipation.findUniqueOrThrow({ where: { id } })).endDate).toBeNull();
+      await expect(sala.bulkLeave(ids, randomUUID())).rejects.toThrow(); // invalid actor fails after booking/routine mutations
+      for (const record of records) {
+        expect((await prisma.fixedSalaBooking.findUniqueOrThrow({ where: { id: record.fixed.id } })).endDate).toBeNull();
+        expect((await prisma.oneOffReservation.findUniqueOrThrow({ where: { id: record.reservation.id } })).cancelledAt).toBeNull();
+        expect((await prisma.routine.findUniqueOrThrow({ where: { id: record.routine.id } })).status).toBe('ACTIVE');
+      }
+      expect((await f.post('bulk-leave', { participationIds: [...ids, ids[0]] }).expect(200)).body).toEqual({ data: { affected: 2 } });
+      for (const id of ids) expect((await prisma.salaParticipation.findUniqueOrThrow({ where: { id } })).endDate).toEqual(new Date('2026-10-31'));
+      for (const record of records) {
+        expect((await prisma.fixedSalaBooking.findUniqueOrThrow({ where: { id: record.fixed.id } })).endDate).toEqual(new Date('2026-10-31'));
+        expect((await prisma.oneOffReservation.findUniqueOrThrow({ where: { id: record.reservation.id } })).cancelledAt).not.toBeNull();
+        expect((await prisma.routine.findUniqueOrThrow({ where: { id: record.routine.id } })).status).toBe('HISTORICAL');
+        expect(await prisma.salaClinicalIndication.findUniqueOrThrow({ where: { id: record.indication.id } })).toMatchObject({ status: 'CLOSED', closedById: f.actor.id, instructions: 'Instrucción privada sintética' });
+      }
+      expect((await prisma.salaParticipation.findUniqueOrThrow({ where: { id: f.students[2]!.participation.id } })).endDate).toBeNull();
+      expect(await prisma.person.count()).toBe(3);
+    });
+    it.each([{ participationIds: [] }, { participationIds: ['invalid'] }, { participationIds: [12] }])('validates bulk UUID arrays $participationIds', async ({ participationIds }) => {
+      const f = await followUpFixture();
+      await f.post('bulk-leave', { participationIds }).expect(400);
+      await f.post('bulk-change-professor', { participationIds, mainProfessorId: f.other.id }).expect(400);
     });
   });
 

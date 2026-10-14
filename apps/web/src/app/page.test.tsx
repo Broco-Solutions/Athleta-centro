@@ -61,7 +61,7 @@ it('shows the General Admin global overview from the real Sala, Clinic and Finan
   const salaCard = screen.getByRole('heading', { name: 'Sala' }).closest('article')!;
   expect(within(salaCard).getByRole('link', { name: 'Ver Agenda' })).toHaveAttribute('href', '/sala');
   expect(within(clinicCard).getByRole('link', { name: 'Ver Agenda' })).toHaveAttribute('href', '/clinic?tab=Agenda');
-  expect(screen.getByRole('link', { name: 'Ver alumnos de Sala' })).toHaveAttribute('href', '/sala?view=students');
+  expect(screen.getByRole('link', { name: 'Ver alumnos de Sala' })).toHaveAttribute('href', '/students');
   expect(screen.getByRole('link', { name: 'Ver Finanzas' })).toHaveAttribute('href', '/finance');
   expect(getSalaDashboard).toHaveBeenCalledWith({ date: '2026-10-31' }, { credentials: 'include' });
   expect(getReservationsTimeline).toHaveBeenCalledWith({ date: '2026-10-31' }, { credentials: 'include' });

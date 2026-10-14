@@ -302,6 +302,10 @@ export const SalaStudentListItemDtoPaymentStatus = {
 } as const;
 
 export interface SalaStudentListItemDto {
+  participationId: string;
+  participationStartDate: string;
+  /** @minimum 0 */
+  unpaidConsecutiveMonths: number;
   id: string;
   firstName: string;
   lastName: string;
@@ -341,6 +345,61 @@ export interface JoinSalaDto {
   mainProfessorId: string;
   planId: string;
   startDate: string;
+}
+
+export interface UpdateSalaObjectiveDto {
+  /**
+   * @maxLength 500
+   * @nullable
+   */
+  objective?: string | null;
+}
+
+export interface SalaObjectiveDto {
+  /**
+   * @maxLength 500
+   * @nullable
+   */
+  objective: string | null;
+}
+
+export interface SalaObjectiveEnvelopeDto {
+  data: SalaObjectiveDto;
+}
+
+export interface SalaLeaveImpactDto {
+  /** @minimum 0 */
+  fixedBookings: number;
+  /** @minimum 0 */
+  futureReservations: number;
+  /** @minimum 0 */
+  activeRoutines: number;
+  /** @minimum 0 */
+  activeClinicalIndications: number;
+}
+
+export interface SalaLeaveImpactEnvelopeDto {
+  data: SalaLeaveImpactDto;
+}
+
+export interface BulkChangeProfessorDto {
+  /** @minItems 1 */
+  participationIds: string[];
+  mainProfessorId: string;
+}
+
+export interface BulkSalaActionResultDto {
+  /** @minimum 0 */
+  affected: number;
+}
+
+export interface BulkSalaActionEnvelopeDto {
+  data: BulkSalaActionResultDto;
+}
+
+export interface BulkLeaveSalaDto {
+  /** @minItems 1 */
+  participationIds: string[];
 }
 
 export interface ChangeProfessorDto {
@@ -2676,6 +2735,166 @@ export const joinSala = async (joinSalaDto: JoinSalaDto, options?: RequestInit):
 
   const data: joinSalaResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as joinSalaResponse
+}
+
+
+
+export type updateSalaObjectiveResponse200 = {
+  data: SalaObjectiveEnvelopeDto
+  status: 200
+}
+
+export type updateSalaObjectiveResponseSuccess = (updateSalaObjectiveResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateSalaObjectiveResponse = (updateSalaObjectiveResponseSuccess)
+
+export const getUpdateSalaObjectiveUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/participations/${id}/objective`
+}
+
+export const updateSalaObjective = async (id: string,
+    updateSalaObjectiveDto: UpdateSalaObjectiveDto, options?: RequestInit): Promise<updateSalaObjectiveResponse> => {
+
+  const res = await fetch(getUpdateSalaObjectiveUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateSalaObjectiveDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateSalaObjectiveResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateSalaObjectiveResponse
+}
+
+
+
+export type getSalaLeaveImpactResponse200 = {
+  data: SalaLeaveImpactEnvelopeDto
+  status: 200
+}
+
+export type getSalaLeaveImpactResponseSuccess = (getSalaLeaveImpactResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getSalaLeaveImpactResponse = (getSalaLeaveImpactResponseSuccess)
+
+export const getGetSalaLeaveImpactUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/participations/${id}/leave-impact`
+}
+
+export const getSalaLeaveImpact = async (id: string, options?: RequestInit): Promise<getSalaLeaveImpactResponse> => {
+
+  const res = await fetch(getGetSalaLeaveImpactUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSalaLeaveImpactResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSalaLeaveImpactResponse
+}
+
+
+
+export type bulkChangeSalaProfessorResponse200 = {
+  data: BulkSalaActionEnvelopeDto
+  status: 200
+}
+
+export type bulkChangeSalaProfessorResponseSuccess = (bulkChangeSalaProfessorResponse200) & {
+  headers: Headers;
+};
+;
+
+export type bulkChangeSalaProfessorResponse = (bulkChangeSalaProfessorResponseSuccess)
+
+export const getBulkChangeSalaProfessorUrl = () => {
+
+
+
+
+  return `/api/sala/participations/bulk-change-professor`
+}
+
+export const bulkChangeSalaProfessor = async (bulkChangeProfessorDto: BulkChangeProfessorDto, options?: RequestInit): Promise<bulkChangeSalaProfessorResponse> => {
+
+  const res = await fetch(getBulkChangeSalaProfessorUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      bulkChangeProfessorDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: bulkChangeSalaProfessorResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as bulkChangeSalaProfessorResponse
+}
+
+
+
+export type bulkLeaveSalaResponse200 = {
+  data: BulkSalaActionEnvelopeDto
+  status: 200
+}
+
+export type bulkLeaveSalaResponseSuccess = (bulkLeaveSalaResponse200) & {
+  headers: Headers;
+};
+;
+
+export type bulkLeaveSalaResponse = (bulkLeaveSalaResponseSuccess)
+
+export const getBulkLeaveSalaUrl = () => {
+
+
+
+
+  return `/api/sala/participations/bulk-leave`
+}
+
+export const bulkLeaveSala = async (bulkLeaveSalaDto: BulkLeaveSalaDto, options?: RequestInit): Promise<bulkLeaveSalaResponse> => {
+
+  const res = await fetch(getBulkLeaveSalaUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      bulkLeaveSalaDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: bulkLeaveSalaResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as bulkLeaveSalaResponse
 }
 
 

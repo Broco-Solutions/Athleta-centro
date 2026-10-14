@@ -172,6 +172,9 @@ export class SalaStudentPlanDto {
   @ApiProperty({ type: String }) name!: string;
 }
 export class SalaStudentListItemDto {
+  @ApiProperty({ type: String, format: 'uuid' }) participationId!: string;
+  @ApiProperty({ type: String, format: 'date' }) participationStartDate!: string;
+  @ApiProperty({ type: 'integer', minimum: 0 }) unpaidConsecutiveMonths!: number;
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
   @ApiProperty({ type: String }) firstName!: string;
   @ApiProperty({ type: String }) lastName!: string;
@@ -184,3 +187,26 @@ export class SalaStudentListItemDto {
 export class SalaStudentListEnvelopeDto {
   @ApiProperty({ type: () => [SalaStudentListItemDto] }) data!: SalaStudentListItemDto[];
 }
+
+export class UpdateSalaObjectiveDto {
+  @ApiPropertyOptional({ type: String, nullable: true, maxLength: 500 }) @IsOptional() @IsString() @MaxLength(500) objective?: string | null;
+}
+export class SalaObjectiveDto {
+  @ApiProperty({ type: String, nullable: true, maxLength: 500 }) objective!: string | null;
+}
+export class SalaObjectiveEnvelopeDto { @ApiProperty({ type: () => SalaObjectiveDto }) data!: SalaObjectiveDto; }
+export class SalaLeaveImpactDto {
+  @ApiProperty({ type: Number, minimum: 0 }) fixedBookings!: number;
+  @ApiProperty({ type: Number, minimum: 0 }) futureReservations!: number;
+  @ApiProperty({ type: Number, minimum: 0 }) activeRoutines!: number;
+  @ApiProperty({ type: Number, minimum: 0 }) activeClinicalIndications!: number;
+}
+export class SalaLeaveImpactEnvelopeDto { @ApiProperty({ type: () => SalaLeaveImpactDto }) data!: SalaLeaveImpactDto; }
+export class BulkLeaveSalaDto {
+  @ApiProperty({ type: 'array', items: { type: 'string', format: 'uuid' }, minItems: 1 }) @IsArray() @ArrayMinSize(1) @IsUUID(undefined, { each: true }) participationIds!: string[];
+}
+export class BulkChangeProfessorDto extends BulkLeaveSalaDto {
+  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() mainProfessorId!: string;
+}
+export class BulkSalaActionResultDto { @ApiProperty({ type: Number, minimum: 0 }) affected!: number; }
+export class BulkSalaActionEnvelopeDto { @ApiProperty({ type: () => BulkSalaActionResultDto }) data!: BulkSalaActionResultDto; }

@@ -7,7 +7,16 @@ const email = `e2e.${kind}@athleta.test`;
 const password = 'ValidPass1!';
 
 async function main(): Promise<void> {
-if (!['normal', 'temporary', 'inactive', 'people', 'team', 'sala', 'occurrence', 'multislot', 'clinic', 'service', 'portal-reset', 'portal-fixed-edit', 'physical-evaluation'].includes(kind ?? '')) throw new Error('Unknown e2e fixture');
+if (!['normal', 'temporary', 'inactive', 'people', 'team', 'sala', 'occurrence', 'multislot', 'clinic', 'service', 'portal-reset', 'portal-fixed-edit', 'physical-evaluation', 'student-follow-up'].includes(kind ?? '')) throw new Error('Unknown e2e fixture');
+  if (kind === 'student-follow-up') {
+    const people = await prisma.person.findMany({ where: { normalizedDni: { in: ['40880000', '40880001', '40880002'] } }, select: { id: true } });
+    const personIds = people.map((person) => person.id);
+    await prisma.salaParticipation.deleteMany({ where: { personId: { in: personIds } } });
+    await prisma.person.deleteMany({ where: { id: { in: personIds } } });
+    await prisma.salaPlan.deleteMany({ where: { name: { in: ['Base FollowUpE2E', 'Nuevo FollowUpE2E'] } } });
+    const other = await prisma.internalUser.findUnique({ where: { normalizedEmail: 'e2e.follow-up.other@athleta.test' } });
+    if (other) { await prisma.internalUserRole.deleteMany({ where: { internalUserId: other.id } }); await prisma.internalUser.delete({ where: { id: other.id } }); }
+  }
   if (kind === 'people') await prisma.person.deleteMany({ where: { normalizedDni: '40999888' } });
   if (kind === 'sala') { const existing = await prisma.person.findUnique({ where: { normalizedDni: '40999777' } }); if (existing) { await prisma.clinicalPatient.deleteMany({ where: { personId: existing.id } }); await prisma.salaParticipation.deleteMany({ where: { personId: existing.id } }); await prisma.person.delete({ where: { id: existing.id } }); } await prisma.salaPlan.deleteMany({ where: { name: 'Plan E2E' } }); const professor = await prisma.internalUser.findUnique({ where: { normalizedEmail: 'e2e.sala.professor@athleta.test' } }); if (professor) { await prisma.internalUserRole.deleteMany({ where: { internalUserId: professor.id } }); await prisma.internalUser.delete({ where: { id: professor.id } }); } }
   if (kind === 'service') await prisma.salaServiceType.deleteMany({ where: { normalizedName: 'servicio retiro e2e' } });
@@ -57,6 +66,16 @@ if (!['normal', 'temporary', 'inactive', 'people', 'team', 'sala', 'occurrence',
     await prisma.salaPlan.create({ data: { name: 'Plan E2E', monthlyAmount: 1000, isSelectable: true } });
     await prisma.person.create({ data: { firstName: 'Persona', lastName: 'SalaE2E', dni: '40999777', normalizedDni: '40999777', phone: '3515550108', birthDate: new Date('1993-04-12T00:00:00Z') } });
     void professor;
+  }
+  if (kind === 'student-follow-up') {
+    const other = await prisma.internalUser.create({ data: { firstName: 'Otro', lastName: 'FollowUpE2E', email: 'e2e.follow-up.other@athleta.test', normalizedEmail: 'e2e.follow-up.other@athleta.test', roles: { create: { role: Role.PROFESSOR } } } });
+    const plans = await Promise.all(['Base FollowUpE2E', 'Nuevo FollowUpE2E'].map((name) => prisma.salaPlan.create({ data: { name, monthlyAmount: 1000 } })));
+    const operational = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    for (let index = 0; index < 3; index++) {
+      const dni = `4088000${index}`;
+      const person = await prisma.person.create({ data: { firstName: `Alumno${index}`, lastName: 'FollowUpE2E', dni, normalizedDni: dni, phone: '3515550108', birthDate: new Date('1990-01-01') } });
+      await prisma.salaParticipation.create({ data: { personId: person.id, mainProfessorId: index === 2 ? other.id : user.id, planId: plans[0]!.id, startDate: new Date(`${operational.slice(0, 7)}-01`) } });
+    }
   }
   if (kind === 'occurrence') {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());

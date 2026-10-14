@@ -589,6 +589,7 @@ model SalaPlanService {
 }
 
 model SalaParticipation {
+  objective           String?              @db.VarChar(500)
   id                  String               @id @default(uuid()) @db.Uuid
   personId            String               @map("person_id") @db.Uuid
   mainProfessorId     String               @map("main_professor_id") @db.Uuid
