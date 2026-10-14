@@ -365,17 +365,31 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
   }
   async listParticipations(personId: string) { return this.prisma.salaParticipation.findMany({ where: { personId }, orderBy: { startDate: 'desc' }, include: { plan: true, mainProfessor: true } }); }
   async leave(id: string, failureAfterMutations = false, actorId?: string) {
-    return this.prisma.$transaction((tx) => this.leaveInTransaction(tx, id, failureAfterMutations, actorId));
+    const now = new Date();
+    return this.prisma.$transaction((tx) => this.leaveInTransaction(tx, id, failureAfterMutations, actorId, now));
   }
-  private async leaveInTransaction(tx: Prisma.TransactionClient, id: string, failureAfterMutations = false, actorId?: string) {
+  private async leaveInTransaction(tx: Prisma.TransactionClient, id: string, failureAfterMutations: boolean, actorId: string | undefined, now: Date) {
     await this.lockParticipations(tx, [id]);
     const current = await tx.salaParticipation.findFirst({ where: { id, endDate: null } });
     if (!current) throw new NotFoundException({ code: 'SALA_ACTIVE_PARTICIPATION_NOT_FOUND', message: 'Active participation not found' });
-    const now = new Date();
-    const today = this.date(this.todayOperational());
+    const today = this.date(this.todayOperational(now));
+    const fixed = await tx.fixedSalaBooking.findMany({ where: { salaParticipationId: id, startDate: { lte: today }, scheduleSlot: { weekday: this.weekday(today) }, OR: [{ endDate: null }, { endDate: { gte: today } }] }, include: { scheduleSlot: true } });
+    for (const booking of fixed) {
+      const startTime = booking.startTime ?? booking.scheduleSlot.startTime;
+      if (this.operationalStart(today.toISOString().slice(0, 10), startTime) <= now) continue;
+      await tx.salaOccurrence.upsert({
+        where: { fixedSalaBookingId_date: { fixedSalaBookingId: booking.id, date: today } },
+        create: { personId: current.personId, scheduleSlotId: booking.scheduleSlotId, date: today, startTime, serviceTypeId: booking.serviceTypeId, serviceDurationMinutes: booking.serviceDurationMinutes, fixedSalaBookingId: booking.id, origin: SalaOccurrenceOrigin.FIXED, status: SalaOccurrenceStatus.CANCELLED, createdBy: actorId ?? null, lastModifiedBy: actorId ?? null },
+        update: {},
+      });
+    }
     await tx.fixedSalaBooking.updateMany({ where: { salaParticipationId: id, OR: [{ endDate: null }, { endDate: { gt: today } }] }, data: { endDate: today } });
-    await tx.oneOffReservation.updateMany({ where: { salaParticipationId: id, date: { gte: today }, cancelledAt: null }, data: { cancelledAt: now } });
-    await tx.salaOccurrence.updateMany({ where: { personId: current.personId, date: { gte: today }, status: { not: SalaOccurrenceStatus.CANCELLED } }, data: { status: SalaOccurrenceStatus.CANCELLED, ...(actorId ? { lastModifiedBy: actorId } : {}) } });
+    const reservations = await tx.oneOffReservation.findMany({ where: { salaParticipationId: id, date: { gte: today }, cancelledAt: null }, include: { scheduleSlot: true } });
+    const futureReservations = reservations.filter(item => this.operationalStart(item.date.toISOString().slice(0, 10), item.startTime ?? item.scheduleSlot.startTime) > now);
+    await tx.oneOffReservation.updateMany({ where: { id: { in: futureReservations.map(item => item.id) }, cancelledAt: null }, data: { cancelledAt: now } });
+    const occurrences = await tx.salaOccurrence.findMany({ where: { personId: current.personId, date: { gte: today }, status: { not: SalaOccurrenceStatus.CANCELLED } }, include: { scheduleSlot: true } });
+    const futureOccurrences = occurrences.filter(item => this.operationalStart(item.date.toISOString().slice(0, 10), item.startTime ?? item.scheduleSlot.startTime) > now);
+    await tx.salaOccurrence.updateMany({ where: { id: { in: futureOccurrences.map(item => item.id) } }, data: { status: SalaOccurrenceStatus.CANCELLED, ...(actorId ? { lastModifiedBy: actorId } : {}) } });
     await tx.routine.updateMany({ where: { salaParticipationId: id, status: RoutineStatus.ACTIVE }, data: { status: RoutineStatus.HISTORICAL } });
     await tx.salaClinicalIndication.updateMany({ where: { personId: current.personId, status: 'ACTIVE' }, data: { status: 'CLOSED', closedAt: now, ...(actorId ? { closedById: actorId } : {}) } });
     if (failureAfterMutations) throw new Error('SIMULATED_LEAVE_FAILURE');
@@ -406,13 +420,15 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
       await this.lockParticipations(tx, [participationId]);
       await this.assertActiveParticipations(tx, [participationId]);
       const current = await tx.salaParticipation.findUniqueOrThrow({ where: { id: participationId }, select: { personId: true } });
-      const today = this.date(this.todayOperational());
-      const [fixedBookings, futureReservations, activeRoutines, activeClinicalIndications] = await Promise.all([
+      const now = new Date();
+      const today = this.date(this.todayOperational(now));
+      const [fixedBookings, reservations, activeRoutines, activeClinicalIndications] = await Promise.all([
         tx.fixedSalaBooking.count({ where: { salaParticipationId: participationId, OR: [{ endDate: null }, { endDate: { gt: today } }] } }),
-        tx.oneOffReservation.count({ where: { salaParticipationId: participationId, date: { gte: today }, cancelledAt: null } }),
+        tx.oneOffReservation.findMany({ where: { salaParticipationId: participationId, date: { gte: today }, cancelledAt: null }, include: { scheduleSlot: true } }),
         tx.routine.count({ where: { salaParticipationId: participationId, status: RoutineStatus.ACTIVE } }),
         tx.salaClinicalIndication.count({ where: { personId: current.personId, status: 'ACTIVE' } }),
       ]);
+      const futureReservations = reservations.filter(item => this.operationalStart(item.date.toISOString().slice(0, 10), item.startTime ?? item.scheduleSlot.startTime) > now).length;
       return { fixedBookings, futureReservations, activeRoutines, activeClinicalIndications };
     });
   }
@@ -428,11 +444,12 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     });
   }
   async bulkLeave(participationIds: string[], actorId: string) {
+    const now = new Date();
     const ids = [...new Set(participationIds.map((id) => id.toLowerCase()))].sort();
     return this.prisma.$transaction(async (tx) => {
       await this.lockParticipations(tx, ids);
       await this.assertActiveParticipations(tx, ids);
-      for (const id of ids) await this.leaveInTransaction(tx, id, false, actorId);
+      for (const id of ids) await this.leaveInTransaction(tx, id, false, actorId, now);
       return { affected: ids.length };
     });
   }
@@ -453,6 +470,25 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     const match = /^GMT([+-])(\d{1,2})(?::(\d{2}))?$/.exec(zone);
     const offset = match ? (match[1] === '+' ? 1 : -1) * (Number(match[2]) * 60 + Number(match[3] ?? 0)) : -180;
     return new Date(utc - offset * 60_000);
+  }
+
+  async cancelFixedOccurrenceFromPortal(fixedBookingId: string, personId: string, date: string, now: Date) {
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM fixed_sala_bookings WHERE id = ${fixedBookingId}::uuid FOR UPDATE`;
+      const booking = await tx.fixedSalaBooking.findUnique({ where: { id: fixedBookingId }, include: { scheduleSlot: true } });
+      if (!booking || booking.personId !== personId) throw new ForbiddenException({ code: 'PORTAL_RESOURCE_FORBIDDEN', message: 'No podés cancelar este turno.' });
+      const day = this.date(date);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(day.getTime()) || day.toISOString().slice(0, 10) !== date || day < booking.startDate || (booking.endDate && day > booking.endDate) || this.weekday(day) !== booking.scheduleSlot.weekday) {
+        throw new BadRequestException({ code: 'PORTAL_FIXED_OCCURRENCE_INVALID', message: 'La fecha no corresponde a este turno fijo.' });
+      }
+      const startTime = booking.startTime ?? booking.scheduleSlot.startTime;
+      if (this.operationalStart(date, startTime) <= now) throw new ConflictException({ code: 'PORTAL_FIXED_OCCURRENCE_STARTED', message: 'El turno ya comenzó y no se puede cancelar desde Portal.' });
+      const existing = await tx.salaOccurrence.findUnique({ where: { fixedSalaBookingId_date: { fixedSalaBookingId: fixedBookingId, date: day } } });
+      if (existing?.status === SalaOccurrenceStatus.CANCELLED) return existing;
+      if (existing && existing.status !== SalaOccurrenceStatus.RESERVED) throw new ConflictException({ code: 'PORTAL_FIXED_OCCURRENCE_NOT_CANCELLABLE', message: 'El estado del turno no permite cancelarlo desde Portal.' });
+      if (existing) return tx.salaOccurrence.update({ where: { id: existing.id }, data: { status: SalaOccurrenceStatus.CANCELLED, lastModifiedBy: null, cancelledForNonPaymentAt: null } });
+      return tx.salaOccurrence.create({ data: { personId, scheduleSlotId: booking.scheduleSlotId, date: day, startTime, serviceTypeId: booking.serviceTypeId, serviceDurationMinutes: booking.serviceDurationMinutes, origin: SalaOccurrenceOrigin.FIXED, status: SalaOccurrenceStatus.CANCELLED, fixedSalaBookingId: fixedBookingId, createdBy: null, lastModifiedBy: null, cancelledForNonPaymentAt: null } });
+    });
   }
 
   private async reconcileUnpaidFixed(date: string, client: Prisma.TransactionClient | PrismaService): Promise<void> {
@@ -498,7 +534,7 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
       const startsAt = this.operationalStart(date, booking.startTime ?? booking.scheduleSlot.startTime);
       const paid = payments.some((payment) => payment.year === Number(date.slice(0, 4)) && payment.month === Number(date.slice(5, 7)) && (startsAt > new Date() ? !payment.reversal : payment.createdAt <= startsAt && (!payment.reversal || payment.reversal.createdAt > startsAt)));
       const status = occurrence?.status ?? (Number(date.slice(8, 10)) > 15 && !paid && (startsAt > new Date() || booking.createdAt <= startsAt) ? 'PENDING_PAYMENT' : 'RESERVED');
-      return { fixedSalaBookingId: booking.id, date, startTime: this.formatMinutes(this.minutes(booking.startTime ?? booking.scheduleSlot.startTime)), status, cancelledForNonPayment: Boolean(occurrence?.cancelledForNonPaymentAt) };
+      return { fixedSalaBookingId: booking.id, date, startTime: this.formatMinutes(this.minutes(occurrence?.startTime ?? booking.startTime ?? booking.scheduleSlot.startTime)), status, cancelledForNonPayment: Boolean(occurrence?.cancelledForNonPaymentAt) };
     }));
   }
 
@@ -911,7 +947,7 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
   private time(value: string): Date { if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) throw new BadRequestException({ code: 'SALA_SCHEDULE_TIME_INVALID', message: 'Time must use HH:mm' }); const [hour, minute] = value.split(':').map(Number); return new Date(Date.UTC(1970, 0, 1, hour, minute)); }
   private date(value: string): Date { return new Date(`${value}T00:00:00.000Z`); }
   private weekday(value: Date): SalaWeekday { return ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'][value.getUTCDay()] as SalaWeekday; }
-  private todayOperational(): string { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()); const values = Object.fromEntries(parts.map((part) => [part.type, part.value])); return `${values.year}-${values.month}-${values.day}`; }
+  private todayOperational(now = new Date()): string { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now); const values = Object.fromEntries(parts.map((part) => [part.type, part.value])); return `${values.year}-${values.month}-${values.day}`; }
   private positiveMoney(value: string, code: string): Prisma.Decimal { if (!/^\d+$/.test(value)) throw new BadRequestException({ code, message: 'Amount must be a positive whole ARS value' }); const amount = new Prisma.Decimal(value); if (!amount.greaterThan(0)) throw new BadRequestException({ code, message: 'Amount must be positive' }); return amount; }
   private signedMoney(value: string, code: string): Prisma.Decimal { if (!/^-?\d+$/.test(value)) throw new BadRequestException({ code, message: 'Amount must be a non-zero whole ARS value' }); const amount = new Prisma.Decimal(value); if (amount.isZero()) throw new BadRequestException({ code, message: 'Amount must be non-zero' }); return amount; }
   private requiredReason(value: string): string { const reason = value.trim(); if (!reason) throw new BadRequestException({ code: 'FINANCIAL_REASON_REQUIRED', message: 'Reason is required' }); return reason; }

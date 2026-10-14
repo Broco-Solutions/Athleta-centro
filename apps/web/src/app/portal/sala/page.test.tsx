@@ -332,3 +332,49 @@ it('groups physical results by test chronologically, preserving repeated results
   expect(within(screen.getByRole('heading', { name: 'Movilidad' }).closest('article')!).getByText('15/08/2026 · 35°')).toBeInTheDocument();
   expect(section.querySelector('canvas, svg')).toBeNull(); expect(section.textContent).not.toMatch(/Nota interna|Secreto|%|mejora|tendencia/i);
 });
+
+it.each(['RESERVED', 'PENDING_PAYMENT', 'CANCELLED', 'ATTENDED', 'ABSENT'])('offers date cancellation only for eligible %s occurrences', async status => {
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], evaluations: [], paymentState: 'PENDING', fixedOccurrences: [{ fixedSalaBookingId: 'fixed-1', date: '2026-10-20', startTime: '17:00', status, cancelledForNonPayment: false }] } })));
+  renderPortalSala();
+  await screen.findByRole('heading', { name: 'Próximos turnos fijos' });
+  const button = screen.queryByRole('button', { name: 'Cancelar esta fecha' });
+  if (status === 'RESERVED' || status === 'PENDING_PAYMENT') expect(button).toBeInTheDocument();
+  else expect(button).not.toBeInTheDocument();
+  expect(screen.getByText(({ RESERVED: 'Reservado', PENDING_PAYMENT: 'Pendiente de pago', CANCELLED: 'Cancelado', ATTENDED: 'Asistió', ABSENT: 'Ausente' })[status]!)).toBeInTheDocument();
+});
+
+it.each([false, true])('confirms one date with CSRF and preserves the recurrence (error=%s)', async fail => {
+  let cancelled = false;
+  let submitted: { method: string; csrf: string | null; body: string } | undefined;
+  server.use(
+    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [{ id: 'fixed-1', startDate: '2026-10-13', startTime: '17:00', serviceType: { id: 'service', name: 'Rehabilitación', durationMinutes: 45 }, scheduleSlot: { id: 'window', weekday: 'TUESDAY' } }], fixedOccurrences: [{ fixedSalaBookingId: 'fixed-1', date: '2026-10-20', startTime: '17:00', status: cancelled ? 'CANCELLED' : 'RESERVED', cancelledForNonPayment: false }], evaluations: [], paymentState: 'PENDING' } })),
+    http.post('http://localhost:3000/api/portal/sala/fixed-bookings/fixed-1/occurrences/2026-10-20/cancel', async ({ request }) => {
+      submitted = { method: request.method, csrf: request.headers.get('x-csrf-token'), body: await request.text() };
+      if (fail) return HttpResponse.json({ code: 'PORTAL_FIXED_OCCURRENCE_STARTED', message: 'El turno ya comenzó.' }, { status: 409 });
+      cancelled = true;
+      return HttpResponse.json({ data: { id: 'occurrence-1', fixedSalaBookingId: 'fixed-1', date: '2026-10-20', status: 'CANCELLED' } });
+    }),
+  );
+  renderPortalSala();
+  fireEvent.click(await screen.findByRole('button', { name: 'Cancelar esta fecha' }));
+  const dialog = screen.getByRole('dialog', { name: 'Cancelar esta fecha' });
+  expect(within(dialog).getByText('Se cancelará únicamente el turno del 20/10/2026 a las 17:00.')).toBeInTheDocument();
+  expect(within(dialog).getByText('Tu turno fijo continuará las semanas siguientes.')).toBeInTheDocument();
+  expect(within(dialog).getByRole('button', { name: 'Volver' })).toBeInTheDocument();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar esta fecha' }));
+  await waitFor(() => expect(submitted).toEqual({ method: 'POST', csrf: 'csrf', body: '' }));
+  if (fail) {
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('El turno ya comenzó.');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.queryByText('Fecha cancelada.')).not.toBeInTheDocument();
+    expect(screen.getByText('Reservado')).toBeInTheDocument();
+  } else {
+    expect(await screen.findByText('Fecha cancelada.')).toBeInTheDocument();
+    await screen.findByText('Cancelado');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancelar esta fecha' })).not.toBeInTheDocument();
+  }
+  expect(screen.getByText('Martes · 17:00–17:45')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Modificar' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Finalizar' })).toBeInTheDocument();
+});

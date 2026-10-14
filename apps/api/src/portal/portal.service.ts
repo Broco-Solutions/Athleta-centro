@@ -26,7 +26,7 @@ export class PortalService {
     const reservations = candidates.filter(item => this.salaService.operationalStart(item.date.toISOString().slice(0, 10), item.startTime ?? item.scheduleSlot.startTime) > now).slice(0, 20).map(({ scheduleSlot, ...item }) => ({ ...item, startTime: item.startTime ?? scheduleSlot.startTime }));
     const fixed = await this.prisma.fixedSalaBooking.findMany({ where: { personId: person.id }, include: { scheduleSlot: true, serviceType: true }, orderBy: { startDate: 'asc' } });
     const dates = Array.from({ length: 31 }, (_, index) => { const day = new Date(`${today}T00:00:00.000Z`); day.setUTCDate(day.getUTCDate() + index); return day.toISOString().slice(0, 10); });
-    const fixedOccurrences = await this.salaService.fixedOccurrenceStates(person.id, dates);
+    const fixedOccurrences = (await this.salaService.fixedOccurrenceStates(person.id, dates)).filter(item => this.salaService.operationalStart(item.date, new Date(`1970-01-01T${item.startTime}:00Z`)) > now);
     const routine = await this.prisma.routine.findFirst({
       where: { personId: person.id, status: 'ACTIVE' },
       include: {
@@ -76,6 +76,11 @@ export class PortalService {
     });
   }
   async cancelReservation(token: string|undefined, id: string) { const { person } = await this.ready(token); const found = await this.prisma.oneOffReservation.findFirst({ where: { id, personId: person.id, cancelledAt: null, date: { gte: new Date() } } }); if (!found) throw new ForbiddenException({ code: 'PORTAL_RESOURCE_FORBIDDEN', message: 'No podés cancelar esta reserva.' }); return this.salaService.cancelReservation(id); }
+  async cancelFixedOccurrence(token: string | undefined, fixedBookingId: string, date: string) {
+    const { person } = await this.ready(token);
+    const occurrence = await this.salaService.cancelFixedOccurrenceFromPortal(fixedBookingId, person.id, date, this.reservationNow());
+    return { id: occurrence.id, fixedSalaBookingId: occurrence.fixedSalaBookingId!, date: occurrence.date.toISOString().slice(0, 10), status: occurrence.status };
+  }
   async fixedBookings(token?: string) { const { person } = await this.ready(token); return this.salaService.listFixed(person.id); }
   async createFixed(token: string|undefined, body: { scheduleSlotId: string; serviceTypeId?: string; startTime?: string; startDate: string; endDate?: string|null }) { const { person } = await this.ready(token); const p = await this.prisma.salaParticipation.findFirst({ where: { personId: person.id, endDate: null } }); if (!p) throw new ForbiddenException({ code: 'SALA_NOT_AVAILABLE', message: 'Sala no disponible.' }); return this.salaService.createFixed({ personId: person.id, salaParticipationId: p.id, scheduleSlotId: body.scheduleSlotId, startDate: body.startDate, ...(body.serviceTypeId ? { serviceTypeId: body.serviceTypeId } : {}), ...(body.startTime ? { startTime: body.startTime } : {}), ...(body.endDate !== undefined ? { endDate: body.endDate } : {}) }); }
   async changeFixed(token: string|undefined, id: string, body: { scheduleSlotId: string; serviceTypeId?: string; startTime?: string; startDate: string; endDate?: string|null }) { const { person } = await this.ready(token); const current = await this.prisma.fixedSalaBooking.findFirst({ where: { id, personId: person.id } }); if (!current) throw new ForbiddenException({ code: 'PORTAL_RESOURCE_FORBIDDEN', message: 'No podés modificar este turno.' }); return this.salaService.changeFixed({ id, personId: person.id, salaParticipationId: current.salaParticipationId, scheduleSlotId: body.scheduleSlotId, startDate: body.startDate, ...(body.serviceTypeId ? { serviceTypeId: body.serviceTypeId } : {}), ...(body.startTime ? { startTime: body.startTime } : {}), ...(body.endDate !== undefined ? { endDate: body.endDate } : {}) }); }

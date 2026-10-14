@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Req, Res } from '@nestjs/common';
-import { ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiOkResponse, ApiParam, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { PortalService } from './portal.service';
 @ApiTags('Portal') @Controller('portal')
@@ -16,6 +16,16 @@ export class PortalController {
   @Get('sala/availability') async availability(@Req() req: Request) { const query = req.query as { date?: string; excludeFixedBookingId?: string }; return { data: await this.portal.salaAvailability(this.cookie(req), String(query.date ?? ''), query.excludeFixedBookingId) }; }
   @Post('sala/reservations') @HttpCode(201) async reserve(@Req() req: Request, @Body() body: { date: string; scheduleSlotId: string; serviceTypeId?: string; startTime?: string; csrfToken?: string }) { await this.portal.assertCsrf(this.cookie(req), req.header('x-csrf-token') ?? body.csrfToken); return { data: await this.portal.reserve(this.cookie(req), body) }; }
   @Post('sala/reservations/:id/cancel') @ApiParam({ name: 'id', type: String }) @HttpCode(200) async cancelReservation(@Req() req: Request, @Param('id') id: string) { await this.portal.assertCsrf(this.cookie(req), req.header('x-csrf-token')); return { data: await this.portal.cancelReservation(this.cookie(req), id) }; }
+  @Post('sala/fixed-bookings/:id/occurrences/:date/cancel')
+  @ApiOperation({ operationId: 'cancelPortalFixedOccurrence', summary: 'Cancela una fecha futura propia sin finalizar la recurrencia semanal' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiParam({ name: 'date', type: String, format: 'date' })
+  @ApiOkResponse({ schema: { type: 'object', required: ['data'], properties: { data: { type: 'object', required: ['id', 'fixedSalaBookingId', 'date', 'status'], properties: { id: { type: 'string', format: 'uuid' }, fixedSalaBookingId: { type: 'string', format: 'uuid' }, date: { type: 'string', format: 'date' }, status: { type: 'string', enum: ['CANCELLED'] } } } } } })
+  @HttpCode(200)
+  async cancelFixedOccurrence(@Req() req: Request, @Param('id') id: string, @Param('date') date: string) {
+    await this.portal.assertCsrf(this.cookie(req), req.header('x-csrf-token'));
+    return { data: await this.portal.cancelFixedOccurrence(this.cookie(req), id, date) };
+  }
   @Get('sala/fixed-bookings') async fixed(@Req() req: Request) { return { data: await this.portal.fixedBookings(this.cookie(req)) }; }
   @Post('sala/fixed-bookings') @HttpCode(201) async createFixed(@Req() req: Request, @Body() body: { scheduleSlotId: string; serviceTypeId?: string; startTime?: string; startDate: string; endDate?: string|null; csrfToken?: string }) { await this.portal.assertCsrf(this.cookie(req), req.header('x-csrf-token') ?? body.csrfToken); return { data: await this.portal.createFixed(this.cookie(req), body) }; }
   @Post('sala/fixed-bookings/:id/change') @ApiParam({ name: 'id', type: String }) async changeFixed(@Req() req: Request, @Param('id') id: string, @Body() body: { scheduleSlotId: string; serviceTypeId?: string; startTime?: string; startDate: string; endDate?: string|null; csrfToken?: string }) { await this.portal.assertCsrf(this.cookie(req), req.header('x-csrf-token') ?? body.csrfToken); return { data: await this.portal.changeFixed(this.cookie(req), id, body) }; }

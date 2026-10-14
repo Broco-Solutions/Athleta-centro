@@ -1278,6 +1278,56 @@ describe('Sala configuration API', () => {
       expect(next.objective).toBeNull(); expect(next.id).not.toBe(student.participation.id);
       expect((await prisma.salaParticipation.findUniqueOrThrow({ where: { id: student.participation.id } })).objective).toBe('Mejorar fuerza');
     });
+    it.each(['leave', 'bulk', 'rollback'] as const)('preserves started activities and cancels only real future starts during %s', async operation => {
+      jest.setSystemTime(new Date('2026-10-13T15:00:00Z')); // 12:00 Buenos Aires.
+      const f = await followUpFixture(Role.ADMINISTRATIVE);
+      const morning = await sala.createSlot({ weekday: 'TUESDAY', startTime: '09:00', durationMinutes: 240 });
+      const evening = await sala.createSlot({ weekday: 'TUESDAY', startTime: '17:00', durationMinutes: 120 });
+      const selected = f.students.slice(0, operation === 'bulk' ? 2 : 1);
+      const fixtures = [];
+      for (const student of selected) {
+        const base = { personId: student.person.id, salaParticipationId: student.participation.id };
+        const fixed = [];
+        for (const [slot, startTime] of [[morning, null], [evening, null], [morning, new Date('1970-01-01T12:00:00Z')]] as const) {
+          fixed.push(await prisma.fixedSalaBooking.create({ data: { ...base, scheduleSlotId: slot.id, startDate: new Date('2026-10-01'), startTime } }));
+        }
+        const reservations = [];
+        for (const [slot, date, startTime] of [[morning, '2026-10-13', null], [evening, '2026-10-13', new Date('1970-01-01T17:30:00Z')], [morning, '2026-10-14', null], [morning, '2026-10-13', new Date('1970-01-01T12:00:00Z')]] as const) {
+          reservations.push(await prisma.oneOffReservation.create({ data: { ...base, scheduleSlotId: slot.id, date: new Date(date), startTime } }));
+        }
+        const occurrences = [];
+        for (const [slot, date, startTime, marker] of [[morning, '2026-10-13', null, null], [evening, '2026-10-13', new Date('1970-01-01T18:00:00Z'), new Date('2026-10-01')], [morning, '2026-10-14', null, null], [morning, '2026-10-13', new Date('1970-01-01T12:00:00Z'), null]] as const) {
+          occurrences.push(await prisma.salaOccurrence.create({ data: { personId: student.person.id, scheduleSlotId: slot.id, date: new Date(date), startTime, origin: 'SPONTANEOUS', status: 'RESERVED', cancelledForNonPaymentAt: marker } }));
+        }
+        const futureFixed = await prisma.salaOccurrence.create({ data: { personId: student.person.id, scheduleSlotId: morning.id, date: new Date('2026-10-20'), fixedSalaBookingId: fixed[0]!.id, origin: 'FIXED', status: 'RESERVED' } });
+        expect(await sala.leaveImpact(student.participation.id)).toMatchObject({ fixedBookings: 3, futureReservations: 2 });
+        fixtures.push({ student, fixed, reservations, occurrences, futureFixed });
+      }
+      if (operation === 'rollback') await expect(sala.leave(selected[0]!.participation.id, true, f.actor.id)).rejects.toThrow('SIMULATED_LEAVE_FAILURE');
+      else if (operation === 'bulk') expect(await sala.bulkLeave(selected.map(item => item.participation.id), f.actor.id)).toEqual({ affected: 2 });
+      else await sala.leave(selected[0]!.participation.id, false, f.actor.id);
+      for (const { student, fixed, reservations, occurrences, futureFixed } of fixtures) {
+        const rolledBack = operation === 'rollback';
+        expect((await prisma.salaOccurrence.findUniqueOrThrow({ where: { id: futureFixed.id } })).status).toBe(rolledBack ? 'RESERVED' : 'CANCELLED');
+        expect((await prisma.salaParticipation.findUniqueOrThrow({ where: { id: student.participation.id } })).endDate).toEqual(rolledBack ? null : new Date('2026-10-13'));
+        for (const booking of fixed) expect((await prisma.fixedSalaBooking.findUniqueOrThrow({ where: { id: booking.id } })).endDate).toEqual(rolledBack ? null : new Date('2026-10-13'));
+        for (const [index, booking] of fixed.entries()) {
+          const materialized = await prisma.salaOccurrence.findUnique({ where: { fixedSalaBookingId_date: { fixedSalaBookingId: booking.id, date: new Date('2026-10-13') } } });
+          if (index === 1 && !rolledBack) expect(materialized).toMatchObject({ status: 'CANCELLED', cancelledForNonPaymentAt: null });
+          else expect(materialized).toBeNull();
+        }
+        for (const [index, reservation] of reservations.entries()) expect((await prisma.oneOffReservation.findUniqueOrThrow({ where: { id: reservation.id } })).cancelledAt).toEqual(!rolledBack && (index === 1 || index === 2) ? new Date('2026-10-13T15:00:00Z') : null);
+        for (const [index, occurrence] of occurrences.entries()) {
+          const stored = await prisma.salaOccurrence.findUniqueOrThrow({ where: { id: occurrence.id } });
+          if (!rolledBack && (index === 1 || index === 2)) expect(stored).toMatchObject({ status: 'CANCELLED', cancelledForNonPaymentAt: occurrence.cancelledForNonPaymentAt });
+          else expect(stored).toEqual(occurrence);
+        }
+        if (!rolledBack) {
+          const corrected = await sala.commandOccurrence({ personId: student.person.id, scheduleSlotId: morning.id, date: '2026-10-13', sourceId: fixed[0]!.id, status: 'ATTENDED' }, f.actor.id);
+          expect(corrected).toMatchObject({ status: 'ATTENDED', fixedSalaBookingId: fixed[0]!.id });
+        }
+      }
+    });
     it('reports only operational counts for the same elements LeaveSala affects', async () => {
       const f = await followUpFixture(Role.ADMINISTRATIVE); await associated(f, 0);
       const id = f.students[0]!.participation.id;

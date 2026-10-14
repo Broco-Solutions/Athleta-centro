@@ -297,3 +297,36 @@ test('completes student follow-up, individual management and the two atomic bulk
   const left = page.waitForResponse(response => response.url().endsWith('/participations/bulk-leave') && response.request().method() === 'POST');
   await bulkLeave.getByRole('button', { name: 'Dar de baja', exact: true }).click(); expect((await left).status()).toBe(200); await expect(bulkLeave).toBeHidden(); await expect(page.getByRole('link', { name: 'Ver ficha' })).toHaveCount(0);
 });
+
+test('cancels one Portal fixed date and keeps the weekly recurrence', async ({ page }) => {
+  fixture('portal-fixed-edit');
+  await page.goto('/portal/login');
+  await page.getByLabel('DNI').fill('40999445');
+  await page.getByLabel('PIN de 4 dígitos').fill('1234');
+  await page.getByRole('button', { name: 'Ingresar' }).click();
+  await expect(page).toHaveURL('/portal');
+  await page.goto('/portal/sala');
+  const before = (await (await page.request.get('/api/portal/sala')).json()).data;
+  const dates = before.fixedOccurrences.filter((item: { status: string }) => item.status === 'RESERVED' || item.status === 'PENDING_PAYMENT');
+  expect(dates.length).toBeGreaterThanOrEqual(2);
+  const selected = dates[0];
+  const next = dates[1];
+  const displayDate = (date: string): string => date.split('-').reverse().join('/');
+  const row = page.getByRole('listitem').filter({ hasText: displayDate(selected.date) });
+  await row.getByRole('button', { name: 'Cancelar esta fecha' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Cancelar esta fecha' });
+  await expect(dialog.getByText('Tu turno fijo continuará las semanas siguientes.')).toBeVisible();
+  const responsePromise = page.waitForResponse(response => response.url().endsWith(`/fixed-bookings/${selected.fixedSalaBookingId}/occurrences/${selected.date}/cancel`) && response.request().method() === 'POST');
+  await dialog.getByRole('button', { name: 'Cancelar esta fecha' }).click();
+  expect((await responsePromise).status()).toBe(200);
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText('Fecha cancelada.')).toBeVisible();
+  await expect(row.getByText('Cancelado', { exact: true })).toBeVisible();
+  await expect(row.getByRole('button', { name: 'Cancelar esta fecha' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Modificar', exact: true })).toBeVisible();
+  const after = (await (await page.request.get('/api/portal/sala')).json()).data;
+  expect(after.fixed).toEqual(before.fixed);
+  expect(after.fixedOccurrences).toContainEqual(next);
+  await page.reload();
+  await expect(page.getByRole('listitem').filter({ hasText: displayDate(selected.date) }).getByText('Cancelado', { exact: true })).toBeVisible();
+});

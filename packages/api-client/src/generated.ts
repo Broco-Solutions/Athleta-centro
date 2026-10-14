@@ -1720,6 +1720,25 @@ export type ListSalaClinicalIndicationsParams = {
 personId: string;
 };
 
+export type CancelPortalFixedOccurrence200DataStatus = typeof CancelPortalFixedOccurrence200DataStatus[keyof typeof CancelPortalFixedOccurrence200DataStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const CancelPortalFixedOccurrence200DataStatus = {
+  CANCELLED: 'CANCELLED',
+} as const;
+
+export type CancelPortalFixedOccurrence200Data = {
+  id: string;
+  fixedSalaBookingId: string;
+  date: string;
+  status: CancelPortalFixedOccurrence200DataStatus;
+};
+
+export type CancelPortalFixedOccurrence200 = {
+  data: CancelPortalFixedOccurrence200Data;
+};
+
 export type GetReservationsTimelineParams = {
 date: string;
 };
@@ -9026,6 +9045,50 @@ export const portalControllerCancelReservation = async (id: string, options?: Re
 
   const data: portalControllerCancelReservationResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as portalControllerCancelReservationResponse
+}
+
+
+
+/**
+ * @summary Cancela una fecha futura propia sin finalizar la recurrencia semanal
+ */
+export type cancelPortalFixedOccurrenceResponse200 = {
+  data: CancelPortalFixedOccurrence200
+  status: 200
+}
+
+export type cancelPortalFixedOccurrenceResponseSuccess = (cancelPortalFixedOccurrenceResponse200) & {
+  headers: Headers;
+};
+;
+
+export type cancelPortalFixedOccurrenceResponse = (cancelPortalFixedOccurrenceResponseSuccess)
+
+export const getCancelPortalFixedOccurrenceUrl = (id: string,
+    date: string,) => {
+
+
+
+
+  return `/api/portal/sala/fixed-bookings/${id}/occurrences/${date}/cancel`
+}
+
+export const cancelPortalFixedOccurrence = async (id: string,
+    date: string, options?: RequestInit): Promise<cancelPortalFixedOccurrenceResponse> => {
+
+  const res = await fetch(getCancelPortalFixedOccurrenceUrl(id,date),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: cancelPortalFixedOccurrenceResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as cancelPortalFixedOccurrenceResponse
 }
 
 

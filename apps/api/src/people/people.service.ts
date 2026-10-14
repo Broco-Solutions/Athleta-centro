@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { randomInt } from 'node:crypto';
-import { ClinicalAppointmentStatus, Prisma, RoutineStatus, SalaOccurrenceStatus, SalaClinicalIndicationStatus, TreatmentFinishReason, TreatmentStatus } from '@prisma/client';
+import { ClinicalAppointmentStatus, Prisma, RoutineStatus, SalaOccurrenceOrigin, SalaOccurrenceStatus, SalaClinicalIndicationStatus, TreatmentFinishReason, TreatmentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreatePersonDto, ListPeopleQueryDto, UpdatePersonDto } from './person.dto';
 import { normalizeDni, normalizeEmail, normalizePhone } from './person.normalization';
@@ -82,25 +82,52 @@ export class PeopleService {
   }
 
   async inactivate(id: string, actorId: string) {
-    const today = this.date(new Date().toISOString().slice(0, 10));
     const now = new Date();
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
+    const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    const today = this.date(`${values.year}-${values.month}-${values.day}`);
     await this.prisma.$transaction(async (tx) => {
       const person = await tx.person.findUnique({ where: { id }, select: { id: true } });
       if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
       const participations = await tx.salaParticipation.findMany({ where: { personId: id, endDate: null }, select: { id: true } });
       for (const participation of participations) {
+        const fixed = await tx.fixedSalaBooking.findMany({ where: { salaParticipationId: participation.id, startDate: { lte: today }, OR: [{ endDate: null }, { endDate: { gte: today } }] }, include: { scheduleSlot: true } });
+        const weekday = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'][today.getUTCDay()];
+        for (const booking of fixed) {
+          const startTime = booking.startTime ?? booking.scheduleSlot.startTime;
+          if (booking.scheduleSlot.weekday !== weekday || this.operationalStart(today.toISOString().slice(0, 10), startTime) <= now) continue;
+          await tx.salaOccurrence.upsert({
+            where: { fixedSalaBookingId_date: { fixedSalaBookingId: booking.id, date: today } },
+            create: { personId: id, scheduleSlotId: booking.scheduleSlotId, date: today, startTime, serviceTypeId: booking.serviceTypeId, serviceDurationMinutes: booking.serviceDurationMinutes, fixedSalaBookingId: booking.id, origin: SalaOccurrenceOrigin.FIXED, status: SalaOccurrenceStatus.CANCELLED, createdBy: actorId, lastModifiedBy: actorId },
+            update: {},
+          });
+        }
         await tx.fixedSalaBooking.updateMany({ where: { salaParticipationId: participation.id, OR: [{ endDate: null }, { endDate: { gt: today } }] }, data: { endDate: today } });
-        await tx.oneOffReservation.updateMany({ where: { salaParticipationId: participation.id, date: { gte: today }, cancelledAt: null }, data: { cancelledAt: now } });
+        const reservations = await tx.oneOffReservation.findMany({ where: { salaParticipationId: participation.id, date: { gte: today }, cancelledAt: null }, include: { scheduleSlot: true } });
+        const future = reservations.filter(item => this.operationalStart(item.date.toISOString().slice(0, 10), item.startTime ?? item.scheduleSlot.startTime) > now);
+        await tx.oneOffReservation.updateMany({ where: { id: { in: future.map(item => item.id) }, cancelledAt: null }, data: { cancelledAt: now } });
         await tx.routine.updateMany({ where: { salaParticipationId: participation.id, status: RoutineStatus.ACTIVE }, data: { status: RoutineStatus.HISTORICAL } });
       }
       await tx.salaParticipation.updateMany({ where: { personId: id, endDate: null }, data: { endDate: today } });
-      await tx.salaOccurrence.updateMany({ where: { personId: id, date: { gte: today }, status: { not: SalaOccurrenceStatus.CANCELLED } }, data: { status: SalaOccurrenceStatus.CANCELLED, lastModifiedBy: actorId } });
+      const occurrences = await tx.salaOccurrence.findMany({ where: { personId: id, date: { gte: today }, status: { not: SalaOccurrenceStatus.CANCELLED } }, include: { scheduleSlot: true } });
+      const future = occurrences.filter(item => this.operationalStart(item.date.toISOString().slice(0, 10), item.startTime ?? item.scheduleSlot.startTime) > now);
+      await tx.salaOccurrence.updateMany({ where: { id: { in: future.map(item => item.id) } }, data: { status: SalaOccurrenceStatus.CANCELLED, lastModifiedBy: actorId } });
       await tx.salaClinicalIndication.updateMany({ where: { personId: id, status: SalaClinicalIndicationStatus.ACTIVE }, data: { status: SalaClinicalIndicationStatus.CLOSED, closedAt: now, closedById: actorId } });
-      await tx.treatment.updateMany({ where: { personId: id, status: TreatmentStatus.IN_PROGRESS }, data: { status: TreatmentStatus.FINISHED, finishDate: today, finishReason: TreatmentFinishReason.INTERRUPTION } });
+      await tx.treatment.updateMany({ where: { personId: id, status: TreatmentStatus.IN_PROGRESS }, data: { status: TreatmentStatus.FINISHED, finishDate: this.date(now.toISOString().slice(0, 10)), finishReason: TreatmentFinishReason.INTERRUPTION } });
       await tx.clinicalAppointment.updateMany({ where: { personId: id, status: ClinicalAppointmentStatus.SCHEDULED, startAt: { gt: now } }, data: { status: ClinicalAppointmentStatus.CANCELLED } });
       await tx.session.updateMany({ where: { personId: id, kind: 'PORTAL', revokedAt: null }, data: { revokedAt: now } });
     });
     return this.get(id);
+  }
+
+  private operationalStart(date: string, time: Date): Date {
+    const [year, month, day] = date.split('-').map(Number);
+    const utc = Date.UTC(year!, month! - 1, day!, time.getUTCHours(), time.getUTCMinutes());
+    const zone = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Argentina/Buenos_Aires', timeZoneName: 'shortOffset' })
+      .formatToParts(new Date(utc)).find((part) => part.type === 'timeZoneName')?.value ?? 'GMT-3';
+    const match = /^GMT([+-])(\d{1,2})(?::(\d{2}))?$/.exec(zone);
+    const offset = match ? (match[1] === '+' ? 1 : -1) * (Number(match[2]) * 60 + Number(match[3] ?? 0)) : -180;
+    return new Date(utc - offset * 60_000);
   }
 
   async get(id: string) {
