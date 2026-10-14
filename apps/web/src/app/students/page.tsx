@@ -44,7 +44,7 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
     (`${student.firstName} ${student.lastName}`.toLocaleLowerCase('es').includes(term) || student.dni.includes(term)) &&
     (filter !== 'without-routine' || student.routineStatus === 'MISSING') &&
     (filter !== 'pending-payment' || student.paymentStatus === 'PENDING'));
-  return <WorkspaceShell active="Alumnos"><div className="mx-auto max-w-7xl space-y-5 text-foreground">
+  return <WorkspaceShell active="sala-students"><div className="mx-auto max-w-7xl space-y-5 text-foreground">
     <header><h1 className="text-3xl font-semibold">Alumnos</h1><p className="mt-1 text-sm text-muted-foreground">{students.length} {students.length === 1 ? 'alumno' : 'alumnos'}</p></header>
     <div className="space-y-3">
       <div className="relative w-full max-w-sm"><Search aria-hidden="true" size={17} className="pointer-events-none absolute left-3 top-3 text-muted-foreground" /><input aria-label="Buscar por nombre o DNI" placeholder="Buscar por nombre o DNI" value={search} onChange={(event) => setSearch(event.target.value)} className="h-11 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" /></div>

@@ -18,7 +18,7 @@ const makeSession = (permissions: string[] = [], roles: string[] = []) => ({
   csrfToken: 'synthetic-csrf-token',
 });
 
-function renderShell({ permissions = [], roles = [], active = 'Inicio' }: { permissions?: string[]; roles?: string[]; active?: string } = {}) {
+function renderShell({ permissions = [], roles = [], active = 'home' }: { permissions?: string[]; roles?: string[]; active?: string } = {}) {
   vi.mocked(currentSession).mockResolvedValue(makeSession(permissions, roles) as never);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={queryClient}><WorkspaceShell active={active}><h1>Contenido sintético</h1></WorkspaceShell></QueryClientProvider>);
@@ -47,7 +47,7 @@ describe('WorkspaceShell', () => {
   });
 
   it('conserva el resaltado amarillo del acceso activo', async () => {
-    renderShell({ permissions: ['PEOPLE_READ'], active: 'Personas' });
+    renderShell({ permissions: ['PEOPLE_READ'], active: 'people' });
 
     const activeLink = await screen.findByRole('link', { name: 'Personas' });
     expect(activeLink).toHaveAttribute('aria-current', 'page');
@@ -74,7 +74,7 @@ describe('WorkspaceShell', () => {
   });
 
   it('abre el drawer cerrado inicialmente y conserva la marca y el activo amarillo en ambas navegaciones', async () => {
-    renderShell({ permissions: ['PEOPLE_READ'], active: 'Personas' });
+    renderShell({ permissions: ['PEOPLE_READ'], active: 'people' });
 
     const trigger = await screen.findByRole('button', { name: 'Abrir menú' });
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -113,23 +113,42 @@ describe('WorkspaceShell', () => {
   });
 
   it('muestra las acciones de usuario para una sesión interna normal', async () => {
-    renderShell({ permissions: ['PEOPLE_READ'] });
+    renderShell({ permissions: ['PEOPLE_READ'], roles: ['PROFESSOR'] });
 
+    expect(await screen.findByText('Ana Demo')).toBeVisible();
+    expect(screen.getByText('Profesor')).toBeVisible();
     expect(await screen.findByRole('link', { name: 'Mi perfil' })).toHaveAttribute('href', '/profile');
     expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
+  });
+
+  it('muestra los roles combinados en el orden recibido', async () => {
+    renderShell({ roles: ['KINESIOLOGIST', 'OSTEOPATH'] });
+
+    expect(await screen.findByText('Ana Demo')).toBeVisible();
+    expect(screen.getByText('Kinesiólogo · Osteópata')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Mi perfil' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
+  });
+
+  it('muestra la etiqueta de Administrador general', async () => {
+    renderShell({ roles: ['GENERAL_ADMIN'] });
+
+    expect(await screen.findByText('Administrador general')).toBeVisible();
   });
 
   it('oculta Mi perfil para BROCO_SUPPORT y conserva Cerrar sesión', async () => {
     renderShell({ roles: ['BROCO_SUPPORT'] });
 
     await screen.findByRole('navigation', { name: 'Navegación principal' });
+    expect(screen.getByText('Ana Demo')).toBeVisible();
+    expect(screen.getByText('Soporte Broco')).toBeVisible();
     expect(screen.queryByRole('link', { name: 'Mi perfil' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
   });
 });
 
 it('shows Rutinas immediately after Sala for routine managers', async () => {
-  renderShell({ permissions: ['SALA_ROUTINE_MANAGE'], active: 'Rutinas' });
+  renderShell({ permissions: ['SALA_ROUTINE_MANAGE'], active: 'routines' });
   const link = await screen.findByRole('link', { name: 'Rutinas' });
   expect(link).toHaveAttribute('href', '/routines'); expect(link).toHaveAttribute('aria-current', 'page');
   expect(within(screen.getByRole('navigation', { name: 'Navegación principal' })).getAllByRole('link').map((item) => item.textContent)).toEqual(['Inicio', 'Sala', 'Rutinas']);
@@ -140,7 +159,7 @@ it('hides Rutinas for users with only routine read permission', async () => {
 });
 
 it('gives pure Professor exactly Inicio, Reservas, Alumnos and Rutinas on desktop and mobile', async () => {
-  renderShell({ roles: ['PROFESSOR'], active: 'Alumnos', permissions: ['PEOPLE_READ', 'PEOPLE_CREATE', 'SALA_RELATION_READ', 'SALA_PARTICIPATION_MANAGE', 'SALA_AGENDA_MANAGE', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_MANAGE', 'EXPENSE_CREATE'] });
+  renderShell({ roles: ['PROFESSOR'], active: 'sala-students', permissions: ['PEOPLE_READ', 'PEOPLE_CREATE', 'SALA_RELATION_READ', 'SALA_PARTICIPATION_MANAGE', 'SALA_AGENDA_MANAGE', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_MANAGE', 'EXPENSE_CREATE'] });
   await screen.findByRole('link', { name: 'Alumnos' });
   fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
   for (const name of ['Navegación principal', 'Navegación móvil']) {
@@ -151,17 +170,17 @@ it('gives pure Professor exactly Inicio, Reservas, Alumnos and Rutinas on deskto
     for (const label of ['Personas', 'Sala', 'Equipo', 'Clínica', 'Finanzas']) expect(navigation.queryByRole('link', { name: label })).not.toBeInTheDocument();
   }
 });
-it.each(['KINESIOLOGIST', 'ADMINISTRATIVE'])('preserves permission navigation for PROFESSOR + %s', async (role) => {
-  renderShell({ roles: ['PROFESSOR', role], permissions: ['PEOPLE_READ', 'SALA_ROUTINE_MANAGE', 'CLINIC_OPERATIONAL_READ'] });
+it('preserves permission navigation for PROFESSOR + KINESIOLOGIST', async () => {
+  renderShell({ roles: ['PROFESSOR', 'KINESIOLOGIST'], permissions: ['PEOPLE_READ', 'SALA_ROUTINE_MANAGE', 'CLINIC_OPERATIONAL_READ'] });
   await screen.findByRole('link', { name: 'Personas' });
   fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
   for (const name of ['Navegación principal', 'Navegación móvil']) expect(within(screen.getByRole('navigation', { name })).getAllByRole('link').map((link) => link.textContent)).toEqual(['Inicio', 'Personas', 'Sala', 'Rutinas', 'Reservas', 'Clínica']);
 });
 
-it.each([{ roles: ['GENERAL_ADMIN'] }, { roles: ['GENERAL_ADMIN', 'PROFESSOR'] }])('uses General Admin navigation for roles %j on desktop and mobile', async ({ roles }) => {
-  renderShell({ roles, permissions: ['PEOPLE_READ', 'SALA_RELATION_READ', 'SALA_ROUTINE_MANAGE', 'CLINIC_OPERATIONAL_READ', 'FINANCE_OPERATIONAL_READ', 'TEAM_READ'] });
-  const expectedLabels = ['Inicio', 'Personas', 'Agenda', 'Sala', 'Clínica', 'Finanzas', 'Equipo'];
-  const expectedHrefs = ['/', '/people', '/reservations', '/sala', '/clinic', '/finance', '/team'];
+it.each([{ roles: ['GENERAL_ADMIN'] }, { roles: ['GENERAL_ADMIN', 'PROFESSOR'] }])('uses General Admin grouped navigation for roles %j on desktop and mobile', async ({ roles }) => {
+  renderShell({ roles, permissions: ['PEOPLE_READ', 'SALA_RELATION_READ', 'SALA_AGENDA_MANAGE', 'SALA_PARTICIPATION_MANAGE', 'SALA_SCHEDULE_MANAGE', 'SALA_ROUTINE_MANAGE', 'CLINIC_OPERATIONAL_READ', 'FINANCE_OPERATIONAL_READ', 'TEAM_READ'] });
+  const expectedLabels = ['Resumen', 'Personas', 'Agenda', 'Alumnos', 'Rutinas', 'Configuración', 'Clínica', 'Resumen', 'Ingresos', 'Gastos', 'Equipo'];
+  const expectedHrefs = ['/', '/people', '/sala', '/sala?view=students', '/routines', '/sala/configuration', '/clinic', '/finance', '/finance?view=income', '/finance?view=expenses', '/team'];
   await screen.findByRole('link', { name: 'Agenda' });
   fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
   for (const name of ['Navegación principal', 'Navegación móvil']) {
@@ -169,6 +188,19 @@ it.each([{ roles: ['GENERAL_ADMIN'] }, { roles: ['GENERAL_ADMIN', 'PROFESSOR'] }
     const links = nav.getAllByRole('link');
     expect(links.map((link) => link.textContent)).toEqual(expectedLabels);
     expect(links.map((link) => link.getAttribute('href'))).toEqual(expectedHrefs);
-    for (const label of ['Reservas', 'Alumnos', 'Rutinas']) expect(nav.queryByRole('link', { name: label })).not.toBeInTheDocument();
+    expect(nav.queryByRole('link', { name: 'Reservas' })).not.toBeInTheDocument();
   }
+});
+
+it('shows Administrative grouped navigation without Rutinas when it only has routine read permission', async () => {
+  renderShell({ roles: ['ADMINISTRATIVE'], permissions: ['PEOPLE_READ', 'SALA_AGENDA_MANAGE', 'SALA_PARTICIPATION_MANAGE', 'SALA_SCHEDULE_MANAGE', 'SALA_ROUTINE_READ', 'CLINIC_OPERATIONAL_READ', 'FINANCE_OPERATIONAL_READ', 'TEAM_READ'] });
+  const nav = await screen.findByRole('navigation', { name: 'Navegación principal' });
+  expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual(['Resumen', 'Personas', 'Agenda', 'Alumnos', 'Configuración', 'Clínica', 'Resumen', 'Ingresos', 'Gastos', 'Equipo']);
+  expect(within(nav).queryByRole('link', { name: 'Rutinas' })).not.toBeInTheDocument();
+});
+
+it('shows Rutinas for Administrative combined with Professor through the effective permission union', async () => {
+  renderShell({ roles: ['ADMINISTRATIVE', 'PROFESSOR'], permissions: ['SALA_AGENDA_MANAGE', 'SALA_PARTICIPATION_MANAGE', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE'] });
+  const nav = await screen.findByRole('navigation', { name: 'Navegación principal' });
+  expect(within(nav).getByRole('link', { name: 'Rutinas' })).toHaveAttribute('href', '/routines');
 });

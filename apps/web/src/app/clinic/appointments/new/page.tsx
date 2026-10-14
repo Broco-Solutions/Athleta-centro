@@ -72,7 +72,7 @@ function AppointmentForm(): React.JSX.Element {
   });
 
   return (
-    <WorkspaceShell active="Clínica">
+    <WorkspaceShell active="clinic">
       <main className="mx-auto max-w-2xl space-y-5 p-4 md:p-6">
         <nav aria-label="Breadcrumb" className="text-sm text-muted-foreground"><Link href={`/clinic?personId=${presetPersonId}`} className="underline">Clínica</Link> / Agendar Turno</nav>
         <div>

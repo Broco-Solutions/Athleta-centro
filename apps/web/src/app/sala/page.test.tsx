@@ -12,7 +12,21 @@ const session = { user: { id: 'admin', firstName: 'Admin', lastName: 'User', ema
 beforeAll(() => { globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch; server.listen({ onUnhandledRequest: 'bypass' }); });
 beforeEach(() => { router.replace.mockClear(); searchParams = new URLSearchParams(); server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: session })), http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: { data: [{ id: 'person', firstName: 'Ada', lastName: 'Sintética', dni: '20123456' }] } })), http.get('http://localhost:3000/api/sala/schedule', () => HttpResponse.json({ data: [{ id: 'slot', weekday: 'MONDAY', startTime: '09:00' }] })), http.get('http://localhost:3000/api/sala/availability', () => HttpResponse.json({ data: [{ slotId: 'slot', capacity: 1, reserved: 0, available: 1, isOverbooked: false, isClosed: false }] }))); });
 afterEach(() => server.resetHandlers()); afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
-it('renders Sala with the daily agenda navigation', async () => { render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SalaPage /></QueryClientProvider>); expect(await screen.findByRole('heading', { name: 'Agenda' })).toBeInTheDocument(); expect(screen.getByRole('link', { name: 'Agenda' })).toBeInTheDocument(); expect(screen.getByRole('link', { name: 'Alumnos' })).toHaveAttribute('href', '/sala?view=students'); expect(screen.getByRole('link', { name: 'Configuración' })).toBeInTheDocument(); });
+it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('%s renders the shared vertical Sala agenda and excludes Clinic bookings', async (role) => {
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: [role], permissions: [...session.permissions, 'SALA_SCHEDULE_MANAGE', 'SALA_ROUTINE_MANAGE', 'CLINIC_OPERATIONAL_READ', 'FINANCE_OPERATIONAL_READ', 'TEAM_READ'] } })),
+    http.get('http://localhost:3000/api/reservations', () => HttpResponse.json({ data: { date: '2026-10-13', startTime: '08:00', endTime: '12:00', rows: [{ kind: 'SALA', bookings: [{ id: 'sala-booking', source: 'SALA', person: { id: 'student', firstName: 'Ana', lastName: 'Alumna', dni: '88000001' }, startTime: '09:00', durationMinutes: 60, serviceName: 'Musculación', status: 'RESERVED', origin: 'FIXED', scheduleSlotId: 'slot' }] }, { kind: 'PROFESSIONAL', bookings: [{ id: 'clinic-booking', source: 'CLINIC', person: { id: 'patient', firstName: 'Clara', lastName: 'Paciente', dni: '88000002' }, startTime: '10:00', durationMinutes: 60, serviceName: 'Kinesiología', status: 'SCHEDULED', origin: 'APPOINTMENT' }] }] } })),
+  );
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SalaPage /></QueryClientProvider>);
+  expect(await screen.findByRole('heading', { name: 'Agenda' })).toBeInTheDocument();
+  expect(await screen.findByTestId('sala-reservations-agenda')).toHaveTextContent('Ana Alumna');
+  expect(screen.getByTestId('sala-reservations-agenda')).not.toHaveTextContent('Clara Paciente');
+  expect(screen.getByRole('link', { name: 'Agenda' })).toHaveAttribute('href', '/sala');
+  expect(screen.getByRole('link', { name: 'Alumnos' })).toHaveAttribute('href', '/sala?view=students');
+  expect(screen.getByRole('link', { name: 'Rutinas' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Configuración' })).toHaveAttribute('href', '/sala/configuration');
+  expect(screen.queryByRole('navigation', { name: 'Secciones de Sala' })).not.toBeInTheDocument();
+});
 
 const planId = '20000000-0000-4000-8000-000000000001';
 const professorId = '20000000-0000-4000-8000-000000000002';
@@ -107,7 +121,9 @@ it('hides global Sala navigation for clinical relation permissions', async () =>
   expect(screen.queryByRole('button', { name: 'Nuevo alumno' })).not.toBeInTheDocument();
 });
 it('preserves Sala navigation for Administration', async () => {
-  renderStudents(); expect(await within(await screen.findByRole('navigation', { name: 'Navegación principal' })).findByRole('link', { name: 'Sala' })).toBeVisible();
+  renderStudents();
+  const nav = await screen.findByRole('navigation', { name: 'Navegación principal' });
+  expect(await within(nav).findByRole('link', { name: 'Agenda' })).toHaveAttribute('href', '/sala');
 });
 
 it.each([false, true])('disables incorporation and explains missing configuration (catalog manager=%s)', async (manage) => {
@@ -144,6 +160,18 @@ it.each([true, false])('shows spontaneous incorporation only with agenda permiss
   await screen.findByRole('heading', { name: 'Agenda' });
   if (allowed) expect(await screen.findByRole('button', { name: 'Incorporación espontánea' })).toBeVisible();
   else { await screen.findByRole('button', { name: /Cerrar sesión/ }); expect(screen.queryByRole('button', { name: 'Incorporación espontánea' })).not.toBeInTheDocument(); }
+});
+
+it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('%s can keep using spontaneous incorporation from the shared Sala agenda', async (role) => {
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: [role] } })),
+    http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [{ slot: { id: 'window:09:00', scheduleSlotId: 'window', startTime: '09:00', durationMinutes: 15 }, capacity: 10, reserved: 0, available: 10, isOverbooked: false, isClosed: false, people: [] }] })),
+    http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: [], meta: { page: 1, pageSize: 100, total: 0, totalPages: 1 } })),
+  );
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SalaPage /></QueryClientProvider>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Incorporación espontánea' }));
+  expect(await screen.findByRole('dialog', { name: 'Incorporación espontánea' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Nueva Persona' })).toBeVisible();
 });
 
 it.each([['PROFESSOR'], ['PROFESSOR', 'KINESIOLOGIST'], ['GENERAL_ADMIN']])('preserves existing-person incorporation with roles %j', async (...roles) => {

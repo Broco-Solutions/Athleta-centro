@@ -24,7 +24,7 @@ function professorResponse(bookings = professorBookings, date = '2026-09-02') { 
 beforeAll(() => { globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch; server.listen({ onUnhandledRequest: 'error' }); });
 afterEach(() => { server.resetHandlers(); vi.useRealTimers(); });
 afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
-function renderTimeline(isProfessorOnly = false, date = '2026-09-02', onDateChange = vi.fn()) { const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); return { ...render(<QueryClientProvider client={client}><ReservationsTimeline isProfessorOnly={isProfessorOnly} date={date} onDateChange={onDateChange} csrfToken="csrf" /></QueryClientProvider>), onDateChange, client }; }
+function renderTimeline(isProfessorOnly = false, date = '2026-09-02', onDateChange = vi.fn(), variant: 'sala' | 'transversal' = isProfessorOnly ? 'sala' : 'transversal') { const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); return { ...render(<QueryClientProvider client={client}><ReservationsTimeline isProfessorOnly={isProfessorOnly} variant={variant} date={date} onDateChange={onDateChange} csrfToken="csrf" /></QueryClientProvider>), onDateChange, client }; }
 function serve(data: unknown) { server.use(http.get('http://localhost:3000/api/reservations', () => HttpResponse.json({ data }))); }
 
 describe('transversal timeline', () => {
@@ -36,7 +36,7 @@ describe('transversal timeline', () => {
 describe('Profesor vertical agenda', () => {
   it('groups the day bookings and translates origin and status without rendering the timeline', async () => {
     serve(professorResponse()); renderTimeline(true);
-    const agenda = await screen.findByTestId('professor-reservations-agenda');
+    const agenda = await screen.findByTestId('sala-reservations-agenda');
     expect(screen.queryByTestId('reservations-timeline')).not.toBeInTheDocument();
     for (const hour of ['08:00', '09:00', '10:30']) expect(within(agenda).getByText(hour)).toBeInTheDocument();
     const nine = within(agenda).getByRole('region', { name: '09:00, 2 alumnos' });
@@ -55,7 +55,7 @@ describe('Profesor vertical agenda', () => {
       { ...professorBookings[0]!, id: 'nine-a', startTime: '09:00', person: salaPerson('nine-a', 'Ana', 'Alonso') },
     ];
     serve(professorResponse(bookings)); renderTimeline(true);
-    const agenda = await screen.findByTestId('professor-reservations-agenda');
+    const agenda = await screen.findByTestId('sala-reservations-agenda');
     const hours = within(agenda).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent);
     expect(hours).toEqual(['Horarios del día', '08:00', '09:00', '10:00']);
     const nine = within(agenda).getByRole('region', { name: '09:00, 2 alumnos' });
@@ -75,10 +75,21 @@ describe('Profesor vertical agenda', () => {
     vi.useRealTimers();
   });
 
-  it.each([['2026-10-14', 'Horarios del día'], ['2026-10-12', 'Horarios del día']])('uses day heading for date %s', async (date, heading) => {
+  it.each([1, -1])('uses Horarios del día for an adjacent date (%s days)', async (offset) => {
+    const [year, month, day] = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).split('-').map(Number);
+    const target = new Date(Date.UTC(year ?? 2000, (month ?? 1) - 1, (day ?? 1) + offset));
+    const date = `${target.getUTCFullYear()}-${String(target.getUTCMonth() + 1).padStart(2, '0')}-${String(target.getUTCDate()).padStart(2, '0')}`;
     serve(professorResponse([professorBookings[0]!], date)); renderTimeline(true, date);
-    const agenda = await screen.findByTestId('professor-reservations-agenda');
-    expect(agenda).toHaveTextContent(heading); expect(agenda).not.toHaveTextContent('Horarios anteriores'); expect(agenda).not.toHaveTextContent('Ahora y próximos');
+    const agenda = await screen.findByTestId('sala-reservations-agenda');
+    expect(agenda).toHaveTextContent('Horarios del día'); expect(agenda).not.toHaveTextContent('Horarios anteriores'); expect(agenda).not.toHaveTextContent('Ahora y próximos');
+  });
+
+  it('uses the same Sala vertical agenda for non-Professor sessions and filters out Clinic bookings', async () => {
+    serve(transversalData); renderTimeline(false, '2026-09-02', vi.fn(), 'sala');
+    const agenda = await screen.findByTestId('sala-reservations-agenda');
+    expect(agenda).toHaveTextContent('Homer Simpson');
+    expect(agenda).not.toHaveTextContent('Marge Simpson');
+    expect(screen.queryByTestId('reservations-timeline')).not.toBeInTheDocument();
   });
 
   it('shows cancelled bookings as muted history and offers no status actions', async () => {

@@ -75,7 +75,7 @@ it.each([false, true])('shows plan administration only with its permission (mana
   renderPage(); fireEvent.click(await screen.findByText('Planes'));
   const section = screen.getByText('Planes').closest('details')!;
   await within(section).findByText(/Mensual/);
-  await waitFor(() => expect(within(screen.getByRole('navigation', { name: 'Navegación principal' })).getByRole('link', { name: 'Sala' })).toBeInTheDocument());
+  await waitFor(() => expect(within(screen.getByRole('navigation', { name: 'Navegación principal' })).getByRole('link', { name: manage ? 'Configuración' : 'Sala' })).toHaveAttribute('aria-current', 'page'));
   for (const name of ['Nuevo plan', 'Editar', 'Retirar']) {
     if (manage) expect(within(section).getByRole('button', { name })).toBeInTheDocument();
     else expect(within(section).queryByRole('button', { name })).not.toBeInTheDocument();

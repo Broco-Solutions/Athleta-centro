@@ -240,8 +240,39 @@ compartida, el cambio debe reflejarse para todos los perfiles que utilizan esa
 funcionalidad. Solo se admiten experiencias diferentes cuando el problema
 operativo es realmente distinto, como Inicio por perfil o el Portal externo.
 
-El Administrador general utiliza la navegación **Inicio → Personas → Agenda →
-Sala → Clínica → Finanzas → Equipo**, con rutas `/`, `/people`, `/reservations`,
-`/sala`, `/clinic`, `/finance` y `/team`. Su Inicio resume la operación diaria
-de Sala y Clínica, el seguimiento de Sala y las Finanzas del mes. Agenda reúne
-los turnos de Sala y Clínica bajo una interfaz transversal compartida.
+El Administrador general utiliza navegación agrupada por áreas. Su Inicio
+resume la operación diaria de Sala y Clínica, el seguimiento de Sala y las
+Finanzas del mes. Sala se consulta desde `/sala`; la agenda transversal deja de
+ser una entrada principal para este perfil.
+
+## Identidad visible de la sesión interna — 2026-10-14
+
+Estado: CONFIRMADO / RESUELTO.
+
+Athleta Manager muestra de forma permanente en la interfaz interna el nombre,
+apellido y rol o roles del usuario que tiene la sesión iniciada.
+
+La regla aplica a todos los perfiles internos y permite identificar rápidamente
+qué cuenta está siendo utilizada cuando una computadora es compartida por
+distintos integrantes de Athleta.
+
+Mi perfil y Cerrar sesión permanecen accesibles junto a la identidad. No se
+incorpora cambio rápido de usuario: para utilizar otra cuenta se debe cerrar
+sesión e iniciar nuevamente.
+
+## Navegación administrativa y Agenda de Sala compartida — 2026-10-14
+
+Estado: **CONFIRMADO / RESUELTO**, excepto donde se indica pendiente.
+
+Administrativo y Administrador general utilizan navegación agrupada por áreas.
+Sala contiene Agenda, Alumnos, Rutinas cuando el permiso efectivo lo permite y
+Configuración. Finanzas se presenta como Resumen, Ingresos y Gastos. Los ítems
+se muestran según los permisos actuales; esta decisión no cambia permisos.
+
+La Agenda de Sala es una única interfaz compartida por Profesor,
+Administrativo y Administrador general. La operación se consulta desde `/sala`;
+la entrada `/reservations` continúa para Profesor y deja de ser la agenda
+transversal principal de Administrativo y Administrador general.
+
+Clínica conserva por ahora una única entrada `/clinic`. Su estructura definitiva
+de navegación queda **PENDIENTE DE DEFINICIÓN FUNCIONAL**.

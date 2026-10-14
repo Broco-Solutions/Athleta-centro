@@ -3,7 +3,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
+import { vi } from 'vitest';
 import ReservationsPage from './page';
+
+const router = vi.hoisted(() => ({ replace: vi.fn() }));
+vi.mock('next/navigation', () => ({ useRouter: () => router }));
 
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
@@ -40,6 +44,7 @@ it('reuses spontaneous incorporation for an existing person and refreshes operat
   server.use(http.post('http://localhost:3000/api/sala/occurrences/spontaneous', async ({ request }) => { submitted = await request.json(); return HttpResponse.json({ data: {} }, { status: 201 }); }));
   const { invalidate } = renderPage();
   expect(await screen.findByRole('link', { name: 'Reservas' })).toHaveAttribute('aria-current', 'page');
+  expect(await screen.findByRole('heading', { name: 'Reservas' })).toBeVisible();
   await screen.findByRole('button', { name: 'Incorporación espontánea' });
   expect(agendaReads).toBe(0); expect(peopleReads).toBe(0);
   fireEvent.click(screen.getByRole('button', { name: 'Incorporación espontánea' }));
@@ -55,14 +60,12 @@ it('reuses spontaneous incorporation for an existing person and refreshes operat
   for (const queryKey of [['reservations', today()], ['sala', 'agenda', today()], ['sala-dashboard']]) expect(invalidate).toHaveBeenCalledWith({ queryKey });
   expect(timelineReads).toBeGreaterThan(1);
 });
-it('shows Agenda as the active context for General Admin', async () => {
-  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: ['GENERAL_ADMIN'] } })));
+it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('redirects %s from transversal reservations into Sala', async (role) => {
+  router.replace.mockClear();
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: [role] } })));
   renderPage();
-  const active = await screen.findByRole('link', { name: 'Agenda' });
-  expect(active).toHaveAttribute('href', '/reservations');
-  expect(active).toHaveAttribute('aria-current', 'page');
-  expect(await screen.findByRole('heading', { name: 'Agenda' })).toBeVisible();
-  expect(screen.getByText('Turnos de Sala y Clínica organizados por horario.')).toBeVisible();
+  await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/sala'));
+  expect(timelineReads).toBe(0);
 });
 it('does not add the Professor-specific action to combined roles', async () => {
   server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: ['PROFESSOR', 'KINESIOLOGIST'] } })));
