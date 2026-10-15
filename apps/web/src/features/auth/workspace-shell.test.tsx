@@ -147,7 +147,7 @@ describe('WorkspaceShell', () => {
   });
 });
 
-it('shows Rutinas immediately after Sala for routine managers', async () => {
+it('shows Rutinas inside Sala for routine managers', async () => {
   renderShell({ permissions: ['SALA_ROUTINE_MANAGE'], active: 'routines' });
   const link = await screen.findByRole('link', { name: 'Rutinas' });
   expect(link).toHaveAttribute('href', '/routines'); expect(link).toHaveAttribute('aria-current', 'page');
@@ -179,28 +179,108 @@ it('preserves permission navigation for PROFESSOR + KINESIOLOGIST', async () => 
 
 it.each([{ roles: ['GENERAL_ADMIN'] }, { roles: ['GENERAL_ADMIN', 'PROFESSOR'] }])('uses General Admin grouped navigation for roles %j on desktop and mobile', async ({ roles }) => {
   renderShell({ roles, permissions: ['PEOPLE_READ', 'SALA_RELATION_READ', 'SALA_AGENDA_MANAGE', 'SALA_PARTICIPATION_MANAGE', 'SALA_SCHEDULE_MANAGE', 'SALA_ROUTINE_MANAGE', 'CLINIC_OPERATIONAL_READ', 'FINANCE_OPERATIONAL_READ', 'TEAM_READ'] });
-  const expectedLabels = ['Resumen', 'Personas', 'Agenda', 'Alumnos', 'Rutinas', 'Configuración', 'Clínica', 'Resumen', 'Ingresos', 'Gastos', 'Equipo'];
-  const expectedHrefs = ['/', '/people', '/sala', '/students', '/routines', '/sala/configuration', '/clinic', '/finance', '/finance?view=income', '/finance?view=expenses', '/team'];
-  await screen.findByRole('link', { name: 'Agenda' });
+  await screen.findByRole('button', { name: 'Inicio' });
   fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
   for (const name of ['Navegación principal', 'Navegación móvil']) {
     const nav = within(screen.getByRole('navigation', { name }));
-    const links = nav.getAllByRole('link');
-    expect(links.map((link) => link.textContent)).toEqual(expectedLabels);
-    expect(links.map((link) => link.getAttribute('href'))).toEqual(expectedHrefs);
+    expect(nav.getByRole('link', { name: 'Resumen' })).toHaveAttribute('href', '/');
+    expect(nav.getByRole('button', { name: 'Inicio' })).toHaveAttribute('aria-expanded', 'true');
+    expect(nav.queryByRole('link', { name: 'Agenda' })).not.toBeInTheDocument();
     expect(nav.queryByRole('link', { name: 'Reservas' })).not.toBeInTheDocument();
   }
+  const desktop = within(screen.getByRole('navigation', { name: 'Navegación principal' }));
+  fireEvent.click(desktop.getByRole('button', { name: 'Sala' }));
+  expect(desktop.getByRole('link', { name: 'Agenda' })).toHaveAttribute('href', '/sala');
+  expect(desktop.getByRole('link', { name: 'Alumnos' })).toBeVisible();
+  expect(desktop.getByRole('link', { name: 'Rutinas' })).toBeVisible();
+  expect(desktop.getByRole('link', { name: 'Configuración' })).toBeVisible();
+  const mobile = within(screen.getByRole('navigation', { name: 'Navegación móvil' }));
+  expect(mobile.getByRole('link', { name: 'Agenda' })).toBeVisible();
+  fireEvent.click(mobile.getByRole('button', { name: 'Finanzas' }));
+  expect(screen.getByRole('dialog', { name: 'Menú principal' })).toBeInTheDocument();
+  expect(desktop.getByRole('button', { name: 'Sala' })).toHaveAttribute('aria-expanded', 'false');
+  expect(mobile.getByRole('button', { name: 'Finanzas' })).toHaveAttribute('aria-expanded', 'true');
+  fireEvent.click(mobile.getByRole('button', { name: 'Sala' }));
+  fireEvent.click(mobile.getByRole('link', { name: 'Agenda' }));
+  expect(screen.queryByRole('dialog', { name: 'Menú principal' })).not.toBeInTheDocument();
 });
 
 it('shows Administrative grouped navigation without Rutinas when it only has routine read permission', async () => {
   renderShell({ roles: ['ADMINISTRATIVE'], permissions: ['PEOPLE_READ', 'SALA_AGENDA_MANAGE', 'SALA_PARTICIPATION_MANAGE', 'SALA_SCHEDULE_MANAGE', 'SALA_ROUTINE_READ', 'CLINIC_OPERATIONAL_READ', 'FINANCE_OPERATIONAL_READ', 'TEAM_READ'] });
   const nav = await screen.findByRole('navigation', { name: 'Navegación principal' });
-  expect(within(nav).getAllByRole('link').map((link) => link.textContent)).toEqual(['Resumen', 'Personas', 'Agenda', 'Alumnos', 'Configuración', 'Clínica', 'Resumen', 'Ingresos', 'Gastos', 'Equipo']);
+  const sala = within(nav).getByRole('button', { name: 'Sala' });
+  fireEvent.click(sala);
+  expect(within(nav).getByRole('link', { name: 'Agenda' })).toBeVisible();
+  expect(within(nav).getByRole('link', { name: 'Alumnos' })).toBeVisible();
+  expect(within(nav).getByRole('link', { name: 'Configuración' })).toBeVisible();
   expect(within(nav).queryByRole('link', { name: 'Rutinas' })).not.toBeInTheDocument();
 });
 
 it('shows Rutinas for Administrative combined with Professor through the effective permission union', async () => {
   renderShell({ roles: ['ADMINISTRATIVE', 'PROFESSOR'], permissions: ['SALA_AGENDA_MANAGE', 'SALA_PARTICIPATION_MANAGE', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE'] });
   const nav = await screen.findByRole('navigation', { name: 'Navegación principal' });
+  fireEvent.click(within(nav).getByRole('button', { name: 'Sala' }));
   expect(within(nav).getByRole('link', { name: 'Rutinas' })).toHaveAttribute('href', '/routines');
+});
+
+it('collapses and restores the complete desktop sidebar while keeping the session identity visible', async () => {
+  const { container } = renderShell({ roles: ['GENERAL_ADMIN'] });
+  expect(await screen.findByRole('complementary')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Ocultar menú lateral' })).toBeInTheDocument();
+  expect(screen.getByText('Ana Demo')).toBeVisible();
+  expect(screen.getByText('Administrador general')).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Mi perfil' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Ocultar menú lateral' }));
+  expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Mostrar menú lateral' })).toBeInTheDocument();
+  expect(container.querySelector('main')).toHaveClass('md:ml-0');
+  expect(container.querySelector('.fixed.inset-x-0.top-0')).toHaveClass('md:left-0');
+  expect(screen.getByText('Ana Demo')).toBeVisible();
+  expect(screen.getByText('Administrador general')).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Mi perfil' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Mostrar menú lateral' }));
+  expect(await screen.findByRole('complementary')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Ocultar menú lateral' })).toBeInTheDocument();
+  expect(container.querySelector('main')).toHaveClass('md:ml-60');
+  expect(container.querySelector('.fixed.inset-x-0.top-0')).toHaveClass('md:left-60');
+});
+
+it('allows the active accordion group to collapse completely', async () => {
+  renderShell({ roles: ['GENERAL_ADMIN'], permissions: ['PEOPLE_READ'], active: 'home' });
+  const nav = within(await screen.findByRole('navigation', { name: 'Navegación principal' }));
+  const home = nav.getByRole('button', { name: 'Inicio' });
+  expect(home).toHaveAttribute('aria-expanded', 'true');
+  fireEvent.click(home);
+  expect(home).toHaveAttribute('aria-expanded', 'false');
+  expect(nav.queryByRole('link', { name: 'Resumen' })).not.toBeInTheDocument();
+  expect(nav.queryByRole('link', { name: 'Personas' })).not.toBeInTheDocument();
+});
+
+it('opens the active General Admin group and only one group at a time, with collapse and active updates', async () => {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.mocked(currentSession).mockResolvedValue(makeSession(['PEOPLE_READ', 'SALA_AGENDA_MANAGE', 'SALA_PARTICIPATION_MANAGE', 'SALA_ROUTINE_MANAGE', 'FINANCE_OPERATIONAL_READ'], ['GENERAL_ADMIN']) as never);
+  const view = render(<QueryClientProvider client={queryClient}><WorkspaceShell active="finance-income"><h1>Contenido sintético</h1></WorkspaceShell></QueryClientProvider>);
+  const nav = within(await screen.findByRole('navigation', { name: 'Navegación principal' }));
+  expect(nav.getByRole('button', { name: 'Finanzas' })).toHaveAttribute('aria-expanded', 'true');
+  expect(nav.getByRole('link', { name: 'Ingresos' })).toHaveAttribute('aria-current', 'page');
+  expect(nav.queryByRole('link', { name: 'Agenda' })).not.toBeInTheDocument();
+
+  fireEvent.click(nav.getByRole('button', { name: 'Sala' }));
+  fireEvent.click(nav.getByRole('button', { name: 'Finanzas' }));
+  expect(nav.getByRole('button', { name: 'Sala' })).toHaveAttribute('aria-expanded', 'false');
+  expect(nav.getByRole('button', { name: 'Finanzas' })).toHaveAttribute('aria-expanded', 'true');
+  expect(nav.queryByRole('link', { name: 'Agenda' })).not.toBeInTheDocument();
+  expect(nav.getByRole('link', { name: 'Ingresos' })).toBeVisible();
+
+  fireEvent.click(nav.getByRole('button', { name: 'Finanzas' }));
+  expect(nav.getByRole('button', { name: 'Finanzas' })).toHaveAttribute('aria-expanded', 'false');
+  expect(nav.queryByRole('link', { name: 'Ingresos' })).not.toBeInTheDocument();
+
+  view.rerender(<QueryClientProvider client={queryClient}><WorkspaceShell active="sala-agenda"><h1>Contenido sintético</h1></WorkspaceShell></QueryClientProvider>);
+  expect(nav.getByRole('button', { name: 'Sala' })).toHaveAttribute('aria-expanded', 'true');
+  expect(nav.getByRole('link', { name: 'Agenda' })).toHaveAttribute('aria-current', 'page');
 });

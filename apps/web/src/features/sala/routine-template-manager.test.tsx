@@ -69,7 +69,7 @@ it('creates an inline exercise and preserves draft fields, days and the optional
   fireEvent.change(screen.getByLabelText('Nombre de la preestablecida'), { target: { value: 'Con remo' } });
   fireEvent.click(screen.getByRole('button', { name: 'Agregar día' })); change(day(1), 'Series', '3');
   api.exercises.mockResolvedValue([...definitions, { id: 'new', name: 'Remo', primaryMuscle: 'Espalda', isActive: true }]);
-  fireEvent.click(day(1).getByRole('button', { name: 'Nuevo ejercicio' })); change(day(1), 'Nombre del ejercicio', 'Remo'); change(day(1), 'Músculo principal', 'Espalda');
+  fireEvent.click(day(1).getByRole('button', { name: 'Nuevo ejercicio' })); change(day(1), 'Nombre del ejercicio', 'Remo'); change(day(1), 'Músculo principal (opcional)', 'Espalda');
   fireEvent.click(day(1).getByRole('button', { name: 'Crear y seleccionar' })); await waitFor(() => expect(day(1).getByLabelText('Ejercicio')).toHaveValue('new'));
   expect(api.createExercise).toHaveBeenCalledWith({ name: 'Remo', primaryMuscle: 'Espalda', description: '' }, expect.any(Object)); expect(day(1).getByLabelText('Series')).toHaveValue('3'); expect(day(2).getByLabelText('Nombre del día 2')).toHaveValue('Día 2');
   fireEvent.click(day(1).getByRole('button', { name: 'Agregar a la rutina' })); await day(1).findByText('Remo · 3 series'); fireEvent.click(screen.getByRole('button', { name: 'Guardar preestablecida' })); await waitFor(() => expect(api.create).toHaveBeenCalled());
@@ -103,4 +103,19 @@ it.each(['create', 'update', 'delete'])('reports real HTTP errors without claimi
     fireEvent.click(screen.getByRole('button', { name: 'Guardar preestablecida' }));
   }
   expect(await screen.findByRole('alert')).toHaveTextContent('HTTP rechazado'); expect(screen.queryByText(/correctamente/)).not.toBeInTheDocument(); expect(listCalls).toBe(1);
+});
+
+it('creates and selects a name-only exercise without an empty muscle separator', async () => {
+  const { api } = renderManager([]);
+  fireEvent.click(await screen.findByRole('button', { name: 'Nueva rutina preestablecida' }));
+  const created = { id: 'new-plank', name: 'Plancha nueva', primaryMuscle: null, description: null, isActive: true };
+  api.createExercise.mockResolvedValue(created);
+  api.exercises.mockResolvedValue([...definitions, created]);
+  fireEvent.click(day(1).getByRole('button', { name: 'Nuevo ejercicio' }));
+  change(day(1), 'Nombre del ejercicio', 'Plancha nueva');
+  fireEvent.click(day(1).getByRole('button', { name: 'Crear y seleccionar' }));
+  const option = await day(1).findByRole('option', { name: 'Plancha nueva' });
+  expect(option).toHaveTextContent(/^Plancha nueva$/);
+  expect(day(1).getByRole('option', { name: 'Sentadilla · Piernas' })).toBeInTheDocument();
+  expect(api.createExercise).toHaveBeenCalledWith({ name: 'Plancha nueva', primaryMuscle: '', description: '' }, expect.any(Object));
 });

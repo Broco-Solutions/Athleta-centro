@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import Image from 'next/image';
-import { Activity, CalendarDays, ClipboardList, Dumbbell, Menu, UserCog, Users, Wallet, X } from 'lucide-react';
+import { Activity, CalendarDays, ChevronDown, ChevronRight, ClipboardList, Dumbbell, Menu, PanelLeftClose, UserCog, Users, Wallet, X } from 'lucide-react';
 import { Button } from '@athleta/ui';
 import { currentSession } from './auth';
 import { AuthShell } from './auth-shell';
@@ -16,7 +16,7 @@ type NavigationItem = {
   icon: typeof Activity;
   canAccess: (permissions: string[]) => boolean;
 };
-type NavigationGroup = { label: string; items: NavigationItem[] };
+type NavigationGroup = { key: 'home' | 'sala' | 'clinic' | 'finance' | 'team'; label: string; items: NavigationItem[] };
 
 const hasAny = (permissions: string[], values: string[]) => values.some((value) => permissions.includes(value));
 const hasDomainPermission = (permissions: string[], prefix: string) => permissions.some((permission) => permission.startsWith(prefix));
@@ -42,25 +42,25 @@ const professorNavigation: NavigationItem[] = [
 function groupedNavigation(permissions: string[]): NavigationGroup[] {
   const allowed = (item: NavigationItem) => item.canAccess(permissions);
   const groups: NavigationGroup[] = [
-    { label: 'Inicio', items: [
+    { key: 'home', label: 'Inicio', items: [
       { key: 'home', href: '/', label: 'Resumen', icon: Activity, canAccess: () => true },
       { key: 'people', href: '/people', label: 'Personas', icon: Users, canAccess: (values) => hasAny(values, ['PEOPLE_READ', 'PEOPLE_CREATE', 'PEOPLE_UPDATE_GENERAL']) },
     ] },
-    { label: 'Sala', items: [
+    { key: 'sala', label: 'Sala', items: [
       { key: 'sala-agenda', href: '/sala', label: 'Agenda', icon: CalendarDays, canAccess: (values) => values.includes('SALA_AGENDA_MANAGE') },
       { key: 'sala-students', href: '/students', label: 'Alumnos', icon: Users, canAccess: (values) => values.includes('SALA_PARTICIPATION_MANAGE') },
       { key: 'routines', href: '/routines', label: 'Rutinas', icon: ClipboardList, canAccess: (values) => values.includes('SALA_ROUTINE_MANAGE') },
       { key: 'sala-configuration', href: '/sala/configuration', label: 'Configuración', icon: Dumbbell, canAccess: (values) => hasAny(values, ['SALA_SCHEDULE_MANAGE', 'SALA_PLAN_CATALOG_MANAGE', 'SALA_SERVICE_DURATION_MANAGE']) },
     ] },
-    { label: 'Clínica', items: [
+    { key: 'clinic', label: 'Clínica', items: [
       { key: 'clinic', href: '/clinic', label: 'Clínica', icon: CalendarDays, canAccess: (values) => hasDomainPermission(values, 'CLINIC_') || hasDomainPermission(values, 'CLINICAL_HISTORY_') },
     ] },
-    { label: 'Finanzas', items: [
+    { key: 'finance', label: 'Finanzas', items: [
       { key: 'finance-summary', href: '/finance', label: 'Resumen', icon: Wallet, canAccess: (values) => values.includes('FINANCE_OPERATIONAL_READ') || values.includes('FINANCE_EXECUTIVE_READ') || values.includes('PAYMENT_METHOD_CATALOG_MANAGE') },
       { key: 'finance-income', href: '/finance?view=income', label: 'Ingresos', icon: Wallet, canAccess: (values) => values.includes('FINANCE_OPERATIONAL_READ') },
       { key: 'finance-expenses', href: '/finance?view=expenses', label: 'Gastos', icon: Wallet, canAccess: (values) => values.includes('FINANCE_OPERATIONAL_READ') || values.includes('EXPENSE_HISTORY_READ') },
     ] },
-    { label: 'Equipo', items: [
+    { key: 'team', label: 'Equipo', items: [
       { key: 'team', href: '/team', label: 'Equipo', icon: UserCog, canAccess: (values) => hasDomainPermission(values, 'TEAM_') },
     ] },
   ];
@@ -69,6 +69,7 @@ function groupedNavigation(permissions: string[]): NavigationGroup[] {
 
 export function WorkspaceShell({ children, active }: { children: React.ReactNode; active: string }): React.JSX.Element {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = React.useState(true);
   const closeMenuRef = React.useRef<HTMLButtonElement>(null);
   const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false });
   const permissions = session.data?.permissions ?? [];
@@ -76,7 +77,13 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
   const isProfessorOnly = roles.length === 1 && roles.includes('PROFESSOR');
   const hasAdministrativeNavigation = roles.includes('ADMINISTRATIVE') || roles.includes('GENERAL_ADMIN');
   const groups = hasAdministrativeNavigation ? groupedNavigation(permissions) : null;
+  const activeGroupKey = groups?.find((group) => group.items.some((item) => item.key === active))?.key;
+  const [openGroupKey, setOpenGroupKey] = React.useState<NavigationGroup['key'] | undefined>(activeGroupKey);
   const visibleNavigation = roles.includes('GENERAL_ADMIN') ? (groups?.flatMap((group) => group.items) ?? []) : hasAdministrativeNavigation ? (groups?.flatMap((group) => group.items) ?? []) : isProfessorOnly ? professorNavigation : navigation.filter((item) => item.canAccess(permissions));
+
+  React.useEffect(() => {
+    setOpenGroupKey(activeGroupKey);
+  }, [activeGroupKey]);
 
   React.useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -96,18 +103,34 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
     <Icon aria-hidden="true" size={18} />
     <span>{label}</span>
   </Link>;
-  const navigationContent = (onNavigate?: () => void) => groups
-    ? groups.map((group) => <section key={group.label} className="space-y-1"><h2 className="px-3 pb-1 pt-4 text-xs font-semibold uppercase tracking-wide text-zinc-400 first:pt-0">{group.label}</h2>{group.items.map((item) => itemLink(item, onNavigate))}</section>)
+  const navigationContent = (idSuffix: string, onNavigate?: () => void) => groups
+    ? groups.map((group) => {
+      const isOpen = openGroupKey === group.key;
+      const contentId = `navigation-group-${group.key}-${idSuffix}`;
+      const Chevron = isOpen ? ChevronDown : ChevronRight;
+      return <section key={group.key} className="space-y-1">
+        <h2 className="pt-2 first:pt-0">
+          <button type="button" aria-expanded={isOpen} aria-controls={contentId} className="flex min-h-11 w-full items-center justify-between rounded-md px-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-300 hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setOpenGroupKey(isOpen ? undefined : group.key)}>
+            <span>{group.label}</span>
+            <Chevron aria-hidden="true" size={16} className="transition-transform duration-150" />
+          </button>
+        </h2>
+        <div id={contentId} hidden={!isOpen} className="space-y-1">{group.items.map((item) => itemLink(item, onNavigate))}</div>
+      </section>;
+    })
     : visibleNavigation.map((item) => itemLink(item, onNavigate));
 
-  return <AuthShell mobileNavigationTrigger={<Button variant="ghost" aria-label="Abrir menú" aria-expanded={mobileMenuOpen} aria-controls="internal-mobile-navigation" className="h-11 gap-2 px-3 md:hidden" onClick={() => setMobileMenuOpen(true)}><Menu aria-hidden="true" size={20} />Menú</Button>}>
-    <main className="min-h-screen min-w-0 bg-background pt-14 md:ml-60">
-      <aside className="fixed inset-y-0 left-0 z-50 hidden w-60 min-w-0 flex-col overflow-y-auto bg-sidebar px-4 py-6 text-sidebar-foreground md:flex">
-        <Link href="/" aria-label="Athleta · Inicio" className="mb-10 shrink-0 text-center">
-          <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-full" />
-        </Link>
-        <nav aria-label="Navegación principal" className="min-w-0 space-y-1">{navigationContent()}</nav>
-      </aside>
+  return <AuthShell desktopSidebarOpen={desktopSidebarOpen} onToggleDesktopSidebar={() => setDesktopSidebarOpen((open) => !open)} mobileNavigationTrigger={<Button variant="ghost" aria-label="Abrir menú" aria-expanded={mobileMenuOpen} aria-controls="internal-mobile-navigation" className="h-11 gap-2 px-3 md:hidden" onClick={() => setMobileMenuOpen(true)}><Menu aria-hidden="true" size={20} />Menú</Button>}>
+    <main className={`min-h-screen min-w-0 bg-background pt-14 transition-[margin] duration-200 ${desktopSidebarOpen ? 'md:ml-60' : 'md:ml-0'}`}>
+      {desktopSidebarOpen ? <aside className="fixed inset-y-0 left-0 z-50 hidden w-60 min-w-0 flex-col overflow-y-auto bg-sidebar px-4 py-6 text-sidebar-foreground md:flex">
+        <div className="mb-8 flex min-w-0 items-center gap-2">
+          <Link href="/" aria-label="Athleta · Inicio" className="min-w-0 flex-1 text-center">
+            <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-full" />
+          </Link>
+          <Button variant="ghost" aria-label="Ocultar menú lateral" className="h-10 w-10 shrink-0 px-0 text-zinc-300 hover:bg-zinc-800 hover:text-white" onClick={() => setDesktopSidebarOpen(false)}><PanelLeftClose aria-hidden="true" size={18} /></Button>
+        </div>
+        <nav aria-label="Navegación principal" className="min-w-0 space-y-1">{navigationContent('desktop')}</nav>
+      </aside> : null}
       {mobileMenuOpen ? <>
         <button type="button" aria-label="Cerrar menú desde el fondo" className="fixed inset-0 z-50 bg-black/40 md:hidden" onClick={() => setMobileMenuOpen(false)} />
         <div id="internal-mobile-navigation" role="dialog" aria-label="Menú principal" className="fixed inset-y-0 left-0 z-[60] w-72 max-w-[85vw] min-w-0 overflow-y-auto bg-sidebar px-4 py-6 text-sidebar-foreground md:hidden">
@@ -117,7 +140,7 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
             </Link>
             <button ref={closeMenuRef} type="button" aria-label="Cerrar menú" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setMobileMenuOpen(false)}><X aria-hidden="true" size={20} /></button>
           </div>
-          <nav aria-label="Navegación móvil" className="min-w-0 space-y-1">{navigationContent(() => setMobileMenuOpen(false))}</nav>
+          <nav aria-label="Navegación móvil" className="min-w-0 space-y-1">{navigationContent('mobile', () => setMobileMenuOpen(false))}</nav>
         </div>
       </> : null}
       <section className="min-w-0 p-4 sm:p-5 md:p-8">{children}</section>

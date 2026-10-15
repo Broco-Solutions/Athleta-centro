@@ -2,11 +2,11 @@
 import React from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { LogOut, UserRound } from 'lucide-react';
+import { LogOut, PanelLeftOpen, UserRound } from 'lucide-react';
 import { Button } from '@athleta/ui';
 import { currentSession, logout } from './auth';
 
-export function AuthShell({ children, mobileNavigationTrigger }: { children: React.ReactNode; mobileNavigationTrigger?: React.ReactNode }): React.JSX.Element {
+export function AuthShell({ children, mobileNavigationTrigger, desktopSidebarOpen = true, onToggleDesktopSidebar }: { children: React.ReactNode; mobileNavigationTrigger?: React.ReactNode; desktopSidebarOpen?: boolean; onToggleDesktopSidebar?: () => void }): React.JSX.Element {
   const queryClient = useQueryClient();
   const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false });
   const signOut = useMutation({ mutationFn: logout, onSuccess: () => { queryClient.removeQueries({ queryKey: ['auth', 'session'] }); window.location.assign('/login'); } });
@@ -27,8 +27,9 @@ export function AuthShell({ children, mobileNavigationTrigger }: { children: Rea
   const fullName = `${current.user.firstName} ${current.user.lastName}`.trim();
   const rolesLabel = (current.roles ?? []).map((role) => roleLabels[role] ?? role).join(' · ');
   const sessionIdentity = [fullName, rolesLabel].filter(Boolean).join(' · ');
-  return <><div className="fixed inset-x-0 top-0 z-40 flex min-h-14 min-w-0 items-center justify-between gap-2 border-b border-border bg-surface px-3 py-1 md:left-60 md:justify-end md:gap-4 md:px-6">
+  return <><div className={`fixed inset-x-0 top-0 z-40 flex min-h-14 min-w-0 items-center justify-between gap-2 border-b border-border bg-surface px-3 py-1 transition-[left] duration-200 ${desktopSidebarOpen ? 'md:left-60 md:justify-end' : 'md:left-0 md:justify-between'} md:gap-4 md:px-6`}>
     <div className="min-w-0 md:hidden">{mobileNavigationTrigger}</div>
+    {!desktopSidebarOpen && onToggleDesktopSidebar ? <Button variant="ghost" aria-label="Mostrar menú lateral" className="hidden h-10 min-w-10 md:inline-flex" onClick={onToggleDesktopSidebar}><PanelLeftOpen aria-hidden="true" size={18} /></Button> : null}
     <div className="min-w-0 flex-1 text-right md:flex-none" title={sessionIdentity}>
       <div className="truncate text-sm font-medium leading-5 text-foreground">{fullName}</div>
       <div className="truncate text-xs leading-4 text-muted-foreground">{rolesLabel}</div>

@@ -204,7 +204,7 @@ async function startInlineCreation() {
   const scope = within(screen.getByRole('group', { name: 'Día 1' }));
   fireEvent.change(scope.getByLabelText('Series'), { target: { value: '4' } });
   fireEvent.click(scope.getByRole('button', { name: 'Nuevo ejercicio' }));
-  for (const [label, value] of [['Nombre del ejercicio', 'Peso muerto'], ['Músculo principal', 'Piernas'], ['Descripción del ejercicio', 'Con barra']]) fireEvent.change(scope.getByLabelText(label!), { target: { value } });
+  for (const [label, value] of [['Nombre del ejercicio', 'Peso muerto'], ['Músculo principal (opcional)', 'Piernas'], ['Descripción del ejercicio', 'Con barra']]) fireEvent.change(scope.getByLabelText(label!), { target: { value } });
   fireEvent.click(scope.getByRole('button', { name: 'Crear y seleccionar' }));
   return scope;
 }
@@ -234,7 +234,7 @@ it.each([400, 409])('keeps an inline HTTP %s catalog creation failure as an erro
   renderWorkspace(); const scope = await startInlineCreation();
   expect(await scope.findByRole('alert')).toHaveTextContent('No se pudo crear el ejercicio.');
   expect(scope.getByLabelText('Nombre del ejercicio')).toHaveValue('Peso muerto');
-  expect(scope.getByLabelText('Músculo principal')).toHaveValue('Piernas');
+  expect(scope.getByLabelText('Músculo principal (opcional)')).toHaveValue('Piernas');
   expect(scope.getByLabelText('Descripción del ejercicio')).toHaveValue('Con barra');
   expect(scope.queryByRole('option', { name: 'Peso muerto · Piernas' })).not.toBeInTheDocument();
   expect(scope.getByLabelText('Series')).toHaveValue('4'); expect(scope.getAllByRole('listitem')).toHaveLength(1);

@@ -21,7 +21,7 @@ export type RoutineExercise = {
   notes?: string | null | undefined;
 };
 export type RoutineDay = { id?: string; position: number; name?: string | null | undefined; exercises: RoutineExercise[] };
-export type ExerciseDefinition = { id: string; name: string; primaryMuscle: string; description?: string | null | undefined; isActive: boolean };
+export type ExerciseDefinition = { id: string; name: string; primaryMuscle?: string | null; description?: string | null | undefined; isActive: boolean };
 export type RoutineTemplate = { id: string; name: string; days: RoutineDay[] };
 
 const exclusiveMessage = 'Elegí Repeticiones o Tiempo, no ambos.';
@@ -58,7 +58,7 @@ type ExerciseCatalogProps = {
 };
 const definitionSchema = z.object({
   name: z.string().trim().min(1, 'El Nombre es obligatorio.').max(120),
-  primaryMuscle: z.string().trim().min(1, 'El Músculo principal es obligatorio.').max(120),
+  primaryMuscle: z.string().trim().max(120),
   description: z.string().trim().max(500),
 });
 
@@ -102,11 +102,11 @@ function RoutineExerciseForm({ definitions, catalogLoading, catalogError, onCrea
   return <form className="mt-3 grid gap-2 rounded-md border bg-white p-3" onSubmit={submit}>
     <div className="grid gap-2 sm:grid-cols-2">
       <div className="sm:col-span-2">
-        <div className="flex items-end gap-2"><label className="grow text-sm">Ejercicio<select aria-label="Ejercicio" className={fieldClass} {...register('exerciseDefinitionId')} value={watch('exerciseDefinitionId')} disabled={disabled || catalogUnavailable || createDefinition.isPending}><option value="">Seleccionar ejercicio</option>{initial && definitions.find((item) => item.id === initial.exerciseDefinitionId)?.isActive === false ? <option value={initial.exerciseDefinitionId} disabled>{displayExercise(initial, definitions)} · No disponible</option> : null}{activeDefinitions.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.primaryMuscle}</option>)}</select></label><Button type="button" variant="secondary" disabled={disabled || createDefinition.isPending} onClick={() => setCreatingExercise(true)}>Nuevo ejercicio</Button></div>
+        <div className="flex items-end gap-2"><label className="grow text-sm">Ejercicio<select aria-label="Ejercicio" className={fieldClass} {...register('exerciseDefinitionId')} value={watch('exerciseDefinitionId')} disabled={disabled || catalogUnavailable || createDefinition.isPending}><option value="">Seleccionar ejercicio</option>{initial && definitions.find((item) => item.id === initial.exerciseDefinitionId)?.isActive === false ? <option value={initial.exerciseDefinitionId} disabled>{displayExercise(initial, definitions)} · No disponible</option> : null}{activeDefinitions.map((item) => <option key={item.id} value={item.id}>{[item.name, item.primaryMuscle].filter(Boolean).join(' · ')}</option>)}</select></label><Button type="button" variant="secondary" disabled={disabled || createDefinition.isPending} onClick={() => setCreatingExercise(true)}>Nuevo ejercicio</Button></div>
         {catalogLoading ? <p role="status" className="mt-2 text-sm text-muted-foreground">Cargando catálogo de ejercicios…</p> : catalogError ? <p role="alert" className="mt-2 text-sm text-red-700">No se pudo cargar el catálogo de ejercicios.</p> : activeDefinitions.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">Todavía no hay ejercicios en el catálogo. Creá uno nuevo para continuar.</p> : null}
         {creatingExercise ? <fieldset aria-label="Nuevo ejercicio del catálogo" className="mt-3 grid gap-2 rounded-md border p-3" disabled={disabled || createDefinition.isPending} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void submitDefinition(); } }}>
           <label className="text-sm">Nombre<input aria-label="Nombre del ejercicio" className={fieldClass} {...definitionForm.register('name')} maxLength={120}/></label>
-          <label className="text-sm">Músculo principal<input aria-label="Músculo principal" className={fieldClass} {...definitionForm.register('primaryMuscle')} maxLength={120}/></label>
+          <label className="text-sm">Músculo principal (opcional)<input aria-label="Músculo principal (opcional)" className={fieldClass} {...definitionForm.register('primaryMuscle')} maxLength={120}/></label>
           <label className="text-sm">Descripción opcional<input aria-label="Descripción del ejercicio" className={fieldClass} {...definitionForm.register('description')} maxLength={500}/></label>
           {creationError || createDefinition.error ? <p role="alert" className="text-sm text-red-700">{creationError ?? errorMessage(createDefinition.error)}</p> : null}
           <Button type="button" onClick={() => void submitDefinition()} disabled={disabled || createDefinition.isPending}>{createDefinition.isPending ? 'Creando…' : 'Crear y seleccionar'}</Button>

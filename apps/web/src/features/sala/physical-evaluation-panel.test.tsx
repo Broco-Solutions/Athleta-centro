@@ -220,3 +220,27 @@ it('preserves evaluation rows when inline creation fails', async () => {
   await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar test' })).toBeEnabled()); fireEvent.click(screen.getByRole('button', { name: 'Guardar test' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos guardar el test.'); expect(screen.getByLabelText('Resultado')).toHaveValue('170°'); expect(screen.getByLabelText('Nombre del test')).toHaveValue('Nuevo nombre');
 });
+
+it('starts physical tests without type, saves null and edits a test without type', async () => {
+  const tests: PhysicalTestDefinitionResponseDto[] = [{ ...testA, type: null }];
+  handlers([], tests);
+  const payloads: unknown[] = [];
+  server.use(
+    http.post('http://localhost:3000/api/sala/physical-test-definitions', async ({ request }) => { const input = await request.json() as { name: string; type: null }; payloads.push(input); const row = { ...testB, ...input }; tests.push(row); return HttpResponse.json({ data: row }, { status: 201 }); }),
+    http.patch(`http://localhost:3000/api/sala/physical-test-definitions/${testId}`, async ({ request }) => { payloads.push(await request.json()); return HttpResponse.json({ data: tests[0] }); }),
+  );
+  renderPanel(); await screen.findByText('No hay evaluaciones físicas registradas.');
+  fireEvent.click(screen.getByRole('button', { name: 'Administrar tests' }));
+  expect(screen.queryByText('Sin tipo')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Nuevo test' }));
+  expect(screen.getByLabelText('Tipo del test')).toHaveValue('');
+  fireEvent.change(screen.getByLabelText('Nombre del test'), { target: { value: 'Salto vertical' } });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar test' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar test' }));
+  await waitFor(() => expect(screen.queryByLabelText('Nombre del test')).not.toBeInTheDocument());
+  fireEvent.click(screen.getAllByRole('button', { name: 'Editar' })[0]!);
+  expect(screen.getByLabelText('Tipo del test')).toHaveValue('');
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar test' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar test' }));
+  await waitFor(() => expect(payloads).toEqual([{ name: 'Salto vertical', type: null, description: null }, { name: 'Test A', type: null, description: null }]));
+});

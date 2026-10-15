@@ -277,6 +277,18 @@ Sala contiene Agenda, Alumnos, Rutinas cuando el permiso efectivo lo permite y
 Configuración. Finanzas se presenta como Resumen, Ingresos y Gastos. Los ítems
 se muestran según los permisos actuales; esta decisión no cambia permisos.
 
+La navegación administrativa utiliza sectores desplegables para reducir la
+extensión vertical del sidebar. Solo un sector permanece abierto a la vez y el
+sector correspondiente a la pantalla actual se abre automáticamente. El ítem
+activo conserva el resaltado visual y los permisos continúan determinando qué
+sectores e ítems se muestran.
+
+En escritorio, la barra lateral completa puede ocultarse y volver a mostrarse
+para ampliar el espacio de trabajo. Este comportamiento no cambia permisos,
+rutas ni funcionalidades y no se persiste entre sesiones.
+
+En dispositivos móviles se conserva el drawer existente.
+
 La Agenda de Sala es una única interfaz compartida por Profesor,
 Administrativo y Administrador general. La operación se consulta desde `/sala`;
 la entrada `/reservations` continúa para Profesor y deja de ser la agenda
@@ -353,3 +365,29 @@ Consolidación de §§6.26–6.29 y §10.9: una Evaluación contiene uno o más 
 El catálogo permite crear, editar y retirar Tests de Fuerza, Movilidad u Otra. Puede crearse un Test inline durante la carga de la Evaluación. El Portal consulta Results agrupados cronológicamente por Test, sin gráficos, cálculos ni Observación interna.
 
 Criterio técnico necesario para preservar historia: al corregir una Evaluación puede conservarse un Test ya usado aunque luego haya sido retirado; un Test retirado no puede agregarse como nuevo Result. CAT-04 continúa pendiente y no cambia la política existente de nombres duplicados.
+
+## Cierre técnico de Sala — Bloque 5 — 2026-10-15
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+En el catálogo de Ejercicios, Nombre es obligatorio; Músculo principal y
+Descripción son opcionales. La ausencia de Músculo principal se omite en
+selectores y listados, sin separadores vacíos ni texto sustituto. CAT-04
+continúa pendiente y no se cambia la política vigente de nombres duplicados.
+
+En el catálogo de Tests físicos, Nombre es obligatorio; Tipo y Descripción
+son opcionales. Si se informa Tipo, solo admite Fuerza, Movilidad u Otra.
+Sin Tipo se conserva `null`; «Sin tipo» es una opción del editor y no una
+categoría histórica. El Test puede utilizarse normalmente en Evaluaciones.
+
+Una Reserva puntual existente del Portal puede cancelarse únicamente antes de
+su hora real de inicio (`startsAt > now`). Una Reserva futura del mismo día
+sigue siendo cancelable; desde el inicio exacto deja de serlo. Se utiliza su
+hora específica y, para registros anteriores sin ella, la del horario asociado.
+Esto no modifica POR-SAL-09: crear nuevas Reservas sigue requiriendo al menos
+20 minutos restantes de actividad. Ownership se deriva de la sesión Portal.
+
+Evidencia: `SalaService.createExerciseDefinition`, `updateExerciseDefinition`,
+`physicalTestData`, `PortalService.cancelReservation`, sus DTOs y los tests de
+integración `sala.integration-spec.ts` y `portal-sala.integration-spec.ts`.
+PROF-01, CAT-04, INI-06 e INI-07 conservan su estado **PENDIENTE**. Resta UAT final.

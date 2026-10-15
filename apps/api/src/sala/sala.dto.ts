@@ -1,6 +1,6 @@
 import { CreatePersonDto, PersonResponseDto } from '../people/person.dto';
 import { Type } from 'class-transformer';
-import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsIn, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, IntersectionType, PickType } from '@nestjs/swagger';
 import { SalaOccurrenceStatus, SalaScheduleExceptionType, SalaWeekday } from '@prisma/client';
 
@@ -87,7 +87,7 @@ export class SalaDashboardEnvelopeDto {
 export class SalaAgendaResponseDto { @ApiProperty({ type: [SalaAgendaGroupDto] }) data!: SalaAgendaGroupDto[]; }
 export class ExerciseDefinitionDto {
   @ApiProperty({ type: String, maxLength: 120 }) @IsString() @MinLength(1) @MaxLength(120) name!: string;
-  @ApiProperty({ type: String, maxLength: 120 }) @IsString() @MinLength(1) @MaxLength(120) primaryMuscle!: string;
+  @ApiPropertyOptional({ type: String, maxLength: 120, nullable: true }) @IsOptional() @IsString() @MaxLength(120) primaryMuscle?: string | null;
   @ApiPropertyOptional({ type: String, maxLength: 500, nullable: true }) @IsOptional() @IsString() @MaxLength(500) description?: string | null;
 }
 export class RetireExerciseDefinitionDto {
@@ -115,7 +115,7 @@ export class ReplaceRoutineDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() salaParticipationId!: string;
   @ApiProperty({ type: () => [RoutineDayDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RoutineDayDto) days!: RoutineDayDto[];
 }
-export class PhysicalTestDefinitionDto { @ApiProperty({ type: String, maxLength: 120 }) @IsString() @MinLength(1) @MaxLength(120) name!: string; @ApiProperty({ enum: ['STRENGTH', 'MOBILITY', 'OTHER'] }) @IsIn(['STRENGTH', 'MOBILITY', 'OTHER']) type!: 'STRENGTH' | 'MOBILITY' | 'OTHER'; @ApiPropertyOptional({ type: String, maxLength: 500, nullable: true }) @IsOptional() @IsString() @MaxLength(500) description?: string | null; }
+export class PhysicalTestDefinitionDto { @ApiProperty({ type: String, maxLength: 120 }) @IsString() @MinLength(1) @MaxLength(120) name!: string; @ApiPropertyOptional({ enum: ['STRENGTH', 'MOBILITY', 'OTHER'], nullable: true }) @IsOptional() @IsString() type?: 'STRENGTH' | 'MOBILITY' | 'OTHER' | null; @ApiPropertyOptional({ type: String, maxLength: 500, nullable: true }) @IsOptional() @IsString() @MaxLength(500) description?: string | null; }
 export class PhysicalTestResultDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() testDefinitionId!: string; @ApiProperty({ type: String, maxLength: 500 }) @IsString() @MinLength(1) @MaxLength(500) resultText!: string; }
 export class PhysicalEvaluationDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() salaParticipationId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() professorId!: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) evaluationDate!: string; @ApiPropertyOptional({ type: String, nullable: true }) @IsOptional() @IsString() observation?: string | null; @ApiProperty({ type: () => [PhysicalTestResultDto], minItems: 1 }) @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => PhysicalTestResultDto) results!: PhysicalTestResultDto[]; }
 export class SalaPaymentAllocationDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() chargeId!: string; @ApiProperty({ type: String, pattern: '^\\d+$' }) @IsString() @Matches(/^\d+$/) amount!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() operationId!: string; }
@@ -220,7 +220,7 @@ export class CorrectPhysicalEvaluationDto {
 export class PhysicalTestDefinitionResponseDto {
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
   @ApiProperty({ type: String }) name!: string;
-  @ApiProperty({ type: String }) type!: string;
+  @ApiProperty({ type: String, nullable: true }) type!: string | null;
   @ApiProperty({ type: String, nullable: true }) description!: string | null;
   @ApiProperty({ type: Boolean }) isActive!: boolean;
 }
@@ -244,3 +244,148 @@ export class PhysicalEvaluationResponseDto {
 }
 export class PhysicalEvaluationEnvelopeDto { @ApiProperty({ type: () => PhysicalEvaluationResponseDto }) data!: PhysicalEvaluationResponseDto; }
 export class PhysicalEvaluationListEnvelopeDto { @ApiProperty({ type: () => [PhysicalEvaluationResponseDto] }) data!: PhysicalEvaluationResponseDto[]; }
+
+export class ExerciseDefinitionResponseDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: String }) name!: string;
+  @ApiProperty({ type: String, nullable: true }) primaryMuscle!: string | null;
+  @ApiProperty({ type: String, nullable: true }) description!: string | null;
+  @ApiProperty({ type: Boolean }) isActive!: boolean;
+}
+export class ExerciseDefinitionEnvelopeDto {
+  @ApiProperty({ type: () => ExerciseDefinitionResponseDto }) data!: ExerciseDefinitionResponseDto;
+}
+export class ExerciseDefinitionListEnvelopeDto {
+  @ApiProperty({ type: () => [ExerciseDefinitionResponseDto] }) data!: ExerciseDefinitionResponseDto[];
+}
+export class RoutineExerciseResponseDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: Number }) position!: number;
+  @ApiProperty({ type: String }) exerciseDefinitionId!: string;
+  @ApiProperty({ type: String, nullable: true }) series!: string | null;
+  @ApiProperty({ type: String, nullable: true }) repetitions!: string | null;
+  @ApiProperty({ type: String, nullable: true }) duration!: string | null;
+  @ApiProperty({ type: String, nullable: true }) load!: string | null;
+  @ApiProperty({ type: String, nullable: true }) rest!: string | null;
+  @ApiProperty({ type: String, nullable: true }) notes!: string | null;
+  @ApiProperty({ type: () => ExerciseDefinitionResponseDto }) exerciseDefinition!: ExerciseDefinitionResponseDto;
+}
+export class RoutineDayResponseDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: Number }) position!: number;
+  @ApiProperty({ type: String, nullable: true }) name!: string | null;
+  @ApiProperty({ type: () => [RoutineExerciseResponseDto] }) exercises!: RoutineExerciseResponseDto[];
+}
+export class RoutineTemplateResponseDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: String }) name!: string;
+  @ApiProperty({ type: () => [RoutineDayResponseDto] }) days!: RoutineDayResponseDto[];
+}
+export class RoutineTemplateListEnvelopeDto {
+  @ApiProperty({ type: () => [RoutineTemplateResponseDto] }) data!: RoutineTemplateResponseDto[];
+}
+export class SalaRoutineResponseDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: String }) personId!: string;
+  @ApiProperty({ type: String }) salaParticipationId!: string;
+  @ApiProperty({ type: String, enum: ['ACTIVE', 'HISTORICAL'] }) status!: 'ACTIVE' | 'HISTORICAL';
+  @ApiProperty({ type: Number }) version!: number;
+  @ApiProperty({ type: String }) createdAt!: string;
+  @ApiProperty({ type: () => [RoutineDayResponseDto] }) days!: RoutineDayResponseDto[];
+}
+export class SalaRoutineListEnvelopeDto {
+  @ApiProperty({ type: () => [SalaRoutineResponseDto] }) data!: SalaRoutineResponseDto[];
+}
+export class SalaParticipationPlanResponseDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: String }) name!: string;
+  @ApiProperty({ type: String }) monthlyAmount!: string;
+}
+export class SalaParticipationResponseDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: String }) personId!: string;
+  @ApiProperty({ type: String }) startDate!: string;
+  @ApiProperty({ type: String, nullable: true }) endDate!: string | null;
+  @ApiProperty({ type: String, nullable: true }) objective!: string | null;
+  @ApiProperty({ type: String }) mainProfessorId!: string;
+  @ApiProperty({ type: String }) planId!: string;
+  @ApiProperty({ type: () => SalaParticipationPlanResponseDto }) plan!: SalaParticipationPlanResponseDto;
+  @ApiProperty({ type: () => SalaProfessorOptionDto }) mainProfessor!: SalaProfessorOptionDto;
+}
+export class SalaParticipationListEnvelopeDto {
+  @ApiProperty({ type: () => [SalaParticipationResponseDto] }) data!: SalaParticipationResponseDto[];
+}
+export class SalaBookingSlotResponseDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: String }) weekday!: string;
+  @ApiProperty({ type: String }) startTime!: string;
+  @ApiProperty({ type: Number }) durationMinutes!: number;
+}
+export class SalaBookingServiceResponseDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: String }) name!: string;
+  @ApiProperty({ type: Number }) durationMinutes!: number;
+}
+export class FixedSalaBookingResponseDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: String }) personId!: string;
+  @ApiProperty({ type: String }) salaParticipationId!: string;
+  @ApiProperty({ type: String, nullable: true }) startTime!: string | null;
+  @ApiProperty({ type: () => SalaBookingSlotResponseDto }) scheduleSlot!: SalaBookingSlotResponseDto;
+  @ApiProperty({ type: () => SalaBookingServiceResponseDto, nullable: true }) serviceType!: SalaBookingServiceResponseDto | null;
+  @ApiProperty({ type: String }) startDate!: string;
+  @ApiProperty({ type: String, nullable: true }) endDate!: string | null;
+}
+export class FixedSalaBookingListEnvelopeDto {
+  @ApiProperty({ type: () => [FixedSalaBookingResponseDto] }) data!: FixedSalaBookingResponseDto[];
+}
+export class SalaReservationResponseDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: String }) personId!: string;
+  @ApiProperty({ type: String }) salaParticipationId!: string;
+  @ApiProperty({ type: String, nullable: true }) startTime!: string | null;
+  @ApiProperty({ type: () => SalaBookingSlotResponseDto }) scheduleSlot!: SalaBookingSlotResponseDto;
+  @ApiProperty({ type: () => SalaBookingServiceResponseDto, nullable: true }) serviceType!: SalaBookingServiceResponseDto | null;
+  @ApiProperty({ type: String }) date!: string;
+  @ApiProperty({ type: String, nullable: true }) cancelledAt!: string | null;
+}
+export class SalaReservationListEnvelopeDto {
+  @ApiProperty({ type: () => [SalaReservationResponseDto] }) data!: SalaReservationResponseDto[];
+}
+export class SalaAvailabilityResponseDto {
+  @ApiProperty({ type: String }) slotId!: string;
+  @ApiProperty({ type: String }) scheduleSlotId!: string;
+  @ApiProperty({ type: String }) startTime!: string;
+  @ApiProperty({ type: String }) endTime!: string;
+  @ApiProperty({ type: String }) date!: string;
+  @ApiProperty({ type: Number }) capacity!: number;
+  @ApiProperty({ type: Number }) reserved!: number;
+  @ApiProperty({ type: Number }) available!: number;
+  @ApiProperty({ type: Boolean }) isOverbooked!: boolean;
+  @ApiProperty({ type: Boolean }) isClosed!: boolean;
+}
+export class SalaAvailabilityListEnvelopeDto {
+  @ApiProperty({ type: () => [SalaAvailabilityResponseDto] }) data!: SalaAvailabilityResponseDto[];
+}
+export class SalaPaymentMethodResponseDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: String }) name!: string;
+  @ApiProperty({ type: Boolean }) isSelectable!: boolean;
+}
+export class SalaPaymentReversalResponseDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: String }) reason!: string;
+}
+export class SalaPaymentResponseDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: Number }) year!: number;
+  @ApiProperty({ type: Number }) month!: number;
+  @ApiProperty({ type: String }) paidAt!: string;
+  @ApiProperty({ type: String }) amount!: string;
+  @ApiProperty({ type: String, nullable: true }) adjustmentReason!: string | null;
+  @ApiProperty({ type: () => SalaPaymentMethodResponseDto }) paymentMethod!: SalaPaymentMethodResponseDto;
+  @ApiProperty({ type: () => SalaPaymentReversalResponseDto, nullable: true }) reversal!: SalaPaymentReversalResponseDto | null;
+}
+export class SalaPaymentListEnvelopeDto {
+  @ApiProperty({ type: () => [SalaPaymentResponseDto] }) data!: SalaPaymentResponseDto[];
+}

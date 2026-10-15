@@ -75,7 +75,15 @@ export class PortalService {
       details: { year, month },
     });
   }
-  async cancelReservation(token: string|undefined, id: string) { const { person } = await this.ready(token); const found = await this.prisma.oneOffReservation.findFirst({ where: { id, personId: person.id, cancelledAt: null, date: { gte: new Date() } } }); if (!found) throw new ForbiddenException({ code: 'PORTAL_RESOURCE_FORBIDDEN', message: 'No podés cancelar esta reserva.' }); return this.salaService.cancelReservation(id); }
+  async cancelReservation(token: string | undefined, id: string) {
+    const { person } = await this.ready(token);
+    const now = this.reservationNow();
+    const found = await this.prisma.oneOffReservation.findFirst({ where: { id, personId: person.id, cancelledAt: null }, include: { scheduleSlot: true } });
+    if (!found || this.salaService.operationalStart(found.date.toISOString().slice(0, 10), found.startTime ?? found.scheduleSlot.startTime) <= now) {
+      throw new ForbiddenException({ code: 'PORTAL_RESOURCE_FORBIDDEN', message: 'No podés cancelar esta reserva.' });
+    }
+    return this.salaService.cancelReservation(id);
+  }
   async cancelFixedOccurrence(token: string | undefined, fixedBookingId: string, date: string) {
     const { person } = await this.ready(token);
     const occurrence = await this.salaService.cancelFixedOccurrenceFromPortal(fixedBookingId, person.id, date, this.reservationNow());

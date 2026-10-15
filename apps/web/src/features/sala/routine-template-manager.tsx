@@ -22,16 +22,20 @@ function checkedBody(response: { status: number; data: unknown }): unknown {
   if (response.status >= 400) throw new Error(body?.message ?? 'No se pudo completar la operación.');
   return body?.data;
 }
+function checkedData<T>(response: { status: number; data: { data: T } }): T {
+  checkedBody(response);
+  return response.data.data;
+}
 const templateApi: RoutineTemplateApi = {
-  list: async (options) => checkedBody(await listSalaRoutineTemplates(options)) as RoutineTemplate[],
+  list: async (options) => checkedData(await listSalaRoutineTemplates(options)),
   create: async (input, options) => checkedBody(await createSalaRoutineTemplate(input, options)),
   update: async (id, input, options) => checkedBody(await updateSalaRoutineTemplate(id, input, options)),
   delete: async (id, options) => checkedBody(await deleteSalaRoutineTemplate(id, options)),
-  exercises: async (options) => checkedBody(await listSalaExerciseDefinitions(options)) as ExerciseDefinition[],
+  exercises: async (options) => checkedData(await listSalaExerciseDefinitions(options)),
   createExercise: async (input, options) => {
-    const created = checkedBody(await createSalaExerciseDefinition(input, options)) as Partial<ExerciseDefinition> | undefined;
-    if (!created?.id || typeof created.name !== 'string' || typeof created.primaryMuscle !== 'string' || typeof created.isActive !== 'boolean') throw new Error('La respuesta no contiene el ejercicio creado.');
-    return created as ExerciseDefinition;
+    const created = checkedData(await createSalaExerciseDefinition(input, options));
+    if (!created?.id || typeof created.name !== 'string' || typeof created.isActive !== 'boolean') throw new Error('La respuesta no contiene el ejercicio creado.');
+    return created;
   },
 };
 const nameSchema = z.string().trim().min(1, 'El Nombre es obligatorio.').max(120, 'El Nombre admite hasta 120 caracteres.');

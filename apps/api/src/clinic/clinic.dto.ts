@@ -295,3 +295,20 @@ export class FinalizeTreatmentDto {
   @ApiPropertyOptional({ enum: TreatmentFinishReason, type: String }) @IsOptional() @IsEnum(TreatmentFinishReason) finishReason?: TreatmentFinishReason;
   @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() conclusion?: string;
 }
+
+export class SalaSafeIndicationProfessionalDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: String }) firstName!: string;
+  @ApiProperty({ type: String }) lastName!: string;
+}
+export class SalaSafeClinicalIndicationDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ enum: TrainingCondition }) trainingCondition!: TrainingCondition;
+  @ApiProperty({ type: String, nullable: true }) affectedArea!: string | null;
+  @ApiProperty({ type: String, nullable: true }) instructions!: string | null;
+  @ApiProperty({ type: String, format: 'date-time' }) lastUpdate!: string;
+  @ApiProperty({ type: () => SalaSafeIndicationProfessionalDto }) responsibleProfessional!: SalaSafeIndicationProfessionalDto;
+}
+export class SalaSafeClinicalIndicationListEnvelopeDto {
+  @ApiProperty({ type: () => [SalaSafeClinicalIndicationDto] }) data!: SalaSafeClinicalIndicationDto[];
+}

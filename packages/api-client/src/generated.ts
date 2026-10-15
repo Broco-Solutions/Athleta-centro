@@ -262,10 +262,34 @@ export interface TeamCredentialResetDto {
   temporaryPassword: string;
 }
 
+export interface SalaParticipationPlanResponseDto {
+  id: string;
+  name: string;
+  monthlyAmount: string;
+}
+
 export interface SalaProfessorOptionDto {
   id: string;
   firstName: string;
   lastName: string;
+}
+
+export interface SalaParticipationResponseDto {
+  id: string;
+  personId: string;
+  startDate: string;
+  /** @nullable */
+  endDate: string | null;
+  /** @nullable */
+  objective: string | null;
+  mainProfessorId: string;
+  planId: string;
+  plan: SalaParticipationPlanResponseDto;
+  mainProfessor: SalaProfessorOptionDto;
+}
+
+export interface SalaParticipationListEnvelopeDto {
+  data: SalaParticipationResponseDto[];
 }
 
 export interface SalaProfessorListEnvelopeDto {
@@ -410,6 +434,59 @@ export interface ChangePlanDto {
   planId: string;
 }
 
+export interface SalaAvailabilityResponseDto {
+  slotId: string;
+  scheduleSlotId: string;
+  startTime: string;
+  endTime: string;
+  date: string;
+  capacity: number;
+  reserved: number;
+  available: number;
+  isOverbooked: boolean;
+  isClosed: boolean;
+}
+
+export interface SalaAvailabilityListEnvelopeDto {
+  data: SalaAvailabilityResponseDto[];
+}
+
+export interface SalaBookingSlotResponseDto {
+  id: string;
+  weekday: string;
+  startTime: string;
+  durationMinutes: number;
+}
+
+export interface SalaBookingServiceResponseDto {
+  id: string;
+  name: string;
+  durationMinutes: number;
+}
+
+/**
+ * @nullable
+ */
+export type FixedSalaBookingResponseDtoServiceType = SalaBookingServiceResponseDto | null;
+
+export interface FixedSalaBookingResponseDto {
+  id: string;
+  personId: string;
+  salaParticipationId: string;
+  /** @nullable */
+  startTime: string | null;
+  scheduleSlot: SalaBookingSlotResponseDto;
+  /** @nullable */
+  serviceType: FixedSalaBookingResponseDtoServiceType;
+  startDate: string;
+  /** @nullable */
+  endDate: string | null;
+}
+
+export interface FixedSalaBookingListEnvelopeDto {
+  data: FixedSalaBookingResponseDto[];
+}
+
 export interface FixedBookingDto {
   personId: string;
   salaParticipationId: string;
@@ -453,6 +530,29 @@ export interface OneOffReservationDto {
   startTime: string;
   date: string;
   confirmOverbooking?: boolean;
+}
+
+/**
+ * @nullable
+ */
+export type SalaReservationResponseDtoServiceType = SalaBookingServiceResponseDto | null;
+
+export interface SalaReservationResponseDto {
+  id: string;
+  personId: string;
+  salaParticipationId: string;
+  /** @nullable */
+  startTime: string | null;
+  scheduleSlot: SalaBookingSlotResponseDto;
+  /** @nullable */
+  serviceType: SalaReservationResponseDtoServiceType;
+  date: string;
+  /** @nullable */
+  cancelledAt: string | null;
+}
+
+export interface SalaReservationListEnvelopeDto {
+  data: SalaReservationResponseDto[];
 }
 
 export type SalaDashboardPersonDtoOrigin = typeof SalaDashboardPersonDtoOrigin[keyof typeof SalaDashboardPersonDtoOrigin];
@@ -699,6 +799,53 @@ export interface SpontaneousOccurrenceDto {
   confirmOverbooking?: boolean;
 }
 
+export interface ExerciseDefinitionResponseDto {
+  id: string;
+  name: string;
+  /** @nullable */
+  primaryMuscle: string | null;
+  /** @nullable */
+  description: string | null;
+  isActive: boolean;
+}
+
+export interface RoutineExerciseResponseDto {
+  id: string;
+  position: number;
+  exerciseDefinitionId: string;
+  /** @nullable */
+  series: string | null;
+  /** @nullable */
+  repetitions: string | null;
+  /** @nullable */
+  duration: string | null;
+  /** @nullable */
+  load: string | null;
+  /** @nullable */
+  rest: string | null;
+  /** @nullable */
+  notes: string | null;
+  exerciseDefinition: ExerciseDefinitionResponseDto;
+}
+
+export interface RoutineDayResponseDto {
+  id: string;
+  position: number;
+  /** @nullable */
+  name: string | null;
+  exercises: RoutineExerciseResponseDto[];
+}
+
+export interface RoutineTemplateResponseDto {
+  id: string;
+  name: string;
+  days: RoutineDayResponseDto[];
+}
+
+export interface RoutineTemplateListEnvelopeDto {
+  data: RoutineTemplateResponseDto[];
+}
+
 export interface RoutineExerciseDto {
   exerciseDefinitionId: string;
   /**
@@ -748,22 +895,56 @@ export interface RoutineTemplateDto {
   days: RoutineDayDto[];
 }
 
+export type SalaRoutineResponseDtoStatus = typeof SalaRoutineResponseDtoStatus[keyof typeof SalaRoutineResponseDtoStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SalaRoutineResponseDtoStatus = {
+  ACTIVE: 'ACTIVE',
+  HISTORICAL: 'HISTORICAL',
+} as const;
+
+export interface SalaRoutineResponseDto {
+  id: string;
+  personId: string;
+  salaParticipationId: string;
+  status: SalaRoutineResponseDtoStatus;
+  version: number;
+  createdAt: string;
+  days: RoutineDayResponseDto[];
+}
+
+export interface SalaRoutineListEnvelopeDto {
+  data: SalaRoutineResponseDto[];
+}
+
 export interface ReplaceRoutineDto {
   personId: string;
   salaParticipationId: string;
   days: RoutineDayDto[];
 }
 
+export interface ExerciseDefinitionListEnvelopeDto {
+  data: ExerciseDefinitionResponseDto[];
+}
+
 export interface ExerciseDefinitionDto {
   /** @maxLength 120 */
   name: string;
-  /** @maxLength 120 */
-  primaryMuscle: string;
+  /**
+   * @maxLength 120
+   * @nullable
+   */
+  primaryMuscle?: string | null;
   /**
    * @maxLength 500
    * @nullable
    */
   description?: string | null;
+}
+
+export interface ExerciseDefinitionEnvelopeDto {
+  data: ExerciseDefinitionResponseDto;
 }
 
 export interface RetireExerciseDefinitionDto {
@@ -773,7 +954,8 @@ export interface RetireExerciseDefinitionDto {
 export interface PhysicalTestDefinitionResponseDto {
   id: string;
   name: string;
-  type: string;
+  /** @nullable */
+  type: string | null;
   /** @nullable */
   description: string | null;
   isActive: boolean;
@@ -783,7 +965,10 @@ export interface PhysicalTestDefinitionListEnvelopeDto {
   data: PhysicalTestDefinitionResponseDto[];
 }
 
-export type PhysicalTestDefinitionDtoType = typeof PhysicalTestDefinitionDtoType[keyof typeof PhysicalTestDefinitionDtoType];
+/**
+ * @nullable
+ */
+export type PhysicalTestDefinitionDtoType = typeof PhysicalTestDefinitionDtoType[keyof typeof PhysicalTestDefinitionDtoType] | null;
 
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
@@ -796,7 +981,8 @@ export const PhysicalTestDefinitionDtoType = {
 export interface PhysicalTestDefinitionDto {
   /** @maxLength 120 */
   name: string;
-  type: PhysicalTestDefinitionDtoType;
+  /** @nullable */
+  type?: PhysicalTestDefinitionDtoType;
   /**
    * @maxLength 500
    * @nullable
@@ -857,6 +1043,39 @@ export interface PhysicalEvaluationDto {
   observation?: string | null;
   /** @minItems 1 */
   results: PhysicalTestResultDto[];
+}
+
+export interface SalaPaymentMethodResponseDto {
+  id: string;
+  name: string;
+  isSelectable: boolean;
+}
+
+export interface SalaPaymentReversalResponseDto {
+  id: string;
+  reason: string;
+}
+
+/**
+ * @nullable
+ */
+export type SalaPaymentResponseDtoReversal = SalaPaymentReversalResponseDto | null;
+
+export interface SalaPaymentResponseDto {
+  id: string;
+  year: number;
+  month: number;
+  paidAt: string;
+  amount: string;
+  /** @nullable */
+  adjustmentReason: string | null;
+  paymentMethod: SalaPaymentMethodResponseDto;
+  /** @nullable */
+  reversal: SalaPaymentResponseDtoReversal;
+}
+
+export interface SalaPaymentListEnvelopeDto {
+  data: SalaPaymentResponseDto[];
 }
 
 export interface SalaPaymentAllocationDto {
@@ -1459,6 +1678,37 @@ export interface SalaClinicalIndicationDto {
   responsibleProfessionalId?: string;
 }
 
+export interface SalaSafeIndicationProfessionalDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
+export type SalaSafeClinicalIndicationDtoTrainingCondition = typeof SalaSafeClinicalIndicationDtoTrainingCondition[keyof typeof SalaSafeClinicalIndicationDtoTrainingCondition];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SalaSafeClinicalIndicationDtoTrainingCondition = {
+  NO_RESTRICTIONS: 'NO_RESTRICTIONS',
+  RESTRICTED: 'RESTRICTED',
+  DO_NOT_TRAIN: 'DO_NOT_TRAIN',
+} as const;
+
+export interface SalaSafeClinicalIndicationDto {
+  id: string;
+  trainingCondition: SalaSafeClinicalIndicationDtoTrainingCondition;
+  /** @nullable */
+  affectedArea: string | null;
+  /** @nullable */
+  instructions: string | null;
+  lastUpdate: string;
+  responsibleProfessional: SalaSafeIndicationProfessionalDto;
+}
+
+export interface SalaSafeClinicalIndicationListEnvelopeDto {
+  data: SalaSafeClinicalIndicationDto[];
+}
+
 export interface ReservationsProfessionalDto {
   id: string;
   firstName: string;
@@ -1575,12 +1825,6 @@ export type ListPeopleParams = {
 pageSize?: number;
 page?: number;
 search?: string;
-};
-
-export type ListPersonSalaParticipations200DataItem = { [key: string]: unknown };
-
-export type ListPersonSalaParticipations200 = {
-  data?: ListPersonSalaParticipations200DataItem[];
 };
 
 export type JoinSala200Data = { [key: string]: unknown };
@@ -2629,7 +2873,7 @@ export const resetTeamUserCredential = async (id: string, options?: RequestInit)
 
 
 export type listPersonSalaParticipationsResponse200 = {
-  data: ListPersonSalaParticipations200
+  data: SalaParticipationListEnvelopeDto
   status: 200
 }
 
@@ -3107,7 +3351,7 @@ export const changeSalaPlan = async (id: string,
 
 
 export type getSalaAvailabilityResponse200 = {
-  data: void
+  data: SalaAvailabilityListEnvelopeDto
   status: 200
 }
 
@@ -3153,7 +3397,7 @@ export const getSalaAvailability = async (params: GetSalaAvailabilityParams, opt
 
 
 export type listFixedSalaBookingsResponse200 = {
-  data: void
+  data: FixedSalaBookingListEnvelopeDto
   status: 200
 }
 
@@ -3354,7 +3598,7 @@ export const createSalaReservation = async (oneOffReservationDto: OneOffReservat
 
 
 export type listSalaReservationsResponse200 = {
-  data: void
+  data: SalaReservationListEnvelopeDto
   status: 200
 }
 
@@ -3852,7 +4096,7 @@ export const createSpontaneousSalaOccurrence = async (spontaneousOccurrenceDto: 
 
 
 export type listSalaRoutineTemplatesResponse200 = {
-  data: void
+  data: RoutineTemplateListEnvelopeDto
   status: 200
 }
 
@@ -4011,7 +4255,7 @@ export const deleteSalaRoutineTemplate = async (id: string, options?: RequestIni
 
 
 export type listPersonSalaRoutinesResponse200 = {
-  data: void
+  data: SalaRoutineListEnvelopeDto
   status: 200
 }
 
@@ -4129,7 +4373,7 @@ export const duplicateSalaRoutine = async (id: string, options?: RequestInit): P
 
 
 export type listSalaExerciseDefinitionsResponse200 = {
-  data: void
+  data: ExerciseDefinitionListEnvelopeDto
   status: 200
 }
 
@@ -4168,7 +4412,7 @@ export const listSalaExerciseDefinitions = async ( options?: RequestInit): Promi
 
 
 export type createSalaExerciseDefinitionResponse201 = {
-  data: void
+  data: ExerciseDefinitionEnvelopeDto
   status: 201
 }
 
@@ -4569,7 +4813,7 @@ export const createSalaPhysicalEvaluation = async (physicalEvaluationDto: Physic
 
 
 export type listSalaPaymentsResponse200 = {
-  data: void
+  data: SalaPaymentListEnvelopeDto
   status: 200
 }
 
@@ -8586,7 +8830,7 @@ export const listSalaClinicalIndications = async (params: ListSalaClinicalIndica
 
 
 export type getSalaClinicalIndicationProjectionResponse200 = {
-  data: void
+  data: SalaSafeClinicalIndicationListEnvelopeDto
   status: 200
 }
 

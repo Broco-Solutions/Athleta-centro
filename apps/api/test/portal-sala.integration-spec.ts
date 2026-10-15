@@ -630,4 +630,44 @@ describe('Portal Sala services from the current plan', () => {
     }
   });
 
+  it.each([
+    ['09:59:59', 200], ['10:00:00', 403], ['10:00:01', 403],
+  ])('cancels a same-day reservation only before the actual start: %s', async (time, status) => {
+    operationalDate.mockReturnValue('2026-10-20');
+    const f = await fixture('2026-10-20');
+    const row = await sala.createReservation({ personId, salaParticipationId: f.participation.id, scheduleSlotId: windowId, serviceTypeId: f.muscle.id, date: '2026-10-20', startTime: '10:00' });
+    reservationNow.mockReturnValue(new Date(`2026-10-20T${time}-03:00`));
+    const response = await request(app.getHttpServer()).post(`/api/portal/sala/reservations/${row.id}/cancel`).set('Cookie', f.cookie).set('x-csrf-token', f.csrf).expect(status);
+    const persisted = await prisma.oneOffReservation.findUniqueOrThrow({ where: { id: row.id } });
+    if (status === 200) expect(persisted.cancelledAt).not.toBeNull();
+    else { expect(response.body.code).toBe('PORTAL_RESOURCE_FORBIDDEN'); expect(persisted.cancelledAt).toBeNull(); }
+  });
+  it('keeps future reservations cancelable, including historical schedule-time fallback', async () => {
+    operationalDate.mockReturnValue('2026-10-20');
+    const f = await fixture('2026-10-21');
+    const row = await sala.createReservation({ personId, salaParticipationId: f.participation.id, scheduleSlotId: windowId, serviceTypeId: f.muscle.id, date: '2026-10-21', startTime: '10:00' });
+    await prisma.oneOffReservation.update({ where: { id: row.id }, data: { startTime: null } });
+    reservationNow.mockReturnValue(new Date('2026-10-20T10:00:00-03:00'));
+    await request(app.getHttpServer()).post(`/api/portal/sala/reservations/${row.id}/cancel`).set('Cookie', f.cookie).set('x-csrf-token', f.csrf).expect(200);
+    expect((await prisma.oneOffReservation.findUniqueOrThrow({ where: { id: row.id } })).cancelledAt).not.toBeNull();
+  });
+  it('does not reveal or cancel another person reservation', async () => {
+    operationalDate.mockReturnValue('2026-10-20');
+    const f = await fixture('2026-10-20');
+    const dni = crypto.randomUUID();
+    const other = await prisma.person.create({ data: { firstName: 'Otra', lastName: 'Persona sintética', dni, normalizedDni: dni, phone: '3515550000', birthDate: new Date('1990-01-01') } });
+    try {
+      const participation = await sala.join({ personId: other.id, mainProfessorId: professorId, planId, startDate: '2020-01-01' });
+      const row = await sala.createReservation({ personId: other.id, salaParticipationId: participation.id, scheduleSlotId: windowId, serviceTypeId: f.muscle.id, date: '2026-10-20', startTime: '10:00' });
+      reservationNow.mockReturnValue(new Date('2026-10-20T09:59:59-03:00'));
+      const response = await request(app.getHttpServer()).post(`/api/portal/sala/reservations/${row.id}/cancel`).set('Cookie', f.cookie).set('x-csrf-token', f.csrf).expect(403);
+      expect(response.body.code).toBe('PORTAL_RESOURCE_FORBIDDEN');
+      expect((await prisma.oneOffReservation.findUniqueOrThrow({ where: { id: row.id } })).cancelledAt).toBeNull();
+    } finally {
+      await prisma.oneOffReservation.deleteMany({ where: { personId: other.id } });
+      await prisma.salaParticipation.deleteMany({ where: { personId: other.id } });
+      await prisma.person.delete({ where: { id: other.id } });
+    }
+  });
+
 });

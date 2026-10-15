@@ -43,7 +43,7 @@ export function SalaPaymentPanel({ personId, csrfToken, canManage, activePlan }:
   // Keep operation IDs for retries of an unchanged submission.
   const pendingRequest = useRef<Parameters<typeof registerSalaPlanPayments>[0] | null>(null);
   const [paymentToReverse, setPaymentToReverse] = useState<Payment | null>(null);
-  const payments = useQuery({ queryKey: ['sala', 'payments', personId], queryFn: async () => { const response = await listSalaPayments(personId, { credentials: 'include' }); assertSuccess(response); return unwrap<Payment>(response); } });
+  const payments = useQuery({ queryKey: ['sala', 'payments', personId], queryFn: async () => { const response = await listSalaPayments(personId, { credentials: 'include' }); assertSuccess(response); return response.data.data; } });
   const methods = useQuery({ queryKey: ['finance', 'payment-methods'], queryFn: async () => unwrap<Method>(await listPaymentMethods({ credentials: 'include' })) });
   const selectableMethods = (methods.data ?? []).filter((item) => item.isSelectable);
   const method = form.watch('paymentMethodId');

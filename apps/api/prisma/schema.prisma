@@ -647,7 +647,7 @@ model SalaServiceType {
 model ExerciseDefinition {
   id               String            @id @default(uuid()) @db.Uuid
   name             String            @db.VarChar(120)
-  primaryMuscle    String            @map("primary_muscle") @db.VarChar(120)
+  primaryMuscle    String?           @map("primary_muscle") @db.VarChar(120)
   description      String?           @db.VarChar(500)
   isActive         Boolean           @default(true) @map("is_active")
   createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -751,7 +751,7 @@ model RoutineExercise {
 model PhysicalTestDefinition {
   id          String               @id @default(uuid()) @db.Uuid
   name        String               @db.VarChar(120)
-  type        String               @db.VarChar(80)
+  type        String?              @db.VarChar(80)
   description String?              @db.VarChar(500)
   isActive    Boolean              @default(true) @map("is_active")
   createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)

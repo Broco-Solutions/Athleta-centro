@@ -45,10 +45,7 @@ function FinancePageContent(): React.JSX.Element {
   const participations = useQuery({ queryKey: ['sala-participations', personId], enabled: selectedPaymentContext && person.isSuccess, queryFn: async () => {
     const response = await listPersonSalaParticipations(personId!, { credentials: 'include' });
     if (response.status >= 400) throw new Error('No se pudo cargar la participación de Sala.');
-    const body: unknown = response.data;
-    const rows = (body as { data?: unknown })?.data;
-    if (!Array.isArray(rows)) throw new Error('No se pudo cargar la participación de Sala.');
-    return rows as Array<{ endDate: string | null; plan: { id: string; name: string; monthlyAmount: string } }>;
+    return response.data.data;
   } });
 
   async function save(event: React.FormEvent) {

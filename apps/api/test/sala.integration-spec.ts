@@ -1518,4 +1518,37 @@ describe('Sala configuration API', () => {
     ] as const) await request(app.getHttpServer())[method](`/api/sala/${path}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(body).expect(403);
   });
 
+  it('creates and clears optional exercise muscles without changing the catalog identity', async () => {
+    const a = await session(Role.GENERAL_ADMIN);
+    const call = (method: 'post' | 'patch', path: string, body: object) => request(app.getHttpServer())[method](`/api/sala/exercise-definitions${path}`).set('Cookie', a.cookie).set('x-csrf-token', a.csrf).send(body);
+    const plank = await call('post', '', { name: 'Plancha' }).expect(201);
+    expect(plank.body.data).toMatchObject({ name: 'Plancha', primaryMuscle: null, description: null, isActive: true });
+    const row = await call('post', '', { name: 'Remo', primaryMuscle: ' Espalda ' }).expect(201);
+    expect(row.body.data.primaryMuscle).toBe('Espalda');
+    for (const primaryMuscle of ['', null]) {
+      const updated = await call('patch', `/${row.body.data.id}`, { name: 'Remo', primaryMuscle }).expect(200);
+      expect(updated.body.data).toMatchObject({ id: row.body.data.id, primaryMuscle: null });
+      expect((await prisma.exerciseDefinition.findUniqueOrThrow({ where: { id: row.body.data.id } })).primaryMuscle).toBeNull();
+    }
+    const list = await request(app.getHttpServer()).get('/api/sala/exercise-definitions').set('Cookie', a.cookie).expect(200);
+    expect(list.body.data).toEqual(expect.arrayContaining([expect.objectContaining({ id: plank.body.data.id, primaryMuscle: null })]));
+  });
+  it('accepts optional physical test type and validates every supplied type on create and edit', async () => {
+    const a = await session(Role.GENERAL_ADMIN);
+    const call = (method: 'post' | 'patch', path: string, body: object) => request(app.getHttpServer())[method](`/api/sala/physical-test-definitions${path}`).set('Cookie', a.cookie).set('x-csrf-token', a.csrf).send(body);
+    const created = await call('post', '', { name: 'Salto vertical' }).expect(201);
+    expect(created.body.data).toMatchObject({ type: null, description: null });
+    for (const type of ['STRENGTH', 'MOBILITY', 'OTHER', null]) {
+      const updated = await call('patch', `/${created.body.data.id}`, { name: 'Salto vertical', type }).expect(200);
+      expect(updated.body.data).toMatchObject({ id: created.body.data.id, type });
+      expect((await prisma.physicalTestDefinition.findUniqueOrThrow({ where: { id: created.body.data.id } })).type).toBe(type);
+    }
+    const invalid = await call('post', '', { name: 'Invalid', type: 'NUMERIC' }).expect(400);
+    expect(invalid.body.code).toBe('SALA_PHYSICAL_TEST_TYPE_INVALID');
+    const f = await physicalFixture();
+    await sala.updatePhysicalTest(f.a.id, { name: f.a.name, type: null });
+    const evaluation = await sala.createPhysicalEvaluation(f.input, f.professor.id);
+    expect(evaluation.results.find(result => result.testDefinitionId === f.a.id)?.testDefinition.type).toBeNull();
+  });
+
 });

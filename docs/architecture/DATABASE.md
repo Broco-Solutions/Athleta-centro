@@ -2473,3 +2473,17 @@ Si existe una intervención de emergencia, deberá reconciliarse y documentarse 
 ## Evaluaciones físicas de Sala — cierre 2026-10-14
 
 `PhysicalEvaluation.observation` es texto nullable, opcional e interno de Sala. Los Results son composición de la Evaluación y puede existir más de un Result para el mismo Test, sin unicidad entre evaluación y definición. Un Test retirado continúa referenciado por los Results históricos. `PhysicalTestDefinition.isActive` es el mecanismo técnico de retiro, no un estado funcional visible. La edición modifica la definición actual, sin snapshot de Test. La corrección reemplaza directamente Results y Observación, conservando Fecha y Profesor.
+
+### Catálogos opcionales de Sala — Bloque 5 (2026-10-15)
+
+`ExerciseDefinition.primaryMuscle` es nullable (`VARCHAR(120)`).
+`PhysicalTestDefinition.type` es nullable (`VARCHAR(80)`). La aplicación
+normaliza valores de Músculo principal omitidos, nulos o vacíos a `null`.
+Tipo omitido o nulo se persiste como `null`; un valor informado solo puede ser
+`STRENGTH`, `MOBILITY` u `OTHER`.
+
+La migración `20261015120000_sala_optional_catalog_fields/migration.sql`
+únicamente elimina `NOT NULL` de `exercise_definitions.primary_muscle` y
+`physical_test_definitions.type`, sin backfill ni modificación de registros.
+Las relaciones, nombres e índices únicos existentes se conservan; CAT-04
+permanece pendiente.
