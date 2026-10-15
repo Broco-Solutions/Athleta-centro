@@ -5,8 +5,9 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { WorkspaceShell } from '../../features/auth/workspace-shell';
-import { getPerson, listPersonSalaParticipations } from '@athleta/api-client';
+import { getPerson, listPersonSalaParticipations, listSalaStudents } from '@athleta/api-client';
 import { SalaPaymentPanel } from '../../features/finance/sala-payment-panel';
+import { ExpenseRegistration } from '../../features/finance/expense-registration';
 import { currentSession } from '../../features/auth/auth';
 
 type Method = { id: string; name: string; isSelectable: boolean };
@@ -28,6 +29,16 @@ function FinancePageContent(): React.JSX.Element {
   const permissions = session.data?.permissions ?? [];
   const read = permissions.includes('FINANCE_OPERATIONAL_READ');
   const canCatalog = permissions.includes('PAYMENT_METHOD_CATALOG_MANAGE');
+  const [search, setSearch] = useState('');
+  const canPay = permissions.includes('SALA_PAYMENT_MANAGE');
+  const students = useQuery({ queryKey: ['sala', 'students'], enabled: view === 'income' && !personId && canPay, queryFn: async () => {
+    const response = await listSalaStudents({ credentials: 'include' });
+    if (response.status >= 400) throw new Error('No pudimos cargar los alumnos de Sala.');
+    return response.data.data;
+  } });
+  const term = search.trim().toLocaleLowerCase('es');
+  const dniDigits = term.replace(/\D/g, '');
+  const results = term ? students.data?.filter(student => `${student.firstName} ${student.lastName}`.toLocaleLowerCase('es').includes(term) || (dniDigits && /^[\d\s.-]+$/.test(term) && student.dni.replace(/\D/g, '').includes(dniDigits))) ?? [] : [];
   const [name, setName] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
   const [message, setMessage] = useState('');
@@ -66,10 +77,23 @@ function FinancePageContent(): React.JSX.Element {
     <header><h1 className="text-3xl font-semibold">Finanzas</h1><p className="text-sm text-muted-foreground">Operación económica · ARS</p></header>
     {view === 'summary' && read ? <>
       <section aria-label="Indicadores financieros" className="grid gap-4 md:grid-cols-5">{indicatorRows.slice(0, permissions.includes('FINANCE_EXECUTIVE_READ') ? 5 : 4).map(([label, key]) => <article className="rounded border bg-white p-4" key={key}><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold">$ {String(totalsData?.[key] ?? '0')}</p></article>)}</section>
-      <PaymentMethods methods={methods.data ?? []} canCatalog={canCatalog} name={name} editing={editing} message={message} onName={setName} onSave={save} onEdit={(method) => { setEditing(method.id); setName(method.name); }} onRetire={(method) => { void retire(method); }} onCancelEdit={() => { setEditing(null); setName(''); }} />
+      <details className="rounded border bg-white p-4"><summary className="cursor-pointer font-semibold">Configuración · Administrar medios de pago</summary><PaymentMethods methods={methods.data ?? []} canCatalog={canCatalog} name={name} editing={editing} message={message} onName={setName} onSave={save} onEdit={(method) => { setEditing(method.id); setName(method.name); }} onRetire={(method) => { void retire(method); }} onCancelEdit={() => { setEditing(null); setName(''); }} /></details>
     </> : null}
+    {view === 'income' && canPay && !personId ? <section className="space-y-3 rounded border bg-white p-5">
+      <h2 className="text-xl font-semibold">Registrar cuota</h2>
+      <p className="text-sm text-muted-foreground">Buscá un alumno para registrar su pago de Sala.</p>
+      <label className="block text-sm">Nombre, apellido o DNI<input type="search" value={search} onChange={event => setSearch(event.target.value)} className="mt-1 h-10 w-full rounded border px-3" /></label>
+      {students.isPending ? <p role="status">Cargando alumnos…</p> : null}
+      {students.isError ? <p role="alert">{students.error.message}</p> : null}
+      {students.isSuccess && term && !results.length ? <p>No se encontraron alumnos.</p> : null}
+      <ul>{results.map(student => <li key={student.id} className="flex flex-wrap items-center justify-between gap-3 border-b py-3 text-sm">
+        <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>DNI {student.dni} · {student.plan.name}</p><p>{student.paymentStatus === 'PAID' ? 'Pago registrado' : 'Pago pendiente'}</p></div>
+        <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}`}>{student.paymentStatus === 'PAID' ? 'Ver pagos' : 'Registrar cuota'}</Link>
+      </li>)}</ul>
+    </section> : null}
     {selectedPaymentContext ? <section className="space-y-3">
       <h2 className="text-xl font-semibold">Pago de Sala</h2>
+      <Link className="inline-block text-sm underline" href="/finance?view=income">Cambiar alumno</Link>
       {person.isPending ? <p role="status">Cargando Persona…</p> : null}
       {person.isError || participations.isError ? <p role="alert">{person.error?.message ?? participations.error?.message}</p> : null}
       {person.isSuccess ? <><p className="font-semibold">{person.data.firstName} {person.data.lastName}</p><p>DNI {person.data.dni}</p>
@@ -78,7 +102,9 @@ function FinancePageContent(): React.JSX.Element {
       </> : null}
     </section> : null}
     {view === 'income' && income.isError ? <p role="alert">No se pudieron cargar los ingresos para este contexto.</p> : null}
-    {view === 'income' && read ? <Data title="Ingresos" value={income.data} action={<Link className="text-sm underline" href="/finance/clinical-income/new">Nuevo ingreso clínico</Link>} /> : null}
+    {view === 'income' && read ? <Data title="Ingresos" value={income.data} /> : null}
+    {view === 'expenses' && permissions.includes('EXPENSE_CREATE') ? <ExpenseRegistration csrfToken={session.data?.csrfToken ?? ''} canManageCategories={permissions.includes('EXPENSE_CATEGORY_CATALOG_MANAGE')} /> : null}
+    {view === 'expenses' && expenses.isError ? <p role="alert">No se pudieron cargar los gastos.</p> : null}
     {view === 'expenses' && (read || permissions.includes('EXPENSE_HISTORY_READ')) ? <Data title="Gastos" value={expenses.data} /> : null}
   </main></WorkspaceShell>;
 }
@@ -90,7 +116,17 @@ function PaymentMethods({ methods, canCatalog, name, editing, message, onName, o
   return <section className="rounded border bg-white p-5"><h2 className="font-semibold">Medios de pago</h2>{methods.map((method) => <div className="flex items-center justify-between border-b py-2 text-sm" key={method.id}><span>{method.name}</span><span className="flex items-center gap-3"><span>{method.isSelectable ? 'Disponible' : 'Retirado'}</span>{canCatalog && <>{method.isSelectable && <button className="underline" onClick={() => onEdit(method)}>Editar</button>}{method.isSelectable && <button className="underline" onClick={() => onRetire(method)}>Retirar</button>}</>}</span></div>)}{canCatalog && <form className="mt-4 flex gap-2" onSubmit={onSave}><input aria-label="Nombre del medio de pago" required value={name} onChange={(event) => onName(event.target.value)} className="h-10 flex-1 rounded border px-3" placeholder={editing ? 'Editar medio de pago' : 'Nuevo medio de pago'} /><button className="rounded bg-[#FCCC05] px-3 py-2 text-sm text-black">{editing ? 'Guardar' : 'Crear'}</button>{editing && <button type="button" className="rounded border px-3" onClick={onCancelEdit}>Cancelar</button>}</form>}{message && <p role="status" className="mt-2 text-sm">{message}</p>}</section>;
 }
 
-function Data({ title, value, action }: { title: string; value: unknown; action?: React.ReactNode }): React.JSX.Element {
-  const rows = Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
-  return <section className="rounded border bg-white p-5"><div className="flex items-center justify-between gap-3"><h2 className="font-semibold">{title}</h2>{action}</div>{rows.length ? rows.map((row) => <div className="flex justify-between border-b py-2 text-sm" key={String(row.id)}><span>{String(row.cashDate ?? '')} · {String(row.source ?? row.area ?? '')}</span><strong>$ {String(row.amount ?? '0')}</strong></div>) : <p className="mt-3 text-sm text-muted-foreground">No hay registros.</p>}</section>;
+type Movement = { id: string; cashDate: string; source?: string; area?: string; amount: string; person?: { firstName: string; lastName: string }; category?: { name: string }; paymentMethod?: { name: string }; description?: string | null };
+const areaLabel = (area?: string) => ({ SALA: 'Sala', GENERAL: 'General', CLINIC: 'Clínica' })[area ?? ''] ?? area;
+const formatDate = (value: string) => value.slice(0, 10).split('-').reverse().join('/');
+const formatMoney = (value: string) => `$ ${BigInt(value).toLocaleString('es-AR')}`;
+
+function Data({ title, value }: { title: string; value: unknown }): React.JSX.Element {
+  const rows = Array.isArray(value) ? value as Movement[] : [];
+  return <section className="rounded border bg-white p-5"><div className="flex items-center justify-between gap-3"><h2 className="font-semibold">{title}</h2></div>{rows.length ? rows.map(row => <div className="grid gap-2 border-b py-3 text-sm sm:grid-cols-[1fr_2fr_1fr_1fr_auto]" key={`${row.source ?? row.area}-${row.id}`}>
+    <time dateTime={row.cashDate.slice(0, 10)}>{formatDate(row.cashDate)}</time>
+    <span className="font-medium">{row.person ? `${row.person.firstName} ${row.person.lastName}` : row.category?.name}</span>
+    <span>{areaLabel(row.source ?? row.area)}</span><span>{row.paymentMethod?.name}</span><strong className="sm:text-right">{formatMoney(row.amount)}</strong>
+    {row.description ? <p className="text-muted-foreground sm:col-span-5">{row.description}</p> : null}
+  </div>) : <p className="mt-3 text-sm text-muted-foreground">No hay registros.</p>}</section>;
 }

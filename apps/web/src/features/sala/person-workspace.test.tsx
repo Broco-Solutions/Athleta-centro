@@ -179,7 +179,7 @@ it('treats an Orval HTTP 409 as a mutation error and preserves the editor withou
   let writes = 0;
   server.use(http.post('http://localhost:3000/api/sala/routines', () => { writes++; return HttpResponse.json({ code: 'SALA_EXERCISE_INVALID', message: 'El ejercicio fue retirado.' }, { status: 409 }); }));
   renderWorkspace(); await screen.findByText('Día de fuerza'); fireEvent.click(screen.getByRole('button', { name: 'Editar rutina' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Guardar rutina' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('El ejercicio fue retirado.');
   expect(writes).toBe(1); expect(reads()).toBe(1);
   expect(screen.getByLabelText('Nombre del día 1')).toHaveValue('Día de fuerza');
@@ -226,7 +226,7 @@ it('returns the actual created catalog entity through the adapter and selects it
   expect(scope.getByRole('option', { name: 'Peso muerto · Piernas' })).toBeInTheDocument();
   expect(writes).toEqual([{ name: 'Peso muerto', primaryMuscle: 'Piernas', description: 'Con barra' }]);
   expect(scope.getByLabelText('Series')).toHaveValue('4'); expect(scope.getAllByRole('listitem')).toHaveLength(1);
-  expect(screen.getByRole('button', { name: 'Guardar rutina' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeInTheDocument();
 });
 it.each([400, 409])('keeps an inline HTTP %s catalog creation failure as an error', async status => {
   navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); routineHandlers();
@@ -257,7 +257,7 @@ it.each([false, true])('uses the generated template list and routine replacement
   );
   renderWorkspace(); await screen.findByText('Día de fuerza'); fireEvent.click(screen.getByRole('button', { name: 'Usar preestablecida' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Preestablecida' }));
-  expect(screen.queryByRole('button', { name: 'Guardar rutina' })).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Asignar rutina' }));
+  expect(screen.queryByRole('button', { name: 'Guardar cambios' })).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Asignar rutina' }));
   if (reject) { expect(await screen.findByRole('alert')).toHaveTextContent('Ejercicio retirado'); expect(screen.queryByText('Rutina asignada correctamente.')).not.toBeInTheDocument(); expect(reads()).toBe(1); }
   else { await screen.findByText('Rutina asignada correctamente.'); await waitFor(() => expect(reads()).toBe(2)); }
   expect(templateReads).toBe(1); expect(writes).toEqual([{ personId, salaParticipationId: 'participation', days: [{ name: 'Modelo', exercises: [{ exerciseDefinitionId: 'squat', series: '4', repetitions: '10', duration: null, load: null, rest: null, notes: null }] }] }]);
@@ -586,4 +586,19 @@ it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('shows contextual Finance actions i
   await client.invalidateQueries({ queryKey: ['sala', 'payments', personId] });
   expect(await screen.findByText('Pago registrado')).toBeVisible();
   expect(screen.getByRole('link', { name: 'Ver pago' })).toHaveAttribute('href', `/finance?view=income&personId=${personId}`);
+});
+
+it('presents the paired routine creation choices in the student workspace and opens the shared day editor', async () => {
+  navigation.tab = 'routine';
+  routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']);
+  routineHandlers();
+  server.use(http.get(`http://localhost:3000/api/sala/people/${personId}/routines`, () => HttpResponse.json({ data: [] })));
+  renderWorkspace();
+  expect(await screen.findByText('No hay una rutina activa.')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Crear desde cero' }));
+  expect(await screen.findByRole('heading', { name: 'Crear rutina desde cero' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Día 1: Día 1' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('button', { name: 'Agregar día' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Cancelar' })).toBeVisible();
 });

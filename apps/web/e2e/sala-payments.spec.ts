@@ -33,7 +33,6 @@ test('centralizes Sala payment registration and reversal in Finance while Profes
   await expect(page).toHaveURL(financeHref!);
   await expect(page.getByRole('heading', { name: 'Pago de Sala', exact: true })).toBeVisible();
   await expect(page.getByText('Alumno0 FollowUpE2E', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Agregar mes' }).click();
   await expect(page.getByLabel(/^Importe /)).toHaveValue('1000');
   await page.getByLabel(/^Importe /).fill('900');
   await expect(page.getByRole('button', { name: 'Registrar pago' })).toBeDisabled();

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -45,10 +45,19 @@ export function SalaPaymentPanel({ personId, csrfToken, canManage, activePlan }:
   const [paymentToReverse, setPaymentToReverse] = useState<Payment | null>(null);
   const payments = useQuery({ queryKey: ['sala', 'payments', personId], queryFn: async () => { const response = await listSalaPayments(personId, { credentials: 'include' }); assertSuccess(response); return response.data.data; } });
   const methods = useQuery({ queryKey: ['finance', 'payment-methods'], queryFn: async () => unwrap<Method>(await listPaymentMethods({ credentials: 'include' })) });
+  // Propose the current month once, after refreshing history; keep later user choices.
+  const initialized = useRef(false);
+  const [year, month] = todayOperational().slice(0, 7).split('-').map(Number);
+  const currentMonthPaid = payments.data?.some(item => item.year === year && item.month === month && item.reversal == null);
+  useEffect(() => {
+    if (initialized.current || !canManage || !activePlan || !payments.isSuccess || payments.isFetching) return;
+    initialized.current = true;
+    if (!currentMonthPaid) setSelectedPeriods([{ year: year!, month: month!, amount: activePlan.monthlyAmount, adjustmentReason: '' }]);
+  }, [activePlan, payments.isSuccess, payments.isFetching, canManage, currentMonthPaid, year, month]);
   const selectableMethods = (methods.data ?? []).filter((item) => item.isSelectable);
   const method = form.watch('paymentMethodId');
   const paidAt = form.watch('paidAt');
-  const validPeriods = selectedPeriods.every(period => /^\d+$/.test(period.amount) && BigInt(period.amount) > 0n && (BigInt(period.amount) === BigInt(activePlan?.monthlyAmount ?? '0') || Boolean(period.adjustmentReason.trim())));
+  const validPeriods = selectedPeriods.every(period => !payments.data?.some(item => item.year === period.year && item.month === period.month && item.reversal == null) && /^\d+$/.test(period.amount) && BigInt(period.amount) > 0n && (BigInt(period.amount) === BigInt(activePlan?.monthlyAmount ?? '0') || Boolean(period.adjustmentReason.trim())));
   const totalAmount = selectedPeriods.reduce((total, period) => total + (/^\d+$/.test(period.amount) ? BigInt(period.amount) : 0n), 0n);
   const updatePeriod = (index: number, values: { amount?: string; adjustmentReason?: string }) => {
     setSelectedPeriods(current => current.map((period, position) => position === index ? { ...period, ...values } : period));
@@ -96,10 +105,7 @@ export function SalaPaymentPanel({ personId, csrfToken, canManage, activePlan }:
     {activePlan ? <div className="mb-3 text-sm"><p>Plan actual: <strong>{activePlan.name}</strong></p><p>Precio actual del Plan: <strong>{money(activePlan.monthlyAmount)}</strong></p></div> : null}
     {canManage && !activePlan ? <p className="text-sm text-muted-foreground">Se necesita una participación activa de Sala para registrar pagos.</p> : null}
     {canManage && activePlan ? <form className="space-y-3" onSubmit={form.handleSubmit(() => { if (validPeriods && paidAt <= todayOperational() && payments.isSuccess && selectedPeriods.length && selectableMethods.some((item) => item.id === method) && !create.isPending) create.mutate(); })}>
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="text-sm">Mes/Año<input type="month" aria-label="Mes/Año" {...form.register('month')} className={inputClass} disabled={create.isPending} /></label>
-        <Button type="button" variant="secondary" onClick={addPeriod} disabled={create.isPending || !payments.isSuccess}>Agregar mes</Button>
-      </div>
+      {currentMonthPaid ? <p className="text-sm">La cuota del mes actual ya está registrada.</p> : null}
       <label className="block text-sm">Fecha de cobro<input type="date" max={todayOperational()} aria-label="Fecha de cobro" {...form.register('paidAt', { onChange: () => { pendingRequest.current = null; } })} className={inputClass} disabled={create.isPending} required /></label>
       {selectedPeriods.length ? <div className="rounded border p-3 text-sm"><p className="font-medium">Meses a abonar</p><ul>{selectedPeriods.map((period, index) => <li key={`${period.year}-${period.month}`} className="flex flex-wrap items-end gap-3 py-2">
         <span>{periodLabel(period)}</span>
@@ -107,6 +113,12 @@ export function SalaPaymentPanel({ personId, csrfToken, canManage, activePlan }:
         {(!/^\d+$/.test(period.amount) || BigInt(period.amount) !== BigInt(activePlan.monthlyAmount)) ? <label>Motivo de ajuste<input aria-label={`Motivo de ajuste ${periodLabel(period)}`} maxLength={300} required value={period.adjustmentReason} onChange={event => updatePeriod(index, { adjustmentReason: event.target.value })} disabled={create.isPending} className={inputClass}/></label> : null}
         <Button type="button" variant="secondary" aria-label={`Quitar ${periodLabel(period)}`} disabled={create.isPending} onClick={() => { setSelectedPeriods(current => current.filter(item => item !== period)); pendingRequest.current = null; }}>Quitar</Button>
       </li>)}</ul><p className="mt-2 font-semibold">Total: {money(totalAmount)}</p></div> : null}
+      <div><p className="mb-2 text-sm text-muted-foreground">Agregar otro mes</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-sm">Mes/Año<input type="month" aria-label="Mes/Año" {...form.register('month')} className={inputClass} disabled={create.isPending} /></label>
+        <Button type="button" variant="secondary" onClick={addPeriod} disabled={create.isPending || !payments.isSuccess}>Agregar mes</Button>
+      </div>
+      </div>
       <div className="flex flex-wrap items-end gap-2"><label className="text-sm">Medio de pago<select aria-label="Medio de pago" {...form.register('paymentMethodId', { onChange: () => { pendingRequest.current = null; } })} className={inputClass} disabled={create.isPending}><option value="">Seleccionar</option>{selectableMethods.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <Button type="submit" disabled={create.isPending || !payments.isSuccess || !validPeriods || !paidAt || paidAt > todayOperational() || !selectedPeriods.length || !selectableMethods.some((item) => item.id === method)}>{create.isPending ? 'Registrando…' : 'Registrar pago'}</Button></div>
       {methods.isSuccess && !selectableMethods.length ? <p className="text-sm text-muted-foreground">No hay medios de pago configurados.</p> : null}

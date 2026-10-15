@@ -468,3 +468,17 @@ contexto de Tratamientos En curso exige `CLINICAL_HISTORY_READ`.
 No se agregan permisos ni estados clínicos. El dashboard general y la ampliación
 de los circuitos de Evaluaciones, Tratamientos, Estudios e IA quedan fuera de
 este bloque. INI-06 e INI-07 conservan su estado pendiente.
+
+## Finanzas operativas para salida de Sala — 2026-10-15
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+Finanzas conserva las vistas Resumen, Ingresos y Gastos. Ingresos permite iniciar el cobro buscando un Alumno activo de Sala por Nombre, Apellido o DNI; la búsqueda local ignora mayúsculas en nombres y separadores visuales del DNI. Seleccionar un Alumno reutiliza la URL contextual y el mismo flujo centralizado de Pago de Sala, con acceso para cambiar de Alumno y volver a su ficha.
+
+La cuota del mes operativo actual impago se propone automáticamente con el precio actual del Plan. Si ya tiene un Pago válido no revertido, se informa sin proponer un duplicado. Otros Mes/Año y varios períodos siguen disponibles. Cada período mantiene su importe ARS entero positivo; cambiarlo respecto del precio del Plan exige Motivo de ajuste según la regla existente. Se conservan fecha real de cobro, medio de pago obligatorio, reversión con motivo e idempotencia.
+
+Gastos dispone de formulario directo con Importe, Fecha, Categoría, Medio de pago, Área y Descripción opcional. Fecha: hoy operativo o anterior, nunca futura. Importe: entero ARS estrictamente positivo. El formulario comienza con Fecha de hoy y Área Sala. Solo ofrece categorías y medios de pago seleccionables. Si no existen categorías seleccionables, quien posee EXPENSE_CATEGORY_CATALOG_MANAGE puede crear una categoría en ese contexto y continuar la carga. Si no existen medios de pago seleccionables, se orienta a su configuración en Resumen; no se crean automáticamente.
+
+Para esta salida de Sala, el formulario de Gasto expone Sala y General; Clínica permanece implementada pero oculta visualmente en ese selector. El alta de Ingresos clínicos permanece implementada, pero no se expone visualmente desde Finanzas durante esta salida. Los históricos existentes, incluidos los movimientos clínicos, no se eliminan ni se filtran por esta decisión y se muestran con etiquetas legibles.
+
+Medios de pago queda como configuración secundaria dentro de Resumen. No se crean permisos, estados ni lógica financiera paralela; se reutilizan endpoints y reglas vigentes. Esta decisión no modifica FIN-01 a FIN-09, los cálculos de indicadores ni la definición de Neto y no resuelve CAT-04.

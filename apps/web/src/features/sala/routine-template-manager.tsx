@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Button } from '@athleta/ui';
 import { createSalaRoutineTemplate, updateSalaRoutineTemplate, deleteSalaRoutineTemplate, listSalaRoutineTemplates, listSalaExerciseDefinitions, createSalaExerciseDefinition, type RoutineTemplateDto, type ExerciseDefinitionDto } from '@athleta/api-client';
-import { DayEditor, RoutineContentSummary, draftToRoutineDays, routineDaysToDraft, newDay, fieldClass, errorMessage, type EditingDay, type RoutineTemplate, type ExerciseDefinition } from './routine-editor';
+import { RoutineDaysEditor, RoutineContentSummary, draftToRoutineDays, routineDaysToDraft, newDay, fieldClass, errorMessage, type EditingDay, type RoutineTemplate, type ExerciseDefinition } from './routine-editor';
 
 export type RoutineTemplateApi = {
   list: (options: RequestInit) => Promise<RoutineTemplate[]>;
@@ -48,6 +48,8 @@ export function RoutineTemplateManager({ csrfToken, api = templateApi }: { csrfT
   const [editing, setEditing] = useState(false);
   const [source, setSource] = useState<RoutineTemplate | null>(null);
   const [days, setDays] = useState<EditingDay[]>(() => [newDay()]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
   const [deleting, setDeleting] = useState<RoutineTemplate | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -68,8 +70,8 @@ export function RoutineTemplateManager({ csrfToken, api = templateApi }: { csrfT
     void client.invalidateQueries({ queryKey: ['sala-exercise-definitions'] });
     return created;
   };
-  const startEditing = (template: RoutineTemplate | null) => {
-    setSource(template); setDays(template ? routineDaysToDraft(template.days) : [newDay()]); reset({ name: template?.name ?? '' });
+  const startEditing = (template: RoutineTemplate | null, duplicate = false) => {
+    setSource(duplicate ? null : template); setDays(template ? routineDaysToDraft(template.days) : [newDay()]); reset({ name: duplicate && template ? `Copia de ${template.name}`.slice(0, 120) : template?.name ?? '' });
     setEditing(true); setFeedback(null); setValidationError(null); save.reset();
   };
   const submit = handleSubmit((values) => {
@@ -79,20 +81,30 @@ export function RoutineTemplateManager({ csrfToken, api = templateApi }: { csrfT
     catch (error) { setValidationError(errorMessage(error)); }
   });
   const editorDefinitions = [...(definitions.data ?? []), ...(source?.days.flatMap((day) => day.exercises.filter((entry) => entry.exerciseDefinition?.isActive === false).map((entry) => ({ id: entry.exerciseDefinitionId, name: entry.exerciseDefinition!.name, primaryMuscle: '', isActive: false }))) ?? [])];
+  const selected = templates.data?.find((template) => template.id === selectedId) ?? templates.data?.[0];
+  const searchTerm = search.trim().toLocaleLowerCase('es');
+  const visibleTemplates = (templates.data ?? []).filter((template) => template.name.toLocaleLowerCase('es').includes(searchTerm));
+  const exerciseCount = (template: RoutineTemplate) => template.days.reduce((count, day) => count + day.exercises.length, 0);
+  const openDelete = (template: RoutineTemplate) => { setDeleting(template); setFeedback(null); remove.reset(); };
 
-  return <section className="space-y-4">
-    <Button type="button" disabled={editing || remove.isPending} onClick={() => startEditing(null)}>Nueva rutina preestablecida</Button>
+  return <section className="space-y-5">
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm text-muted-foreground">{templates.data?.length ?? 0} {templates.data?.length === 1 ? 'rutina preestablecida' : 'rutinas preestablecidas'}</p><p className="text-sm text-muted-foreground">Elegí una rutina para ver sus días y ejercicios.</p></div><Button type="button" disabled={editing || remove.isPending} onClick={() => startEditing(null)}>Nueva rutina preestablecida</Button></div>
     {feedback ? <p role="status">{feedback}</p> : null}
     {templates.isLoading ? <p role="status">Cargando rutinas preestablecidas…</p> : templates.isError ? <p role="alert">{errorMessage(templates.error)}</p> : templates.data?.length === 0 ? <p className="text-sm text-muted-foreground">Todavía no hay rutinas preestablecidas.</p> : null}
     {remove.error ? <p role="alert">{errorMessage(remove.error)}</p> : null}
     {editing ? <div className="rounded-md border bg-white p-4">
-      <h2 className="font-semibold">{source ? 'Editar rutina preestablecida' : 'Nueva rutina preestablecida'}</h2>
-      <label className="mt-3 block text-sm">Nombre de la preestablecida<input aria-label="Nombre de la preestablecida" className={fieldClass} maxLength={120} {...register('name')} disabled={save.isPending}/></label>
-      {days.map((day, index) => <DayEditor key={day.key} day={day} index={index} definitions={editorDefinitions} catalogLoading={definitions.isLoading} catalogError={definitions.isError} onCreateExercise={createInlineExercise} disabled={save.isPending} canRemove={days.length > 1} onRemove={() => setDays((current) => current.filter((item) => item.key !== day.key))} onChange={(next) => setDays((current) => current.map((item) => item.key === next.key ? next : item))}/>)}
-      <Button type="button" variant="secondary" className="mt-3" disabled={save.isPending} onClick={() => setDays((current) => [...current, newDay(`Día ${current.length + 1}`)])}>Agregar día</Button>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">{source ? 'Editar rutina preestablecida' : 'Nueva rutina preestablecida'}</h2><p className="mt-1 text-sm text-muted-foreground">Organizá los días y agregá los ejercicios del plan.</p></div><Button type="button" variant="secondary" disabled={save.isPending} onClick={() => setEditing(false)}>Cancelar</Button></div>
+      <div className="mt-4 grid gap-3 rounded-md bg-surface-muted p-4 sm:grid-cols-[minmax(16rem,1fr)_auto] sm:items-end"><label className="text-sm font-medium">Nombre de la rutina<input aria-label="Nombre de la preestablecida" className={`${fieldClass} mt-1`} maxLength={120} {...register('name')} disabled={save.isPending}/></label><p className="text-sm text-muted-foreground">{days.length} {days.length === 1 ? 'día' : 'días'} · {days.reduce((count, day) => count + day.exercises.length, 0)} ejercicios</p></div>
+      <RoutineDaysEditor days={days} definitions={editorDefinitions} catalogLoading={definitions.isLoading} catalogError={definitions.isError} onCreateExercise={createInlineExercise} disabled={save.isPending} onChange={setDays}/>
       {validationError || save.error ? <p role="alert" className="mt-3 text-sm text-red-700">{validationError ?? errorMessage(save.error)}</p> : null}
-      <div className="mt-4 flex justify-end gap-2"><Button type="button" variant="secondary" disabled={save.isPending} onClick={() => setEditing(false)}>Cancelar</Button><Button type="button" disabled={save.isPending} onClick={() => void submit()}>{save.isPending ? 'Guardando…' : 'Guardar preestablecida'}</Button></div>
-    </div> : <div className="grid gap-4">{templates.data?.map((template) => <article key={template.id} aria-label={template.name} className="rounded-md border bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-semibold">{template.name}</h2><div className="flex gap-2"><Button type="button" variant="secondary" disabled={remove.isPending} onClick={() => startEditing(template)}>Editar</Button><Button type="button" variant="ghost" disabled={remove.isPending} onClick={() => { setDeleting(template); setFeedback(null); remove.reset(); }}>Eliminar</Button></div></div><RoutineContentSummary days={template.days}/></article>)}</div>}
+      <div className="mt-4 flex flex-wrap justify-end gap-2"><Button type="button" disabled={save.isPending} onClick={() => void submit()}>{save.isPending ? 'Guardando…' : 'Guardar cambios'}</Button></div>
+    </div> : templates.data?.length ? <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(15rem,0.34fr)_minmax(0,1fr)]">
+      <section aria-label="Lista de rutinas preestablecidas" className="min-w-0 rounded-lg border bg-white p-4"><label className="block text-sm font-medium">Buscar rutina<input className={`${fieldClass} mt-1`} type="search" placeholder="Nombre de la rutina" value={search} onChange={(event) => setSearch(event.target.value)}/></label><p className="mt-3 text-xs text-muted-foreground">{visibleTemplates.length} resultados</p>
+        <ul className="mt-2 grid max-h-[28rem] gap-2 overflow-y-auto">{visibleTemplates.map((template) => <li key={template.id}><button type="button" aria-pressed={selected?.id === template.id} onClick={() => setSelectedId(template.id)} className={`w-full rounded-md border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected?.id === template.id ? 'border-primary bg-primary/10' : 'bg-white hover:bg-surface-muted'}`}><span className="block font-medium">{template.name}</span><span className="mt-1 block text-xs text-muted-foreground">{template.days.length} {template.days.length === 1 ? 'día' : 'días'} · {exerciseCount(template)} ejercicios</span></button></li>)}</ul>
+        {!visibleTemplates.length ? <p className="mt-3 text-sm text-muted-foreground">No hay rutinas que coincidan.</p> : null}
+      </section>
+      {selected ? <article aria-label={selected.name} className="min-w-0 rounded-lg border bg-white p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Rutina seleccionada</p><h2 className="mt-1 break-words text-xl font-semibold">{selected.name}</h2><p className="mt-1 text-sm text-muted-foreground">{selected.days.length} {selected.days.length === 1 ? 'día' : 'días'} · {exerciseCount(selected)} ejercicios</p></div><div className="flex flex-wrap gap-2"><Button type="button" variant="secondary" disabled={remove.isPending} onClick={() => startEditing(selected, true)}>Duplicar</Button><Button type="button" variant="secondary" disabled={remove.isPending} onClick={() => startEditing(selected)}>Editar</Button><Button type="button" variant="ghost" disabled={remove.isPending} onClick={() => openDelete(selected)}>Eliminar</Button></div></div><RoutineContentSummary days={selected.days}/></article> : null}
+    </div> : null}
     {deleting ? <div role="alertdialog" aria-label="Eliminar rutina preestablecida" className="rounded-md border bg-white p-4"><p>¿Eliminar esta rutina preestablecida? Las rutinas ya asignadas a alumnos no se modificarán.</p><div className="mt-3 flex gap-2"><Button type="button" disabled={remove.isPending} onClick={() => remove.mutate(deleting.id)}>Confirmar eliminación</Button><Button type="button" variant="secondary" disabled={remove.isPending} onClick={() => { setDeleting(null); remove.reset(); }}>Cancelar eliminación</Button></div></div> : null}
   </section>;
 }

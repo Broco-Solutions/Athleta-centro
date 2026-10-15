@@ -41,6 +41,9 @@ it('shows the current preestablished routines experience with management permiss
   expect(await screen.findByRole('heading', { name: 'Rutinas preestablecidas' })).toBeVisible();
   expect(await screen.findByRole('button', { name: 'Nueva rutina preestablecida' })).toBeVisible();
   expect(await screen.findByRole('heading', { name: 'Fuerza general' })).toBeVisible();
+  expect(await screen.findByLabelText('Buscar rutina')).toBeVisible();
+  expect(await screen.findByText('1 rutina preestablecida')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Duplicar' })).toBeVisible();
   await waitFor(() => { expect(reads).toBe(1); expect(catalogReads).toBe(1); });
 });
 
