@@ -390,4 +390,22 @@ Esto no modifica POR-SAL-09: crear nuevas Reservas sigue requiriendo al menos
 Evidencia: `SalaService.createExerciseDefinition`, `updateExerciseDefinition`,
 `physicalTestData`, `PortalService.cancelReservation`, sus DTOs y los tests de
 integración `sala.integration-spec.ts` y `portal-sala.integration-spec.ts`.
-PROF-01, CAT-04, INI-06 e INI-07 conservan su estado **PENDIENTE**. Resta UAT final.
+CAT-04, INI-06 e INI-07 conservan su estado **PENDIENTE**. PROF-01 se resuelve en la decisión posterior del 2026-10-15. Resta UAT final.
+
+## PROF-01 — Alta de Alumno por Profesor — 2026-10-15
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+Esta decisión sustituye la ocultación provisoria de altas del 2026-10-13 y resuelve PROF-01, que también seguía pendiente al cierre de los bloques anteriores. Se conserva ese historial.
+
+El Profesor puede dar de alta Alumnos de forma autónoma desde `/students` mediante Nuevo alumno, con `PEOPLE_CREATE` y `SALA_PARTICIPATION_MANAGE`. Personas no se habilita visualmente al Profesor puro. Su navegación sigue siendo Inicio → Reservas → Alumnos → Rutinas. No se modifican permisos ni contratos del backend.
+
+El alta comienza por DNI (6–8 dígitos, normalizando puntos, espacios y guiones). La búsqueda parcial existente se verifica por coincidencia exacta de DNI:
+
+- Persona existente con Sala activa: se informa que ya es alumno activo y no se ejecuta ninguna creación/incorporación.
+- Persona existente sin Sala activa: se reutiliza su identidad, se solicitan Plan y Profesor principal y se incorpora mediante `joinSala`, con la fecha operacional de Argentina. Conserva su credencial/PIN; no se genera ni resetea.
+- DNI inexistente: se solicitan Nombre, Apellido, DNI, Teléfono y Fecha de nacimiento, además de Plan y Profesor principal. Se respetan las validaciones vigentes de Persona. `createSalaStudent` crea la Persona y su participación en una única operación atómica. No se incluyen campos opcionales en este alta simple.
+
+Plan y Profesor principal son obligatorios y se seleccionan de las opciones elegibles devueltas por backend. El listado se refresca al completar cualquiera de las operaciones.
+
+Solo al crear una Persona nueva se presenta el `initialPin` devuelto por backend, indicando que se muestra una sola vez, con Copiar PIN y Entendido. Al cerrar se descarta. Los errores de búsqueda, carga de opciones, alta/incorporación y conflicto de DNI se muestran sin simular éxito.

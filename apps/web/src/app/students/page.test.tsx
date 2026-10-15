@@ -21,7 +21,7 @@ beforeAll(() => {
 beforeEach(() => {
   navigation.filter = '';
   server.use(
-    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'prof-1', firstName: 'Federico', lastName: 'Sintético' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ'], csrfToken: 'csrf', mustChangePassword: false } })),
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'prof-1', firstName: 'Federico', lastName: 'Sintético' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'PEOPLE_READ', 'PEOPLE_CREATE', 'SALA_PARTICIPATION_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })),
     http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: students })),
   );
 });
@@ -30,7 +30,7 @@ afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 function renderPage() { return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><StudentsPage /></QueryClientProvider>); }
 function list() { return within(screen.getByRole('table', { name: 'Alumnos activos de Sala' })); }
 
-it('shows all students, full Professor names, plan and follow-up states without creation actions', async () => {
+it('shows all students, full Professor names, plan and follow-up states with contextual student creation', async () => {
   renderPage();
   expect(await screen.findByRole('heading', { name: 'Alumnos' })).toBeInTheDocument();
   await screen.findByText('Ana Alumna');
@@ -48,7 +48,8 @@ it('shows all students, full Professor names, plan and follow-up states without 
   expect(list().getByText('Pago registrado')).toBeInTheDocument();
   expect(row.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/student-2');
   expect(screen.queryByText('Nueva Persona')).not.toBeInTheDocument();
-  expect(screen.queryByText('Nuevo alumno')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Nuevo alumno' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Personas' })).not.toBeInTheDocument();
 });
 it.each([['Lucía', 'Lucía Ejemplo'], ['88000001', 'Ana Alumna']])('searches locally by %s', async (term, name) => {
   renderPage(); await screen.findByText('Ana Alumna');
@@ -170,4 +171,126 @@ it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('links %s to contextual Finance and
   expect(pending.getByRole('link', { name: 'Registrar pago' })).toHaveAttribute('href', '/finance?view=income&personId=student-2');
   expect(pending.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/student-2');
   expect(list().getByRole('link', { name: 'Ver pago' })).toHaveAttribute('href', '/finance?view=income&personId=student-1');
+});
+
+
+const existingPerson = { id: 'person-existing', firstName: 'Persona', lastName: 'Sintética', dni: '88123456', phone: '1123456789', birthDate: '2000-01-01', status: 'ACTIVE', contexts: [], hasSalaParticipation: false, isClinicalPatient: false };
+function enrollmentHandlers(people: object[] = []) {
+  server.use(
+    http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: people, meta: { page: 1, pageSize: 25, total: people.length, totalPages: 1 } })),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'plan-new', name: 'Plan seleccionable' }] })),
+    http.get('http://localhost:3000/api/sala/professors', () => HttpResponse.json({ data: [{ id: 'prof-new', firstName: 'Profesor', lastName: 'Elegible' }] })),
+  );
+}
+async function startEnrollment(dni = '88.123-456') {
+  renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: 'Nuevo alumno' }));
+  fireEvent.change(screen.getByLabelText('DNI'), { target: { value: dni } });
+  fireEvent.click(screen.getByRole('button', { name: 'Continuar' }));
+}
+async function selectEnrollmentOptions() {
+  await screen.findByRole('option', { name: 'Plan seleccionable' });
+  await screen.findByRole('option', { name: 'Profesor Elegible' });
+  fireEvent.change(screen.getByLabelText('Plan'), { target: { value: 'plan-new' } });
+  fireEvent.change(screen.getByLabelText('Profesor principal'), { target: { value: 'prof-new' } });
+}
+function fillNewPerson() {
+  for (const [label, value] of [['Nombre', ' Nueva '], ['Apellido', ' Sintética '], ['Teléfono', '(11) 2345-6789'], ['Fecha de nacimiento', '2000-01-02']] as const) {
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  }
+}
+it.each([[[]], [['PEOPLE_CREATE']], [['SALA_PARTICIPATION_MANAGE']]])('hides creation unless both permissions are present: %j', async (permissions) => {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'prof-1' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', ...permissions], csrfToken: 'csrf', mustChangePassword: false } })));
+  renderPage(); await screen.findByText('Ana Alumna');
+  expect(screen.queryByRole('button', { name: 'Nuevo alumno' })).not.toBeInTheDocument();
+});
+it('creates a new student atomically with normalized data, CSRF, refetch and one-time copyable PIN', async () => {
+  enrollmentHandlers(); let reads = 0; let searched: URL | undefined; let body: unknown; let csrf: string | null = null;
+  const copy = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: copy } });
+  server.use(
+    http.get('http://localhost:3000/api/people', ({ request }) => { searched = new URL(request.url); return HttpResponse.json({ data: [] }); }),
+    http.get('http://localhost:3000/api/sala/students', () => { reads++; return HttpResponse.json({ data: students }); }),
+    http.post('http://localhost:3000/api/sala/students', async ({ request }) => { body = await request.json(); csrf = request.headers.get('x-csrf-token'); expect(request.credentials).toBe('include'); return HttpResponse.json({ data: { ...existingPerson, initialPin: '4812' } }, { status: 201 }); }),
+  );
+  await startEnrollment(); await screen.findByLabelText('Nombre');
+  expect(searched?.searchParams.get('search')).toBe('88123456');
+  expect(searched?.searchParams.get('page')).toBe('1'); expect(searched?.searchParams.get('pageSize')).toBe('25');
+  expect(screen.queryByLabelText(/Obra Social/)).not.toBeInTheDocument();
+  fillNewPerson(); await selectEnrollmentOptions();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar alumno' }));
+  expect(await screen.findByLabelText('PIN temporal')).toHaveTextContent('4812');
+  expect(screen.getByText(/se muestra una sola vez/)).toBeInTheDocument();
+  expect(body).toEqual({ firstName: 'Nueva', lastName: 'Sintética', dni: '88123456', phone: '1123456789', birthDate: '2000-01-02', planId: 'plan-new', mainProfessorId: 'prof-new' });
+  expect(csrf).toBe('csrf'); expect(reads).toBe(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar PIN' }));
+  await screen.findByText('PIN copiado'); expect(copy).toHaveBeenCalledWith('4812');
+  fireEvent.click(screen.getByRole('button', { name: 'Entendido' }));
+  expect(screen.queryByLabelText('PIN temporal')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Nuevo alumno' }));
+  expect(screen.queryByLabelText('PIN temporal')).not.toBeInTheDocument();
+});
+it('reuses only the exact DNI match, joins on the operational date and preserves credentials', async () => {
+  // At this UTC instant Argentina is still on the previous day.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-15T01:30:00Z'));
+  try {
+    enrollmentHandlers([{ ...existingPerson, id: 'partial', dni: '8812345', hasSalaParticipation: true }, existingPerson]);
+    let body: unknown; let creates = 0; let reads = 0;
+    server.use(
+      http.get('http://localhost:3000/api/sala/students', () => { reads++; return HttpResponse.json({ data: students }); }),
+      http.post('http://localhost:3000/api/sala/students', () => { creates++; return HttpResponse.json({}); }),
+      http.post('http://localhost:3000/api/sala/participations', async ({ request }) => { body = await request.json(); expect(request.headers.get('x-csrf-token')).toBe('csrf'); expect(request.credentials).toBe('include'); return HttpResponse.json({ data: {} }); }),
+    );
+    await startEnrollment(); await screen.findByText('Persona Sintética · DNI 88123456');
+    for (const label of ['Nombre', 'Apellido', 'Teléfono', 'Fecha de nacimiento']) expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
+    await selectEnrollmentOptions(); fireEvent.click(screen.getByRole('button', { name: 'Guardar alumno' }));
+    await screen.findByText('El Alumno fue incorporado a Sala.');
+    expect(body).toEqual({ personId: 'person-existing', planId: 'plan-new', mainProfessorId: 'prof-new', startDate: '2026-10-14' });
+    expect(creates).toBe(0); expect(reads).toBe(2);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(screen.queryByLabelText('PIN temporal')).not.toBeInTheDocument();
+  } finally { vi.useRealTimers(); }
+});
+it('offers new-person fields when only partial DNI matches are returned', async () => {
+  enrollmentHandlers([{ ...existingPerson, dni: '8812345', hasSalaParticipation: true }]);
+  await startEnrollment(); expect(await screen.findByLabelText('Nombre')).toBeInTheDocument();
+  expect(screen.queryByText(/ya es alumno activo/)).not.toBeInTheDocument();
+});
+it('blocks all POSTs for a person already active in Sala', async () => {
+  enrollmentHandlers([{ ...existingPerson, hasSalaParticipation: true }]); let posts = 0;
+  server.use(http.post('http://localhost:3000/api/sala/*', () => { posts++; return HttpResponse.json({}); }));
+  await startEnrollment(); await screen.findByText('Esta Persona ya es alumno activo de Sala.');
+  expect(screen.queryByRole('button', { name: 'Guardar alumno' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Plan')).not.toBeInTheDocument(); expect(posts).toBe(0);
+});
+it.each(['new', 'existing', 'conflict'])('keeps %s enrollment failure visible in the dialog', async (kind) => {
+  enrollmentHandlers(kind === 'existing' ? [existingPerson] : []);
+  server.use(http.post(`http://localhost:3000/api/sala/${kind === 'existing' ? 'participations' : 'students'}`, () => HttpResponse.json({}, { status: kind === 'conflict' ? 409 : 500 })));
+  await startEnrollment(); await selectEnrollmentOptions(); if (kind !== 'existing') fillNewPerson();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar alumno' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(kind === 'conflict' ? 'Ya existe una Persona con ese DNI' : kind === 'existing' ? 'No se pudo incorporar' : 'No se pudo crear');
+  expect(screen.getByRole('dialog', { name: 'Nuevo alumno' })).toBeInTheDocument(); expect(screen.queryByLabelText('PIN temporal')).not.toBeInTheDocument();
+});
+it('shows a lookup failure and allows retry', async () => {
+  enrollmentHandlers(); server.use(http.get('http://localhost:3000/api/people', () => HttpResponse.json({}, { status: 500 })));
+  await startEnrollment(); expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo buscar la Persona');
+  expect(screen.getByRole('button', { name: 'Continuar' })).toBeEnabled();
+});
+it.each(['plans', 'professors'])('shows %s loading errors and prevents saving', async (catalog) => {
+  enrollmentHandlers(); server.use(http.get(`http://localhost:3000/api/sala/${catalog}`, () => HttpResponse.json({}, { status: 500 })));
+  await startEnrollment(); expect(await screen.findByRole('alert')).toHaveTextContent('No se pudieron cargar los Planes o Profesores');
+  expect(screen.getByRole('button', { name: 'Guardar alumno' })).toBeDisabled();
+});
+it('validates DNI before searching and requires personal data and both selections', async () => {
+  enrollmentHandlers(); await startEnrollment('123');
+  expect(await screen.findByRole('alert')).toHaveTextContent('El DNI debe tener entre 6 y 8 dígitos');
+  fireEvent.change(screen.getByLabelText('DNI'), { target: { value: '88 123 456' } }); fireEvent.click(screen.getByRole('button', { name: 'Continuar' }));
+  await screen.findByLabelText('Nombre'); await screen.findByRole('option', { name: 'Profesor Elegible' });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar alumno' }));
+  await screen.findByText('Ingresá el nombre'); expect(screen.getAllByRole('alert')).toHaveLength(6);
+  fillNewPerson(); await selectEnrollmentOptions();
+  fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '+54 11 2345-6789' } });
+  fireEvent.change(screen.getByLabelText('Fecha de nacimiento'), { target: { value: '2999-01-01' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar alumno' }));
+  await screen.findByText('El teléfono debe tener 10 dígitos.'); await screen.findByText('La fecha de nacimiento no puede ser futura');
 });

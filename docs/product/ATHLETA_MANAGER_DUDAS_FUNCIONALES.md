@@ -21,7 +21,6 @@ Los siguientes puntos continúan pendientes después de la consolidación histó
 
 | ID | Tema pendiente |
 |---|---|
-| PROF-01 | Alta de Persona/Alumno por Profesor: validar autonomía de altas con Athleta. |
 | INI-06 | Label visible exacto de la tarjeta de Atendidos/Atenciones. |
 | INI-07 | Comportamiento visual de la tarjeta Atendidos al seleccionar Mañana. |
 | CAT-04 | Si los catálogos permiten nombres duplicados; los mecanismos actuales no son uniformes y no constituyen aprobación de una regla global. |
@@ -473,11 +472,13 @@ Los registros históricos existentes con inicio :15 o :45 se conservan y no se r
 
 ## PROF-01 — Alta de Persona/Alumno por Profesor
 
-Estado: **PENDIENTE**.
+Estado: **RESUELTO — 2026-10-15**.
 
-En la experiencia actual del Profesor puro no se muestra ninguna acción para crear una nueva Persona/Alumno. El listado Alumnos es de consulta y seguimiento de participantes activos.
+El Profesor puede realizar altas autónomas desde Alumnos (`/students`), sin habilitar el módulo Personas al Profesor puro. Se mantiene la navegación Inicio → Reservas → Alumnos → Rutinas.
 
-La autorización `PEOPLE_CREATE` permanece temporalmente en backend hasta validar con Athleta si el Profesor debe poder resolver altas de forma autónoma. Puede continuar incorporando una Persona existente cuando posee `SALA_PARTICIPATION_MANAGE`. Los roles combinados conservan la suma natural de sus capacidades.
+El flujo comienza por DNI normalizado y busca una coincidencia exacta. Si la Persona existe, se reutiliza y se incorpora a Sala conservando su credencial/PIN actual. Si ya tiene participación activa en Sala, se informa y no se crea nada. Si no existe, se crea la Persona y se incorpora a Sala atómicamente.
+
+Plan y Profesor principal son obligatorios en ambos caminos. Para una Persona nueva se solicitan únicamente Nombre, Apellido, DNI, Teléfono y Fecha de nacimiento, además de Plan y Profesor principal. El PIN temporal solo se muestra cuando realmente se crea una Persona nueva, una sola vez, con las acciones Copiar PIN y Entendido.
 
 ### Alcance de Alumnos — RESUELTO, 2026-10-13
 
