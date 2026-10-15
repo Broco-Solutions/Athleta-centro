@@ -47,6 +47,8 @@ export class PeopleService {
     if (socialWorkId && socialWorkId !== current.socialWorkId) await this.validateSelectableSocialWork(socialWorkId);
     try {
       const person = await this.prisma.person.update({ where: { id }, data: {
+        ...(input.sport !== undefined && { sport: input.sport?.trim() || null }),
+        ...(input.club !== undefined && { club: input.club?.trim() || null }),
         ...(input.firstName !== undefined && { firstName: input.firstName.trim() }),
         ...(input.lastName !== undefined && { lastName: input.lastName.trim() }),
         ...(dni !== undefined && { dni, normalizedDni: dni }),
@@ -152,7 +154,7 @@ export class PeopleService {
   }
 
   private createData(input: CreatePersonDto, normalizedDni: string, phone: string, emergencyContactPhone: string | null): Prisma.PersonUncheckedCreateInput {
-    return { firstName: input.firstName.trim(), lastName: input.lastName.trim(), dni: normalizedDni, normalizedDni, phone, birthDate: this.date(input.birthDate), email: input.email?.trim() || null, normalizedEmail: normalizeEmail(input.email), emergencyContactName: input.emergencyContactName?.trim() || null, emergencyContactPhone, socialWorkId: input.socialWorkId ?? null, affiliateNumber: input.socialWorkId ? input.affiliateNumber?.trim() || null : null };
+    return { sport: input.sport?.trim() || null, club: input.club?.trim() || null, firstName: input.firstName.trim(), lastName: input.lastName.trim(), dni: normalizedDni, normalizedDni, phone, birthDate: this.date(input.birthDate), email: input.email?.trim() || null, normalizedEmail: normalizeEmail(input.email), emergencyContactName: input.emergencyContactName?.trim() || null, emergencyContactPhone, socialWorkId: input.socialWorkId ?? null, affiliateNumber: input.socialWorkId ? input.affiliateNumber?.trim() || null : null };
   }
   private async validateSelectableSocialWork(id: string, tx: Prisma.TransactionClient = this.prisma): Promise<void> {
     const socialWork = await tx.socialWork.findUnique({ where: { id }, select: { isSelectable: true } });
@@ -185,10 +187,10 @@ export class PeopleService {
     if (value > today) throw new BadRequestException({ code: 'PERSON_BIRTH_DATE_FUTURE', message: 'Birth date cannot be future' });
   }
   private date(value: string): Date { return new Date(`${value}T00:00:00.000Z`); }
-  private async serialize(person: { id: string; firstName: string; lastName: string; dni: string; phone: string; birthDate: Date; email: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; socialWorkId: string | null; affiliateNumber: string | null; clinicalPatient?: { personId: string } | null; salaParticipations?: { id: string }[]; treatments?: { id: string }[]; clinicalAppointments?: { id: string; startAt: Date }[] }) {
+  private async serialize(person: { sport: string | null; club: string | null; id: string; firstName: string; lastName: string; dni: string; phone: string; birthDate: Date; email: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; socialWorkId: string | null; affiliateNumber: string | null; clinicalPatient?: { personId: string } | null; salaParticipations?: { id: string }[]; treatments?: { id: string }[]; clinicalAppointments?: { id: string; startAt: Date }[] }) {
     const isClinicalPatient = Boolean(person.clinicalPatient);
     const hasSalaParticipation = (person.salaParticipations?.length ?? 0) > 0;
-    return { id: person.id, firstName: person.firstName, lastName: person.lastName, dni: person.dni, phone: person.phone, birthDate: person.birthDate.toISOString().slice(0, 10), email: person.email, emergencyContactName: person.emergencyContactName, emergencyContactPhone: person.emergencyContactPhone, socialWorkId: person.socialWorkId, affiliateNumber: person.affiliateNumber, status: await this.activity.isActive(person.id) ? 'ACTIVE' as const : 'INACTIVE' as const, contexts: [hasSalaParticipation ? 'SALA' : '', isClinicalPatient ? 'CLINIC' : ''].filter(Boolean), hasSalaParticipation, isClinicalPatient, activeTreatmentCount: person.treatments?.length ?? 0, nextClinicalAppointment: person.clinicalAppointments?.[0]?.startAt?.toISOString() ?? null };
+    return { sport: person.sport, club: person.club, id: person.id, firstName: person.firstName, lastName: person.lastName, dni: person.dni, phone: person.phone, birthDate: person.birthDate.toISOString().slice(0, 10), email: person.email, emergencyContactName: person.emergencyContactName, emergencyContactPhone: person.emergencyContactPhone, socialWorkId: person.socialWorkId, affiliateNumber: person.affiliateNumber, status: await this.activity.isActive(person.id) ? 'ACTIVE' as const : 'INACTIVE' as const, contexts: [hasSalaParticipation ? 'SALA' : '', isClinicalPatient ? 'CLINIC' : ''].filter(Boolean), hasSalaParticipation, isClinicalPatient, activeTreatmentCount: person.treatments?.length ?? 0, nextClinicalAppointment: person.clinicalAppointments?.[0]?.startAt?.toISOString() ?? null };
   }
   private duplicateDni(): never { throw new ConflictException({ code: 'PERSON_DNI_ALREADY_EXISTS', message: 'A person with this DNI already exists' }); }
 }

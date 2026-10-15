@@ -102,9 +102,72 @@ function GeneralAdminHome({ firstName }: { firstName: string }): React.JSX.Eleme
   </div>;
 }
 
+function AdministrativeHome({ firstName }: { firstName: string }): React.JSX.Element {
+  const date = todayOperational();
+  const sala = useQuery({
+    queryKey: ['sala-dashboard', date],
+    queryFn: async () => {
+      const response = await getSalaDashboard({ date }, { credentials: 'include' });
+      if (response.status !== 200) throw new Error('Sala request failed');
+      return response.data.data;
+    },
+  });
+  const clinic = useQuery({
+    queryKey: ['reservations', date],
+    queryFn: async () => {
+      const response = await getReservationsTimeline({ date }, { credentials: 'include' });
+      if (response.status >= 400) throw new Error('Clinic request failed');
+      return response.data.data;
+    },
+  });
+  const clinicBookings = clinic.data?.rows.flatMap((row) => row.bookings).filter((booking) => booking.source === 'CLINIC') ?? [];
+  const attended = clinicBookings.filter((booking) => booking.status === 'ATTENDED').length;
+  const pending = clinicBookings.filter((booking) => booking.status === 'SCHEDULED').length;
+  const followUp = [
+    { label: 'Sin rutina activa', href: '/students?filter=without-routine', value: sala.data?.withoutRoutine.count, icon: ClipboardList },
+    { label: 'Pago pendiente', href: '/students?filter=pending-payment', value: sala.data?.pendingPayment.count, icon: Wallet },
+  ];
+  const shortcuts = [
+    { label: 'Alumnos', href: '/students', description: 'Seguimiento de Sala', icon: Dumbbell },
+    { label: 'Personas', href: '/people', description: 'Datos generales', icon: Users },
+    { label: 'Ingresos / Pagos', href: '/finance?view=income', description: 'Pagos de Sala e ingresos', icon: Wallet },
+    { label: 'Gastos', href: '/finance?view=expenses', description: 'Gestión de gastos', icon: ClipboardList },
+  ];
+  return <div className="mx-auto w-full max-w-6xl space-y-6 text-foreground">
+    <header><p className="mb-1 text-sm font-medium text-muted-foreground">Inicio</p><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Hola, {firstName}</h1><p className="mt-2 text-sm text-muted-foreground">Operación administrativa de hoy</p></header>
+    <section aria-labelledby="today-operation-title"><h2 id="today-operation-title" className="mb-3 text-lg font-semibold">Operación de hoy</h2><div className="grid gap-4 lg:grid-cols-2">
+      <article className="rounded-md border border-border bg-surface p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold">Sala</h3><p className="mt-1 text-sm text-muted-foreground">Actividad del día</p></div><Dumbbell size={20} aria-hidden="true" className="text-muted-foreground"/></div>{sala.isError ? <p role="alert" className="mt-4 text-sm text-muted-foreground">No pudimos cargar la actividad de Sala.</p> : <div aria-busy={sala.isPending} className="mt-4 grid grid-cols-3 gap-2">{[['Alumnos esperados', sala.data?.expected], ['Asistencias', sala.data?.attended], ['Cancelados / Ausentes', sala.data?.cancelledOrAbsent]].map(([label, value]) => <div key={String(label)} className="rounded-md border border-border p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{sala.isPending ? '…' : value}</p></div>)}</div>}<Link href="/sala" className="mt-4 inline-flex min-h-10 items-center gap-2 text-sm font-medium hover:underline">Ver Agenda <ArrowRight size={16} aria-hidden="true"/></Link></article>
+      <article className="rounded-md border border-border bg-surface p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold">Clínica</h3><p className="mt-1 text-sm text-muted-foreground">Turnos clínicos del día</p></div><CalendarClock size={20} aria-hidden="true" className="text-muted-foreground"/></div>{clinic.isError ? <p role="alert" className="mt-4 text-sm text-muted-foreground">No pudimos cargar la actividad de Clínica.</p> : <div aria-busy={clinic.isPending} className="mt-4 grid grid-cols-3 gap-2">{[['Turnos del día', clinic.data ? clinicBookings.length : undefined], ['Atendidos', clinic.data ? attended : undefined], ['Pendientes', clinic.data ? pending : undefined]].map(([label, value]) => <div key={String(label)} className="rounded-md border border-border p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{clinic.isPending ? '…' : value}</p></div>)}</div>}<Link href="/clinic?tab=Agenda" className="mt-4 inline-flex min-h-10 items-center gap-2 text-sm font-medium hover:underline">Ver Agenda <ArrowRight size={16} aria-hidden="true"/></Link></article>
+    </div></section>
+    <section aria-labelledby="followup-title">
+      <h2 id="followup-title" className="mb-3 text-lg font-semibold">Seguimiento</h2>
+      {sala.isError && <p role="alert" className="mb-3 text-sm text-muted-foreground">No pudimos cargar la actividad de Sala.</p>}
+      <div aria-busy={sala.isPending} className="grid gap-3 sm:grid-cols-2">
+        {followUp.map(({ label, href, value, icon: Icon }) => <Link key={label} href={href} className="flex min-w-0 items-center gap-3 rounded-md border border-border bg-surface p-4 hover:bg-surface-muted sm:p-5">
+          <span className="rounded-md bg-primary/15 p-2"><Icon size={18} aria-hidden="true"/></span>
+          <span className="min-w-0 flex-1 text-sm font-medium">{label}</span>
+          <span className="text-2xl font-semibold tabular-nums">{sala.isPending ? '…' : sala.isError ? '—' : value}</span>
+          <ArrowRight size={16} aria-hidden="true" className="text-muted-foreground"/>
+        </Link>)}
+      </div>
+    </section>
+    <section aria-labelledby="shortcuts-title">
+      <h2 id="shortcuts-title" className="mb-3 text-lg font-semibold">Accesos operativos</h2>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {shortcuts.map(({ label, href, description, icon: Icon }) => <Link key={label} href={href} className="flex min-w-0 items-center gap-3 rounded-md border border-border bg-surface p-4 hover:bg-surface-muted">
+          <Icon size={20} aria-hidden="true" className="shrink-0 text-muted-foreground"/>
+          <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{label}</span><span className="mt-1 block text-xs text-muted-foreground">{description}</span></span>
+          <ArrowRight size={16} aria-hidden="true" className="shrink-0 text-muted-foreground"/>
+        </Link>)}
+      </div>
+    </section>
+  </div>;
+}
+
 export default function HomePage(): React.JSX.Element {
   const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false });
   const isProfessorOnly = session.data?.roles.length === 1 && session.data.roles.includes('PROFESSOR');
+  const isAdministrative = session.data?.roles.includes('ADMINISTRATIVE') ?? false;
   const isGeneralAdmin = session.data?.roles.includes('GENERAL_ADMIN') ?? false;
-  return <WorkspaceShell active="home">{session.isPending ? <p role="status" className="text-sm text-muted-foreground">Cargando…</p> : isGeneralAdmin ? <GeneralAdminHome firstName={session.data!.user.firstName}/> : isProfessorOnly ? <ProfessorHome firstName={session.data!.user.firstName}/> : <><header className="mb-6 sm:mb-8"><p className="mb-1 text-sm font-medium text-muted-foreground">Resumen operativo</p><h1 className="m-0 text-2xl font-semibold tracking-tight sm:text-3xl">Bienvenido a Athleta</h1></header><div className="w-full max-w-3xl rounded-md border bg-surface p-4 sm:p-6"><h2 className="mt-0 text-lg font-semibold">Workspace operativo</h2><p className="mb-0 text-sm leading-6 text-muted-foreground">Gestioná Personas desde la navegación principal.</p></div></>}</WorkspaceShell>;
+  return <WorkspaceShell active="home">{session.isPending ? <p role="status" className="text-sm text-muted-foreground">Cargando…</p> : isGeneralAdmin ? <GeneralAdminHome firstName={session.data!.user.firstName}/> : isAdministrative ? <AdministrativeHome firstName={session.data!.user.firstName}/> : isProfessorOnly ? <ProfessorHome firstName={session.data!.user.firstName}/> : <><header className="mb-6 sm:mb-8"><p className="mb-1 text-sm font-medium text-muted-foreground">Resumen operativo</p><h1 className="m-0 text-2xl font-semibold tracking-tight sm:text-3xl">Bienvenido a Athleta</h1></header><div className="w-full max-w-3xl rounded-md border bg-surface p-4 sm:p-6"><h2 className="mt-0 text-lg font-semibold">Workspace operativo</h2><p className="mb-0 text-sm leading-6 text-muted-foreground">Gestioná Personas desde la navegación principal.</p></div></>}</WorkspaceShell>;
 }

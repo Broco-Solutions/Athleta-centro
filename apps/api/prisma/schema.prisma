@@ -210,6 +210,8 @@ model Person {
   birthDate               DateTime                 @map("birth_date") @db.Date
   email                   String?
   normalizedEmail         String?                  @map("normalized_email")
+  sport                   String?
+  club                    String?
   emergencyContactName    String?                  @map("emergency_contact_name")
   emergencyContactPhone   String?                  @map("emergency_contact_phone")
   socialWorkId            String?                  @map("social_work_id") @db.Uuid

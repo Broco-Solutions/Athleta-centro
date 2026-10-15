@@ -21,6 +21,11 @@ type NavigationGroup = { key: 'home' | 'sala' | 'clinic' | 'finance' | 'team'; l
 const hasAny = (permissions: string[], values: string[]) => values.some((value) => permissions.includes(value));
 const hasDomainPermission = (permissions: string[], prefix: string) => permissions.some((permission) => permission.startsWith(prefix));
 
+const clinicNavigation: NavigationItem[] = [
+  { key: 'clinic-patients', href: '/clinic?tab=Pacientes', label: 'Pacientes', icon: Users, canAccess: (permissions) => permissions.includes('CLINIC_OPERATIONAL_READ') },
+  { key: 'clinic-appointments', href: '/clinic?tab=Agenda', label: 'Turnos', icon: CalendarDays, canAccess: (permissions) => permissions.includes('CLINIC_OPERATIONAL_READ') },
+];
+
 const navigation: NavigationItem[] = [
   { key: 'home', href: '/', label: 'Inicio', icon: Activity, canAccess: () => true },
   { key: 'people', href: '/people', label: 'Personas', icon: Users, canAccess: (permissions) => hasAny(permissions, ['PEOPLE_READ', 'PEOPLE_CREATE', 'PEOPLE_UPDATE_GENERAL']) },
@@ -28,7 +33,7 @@ const navigation: NavigationItem[] = [
   { key: 'sala-agenda', href: '/sala', label: 'Sala', icon: Dumbbell, canAccess: (permissions) => hasAny(permissions, ['SALA_PARTICIPATION_MANAGE', 'SALA_SCHEDULE_MANAGE', 'SALA_AGENDA_MANAGE', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE', 'SALA_PHYSICAL_EVALUATION_READ', 'SALA_PHYSICAL_EVALUATION_MANAGE', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_MANAGE']) },
   { key: 'routines', href: '/routines', label: 'Rutinas', icon: ClipboardList, canAccess: (permissions) => permissions.includes('SALA_ROUTINE_MANAGE') },
   { key: 'reservations', href: '/reservations', label: 'Reservas', icon: ClipboardList, canAccess: (permissions) => hasAny(permissions, ['SALA_RELATION_READ', 'CLINIC_OPERATIONAL_READ']) },
-  { key: 'clinic', href: '/clinic', label: 'Clínica', icon: CalendarDays, canAccess: (permissions) => hasDomainPermission(permissions, 'CLINIC_') || hasDomainPermission(permissions, 'CLINICAL_HISTORY_') },
+  ...clinicNavigation,
   { key: 'finance-summary', href: '/finance', label: 'Finanzas', icon: Wallet, canAccess: (permissions) => hasDomainPermission(permissions, 'FINANCE_') || permissions.includes('PAYMENT_METHOD_CATALOG_MANAGE') },
 ];
 
@@ -52,9 +57,7 @@ function groupedNavigation(permissions: string[]): NavigationGroup[] {
       { key: 'routines', href: '/routines', label: 'Rutinas', icon: ClipboardList, canAccess: (values) => values.includes('SALA_ROUTINE_MANAGE') },
       { key: 'sala-configuration', href: '/sala/configuration', label: 'Configuración', icon: Dumbbell, canAccess: (values) => hasAny(values, ['SALA_SCHEDULE_MANAGE', 'SALA_PLAN_CATALOG_MANAGE', 'SALA_SERVICE_DURATION_MANAGE']) },
     ] },
-    { key: 'clinic', label: 'Clínica', items: [
-      { key: 'clinic', href: '/clinic', label: 'Clínica', icon: CalendarDays, canAccess: (values) => hasDomainPermission(values, 'CLINIC_') || hasDomainPermission(values, 'CLINICAL_HISTORY_') },
-    ] },
+    { key: 'clinic', label: 'Clínica', items: clinicNavigation },
     { key: 'finance', label: 'Finanzas', items: [
       { key: 'finance-summary', href: '/finance', label: 'Resumen', icon: Wallet, canAccess: (values) => values.includes('FINANCE_OPERATIONAL_READ') || values.includes('FINANCE_EXECUTIVE_READ') || values.includes('PAYMENT_METHOD_CATALOG_MANAGE') },
       { key: 'finance-income', href: '/finance?view=income', label: 'Ingresos', icon: Wallet, canAccess: (values) => values.includes('FINANCE_OPERATIONAL_READ') },
@@ -68,6 +71,7 @@ function groupedNavigation(permissions: string[]): NavigationGroup[] {
 }
 
 export function WorkspaceShell({ children, active }: { children: React.ReactNode; active: string }): React.JSX.Element {
+  const activeKey = active === 'clinic' ? 'clinic-patients' : active;
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = React.useState(true);
   const closeMenuRef = React.useRef<HTMLButtonElement>(null);
@@ -77,7 +81,7 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
   const isProfessorOnly = roles.length === 1 && roles.includes('PROFESSOR');
   const hasAdministrativeNavigation = roles.includes('ADMINISTRATIVE') || roles.includes('GENERAL_ADMIN');
   const groups = hasAdministrativeNavigation ? groupedNavigation(permissions) : null;
-  const activeGroupKey = groups?.find((group) => group.items.some((item) => item.key === active))?.key;
+  const activeGroupKey = groups?.find((group) => group.items.some((item) => item.key === activeKey))?.key;
   const [openGroupKey, setOpenGroupKey] = React.useState<NavigationGroup['key'] | undefined>(activeGroupKey);
   const visibleNavigation = roles.includes('GENERAL_ADMIN') ? (groups?.flatMap((group) => group.items) ?? []) : hasAdministrativeNavigation ? (groups?.flatMap((group) => group.items) ?? []) : isProfessorOnly ? professorNavigation : navigation.filter((item) => item.canAccess(permissions));
 
@@ -99,7 +103,7 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
     };
   }, [mobileMenuOpen]);
 
-  const itemLink = ({ key, href, label, icon: Icon }: NavigationItem, onNavigate?: () => void) => <Link key={key} aria-current={active === key ? 'page' : undefined} className={`flex min-h-11 items-center gap-3 rounded-md px-3 py-2.5 text-sm md:min-h-0 ${active === key ? 'bg-primary font-semibold text-primary-foreground' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'}`} href={href} onClick={() => onNavigate?.()}>
+  const itemLink = ({ key, href, label, icon: Icon }: NavigationItem, onNavigate?: () => void) => <Link key={key} aria-current={activeKey === key ? 'page' : undefined} className={`flex min-h-11 items-center gap-3 rounded-md px-3 py-2.5 text-sm md:min-h-0 ${activeKey === key ? 'bg-primary font-semibold text-primary-foreground' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'}`} href={href} onClick={() => onNavigate?.()}>
     <Icon aria-hidden="true" size={18} />
     <span>{label}</span>
   </Link>;
@@ -118,7 +122,7 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
         <div id={contentId} hidden={!isOpen} className="space-y-1">{group.items.map((item) => itemLink(item, onNavigate))}</div>
       </section>;
     })
-    : visibleNavigation.map((item) => itemLink(item, onNavigate));
+    : visibleNavigation.map((item) => <React.Fragment key={item.key}>{item.key === 'clinic-patients' && <h2 className="px-3 pt-3 text-xs font-semibold uppercase tracking-wide text-zinc-300">Clínica</h2>}{itemLink(item, onNavigate)}</React.Fragment>);
 
   return <AuthShell desktopSidebarOpen={desktopSidebarOpen} onToggleDesktopSidebar={() => setDesktopSidebarOpen((open) => !open)} mobileNavigationTrigger={<Button variant="ghost" aria-label="Abrir menú" aria-expanded={mobileMenuOpen} aria-controls="internal-mobile-navigation" className="h-11 gap-2 px-3 md:hidden" onClick={() => setMobileMenuOpen(true)}><Menu aria-hidden="true" size={20} />Menú</Button>}>
     <main className={`min-h-screen min-w-0 bg-background pt-14 transition-[margin] duration-200 ${desktopSidebarOpen ? 'md:ml-60' : 'md:ml-0'}`}>

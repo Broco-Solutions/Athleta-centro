@@ -409,3 +409,62 @@ El alta comienza por DNI (6–8 dígitos, normalizando puntos, espacios y guione
 Plan y Profesor principal son obligatorios y se seleccionan de las opciones elegibles devueltas por backend. El listado se refresca al completar cualquiera de las operaciones.
 
 Solo al crear una Persona nueva se presenta el `initialPin` devuelto por backend, indicando que se muestra una sola vez, con Copiar PIN y Entendido. Al cerrar se descarta. Los errores de búsqueda, carga de opciones, alta/incorporación y conflicto de DNI se muestran sin simular éxito.
+
+
+## Inicio operativo del Administrativo — 2026-10-15
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+El Administrativo posee un Inicio propio orientado a la gestión diaria del centro:
+
+- Operación de hoy de Sala: Alumnos esperados, Asistencias y Cancelados / Ausentes.
+- Operación clínica de hoy: Turnos del día, Atendidos y Pendientes.
+- Seguimiento: Sin rutina activa y Pago pendiente, con accesos a los filtros de Alumnos.
+- Accesos directos: Alumnos, Personas, Ingresos/Pagos y Gastos.
+
+Reutiliza `getSalaDashboard` para Sala y seguimiento, y `getReservationsTimeline`
+para Clínica, contando exclusivamente bookings con `source === 'CLINIC'`.
+Turnos del día incluye todos esos bookings; Atendidos cuenta `ATTENDED` y
+Pendientes cuenta `SCHEDULED`.
+
+Usa exclusivamente la fecha operativa actual de Argentina, sin selector
+Hoy/Mañana. No muestra métricas financieras ejecutivas ni consume
+`/api/finance/executive-totals`. Tampoco muestra gráficos, tendencias ni
+configuración. Los accesos financieros conducen a las pantallas operativas.
+No requiere nuevos endpoints, permisos ni cambios de backend o navegación.
+
+`GENERAL_ADMIN` conserva su Inicio global. Profesor puro conserva su Inicio
+operativo de Sala. Otros perfiles conservan por ahora el Inicio general.
+Los roles combinados con `ADMINISTRATIVE` utilizan el Inicio Administrativo,
+salvo que también incluyan `GENERAL_ADMIN`, que tiene precedencia.
+
+INI-06 e INI-07 continúan **PENDIENTES**. Esta decisión no redefine globalmente
+esos pendientes clínicos ni resuelve el comportamiento para Mañana.
+
+
+## Clínica — Bloque 1: Pacientes y ficha inicial — 2026-10-15
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+Deporte (`sport`) y Club (`club`) son textos opcionales e independientes de la
+identidad compartida de Persona. Pueden editarse o limpiarse; los valores vacíos
+se guardan como `null`. No pertenecen al vínculo clínico ni crean catálogos.
+
+Clínica ofrece Pacientes y Turnos mediante `/clinic` y sus parámetros existentes.
+La historia clínica se navega dentro de un Paciente. El alta comienza por DNI,
+reutiliza la Persona existente (incluida su participación en Sala) y registra
+explícitamente el vínculo clínico, sin crear actividad. Si la Persona es nueva,
+el PIN temporal se muestra una sola vez; ante un fallo posterior se reintenta
+solo el registro clínico con el mismo identificador.
+
+El listado conserva filtros combinables y paginación, agrega búsqueda por
+nombre/apellido/DNI, participación actual en Sala, Deporte, Club y próximo Turno
+Agendado futuro, ordenado por inicio. La vuelta desde ficha conserva el contexto
+del listado. La ficha usa la lectura individual de Persona y distingue carga,
+error, inexistencia y ausencia de vínculo clínico. Incluye datos generales,
+cobertura y actividad operativa; la edición exige `PEOPLE_UPDATE_GENERAL` y el
+contexto de Tratamientos En curso exige `CLINICAL_HISTORY_READ`.
+
+No se agregan permisos ni estados clínicos. El dashboard general y la ampliación
+de los circuitos de Evaluaciones, Tratamientos, Estudios e IA quedan fuera de
+este bloque. INI-06 e INI-07 conservan su estado pendiente.

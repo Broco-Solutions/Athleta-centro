@@ -42,6 +42,26 @@ describe('People API', () => {
     expect(detailAfterReset.body.data.initialPin).toBeUndefined();
   });
 
+  it.each([
+    [{}, null, null],
+    [{ sport: '', club: '   ' }, null, null],
+    [{ sport: ' Tenis ' }, 'Tenis', null],
+    [{ club: ' Club sintético ' }, null, 'Club sintético'],
+  ])('stores optional sports data independently and allows clearing it: %j', async (optional, sport, club) => {
+    const authn = await session(Role.ADMINISTRATIVE);
+    const created = await request(app.getHttpServer()).post('/api/people').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ ...payload, ...optional }).expect(201);
+    const id = created.body.data.id as string;
+    expect(created.body.data).toMatchObject({ sport, club });
+    expect(await prisma.person.findUniqueOrThrow({ where: { id } })).toMatchObject({ sport, club });
+    const updated = await request(app.getHttpServer()).patch(`/api/people/${id}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ sport: ' Natación ', club: ' Club nuevo ' }).expect(200);
+    expect(updated.body.data).toMatchObject({ sport: 'Natación', club: 'Club nuevo' });
+    await request(app.getHttpServer()).patch(`/api/people/${id}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ sport: '  ', club: null }).expect(200);
+    const detail = await request(app.getHttpServer()).get(`/api/people/${id}`).set('Cookie', authn.cookie).expect(200);
+    expect(detail.body.data).toMatchObject({ sport: null, club: null });
+    expect(detail.body.data.initialPin).toBeUndefined();
+    expect(await prisma.person.findUniqueOrThrow({ where: { id } })).toMatchObject({ sport: null, club: null });
+  });
+
   it('returns stable duplicate and validation errors', async () => {
     const authn = await session(Role.ADMINISTRATIVE);
     await request(app.getHttpServer()).post('/api/people').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(payload).expect(201);

@@ -436,3 +436,14 @@ it('reuses the Sala Objective dialog without submitting the surrounding Person f
   expect(objectiveWrites).toBe(1); expect(personWrites).toBe(0);
   expect(screen.getByRole('heading', { name: 'Editar Persona' })).toBeInTheDocument();
 });
+
+it('edits and clears the shared optional sport and club fields', async () => {
+  let updated: unknown;
+  server.use(http.patch(`http://localhost:3000/api/people/${person.id}`, async ({ request }) => { updated = await request.json(); return HttpResponse.json({ data: person }); }));
+  renderPage();
+  fireEvent.click(await screen.findByText('Sintética, Ana'));
+  fireEvent.change(screen.getByLabelText('Deporte (opcional)'), { target: { value: 'Tenis' } });
+  fireEvent.change(screen.getByLabelText('Club (opcional)'), { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(updated).toMatchObject({ sport: 'Tenis', club: '' }));
+});

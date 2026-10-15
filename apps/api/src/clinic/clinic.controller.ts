@@ -46,6 +46,7 @@ export class ClinicController {
   @Get('patients/overview')
   @RequirePermissions('CLINIC_OPERATIONAL_READ')
   @ApiOperation({ operationId: 'listClinicalPatientsOverview' })
+  @ApiQuery({ name: 'search', required: false, type: String })
   @ApiQuery({ name: 'treatmentInProgress', required: false, enum: ['YES', 'NO'] })
   @ApiQuery({ name: 'withoutRecentAttentionDays', required: false, enum: [30, 60, 90] })
   @ApiQuery({ name: 'page', required: false, type: Number })

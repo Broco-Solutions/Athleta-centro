@@ -60,7 +60,7 @@ describe('WorkspaceShell', () => {
     ['Sala', 'SALA_AGENDA_MANAGE', ['Sala']],
     ['Rutinas', 'SALA_ROUTINE_MANAGE', ['Sala', 'Rutinas']],
     ['Reservas', 'SALA_RELATION_READ', ['Reservas']],
-    ['Clínica', 'CLINIC_OPERATIONAL_READ', ['Reservas', 'Clínica']],
+    ['Clínica', 'CLINIC_OPERATIONAL_READ', ['Reservas', 'Pacientes', 'Turnos']],
     ['Finanzas', 'FINANCE_OPERATIONAL_READ', ['Finanzas']],
   ])('mantiene la regla de acceso actual de %s', async (_label, permission, expectedLabels) => {
     renderShell({ permissions: [permission] });
@@ -174,7 +174,7 @@ it('preserves permission navigation for PROFESSOR + KINESIOLOGIST', async () => 
   renderShell({ roles: ['PROFESSOR', 'KINESIOLOGIST'], permissions: ['PEOPLE_READ', 'SALA_ROUTINE_MANAGE', 'CLINIC_OPERATIONAL_READ'] });
   await screen.findByRole('link', { name: 'Personas' });
   fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
-  for (const name of ['Navegación principal', 'Navegación móvil']) expect(within(screen.getByRole('navigation', { name })).getAllByRole('link').map((link) => link.textContent)).toEqual(['Inicio', 'Personas', 'Sala', 'Rutinas', 'Reservas', 'Clínica']);
+  for (const name of ['Navegación principal', 'Navegación móvil']) expect(within(screen.getByRole('navigation', { name })).getAllByRole('link').map((link) => link.textContent)).toEqual(['Inicio', 'Personas', 'Sala', 'Rutinas', 'Reservas', 'Pacientes', 'Turnos']);
 });
 
 it.each([{ roles: ['GENERAL_ADMIN'] }, { roles: ['GENERAL_ADMIN', 'PROFESSOR'] }])('uses General Admin grouped navigation for roles %j on desktop and mobile', async ({ roles }) => {
@@ -283,4 +283,13 @@ it('opens the active General Admin group and only one group at a time, with coll
   view.rerender(<QueryClientProvider client={queryClient}><WorkspaceShell active="sala-agenda"><h1>Contenido sintético</h1></WorkspaceShell></QueryClientProvider>);
   expect(nav.getByRole('button', { name: 'Sala' })).toHaveAttribute('aria-expanded', 'true');
   expect(nav.getByRole('link', { name: 'Agenda' })).toHaveAttribute('aria-current', 'page');
+});
+
+it.each(['KINESIOLOGIST', 'OSTEOPATH', 'ADMINISTRATIVE', 'GENERAL_ADMIN'])('exposes Patients and Appointments through effective permissions for %s', async (role) => {
+  renderShell({ roles: [role], permissions: ['CLINIC_OPERATIONAL_READ'], active: 'clinic-patients' });
+  const nav = within(await screen.findByRole('navigation', { name: 'Navegación principal' }));
+  expect(await nav.findByRole('link', { name: 'Pacientes' })).toHaveAttribute('href', '/clinic?tab=Pacientes');
+  expect(nav.getByRole('link', { name: 'Turnos' })).toHaveAttribute('href', '/clinic?tab=Agenda');
+  expect(nav.getByRole('link', { name: 'Pacientes' })).toHaveAttribute('aria-current', 'page');
+  expect(nav.queryByRole('link', { name: 'Clínica' })).not.toBeInTheDocument();
 });

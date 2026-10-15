@@ -36,6 +36,8 @@ describe('Clinic operational appointments API', () => {
     await prisma.clinicalAttention.deleteMany({ where: { person: { dni: { startsWith: '56' } } } });
     await prisma.treatment.deleteMany({ where: { person: { dni: { startsWith: '56' } } } });
     await prisma.clinicalAppointment.deleteMany({ where: { person: { dni: { startsWith: '56' } } } });
+    await prisma.salaParticipation.deleteMany({ where: { person: { dni: { startsWith: '56' } } } });
+    await prisma.salaPlan.deleteMany({ where: { name: { startsWith: 'clinic-block1-' } } });
     await prisma.clinicalPatient.deleteMany({ where: { person: { dni: { startsWith: '56' } } } });
     await prisma.person.deleteMany({ where: { dni: { startsWith: '56' } } });
     await prisma.authAttemptBucket.deleteMany();
@@ -69,6 +71,48 @@ describe('Clinic operational appointments API', () => {
     await prisma.clinicalPatient.create({ data: { personId: person.id, registeredById: professional.id } });
     return { professional, person };
   }
+
+  it('registers the same Sala identity idempotently without creating clinical activity', async () => {
+    const administrative = await session(Role.ADMINISTRATIVE);
+    const { person, professional } = await clinicFixture();
+    await prisma.clinicalPatient.delete({ where: { personId: person.id } });
+    const plan = await prisma.salaPlan.create({ data: { name: `clinic-block1-${suffix()}`, monthlyAmount: 1000 } });
+    const participation = await prisma.salaParticipation.create({ data: { personId: person.id, mainProfessorId: professional.id, planId: plan.id, startDate: new Date('2026-01-01') } });
+    for (let index = 0; index < 2; index += 1) {
+      await request(app.getHttpServer()).post('/api/clinic/patients').set('Cookie', administrative.cookie).set('x-csrf-token', administrative.csrf).send({ personId: person.id }).expect(201);
+    }
+    expect(await prisma.person.count({ where: { normalizedDni: person.normalizedDni } })).toBe(1);
+    expect(await prisma.clinicalPatient.count({ where: { personId: person.id } })).toBe(1);
+    expect(await prisma.salaParticipation.findUniqueOrThrow({ where: { id: participation.id } })).toMatchObject({ personId: person.id, endDate: null });
+    expect(await prisma.clinicalAppointment.count({ where: { personId: person.id } })).toBe(0);
+    expect(await prisma.clinicalAttention.count({ where: { personId: person.id } })).toBe(0);
+    expect(await prisma.treatment.count({ where: { personId: person.id } })).toBe(0);
+  });
+
+  it('combines patient search and treatment filters before pagination and returns only safe next appointment data', async () => {
+    const administrative = await session(Role.ADMINISTRATIVE);
+    const professor = await session(Role.PROFESSOR);
+    const { person, professional } = await clinicFixture();
+    await prisma.person.update({ where: { id: person.id }, data: { sport: 'Tenis', club: 'Club sintético' } });
+    const other = await prisma.person.create({ data: { firstName: 'Otra', lastName: 'Aardvark', dni: '56999999', normalizedDni: '56999999', phone: '3415555678', birthDate: new Date('1990-01-01') } });
+    await prisma.clinicalPatient.create({ data: { personId: other.id, registeredById: professional.id } });
+    const now = Date.now();
+    const near = new Date(now + 2 * 86_400_000);
+    for (const [offset, status] of [[4, 'SCHEDULED'], [-1, 'SCHEDULED'], [1, 'CANCELLED'], [2, 'SCHEDULED']] as const) {
+      await prisma.clinicalAppointment.create({ data: { personId: person.id, professionalId: professional.id, startAt: new Date(now + offset * 86_400_000), durationMinutes: 60, status, operationalNote: 'Nota privada operativa' } });
+    }
+    await prisma.treatment.create({ data: { personId: person.id, responsibleProfessionalId: professional.id, consultationReason: 'Contenido reservado', bodyAreaOrInjury: 'Reservado', startDate: new Date(now - 100 * 86_400_000) } });
+    for (const search of [person.firstName.toLowerCase(), person.lastName.toLowerCase(), person.dni]) {
+      const response = await request(app.getHttpServer()).get('/api/clinic/patients/overview').query({ search, treatmentInProgress: 'YES', withoutRecentAttentionDays: 60, page: 1, pageSize: 1 }).set('Cookie', administrative.cookie).expect(200);
+      expect(response.body.meta).toMatchObject({ total: 1, totalPages: 1 });
+      expect(response.body.data).toEqual([expect.objectContaining({ id: person.id, sport: 'Tenis', club: 'Club sintético', hasSalaParticipation: false, nextAppointmentAt: near.toISOString() })]);
+      expect(JSON.stringify(response.body)).not.toMatch(/consultationReason|bodyAreaOrInjury|evolutionText|operationalNote|Contenido reservado/);
+    }
+    const empty = await request(app.getHttpServer()).get('/api/clinic/patients/overview').query({ search: person.dni, treatmentInProgress: 'NO', page: 1, pageSize: 1 }).set('Cookie', administrative.cookie).expect(200);
+    expect(empty.body.meta.total).toBe(0);
+    await request(app.getHttpServer()).get('/api/clinic/patients/overview').set('Cookie', professor.cookie).expect(403);
+    await request(app.getHttpServer()).get(`/api/clinic/treatments?personId=${person.id}`).set('Cookie', administrative.cookie).expect(403);
+  });
 
   it('allows Administrative to operate safe appointments but never to read clinical history; Professor is forbidden', async () => {
     const administrative = await session(Role.ADMINISTRATIVE);

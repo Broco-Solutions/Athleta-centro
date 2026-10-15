@@ -9,6 +9,8 @@ function patient(id: string, treatments: { startDate: Date; attentions: { occurr
       firstName: 'Paciente',
       lastName: id,
       dni: `20.${id}`,
+      sport: null,
+      club: null,
       salaParticipations: [],
       clinicalAppointments: [],
       clinicalAttentions: lastAttentionAt ? [{ occurredAt: lastAttentionAt }] : [],
@@ -29,7 +31,7 @@ describe('ClinicService patient overview', () => {
 
     const result = await service.listPatientOverview({ page: 1, pageSize: 25, withoutRecentAttentionDays: 30 }, now);
 
-    expect(result.data).toEqual([{ id: 'multiple', firstName: 'Paciente', lastName: 'multiple', dni: '20.multiple', status: 'ACTIVE', lastAttentionAt: '2026-09-11T12:00:00.000Z' }]);
+    expect(result.data).toEqual([{ id: 'multiple', firstName: 'Paciente', lastName: 'multiple', dni: '20.multiple', sport: null, club: null, hasSalaParticipation: false, nextAppointmentAt: null, status: 'ACTIVE', lastAttentionAt: '2026-09-11T12:00:00.000Z' }]);
     expect(result.meta.total).toBe(1);
   });
 

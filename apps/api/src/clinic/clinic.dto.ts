@@ -30,6 +30,7 @@ export class PatientDto {
 }
 
 export class ListClinicalPatientsOverviewQueryDto {
+  @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() @MaxLength(100) search?: string;
   @ApiPropertyOptional({ enum: ['YES', 'NO'], description: 'Filters by the existence of at least one Treatment En curso.' })
   @IsOptional() @IsIn(['YES', 'NO']) treatmentInProgress?: 'YES' | 'NO';
   @ApiPropertyOptional({ enum: [30, 60, 90], description: 'Minimum complete days without attention for at least one Treatment En curso.' })
@@ -45,6 +46,10 @@ export class ClinicalPatientOverviewDto {
   @ApiProperty({ type: String }) firstName!: string;
   @ApiProperty({ type: String }) lastName!: string;
   @ApiProperty({ type: String }) dni!: string;
+  @ApiProperty({ type: Boolean }) hasSalaParticipation!: boolean;
+  @ApiPropertyOptional({ type: String, nullable: true }) sport!: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) club!: string | null;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) nextAppointmentAt!: string | null;
   @ApiProperty({ enum: ['ACTIVE', 'INACTIVE'] }) status!: 'ACTIVE' | 'INACTIVE';
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true, description: 'Most recent attention of the patient, regardless of Treatment association.' }) lastAttentionAt!: string | null;
 }

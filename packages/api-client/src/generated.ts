@@ -38,6 +38,10 @@ export interface PersonResponseDto {
   socialWorkId?: string | null;
   /** @nullable */
   affiliateNumber?: string | null;
+  /** @nullable */
+  sport?: string | null;
+  /** @nullable */
+  club?: string | null;
   /** Derived from currently available relationships. */
   status: PersonResponseDtoStatus;
   contexts: string[];
@@ -78,6 +82,10 @@ export interface CreatePersonDto {
   birthDate: string;
   /** @nullable */
   email?: string | null;
+  /** @nullable */
+  sport?: string | null;
+  /** @nullable */
+  club?: string | null;
   emergencyContactName?: string;
   /** Optional emergency phone; when nonempty, the same national 10-digit phone rules apply. Empty values are stored as null. */
   emergencyContactPhone?: string;
@@ -96,6 +104,10 @@ export interface UpdatePersonDto {
   birthDate?: string;
   /** @nullable */
   email?: string | null;
+  /** @nullable */
+  sport?: string | null;
+  /** @nullable */
+  club?: string | null;
   emergencyContactName?: string;
   /** Optional emergency phone; when nonempty, the same national 10-digit phone rules apply. Empty values are stored as null. */
   emergencyContactPhone?: string;
@@ -354,6 +366,10 @@ export interface CreateSalaStudentDto {
   birthDate: string;
   /** @nullable */
   email?: string | null;
+  /** @nullable */
+  sport?: string | null;
+  /** @nullable */
+  club?: string | null;
   emergencyContactName?: string;
   /** Optional emergency phone; when nonempty, the same national 10-digit phone rules apply. Empty values are stored as null. */
   emergencyContactPhone?: string;
@@ -762,6 +778,10 @@ export interface CreateSpontaneousSalaStudentDto {
   birthDate: string;
   /** @nullable */
   email?: string | null;
+  /** @nullable */
+  sport?: string | null;
+  /** @nullable */
+  club?: string | null;
   emergencyContactName?: string;
   /** Optional emergency phone; when nonempty, the same national 10-digit phone rules apply. Empty values are stored as null. */
   emergencyContactPhone?: string;
@@ -1266,6 +1286,13 @@ export interface ClinicalPatientOverviewDto {
   firstName: string;
   lastName: string;
   dni: string;
+  hasSalaParticipation: boolean;
+  /** @nullable */
+  sport?: string | null;
+  /** @nullable */
+  club?: string | null;
+  /** @nullable */
+  nextAppointmentAt?: string | null;
   status: ClinicalPatientOverviewDtoStatus;
   /**
    * Most recent attention of the patient, regardless of Treatment association.
@@ -1907,6 +1934,7 @@ pageSize?: number;
 page?: number;
 withoutRecentAttentionDays?: ListClinicalPatientsOverviewWithoutRecentAttentionDays;
 treatmentInProgress?: ListClinicalPatientsOverviewTreatmentInProgress;
+search?: string;
 };
 
 export type ListClinicalPatientsOverviewWithoutRecentAttentionDays = typeof ListClinicalPatientsOverviewWithoutRecentAttentionDays[keyof typeof ListClinicalPatientsOverviewWithoutRecentAttentionDays];
