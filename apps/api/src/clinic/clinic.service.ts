@@ -295,6 +295,7 @@ export class ClinicService {
     const rows = await this.prisma.clinicalAppointment.findMany({
       where: {
         ...(query.personId ? { personId: query.personId } : {}),
+        ...(query.professionalId ? { professionalId: query.professionalId } : {}),
         ...(query.pendingPastScheduled === 'YES'
           ? { status: ClinicalAppointmentStatus.SCHEDULED, startAt: { lt: now } }
           : from || to

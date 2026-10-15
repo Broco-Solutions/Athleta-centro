@@ -149,6 +149,46 @@ describe('Clinic operational appointments API', () => {
     expect(JSON.stringify(listed.body.data)).not.toMatch(/serviceId|fee|charge|evolutionText|consultationReason|bodyAreaOrInjury/i);
   });
 
+  it('filters operational appointments by professional, range, patient and pending status without exposing clinical content', async () => {
+    const administrative = await session(Role.ADMINISTRATIVE);
+    const { professional, person } = await clinicFixture();
+    const other = await prisma.internalUser.create({ data: {
+      firstName: 'Otro', lastName: 'Profesional', email: `${suffix()}@clinic-operational.test`, normalizedEmail: `${suffix()}@clinic-operational.test`,
+      roles: { create: { role: Role.OSTEOPATH } },
+    } });
+    const otherDni = `56${Math.floor(Math.random() * 10_000_000_000)}`.slice(0, 12);
+    const otherPerson = await prisma.person.create({ data: { firstName: 'Otra', lastName: 'Persona', dni: otherDni, normalizedDni: otherDni, phone: '3510000001', birthDate: new Date('1991-01-01') } });
+    const now = Date.now();
+    const create = (professionalId: string, personId: string, offset: number, status: ClinicalAppointmentStatus = 'SCHEDULED') => prisma.clinicalAppointment.create({
+      data: { professionalId, personId, startAt: new Date(now + offset * 86_400_000), durationMinutes: 60, status },
+    });
+    const past = await create(professional.id, person.id, -2);
+    const attended = await create(professional.id, person.id, -1, 'ATTENDED');
+    const future = await create(professional.id, person.id, 1);
+    const later = await create(professional.id, person.id, 2);
+    const otherPatient = await create(professional.id, otherPerson.id, -3);
+    const otherProfessional = await create(other.id, person.id, -2);
+    const attention = await prisma.clinicalAttention.create({ data: {
+      appointmentId: attended.id, personId: person.id, professionalId: professional.id, occurredAt: attended.startAt, coverage: 'PRIVATE',
+      evolution: { create: { authorId: professional.id, evolutionText: 'Contenido clínico reservado sintético' } },
+    } });
+    const list = async (query: Record<string, string>) => {
+      const result = await request(app.getHttpServer()).get('/api/clinic/appointments').query(query).set('Cookie', administrative.cookie).expect(200);
+      expect(JSON.stringify(result.body.data)).not.toMatch(/evolutionText|consultationReason|bodyAreaOrInjury|clinicalHistory|evaluations|studies|Contenido clínico reservado/i);
+      return result.body.data as Array<{ id: string; professionalId: string }>;
+    };
+    expect((await list({ professionalId: professional.id })).map((row) => row.id)).toEqual([otherPatient.id, past.id, attended.id, future.id, later.id]);
+    expect((await list({ personId: person.id })).map((row) => row.id)).toEqual(expect.arrayContaining([past.id, attended.id, future.id, later.id, otherProfessional.id]));
+    const range = { from: future.startAt.toISOString(), to: later.startAt.toISOString() };
+    expect((await list({ ...range, professionalId: professional.id })).map((row) => row.id)).toEqual([future.id]);
+    expect((await list({ personId: person.id, professionalId: professional.id })).map((row) => row.id)).toEqual([past.id, attended.id, future.id, later.id]);
+    expect((await list({ professionalId: professional.id, pendingPastScheduled: 'YES' })).map((row) => row.id)).toEqual([otherPatient.id, past.id]);
+    // Pending appointments retain their existing precedence over the range.
+    expect((await list({ ...range, personId: person.id, professionalId: professional.id, pendingPastScheduled: 'YES' })).map((row) => row.id)).toEqual([past.id]);
+    await request(app.getHttpServer()).get('/api/clinic/appointments').query({ professionalId: 'invalid-uuid' }).set('Cookie', administrative.cookie).expect(400);
+    expect(await prisma.evolution.count({ where: { attentionId: attention.id } })).toBe(1);
+  });
+
   it('enforces coverage and Buenos Aires historical-professional rules for direct attentions', async () => {
     const administrative = await session(Role.ADMINISTRATIVE);
     const professor = await session(Role.PROFESSOR);

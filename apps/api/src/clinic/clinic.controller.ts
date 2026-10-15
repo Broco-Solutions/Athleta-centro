@@ -119,6 +119,7 @@ export class ClinicController {
   @ApiQuery({ name: 'from', required: false, type: String, format: 'date-time' })
   @ApiQuery({ name: 'to', required: false, type: String, format: 'date-time' })
   @ApiQuery({ name: 'personId', required: false, type: String, format: 'uuid' })
+  @ApiQuery({ name: 'professionalId', required: false, type: String, format: 'uuid' })
   @ApiQuery({ name: 'pendingPastScheduled', required: false, enum: ['YES', 'NO'] })
   @ApiOkResponse({ type: ClinicalAppointmentListEnvelopeDto })
   async list(@Query() query: ListClinicalAppointmentsQueryDto) {

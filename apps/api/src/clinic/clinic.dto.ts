@@ -117,6 +117,7 @@ export class ListClinicalAppointmentsQueryDto {
   @ApiPropertyOptional({ type: String, format: 'date-time' }) @IsOptional() @IsDateString() from?: string;
   @ApiPropertyOptional({ type: String, format: 'date-time' }) @IsOptional() @IsDateString() to?: string;
   @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() personId?: string;
+  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() professionalId?: string;
   @ApiPropertyOptional({ enum: ['YES', 'NO'], description: 'When YES, returns past SCHEDULED appointments awaiting manual correction.' })
   @IsOptional() @IsIn(['YES', 'NO']) pendingPastScheduled?: 'YES' | 'NO';
 }

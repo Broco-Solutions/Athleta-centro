@@ -1962,6 +1962,7 @@ occurredAt?: string;
 
 export type ListClinicalAppointmentsParams = {
 pendingPastScheduled?: ListClinicalAppointmentsPendingPastScheduled;
+professionalId?: string;
 personId?: string;
 to?: string;
 from?: string;
