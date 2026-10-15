@@ -44,6 +44,9 @@ describe('Finance views', () => {
   it('uses /finance for indicators and payment methods', async () => {
     renderPage();
     expect(await screen.findByText('$ 100')).toBeVisible();
+    const indicators = within(screen.getByRole('region', { name: 'Indicadores financieros' }));
+    expect(indicators.queryByText('Clínica')).not.toBeInTheDocument();
+    for (const label of ['Ingresos', 'Sala', 'Gastos', 'Neto']) expect(indicators.getByText(label)).toBeVisible();
     fireEvent.click(screen.getByText('Configuración · Administrar medios de pago'));
     expect(await screen.findByRole('heading', { name: 'Medios de pago' })).toBeVisible();
     expect(screen.getByText('Efectivo')).toBeVisible();
@@ -127,23 +130,25 @@ it('searches active Sala students by name, surname and formatted DNI using the e
   renderPage();
   expect(await screen.findByRole('heading', { name: 'Registrar cuota' })).toBeVisible();
   await waitFor(() => expect(reads).toBe(1));
-  expect(screen.queryByText('Lucía Ejemplo')).not.toBeInTheDocument();
+  expect(await screen.findByText('Lucía Ejemplo')).toBeVisible();
+  expect(screen.getByText('Pedro Prueba')).toBeVisible();
+  expect(screen.getAllByRole('link', { name: 'Seleccionar' }).map(link => link.getAttribute('href'))).toEqual(['/finance?view=income&personId=student-1', '/finance?view=income&personId=student-2']);
   const search = screen.getByRole('searchbox', { name: 'Nombre, apellido o DNI' });
-  for (const value of ['LUCÍA', 'eJEmPlo', '88.000.002']) {
+  for (const value of ['LUCÍA', 'eJEmPlo', 'Lucía Ejemplo', '88000002', '88.000.002', '88 000 002', '88-000-002']) {
     fireEvent.change(search, { target: { value } });
     expect(await screen.findByText('Lucía Ejemplo')).toBeVisible();
     expect(screen.getByText('DNI 88000002 · Plan Base')).toBeVisible();
     expect(screen.getByText('Pago pendiente')).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Registrar cuota' })).toHaveAttribute('href', '/finance?view=income&personId=student-1');
+    expect(screen.getByRole('link', { name: 'Seleccionar' })).toHaveAttribute('href', '/finance?view=income&personId=student-1');
     expect(screen.queryByText('Pedro Prueba')).not.toBeInTheDocument();
   }
   fireEvent.change(search, { target: { value: '88-000-003' } });
   expect(await screen.findByText('Pedro Prueba')).toBeVisible();
   expect(screen.getByText('Pago registrado')).toBeVisible();
-  expect(screen.getByRole('link', { name: 'Ver pagos' })).toHaveAttribute('href', '/finance?view=income&personId=student-2');
+  expect(screen.getByRole('link', { name: 'Seleccionar' })).toHaveAttribute('href', '/finance?view=income&personId=student-2');
   fireEvent.change(search, { target: { value: 'Alumno que no fue retornado' } });
   expect(screen.getByText('No se encontraron alumnos.')).toBeVisible();
-  expect(screen.queryByRole('link', { name: 'Registrar cuota' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Seleccionar' })).not.toBeInTheDocument();
   expect(reads).toBe(1);
 });
 
@@ -239,13 +244,13 @@ it('creates the first selectable category in context and allows expense entry to
   );
   renderPage();
   expect(await screen.findByText('No hay categorías de gastos configuradas.')).toBeVisible();
-  fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Alquiler' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Crear categoría' }));
+  fireEvent.change(screen.getByLabelText('Nombre de la categoría'), { target: { value: 'Alquiler' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Crear' }));
   await screen.findByRole('option', { name: 'Alquiler' });
   await waitFor(() => expect(screen.getByLabelText('Categoría')).toHaveValue('rent'));
   expect(categoryCsrf).toBe('csrf'); expect(reads).toBe(2);
   await fillExpense();
-  expect(screen.queryByRole('button', { name: 'Crear categoría' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Crear' })).not.toBeInTheDocument();
 });
 
 it('guides users to payment method configuration and excludes retired methods', async () => {
@@ -290,6 +295,17 @@ it('does not offer category creation without catalog permission', async () => {
   );
   renderPage();
   expect(await screen.findByText('No hay categorías de gastos configuradas.')).toBeVisible();
-  expect(screen.queryByRole('button', { name: 'Crear categoría' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Crear' })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Registrar gasto' })).toBeDisabled();
+});
+
+it('keeps operational indicators without exposing executive net or clinical breakdown', async () => {
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: ['ADMINISTRATIVE'], permissions: ['FINANCE_OPERATIONAL_READ'] } })),
+    http.get('http://localhost:3000/api/finance/totals', () => HttpResponse.json({ data: { totalIncome: '100', salaIncome: '60', clinicalIncome: '40', expenses: '20' } })),
+  );
+  renderPage(); await screen.findByText('$ 100');
+  const indicators = within(screen.getByRole('region', { name: 'Indicadores financieros' }));
+  for (const label of ['Ingresos', 'Sala', 'Gastos']) expect(indicators.getByText(label)).toBeVisible();
+  for (const label of ['Clínica', 'Neto']) expect(indicators.queryByText(label)).not.toBeInTheDocument();
 });

@@ -57,7 +57,6 @@ function groupedNavigation(permissions: string[]): NavigationGroup[] {
       { key: 'routines', href: '/routines', label: 'Rutinas', icon: ClipboardList, canAccess: (values) => values.includes('SALA_ROUTINE_MANAGE') },
       { key: 'sala-configuration', href: '/sala/configuration', label: 'Configuración', icon: Dumbbell, canAccess: (values) => hasAny(values, ['SALA_SCHEDULE_MANAGE', 'SALA_PLAN_CATALOG_MANAGE', 'SALA_SERVICE_DURATION_MANAGE']) },
     ] },
-    { key: 'clinic', label: 'Clínica', items: clinicNavigation },
     { key: 'finance', label: 'Finanzas', items: [
       { key: 'finance-summary', href: '/finance', label: 'Resumen', icon: Wallet, canAccess: (values) => values.includes('FINANCE_OPERATIONAL_READ') || values.includes('FINANCE_EXECUTIVE_READ') || values.includes('PAYMENT_METHOD_CATALOG_MANAGE') },
       { key: 'finance-income', href: '/finance?view=income', label: 'Ingresos', icon: Wallet, canAccess: (values) => values.includes('FINANCE_OPERATIONAL_READ') },
@@ -114,10 +113,10 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
       const Chevron = isOpen ? ChevronDown : ChevronRight;
       return <section key={group.key} className="space-y-1">
         <h2 className="pt-2 first:pt-0">
-          <button type="button" aria-expanded={isOpen} aria-controls={contentId} className="flex min-h-11 w-full items-center justify-between rounded-md px-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-300 hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setOpenGroupKey(isOpen ? undefined : group.key)}>
+          <Link href={group.items[0]!.href} aria-expanded={isOpen} aria-controls={contentId} className="flex min-h-11 w-full items-center justify-between rounded-md px-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-300 hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => { setOpenGroupKey(group.key); onNavigate?.(); }}>
             <span>{group.label}</span>
             <Chevron aria-hidden="true" size={16} className="transition-transform duration-150" />
-          </button>
+          </Link>
         </h2>
         <div id={contentId} hidden={!isOpen} className="space-y-1">{group.items.map((item) => itemLink(item, onNavigate))}</div>
       </section>;

@@ -31,6 +31,7 @@ async function request(path: string, options?: RequestInit) {
 export function ExpenseRegistration({ csrfToken, canManageCategories }: { csrfToken: string; canManageCategories: boolean }): React.JSX.Element {
   const client = useQueryClient();
   const [categoryName, setCategoryName] = useState('');
+  const [showCategoryCreator, setShowCategoryCreator] = useState<boolean | null>(null);
   const [confirmation, setConfirmation] = useState('');
   const pendingRequest = useRef<ExpenseRequest | null>(null);
   const form = useForm<ExpenseValues>({ resolver: zodResolver(schema), mode: 'onChange', defaultValues: { amount: '', cashDate: todayOperational(), categoryId: '', paymentMethodId: '', area: 'SALA', description: '' } });
@@ -48,6 +49,7 @@ export function ExpenseRegistration({ csrfToken, canManageCategories }: { csrfTo
       await client.invalidateQueries({ queryKey: ['finance', 'expense-categories'] });
       form.setValue('categoryId', category.id, { shouldValidate: true });
       setCategoryName('');
+      setShowCategoryCreator(false);
     },
   });
   const createExpense = useMutation({
@@ -74,18 +76,26 @@ export function ExpenseRegistration({ csrfToken, canManageCategories }: { csrfTo
     {categories.isError || methods.isError ? <p role="alert">No pudimos cargar las categorías o los medios de pago. Intentá nuevamente.</p> : null}
     {categories.isSuccess && !selectableCategories.length ? <div className="space-y-2 text-sm">
       <p>No hay categorías de gastos configuradas.</p>
-      {canManageCategories ? <form className="flex flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); if (categoryName.trim() && !createCategory.isPending) createCategory.mutate(); }}>
-        <label>Nombre<input className={inputClass} value={categoryName} onChange={event => setCategoryName(event.target.value)} required disabled={createCategory.isPending}/></label>
-        <Button type="submit" disabled={!categoryName.trim() || createCategory.isPending}>{createCategory.isPending ? 'Creando…' : 'Crear categoría'}</Button>
-      </form> : <p>Solicitá la configuración de una categoría a Administración.</p>}
-      {createCategory.isError ? <p role="alert">{createCategory.error.message}</p> : null}
+      {!canManageCategories ? <p>Solicitá la configuración de una categoría a Administración.</p> : null}
     </div> : null}
     {methods.isSuccess && !selectableMethods.length ? <p className="text-sm">No hay medios de pago configurados. <Link className="underline" href="/finance">Ir a Resumen · Configuración de medios de pago</Link></p> : null}
     <form onChange={() => { pendingRequest.current = null; setConfirmation(''); }} onSubmit={form.handleSubmit(values => { if (catalogsValid && !createExpense.isPending) createExpense.mutate(values); })}>
       <fieldset disabled={createExpense.isPending} className="grid gap-4 sm:grid-cols-2">
         <label className="text-sm">Importe ($ ARS)<input className={inputClass} inputMode="numeric" pattern="[0-9]+" required {...form.register('amount')} /></label>
         <label className="text-sm">Fecha<input className={inputClass} type="date" max={todayOperational()} required {...form.register('cashDate')} /></label>
-        <label className="text-sm">Categoría<select className={inputClass} required {...form.register('categoryId')} value={categoryId}><option value="">Seleccionar</option>{selectableCategories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <div className="space-y-2"><label className="text-sm">Categoría<select className={inputClass} required {...form.register('categoryId')} value={categoryId}><option value="">Seleccionar</option>{selectableCategories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          {canManageCategories ? <>
+            <Button type="button" variant="secondary" disabled={createCategory.isPending} onClick={() => { createCategory.reset(); setShowCategoryCreator(true); }}>+ Nueva categoría</Button>
+            {(showCategoryCreator ?? (categories.isSuccess && !selectableCategories.length)) ? <div className="space-y-2 text-sm" onChange={event => event.stopPropagation()}>
+              <label>Nombre de la categoría<input className={inputClass} value={categoryName} onChange={event => setCategoryName(event.target.value)} disabled={createCategory.isPending}/></label>
+              <div className="flex gap-2">
+                <Button type="button" disabled={!categoryName.trim() || createCategory.isPending} onClick={() => createCategory.mutate()}>{createCategory.isPending ? 'Creando…' : 'Crear'}</Button>
+                <Button type="button" variant="secondary" disabled={createCategory.isPending} onClick={() => { setShowCategoryCreator(false); setCategoryName(''); createCategory.reset(); }}>Cancelar</Button>
+              </div>
+              {createCategory.isError ? <p role="alert">{createCategory.error.message}</p> : null}
+            </div> : null}
+          </> : null}
+        </div>
         <label className="text-sm">Medio de pago<select className={inputClass} required {...form.register('paymentMethodId')}><option value="">Seleccionar</option>{selectableMethods.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label className="text-sm">Área<select className={inputClass} required {...form.register('area')}><option value="SALA">Sala</option><option value="GENERAL">General</option></select></label>
         <label className="text-sm">Descripción (opcional)<input className={inputClass} {...form.register('description')} /></label>

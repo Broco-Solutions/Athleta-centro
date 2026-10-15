@@ -482,3 +482,27 @@ Gastos dispone de formulario directo con Importe, Fecha, Categoría, Medio de pa
 Para esta salida de Sala, el formulario de Gasto expone Sala y General; Clínica permanece implementada pero oculta visualmente en ese selector. El alta de Ingresos clínicos permanece implementada, pero no se expone visualmente desde Finanzas durante esta salida. Los históricos existentes, incluidos los movimientos clínicos, no se eliminan ni se filtran por esta decisión y se muestran con etiquetas legibles.
 
 Medios de pago queda como configuración secundaria dentro de Resumen. No se crean permisos, estados ni lógica financiera paralela; se reutilizan endpoints y reglas vigentes. Esta decisión no modifica FIN-01 a FIN-09, los cálculos de indicadores ni la definición de Neto y no resuelve CAT-04.
+
+## Ajustes de navegación y operación para salida de Sala — 2026-10-15
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+### Clínica
+
+Durante la salida inicial de Sala, Administrativo y Administrador general (también en cuentas con roles combinados) no exponen Clínica en su navegación ni operación Clínica en sus respectivos Inicio. Finanzas no muestra el desglose visual Clínica; los cálculos existentes se conservan.
+
+Clínica continúa implementada. Sus rutas, backend, permisos, datos e históricos no se eliminan, y el acceso directo por URL se conserva según los permisos existentes. Kinesiólogo y Osteópata sin rol Administrativo o Administrador general conservan sus accesos clínicos correspondientes.
+
+Esta decisión reemplaza temporalmente la visibilidad clínica definida anteriormente para `AdministrativeHome` y `GeneralAdminHome`, sin redefinir el dominio clínico.
+
+### Finanzas — cuotas
+
+Ingresos muestra los Alumnos activos de Sala sin requerir búsqueda. La búsqueda sirve como filtro por nombre, apellido o DNI, incluyendo DNI con separadores. Cada Alumno posee una acción `Seleccionar` que abre su contexto financiero existente. Las reglas de Pago de Sala no cambian.
+
+### Gastos
+
+Categoría continúa siendo obligatoria conforme FIN-04. Quien posee `EXPENSE_CATEGORY_CATALOG_MANAGE` puede crear nuevas categorías inline desde Registrar gasto en cualquier momento. La nueva categoría se selecciona automáticamente y se conservan los demás datos del Gasto. No se crea una pantalla independiente de catálogo para esta necesidad. Área mantiene las opciones Sala y General. CAT-04 continúa pendiente.
+
+### Navegación
+
+Los encabezados de las áreas administrativas navegan en un click a la primera opción permitida de cada grupo. El grupo correspondiente queda desplegado al ingresar. No se requiere primero desplegar y luego elegir la primera opción. En móvil también se cierra el drawer al navegar y el grupo activo aparece desplegado al reabrirlo.

@@ -38,7 +38,7 @@ function FinancePageContent(): React.JSX.Element {
   } });
   const term = search.trim().toLocaleLowerCase('es');
   const dniDigits = term.replace(/\D/g, '');
-  const results = term ? students.data?.filter(student => `${student.firstName} ${student.lastName}`.toLocaleLowerCase('es').includes(term) || (dniDigits && /^[\d\s.-]+$/.test(term) && student.dni.replace(/\D/g, '').includes(dniDigits))) ?? [] : [];
+  const results = term ? students.data?.filter(student => `${student.firstName} ${student.lastName}`.toLocaleLowerCase('es').includes(term) || (dniDigits && /^[\d\s.-]+$/.test(term) && student.dni.replace(/\D/g, '').includes(dniDigits))) ?? [] : students.data ?? [];
   const [name, setName] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
   const [message, setMessage] = useState('');
@@ -72,23 +72,23 @@ function FinancePageContent(): React.JSX.Element {
     if (response.ok) await qc.invalidateQueries({ queryKey: ['finance', 'payment-methods'] });
   }
   const totalsData = totals.data as Record<string, unknown> | undefined;
-  const indicatorRows: Array<[string, string]> = [['Ingresos', 'totalIncome'], ['Sala', 'salaIncome'], ['Clínica', 'clinicalIncome'], ['Gastos', 'expenses'], ['Neto', 'net']];
+  const indicatorRows: Array<[string, string]> = [['Ingresos', 'totalIncome'], ['Sala', 'salaIncome'], ['Gastos', 'expenses'], ['Neto', 'net']];
   return <WorkspaceShell active={active}><main className="mx-auto max-w-6xl space-y-6">
     <header><h1 className="text-3xl font-semibold">Finanzas</h1><p className="text-sm text-muted-foreground">Operación económica · ARS</p></header>
     {view === 'summary' && read ? <>
-      <section aria-label="Indicadores financieros" className="grid gap-4 md:grid-cols-5">{indicatorRows.slice(0, permissions.includes('FINANCE_EXECUTIVE_READ') ? 5 : 4).map(([label, key]) => <article className="rounded border bg-white p-4" key={key}><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold">$ {String(totalsData?.[key] ?? '0')}</p></article>)}</section>
+      <section aria-label="Indicadores financieros" className="grid gap-4 md:grid-cols-4">{indicatorRows.slice(0, permissions.includes('FINANCE_EXECUTIVE_READ') ? 4 : 3).map(([label, key]) => <article className="rounded border bg-white p-4" key={key}><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold">$ {String(totalsData?.[key] ?? '0')}</p></article>)}</section>
       <details className="rounded border bg-white p-4"><summary className="cursor-pointer font-semibold">Configuración · Administrar medios de pago</summary><PaymentMethods methods={methods.data ?? []} canCatalog={canCatalog} name={name} editing={editing} message={message} onName={setName} onSave={save} onEdit={(method) => { setEditing(method.id); setName(method.name); }} onRetire={(method) => { void retire(method); }} onCancelEdit={() => { setEditing(null); setName(''); }} /></details>
     </> : null}
     {view === 'income' && canPay && !personId ? <section className="space-y-3 rounded border bg-white p-5">
       <h2 className="text-xl font-semibold">Registrar cuota</h2>
-      <p className="text-sm text-muted-foreground">Buscá un alumno para registrar su pago de Sala.</p>
+      <p className="text-sm text-muted-foreground">Seleccioná un alumno para registrar su pago de Sala.</p>
       <label className="block text-sm">Nombre, apellido o DNI<input type="search" value={search} onChange={event => setSearch(event.target.value)} className="mt-1 h-10 w-full rounded border px-3" /></label>
       {students.isPending ? <p role="status">Cargando alumnos…</p> : null}
       {students.isError ? <p role="alert">{students.error.message}</p> : null}
-      {students.isSuccess && term && !results.length ? <p>No se encontraron alumnos.</p> : null}
+      {students.isSuccess && !results.length ? <p>No se encontraron alumnos.</p> : null}
       <ul>{results.map(student => <li key={student.id} className="flex flex-wrap items-center justify-between gap-3 border-b py-3 text-sm">
         <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>DNI {student.dni} · {student.plan.name}</p><p>{student.paymentStatus === 'PAID' ? 'Pago registrado' : 'Pago pendiente'}</p></div>
-        <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}`}>{student.paymentStatus === 'PAID' ? 'Ver pagos' : 'Registrar cuota'}</Link>
+        <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}`}>Seleccionar</Link>
       </li>)}</ul>
     </section> : null}
     {selectedPaymentContext ? <section className="space-y-3">

@@ -40,7 +40,7 @@ it.each([['KINESIOLOGIST'], ['PROFESSOR', 'KINESIOLOGIST']])('preserves general 
   renderPage(); expect(await screen.findByRole('heading', { name: 'Bienvenido a Athleta' })).toBeVisible();
   expect(screen.getByRole('link', { name: 'Personas' })).toBeVisible(); expect(screen.queryByText('Próximos horarios')).not.toBeInTheDocument(); expect(getSalaDashboard).not.toHaveBeenCalled();
 });
-it.each<SafeSession['roles']>([['GENERAL_ADMIN'], ['GENERAL_ADMIN', 'ADMINISTRATIVE']])('shows the General Admin global overview from the real Sala, Clinic and Finance sources for roles %j', async (...roles) => {
+it.each<SafeSession['roles']>([['GENERAL_ADMIN'], ['GENERAL_ADMIN', 'ADMINISTRATIVE']])('shows the General Admin global overview from the real Sala and Finance sources for roles %j', async (...roles) => {
   vi.mocked(currentSession).mockResolvedValue({ ...session, roles });
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input), 'http://localhost:3000');
@@ -52,19 +52,14 @@ it.each<SafeSession['roles']>([['GENERAL_ADMIN'], ['GENERAL_ADMIN', 'ADMINISTRAT
   expect(await screen.findByRole('heading', { name: 'Hola, Federico' })).toBeVisible();
   for (const text of ['Resumen general de Athleta', 'Operación de hoy', 'Seguimiento', 'Sin rutina activa', 'Pago pendiente', 'Finanzas del mes', 'Ingresos', 'Gastos', 'Resultado']) expect(await screen.findByText(text)).toBeVisible();
   expect(await screen.findByRole('heading', { name: 'Sala' })).toBeVisible();
-  expect(await screen.findByRole('heading', { name: 'Clínica' })).toBeVisible();
-  const clinicCard = screen.getByRole('heading', { name: 'Clínica' }).closest('article')!;
-  expect(within(clinicCard).getByText('Turnos del día').parentElement).toHaveTextContent('4');
-  expect(within(clinicCard).getByText('Atendidos').parentElement).toHaveTextContent('1');
-  expect(within(clinicCard).getByText('Pendientes').parentElement).toHaveTextContent('2');
-  expect(screen.getAllByRole('link', { name: 'Ver Agenda' })).toHaveLength(2);
+  expect(screen.getAllByRole('link', { name: 'Ver Agenda' })).toHaveLength(1);
   const salaCard = screen.getByRole('heading', { name: 'Sala' }).closest('article')!;
   expect(within(salaCard).getByRole('link', { name: 'Ver Agenda' })).toHaveAttribute('href', '/sala');
-  expect(within(clinicCard).getByRole('link', { name: 'Ver Agenda' })).toHaveAttribute('href', '/clinic?tab=Agenda');
   expect(screen.getByRole('link', { name: 'Ver alumnos de Sala' })).toHaveAttribute('href', '/students');
   expect(screen.getByRole('link', { name: 'Ver Finanzas' })).toHaveAttribute('href', '/finance');
   expect(getSalaDashboard).toHaveBeenCalledWith({ date: '2026-10-31' }, { credentials: 'include' });
-  expect(getReservationsTimeline).toHaveBeenCalledWith({ date: '2026-10-31' }, { credentials: 'include' });
+  expect(getReservationsTimeline).not.toHaveBeenCalled();
+  for (const label of ['Clínica', 'Turnos del día', 'Atendidos', 'Pendientes']) expect(screen.queryByText(label, { exact: true })).not.toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledTimes(1);
   const financeUrl = new URL(String(fetchMock.mock.calls[0]?.[0]), 'http://localhost:3000');
   expect(financeUrl.pathname).toBe('/api/finance/executive-totals');
@@ -94,17 +89,12 @@ it.each<SafeSession['roles']>([['ADMINISTRATIVE'], ['ADMINISTRATIVE', 'PROFESSOR
   expect(await screen.findByRole('heading', { name: 'Hola, Federico' })).toBeVisible();
   for (const text of ['Operación administrativa de hoy', 'Operación de hoy', 'Seguimiento', 'Sin rutina activa', 'Pago pendiente', 'Accesos operativos']) expect(screen.getByText(text)).toBeVisible();
   const salaCard = screen.getByRole('heading', { name: 'Sala' }).closest('article')!;
-  const clinicCard = screen.getByRole('heading', { name: 'Clínica' }).closest('article')!;
   await waitFor(() => {
     expect(within(salaCard).getByText('Alumnos esperados').parentElement).toHaveTextContent(String(summary.expected));
     expect(within(salaCard).getByText('Asistencias').parentElement).toHaveTextContent(String(summary.attended));
     expect(within(salaCard).getByText('Cancelados / Ausentes').parentElement).toHaveTextContent(String(summary.cancelledOrAbsent));
-    expect(within(clinicCard).getByText('Turnos del día').parentElement).toHaveTextContent('4');
-    expect(within(clinicCard).getByText('Atendidos').parentElement).toHaveTextContent('1');
-    expect(within(clinicCard).getByText('Pendientes').parentElement).toHaveTextContent('2');
   });
   expect(within(salaCard).getByRole('link', { name: 'Ver Agenda' })).toHaveAttribute('href', '/sala');
-  expect(within(clinicCard).getByRole('link', { name: 'Ver Agenda' })).toHaveAttribute('href', '/clinic?tab=Agenda');
   const followUp = screen.getByRole('region', { name: 'Seguimiento' });
   expect(within(followUp).getByRole('link', { name: /Sin rutina activa/ })).toHaveAttribute('href', '/students?filter=without-routine');
   expect(within(followUp).getByRole('link', { name: /Sin rutina activa/ })).toHaveTextContent(String(summary.withoutRoutine.count));
@@ -115,23 +105,21 @@ it.each<SafeSession['roles']>([['ADMINISTRATIVE'], ['ADMINISTRATIVE', 'PROFESSOR
     expect(within(shortcuts).getByRole('link', { name: new RegExp(name!) })).toHaveAttribute('href', href);
   }
   expect(getSalaDashboard).toHaveBeenCalledWith({ date: '2026-10-31' }, { credentials: 'include' });
-  expect(getReservationsTimeline).toHaveBeenCalledWith({ date: '2026-10-31' }, { credentials: 'include' });
+  expect(getReservationsTimeline).not.toHaveBeenCalled();
+  for (const label of ['Clínica', 'Turnos del día', 'Atendidos', 'Pendientes']) expect(screen.queryByText(label, { exact: true })).not.toBeInTheDocument();
   for (const text of ['Finanzas del mes', 'Ingresos', 'Resultado', 'Próximos horarios', 'Hoy', 'Mañana']) expect(screen.queryByText(text, { exact: true })).not.toBeInTheDocument();
   expect(fetchMock).not.toHaveBeenCalled();
 });
-it.each(['Sala', 'Clínica'] as const)('keeps Administrative errors localized when %s fails', async (source) => {
+it('keeps Administrative Sala errors localized', async () => {
   vi.mocked(currentSession).mockResolvedValue({ ...session, roles: ['ADMINISTRATIVE'] });
-  if (source === 'Sala') vi.mocked(getSalaDashboard).mockRejectedValue(new Error('technical details'));
-  else vi.mocked(getReservationsTimeline).mockRejectedValue(new Error('technical details'));
+  vi.mocked(getSalaDashboard).mockRejectedValue(new Error('technical details'));
   renderPage();
-  expect((await screen.findAllByText(`No pudimos cargar la actividad de ${source}.`)).length).toBeGreaterThan(0);
-  const availableCard = screen.getByRole('heading', { name: source === 'Sala' ? 'Clínica' : 'Sala' }).closest('article')!;
-  await waitFor(() => expect(within(availableCard).getByText(source === 'Sala' ? 'Turnos del día' : 'Alumnos esperados').parentElement).toHaveTextContent(source === 'Sala' ? '4' : '7'));
-  expect(within(availableCard).getByRole('link', { name: 'Ver Agenda' })).toBeVisible();
+  expect((await screen.findAllByText('No pudimos cargar la actividad de Sala.')).length).toBeGreaterThan(0);
   expect(screen.getByRole('region', { name: 'Accesos operativos' })).toBeVisible();
   expect(screen.queryByText('technical details')).not.toBeInTheDocument();
+  expect(getReservationsTimeline).not.toHaveBeenCalled();
 });
-it('keeps Administrative loading localized while the other source is usable', async () => {
+it('keeps Administrative loading localized while shortcuts remain usable', async () => {
   vi.mocked(currentSession).mockResolvedValue({ ...session, roles: ['ADMINISTRATIVE'] });
   vi.mocked(getSalaDashboard).mockImplementation(() => new Promise(() => {}));
   renderPage();
@@ -140,8 +128,6 @@ it('keeps Administrative loading localized while the other source is usable', as
   expect(salaCard.querySelector('[aria-busy="true"]')).toBeInTheDocument();
   const followUp = screen.getByRole('region', { name: 'Seguimiento' });
   expect(within(followUp).getAllByText('…')).toHaveLength(2);
-  const clinicCard = screen.getByRole('heading', { name: 'Clínica' }).closest('article')!;
-  await waitFor(() => expect(within(clinicCard).getByText('Turnos del día').parentElement).toHaveTextContent('4'));
   expect(within(salaCard).getByRole('link', { name: 'Ver Agenda' })).toBeVisible();
   expect(screen.getByRole('region', { name: 'Accesos operativos' })).toBeVisible();
 });
