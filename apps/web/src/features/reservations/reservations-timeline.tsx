@@ -55,7 +55,9 @@ function formatMonthYear(date: string): string {
 }
 function formatTabDate(date: string): string {
   const value = new Date(`${date}T15:00:00Z`);
-  return new Intl.DateTimeFormat('es-AR', { timeZone: OPERATIONAL_TIME_ZONE, weekday: 'short', day: 'numeric' }).format(value);
+  const weekday = new Intl.DateTimeFormat('es-AR', { timeZone: OPERATIONAL_TIME_ZONE, weekday: 'short' }).format(value);
+  const [, month, day] = date.split('-');
+  return `${weekday} ${day}/${month}`;
 }
 function formatHumanDate(date: string): string {
   const [year, month, day] = date.split('-').map(Number);

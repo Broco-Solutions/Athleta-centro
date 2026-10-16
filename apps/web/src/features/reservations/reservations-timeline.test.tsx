@@ -35,6 +35,22 @@ describe('transversal timeline', () => {
 });
 
 describe('Profesor vertical agenda', () => {
+  it('shows weekday, day and month in the five reservation date tabs', async () => {
+    serve(professorResponse([], '2026-10-16')); renderTimeline(true, '2026-10-16');
+    const tabs = await screen.findByRole('group', { name: 'Días de reservas' });
+    for (const label of ['mié 14/10', 'jue 15/10', 'vie 16/10', 'sáb 17/10', 'dom 18/10']) {
+      expect(within(tabs).getByText(label)).toBeInTheDocument();
+    }
+  });
+
+  it('shows the correct month on date tabs when the five day range crosses a month', async () => {
+    serve(professorResponse([], '2026-10-31')); renderTimeline(true, '2026-10-31');
+    const tabs = await screen.findByRole('group', { name: 'Días de reservas' });
+    for (const label of ['vie 30/10', 'sáb 31/10', 'dom 01/11', 'lun 02/11']) {
+      expect(within(tabs).getByText(label)).toBeInTheDocument();
+    }
+  });
+
   it('groups the day bookings and translates origin and status without rendering the timeline', async () => {
     serve(professorResponse()); renderTimeline(true);
     const agenda = await screen.findByTestId('sala-reservations-agenda');
