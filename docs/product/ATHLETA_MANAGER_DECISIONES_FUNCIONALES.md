@@ -579,3 +579,18 @@ Estado: **CONFIRMADO / RESUELTO**.
 - El alta de categoría queda como acción secundaria al final del formulario; crearla la selecciona sin perder los otros datos del Gasto.
 - No se crea una pantalla adicional de catálogo. Registros conserva el histórico.
 - Se mantiene la idempotencia de Gastos. No se agregan migraciones ni nuevas reglas financieras; FIN-01 a FIN-09 continúan vigentes.
+
+## Pulido preproducción de Sala — Bloque 3 — Editor de Rutinas — 2026-10-16
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+- El editor muestra un único Día activo a la vez mediante pestañas con Nombre y cantidad de ejercicios. Agregar Día crea y selecciona inmediatamente la nueva pestaña. Eliminar el Día activo selecciona el anterior cuando existe, o el primero restante; siempre se conserva al menos un Día.
+- Los ejercicios ya agregados se editan inline, con campos apilados en mobile. Solo Ejercicio es obligatorio; Series, Tiempo, Carga y Descanso conservan su representación de texto opcional.
+- Repeticiones/Tiempo se representa mediante un selector visual y continúa persistiendo en los campos existentes `repetitions` y `duration`, excluyentes entre sí. El cambio explícito de alternativa limpia el campo contrario. Los datos antiguos con ambos valores requieren resolución explícita antes de guardar.
+- Observación continúa opcional y secundaria, desplegable debajo de cada ejercicio; las observaciones existentes permanecen accesibles y expandidas.
+- Agregar ejercicio se realiza desde una sección separada debajo del Día activo. El catálogo puede buscarse por Nombre/Músculo, sin distinguir mayúsculas, y cada resultado activo se agrega directamente. Los ejercicios retirados ya seleccionados siguen siendo visibles como no disponibles.
+- Crear nuevo ejercicio se realiza sin salir de la Rutina, permite Nombre, Músculo principal opcional y Descripción opcional, y lo incorpora inmediatamente al Día desde el cual se inició el alta. Conserva los cambios locales; ante error mantiene los campos y no incorpora una fila falsa.
+- Guardar/Cancelar se ubican al final del editor, con la indicación «Los cambios se aplican al guardar». Cancelar descarta la edición local sin persistir la Rutina. Administrar ejercicios conserva la gestión completa del catálogo como configuración secundaria posterior al editor.
+- El mismo editor se reutiliza para Rutinas de Alumnos, personalización de copias y Rutinas preestablecidas.
+- Profesor y Administrador general gestionan Rutinas según los permisos actuales. Administrativo mantiene lectura solamente.
+- No cambian versionado, historial, independencia de copias, semántica de preestablecidas ni reglas SAL-RUT. No cambian backend, permisos, contratos HTTP ni esquema de datos.

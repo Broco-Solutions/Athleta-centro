@@ -21,7 +21,9 @@ function renderManager(rows = [template]) {
 }
 const day = (index: number) => { fireEvent.click(screen.getByRole('button', { name: new RegExp(`^Día ${index}:`) })); return within(screen.getByRole('group', { name: `Día ${index}` })); };
 const change = (scope: ReturnType<typeof within>, label: string, value: string) => fireEvent.change(scope.getByLabelText(label), { target: { value } });
-async function add(index: number, id: string) { change(day(index), 'Ejercicio', id); fireEvent.click(day(index).getByRole('button', { name: 'Agregar a la rutina' })); await day(index).findByRole('button', { name: /^Quitar / }); }
+async function add(index: number, id: string) { day(index); fireEvent.click(await screen.findByRole('button', { name: `Agregar ${id === 'squat' ? 'Sentadilla' : 'Plancha'}` })); }
+const catalog = () => within(screen.getByRole('region', { name: 'Agregar ejercicios' }));
+const row = (index = 0) => within(screen.getByRole('group', { name: /^Día \d+$/ }).querySelectorAll('li')[index]!);
 afterEach(cleanup);
 it('lists ordered days and exercises with optional fields', async () => {
   renderManager(); await screen.findByRole('article', { name: 'Modelo fuerza' });
@@ -32,11 +34,12 @@ it('lists ordered days and exercises with optional fields', async () => {
 });
 it('creates several days and exercises, including optional content and an exercise-only entry', async () => {
   const { api } = renderManager([]); fireEvent.click(screen.getByRole('button', { name: 'Nueva rutina preestablecida' }));
-  await day(1).findByRole('option', { name: 'Sentadilla · Piernas' });
+  await catalog().findByRole('button', { name: 'Agregar Sentadilla' });
   fireEvent.change(screen.getByLabelText('Nombre de la preestablecida'), { target: { value: '  Modelo nuevo  ' } });
-  for (const [label, value] of [['Series', '4'], ['Repeticiones', '10'], ['Carga', '60 kg'], ['Descanso', '90 s'], ['Observación', 'Técnica']]) change(day(1), label!, value!);
-  await add(1, 'squat'); change(day(1), 'Tiempo', '45 s'); await add(1, 'plank');
-  fireEvent.click(screen.getByRole('button', { name: 'Agregar día' })); await add(2, 'squat');
+  await add(1, 'squat');
+  for (const [label, value] of [['Series', '4'], ['Valor', '10'], ['Carga', '60 kg'], ['Descanso', '90 s'], ['Observación', 'Técnica']]) change(day(1), label!, value!);
+  await add(1, 'plank'); change(row(1), 'Tipo', 'duration'); change(row(1), 'Valor', '45 s');
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar día' })); await add(2, 'squat');
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' })); await screen.findByText('Rutina preestablecida guardada correctamente.');
   expect(api.create).toHaveBeenCalledExactlyOnceWith({ name: 'Modelo nuevo', days: [
     { name: 'Día 1', exercises: [{ exerciseDefinitionId: 'squat', series: '4', repetitions: '10', duration: null, load: '60 kg', rest: '90 s', notes: 'Técnica' }, { exerciseDefinitionId: 'plank', series: null, repetitions: null, duration: '45 s', load: null, rest: null, notes: null }] },
@@ -49,8 +52,9 @@ it('edits the complete template without any person and without mutating the sour
   await screen.findByRole('article', { name: 'Modelo fuerza' }); fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
   expect(day(1).getByLabelText('Nombre del día 1')).toHaveValue('Fuerza'); expect(day(2).getByLabelText('Nombre del día 2')).toHaveValue('Core');
   fireEvent.change(screen.getByLabelText('Nombre de la preestablecida'), { target: { value: 'Actualizada' } });
-  fireEvent.click(day(1).getByRole('button', { name: 'Editar' })); change(day(1), 'Series', '5'); fireEvent.click(day(1).getByRole('button', { name: 'Guardar ejercicio' }));
-  await waitFor(() => expect(day(1).getByText(/5 series/)).toBeInTheDocument());
+  change(day(1), 'Series', '5'); day(2);
+  expect(screen.queryByRole('group', { name: 'Día 1' })).not.toBeInTheDocument();
+  day(1); expect(row().getByLabelText('Series')).toHaveValue('5');
   fireEvent.click(day(2).getByRole('button', { name: 'Eliminar día' }));
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' })); await screen.findByText('Rutina preestablecida guardada correctamente.');
   expect(api.update).toHaveBeenCalledTimes(1); const [id, input] = api.update.mock.calls[0]!;
@@ -65,16 +69,40 @@ it('requires confirmation before deletion and supports cancellation', async () =
   fireEvent.click(screen.getByRole('button', { name: 'Eliminar' })); fireEvent.click(screen.getByRole('button', { name: 'Confirmar eliminación' }));
   await screen.findByText('Rutina preestablecida eliminada correctamente.'); expect(api.delete).toHaveBeenCalledExactlyOnceWith('template', expect.any(Object)); await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2));
 });
-it('creates an inline exercise and preserves draft fields, days and the optional description', async () => {
-  const { api } = renderManager([]); fireEvent.click(screen.getByRole('button', { name: 'Nueva rutina preestablecida' })); await day(1).findByRole('option', { name: 'Sentadilla · Piernas' });
+it('creates and directly adds inline while preserving template name, entries and all days', async () => {
+  const { api } = renderManager([]); fireEvent.click(screen.getByRole('button', { name: 'Nueva rutina preestablecida' }));
+  await add(1, 'squat'); change(row(), 'Series', '3'); change(day(1), 'Nombre del día 1', 'Fuerza nueva');
   fireEvent.change(screen.getByLabelText('Nombre de la preestablecida'), { target: { value: 'Con remo' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Agregar día' })); change(day(1), 'Series', '3');
-  api.exercises.mockResolvedValue([...definitions, { id: 'new', name: 'Remo', primaryMuscle: 'Espalda', isActive: true }]);
-  fireEvent.click(day(1).getByRole('button', { name: 'Nuevo ejercicio' })); change(day(1), 'Nombre del ejercicio', 'Remo'); change(day(1), 'Músculo principal (opcional)', 'Espalda');
-  fireEvent.click(day(1).getByRole('button', { name: 'Crear y seleccionar' })); await waitFor(() => expect(day(1).getByLabelText('Ejercicio')).toHaveValue('new'));
-  expect(api.createExercise).toHaveBeenCalledWith({ name: 'Remo', primaryMuscle: 'Espalda', description: '' }, expect.any(Object)); expect(day(1).getByLabelText('Series')).toHaveValue('3'); expect(day(2).getByLabelText('Nombre del día 2')).toHaveValue('Día 2');
-  fireEvent.click(day(1).getByRole('button', { name: 'Agregar a la rutina' })); await day(1).findByText('Remo'); fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' })); await waitFor(() => expect(api.create).toHaveBeenCalled());
-  expect(api.create.mock.calls[0]![0].days[0]?.exercises[0]).toMatchObject({ exerciseDefinitionId: 'new', series: '3' });
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar día' }));
+  expect(screen.queryByRole('group', { name: 'Día 1' })).not.toBeInTheDocument();
+  expect(screen.getByRole('group', { name: 'Día 2' })).toBeInTheDocument(); day(1);
+  fireEvent.click(catalog().getByRole('button', { name: '+ Crear nuevo ejercicio' }));
+  change(catalog(), 'Nombre del ejercicio', 'Remo'); change(catalog(), 'Músculo principal (opcional)', 'Espalda'); change(catalog(), 'Descripción del ejercicio', 'Con banda');
+  fireEvent.click(catalog().getByRole('button', { name: 'Crear y agregar' }));
+  await waitFor(() => expect(row(1).getByLabelText('Ejercicio')).toHaveValue('new'));
+  expect(api.createExercise).toHaveBeenCalledWith({ name: 'Remo', primaryMuscle: 'Espalda', description: 'Con banda' }, expect.any(Object));
+  expect(row().getByLabelText('Series')).toHaveValue('3'); expect(day(1).getByLabelText('Nombre del día 1')).toHaveValue('Fuerza nueva');
+  expect(catalog().queryByRole('group')).not.toBeInTheDocument();
+  expect(day(2).getByLabelText('Nombre del día 2')).toHaveValue('Día 2');
+  expect(screen.getByLabelText('Nombre de la preestablecida')).toHaveValue('Con remo');
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' })); await waitFor(() => expect(api.create).toHaveBeenCalled());
+  expect(api.create.mock.calls[0]![0].days).toHaveLength(2);
+  expect(api.create.mock.calls[0]![0].days[0]?.exercises).toEqual([
+    { exerciseDefinitionId: 'squat', series: '3', repetitions: null, duration: null, load: null, rest: null, notes: null },
+    { exerciseDefinitionId: 'new', series: null, repetitions: null, duration: null, load: null, rest: null, notes: null },
+  ]);
+});
+it('cancels template editing without persistence or source mutation and places both actions at the end', async () => {
+  const { api } = renderManager(); const original = structuredClone(template);
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  expect(screen.queryByRole('group', { name: 'Día 2' })).not.toBeInTheDocument();
+  change(day(1), 'Series', '99'); day(2); day(1); expect(row().getByLabelText('Series')).toHaveValue('99');
+  expect(screen.getAllByRole('button', { name: 'Cancelar' })).toHaveLength(1);
+  const editor = screen.getByRole('region', { name: 'Contenido de la rutina' });
+  for (const name of ['Cancelar', 'Guardar cambios']) expect(editor.compareDocumentPosition(screen.getByRole('button', { name })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+  expect(api.update).not.toHaveBeenCalled(); expect(api.create).not.toHaveBeenCalled(); expect(template).toEqual(original);
+  fireEvent.click(screen.getByRole('button', { name: 'Editar' })); expect(row().getByLabelText('Series')).toHaveValue('4');
 });
 it('validates the trimmed mandatory name without sending a request', async () => {
   const { api } = renderManager([]); fireEvent.click(screen.getByRole('button', { name: 'Nueva rutina preestablecida' }));
@@ -112,9 +140,9 @@ it('creates and selects a name-only exercise without an empty muscle separator',
   const created = { id: 'new-plank', name: 'Plancha nueva', primaryMuscle: null, description: null, isActive: true };
   api.createExercise.mockResolvedValue(created);
   api.exercises.mockResolvedValue([...definitions, created]);
-  fireEvent.click(day(1).getByRole('button', { name: 'Nuevo ejercicio' }));
-  change(day(1), 'Nombre del ejercicio', 'Plancha nueva');
-  fireEvent.click(day(1).getByRole('button', { name: 'Crear y seleccionar' }));
+  fireEvent.click(catalog().getByRole('button', { name: '+ Crear nuevo ejercicio' }));
+  change(catalog(), 'Nombre del ejercicio', 'Plancha nueva');
+  fireEvent.click(catalog().getByRole('button', { name: 'Crear y agregar' }));
   const option = await day(1).findByRole('option', { name: 'Plancha nueva' });
   expect(option).toHaveTextContent(/^Plancha nueva$/);
   expect(day(1).getByRole('option', { name: 'Sentadilla · Piernas' })).toBeInTheDocument();

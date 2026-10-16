@@ -203,12 +203,13 @@ async function startInlineCreation() {
   fireEvent.click(screen.getByRole('button', { name: 'Editar rutina' }));
   const scope = within(screen.getByRole('group', { name: 'Día 1' }));
   fireEvent.change(scope.getByLabelText('Series'), { target: { value: '4' } });
-  fireEvent.click(scope.getByRole('button', { name: 'Nuevo ejercicio' }));
-  for (const [label, value] of [['Nombre del ejercicio', 'Peso muerto'], ['Músculo principal (opcional)', 'Piernas'], ['Descripción del ejercicio', 'Con barra']]) fireEvent.change(scope.getByLabelText(label!), { target: { value } });
-  fireEvent.click(scope.getByRole('button', { name: 'Crear y seleccionar' }));
+  const catalog = within(screen.getByRole('region', { name: 'Agregar ejercicios' }));
+  fireEvent.click(catalog.getByRole('button', { name: '+ Crear nuevo ejercicio' }));
+  for (const [label, value] of [['Nombre del ejercicio', 'Peso muerto'], ['Músculo principal (opcional)', 'Piernas'], ['Descripción del ejercicio', 'Con barra']]) fireEvent.change(catalog.getByLabelText(label!), { target: { value } });
+  fireEvent.click(catalog.getByRole('button', { name: 'Crear y agregar' }));
   return scope;
 }
-it('returns the actual created catalog entity through the adapter and selects it inline', async () => {
+it('returns the actual created catalog entity through the adapter and adds it directly to the day', async () => {
   navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); routineHandlers();
   const created = { id: 'deadlift', name: 'Peso muerto', primaryMuscle: 'Piernas', description: 'Con barra', isActive: true };
   const writes: unknown[] = [];
@@ -222,20 +223,21 @@ it('returns the actual created catalog entity through the adapter and selects it
     }),
   );
   renderWorkspace(); const scope = await startInlineCreation();
-  await waitFor(() => expect(scope.getByLabelText('Ejercicio')).toHaveValue('deadlift'));
-  expect(scope.getByRole('option', { name: 'Peso muerto · Piernas' })).toBeInTheDocument();
+  await waitFor(() => expect(scope.getAllByLabelText('Ejercicio')).toHaveLength(2));
+  expect(scope.getAllByLabelText('Ejercicio')[1]).toHaveValue('deadlift');
+  expect(scope.getAllByRole('option', { name: 'Peso muerto · Piernas' })).toHaveLength(2);
   expect(writes).toEqual([{ name: 'Peso muerto', primaryMuscle: 'Piernas', description: 'Con barra' }]);
-  expect(scope.getByLabelText('Series')).toHaveValue('4'); expect(scope.getAllByRole('listitem')).toHaveLength(1);
+  expect(scope.getAllByLabelText('Series')[0]).toHaveValue('4'); expect(scope.getAllByRole('listitem')).toHaveLength(2);
   expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeInTheDocument();
 });
 it.each([400, 409])('keeps an inline HTTP %s catalog creation failure as an error', async status => {
   navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); routineHandlers();
   server.use(http.post('http://localhost:3000/api/sala/exercise-definitions', () => HttpResponse.json({ code: 'EXERCISE_CREATION_FAILED', message: 'No se pudo crear el ejercicio.' }, { status })));
   renderWorkspace(); const scope = await startInlineCreation();
-  expect(await scope.findByRole('alert')).toHaveTextContent('No se pudo crear el ejercicio.');
-  expect(scope.getByLabelText('Nombre del ejercicio')).toHaveValue('Peso muerto');
-  expect(scope.getByLabelText('Músculo principal (opcional)')).toHaveValue('Piernas');
-  expect(scope.getByLabelText('Descripción del ejercicio')).toHaveValue('Con barra');
+  expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo crear el ejercicio.');
+  expect(within(screen.getByRole('region', { name: 'Agregar ejercicios' })).getByLabelText('Nombre del ejercicio')).toHaveValue('Peso muerto');
+  expect(within(screen.getByRole('region', { name: 'Agregar ejercicios' })).getByLabelText('Músculo principal (opcional)')).toHaveValue('Piernas');
+  expect(within(screen.getByRole('region', { name: 'Agregar ejercicios' })).getByLabelText('Descripción del ejercicio')).toHaveValue('Con barra');
   expect(scope.queryByRole('option', { name: 'Peso muerto · Piernas' })).not.toBeInTheDocument();
   expect(scope.getByLabelText('Series')).toHaveValue('4'); expect(scope.getAllByRole('listitem')).toHaveLength(1);
 });
@@ -243,8 +245,8 @@ it('rejects an unexpected successful creation body without a created entity', as
   navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); routineHandlers();
   server.use(http.post('http://localhost:3000/api/sala/exercise-definitions', () => HttpResponse.json({ data: {} }, { status: 201 })));
   renderWorkspace(); const scope = await startInlineCreation();
-  expect(await scope.findByRole('alert')).toHaveTextContent('La respuesta no contiene el ejercicio creado.');
-  expect(scope.getByLabelText('Nombre del ejercicio')).toHaveValue('Peso muerto');
+  expect(await screen.findByRole('alert')).toHaveTextContent('La respuesta no contiene el ejercicio creado.');
+  expect(within(screen.getByRole('region', { name: 'Agregar ejercicios' })).getByLabelText('Nombre del ejercicio')).toHaveValue('Peso muerto');
   expect(scope.queryByRole('option', { name: 'Peso muerto · Piernas' })).not.toBeInTheDocument();
 });
 
@@ -598,7 +600,7 @@ it('presents the paired routine creation choices in the student workspace and op
   fireEvent.click(screen.getByRole('button', { name: 'Crear desde cero' }));
   expect(await screen.findByRole('heading', { name: 'Crear rutina desde cero' })).toBeVisible();
   expect(screen.getByRole('button', { name: 'Día 1: Día 1' })).toHaveAttribute('aria-pressed', 'true');
-  expect(screen.getByRole('button', { name: 'Agregar día' })).toBeVisible();
+  expect(screen.getByRole('button', { name: '+ Agregar día' })).toBeVisible();
   expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeVisible();
   expect(screen.getByRole('button', { name: 'Cancelar' })).toBeVisible();
 });
