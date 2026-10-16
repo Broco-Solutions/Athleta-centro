@@ -43,6 +43,23 @@ describe('Profesor vertical agenda', () => {
     }
   });
 
+  it('highlights the selected reservation date, not the current day', async () => {
+    serve(professorResponse([], '2026-10-16')); renderTimeline(true, '2026-10-16');
+    const tabs = await screen.findByRole('group', { name: 'Días de reservas' });
+    const selected = within(tabs).getByText('vie 16/10').closest('button');
+    expect(selected).not.toBeNull();
+    expect(selected).toHaveAttribute('aria-pressed', 'true');
+    for (const className of ['bg-primary/10', 'border-primary', 'font-semibold', 'text-foreground']) {
+      expect(selected).toHaveClass(className);
+    }
+
+    const adjacent = within(tabs).getByText('jue 15/10').closest('button');
+    expect(adjacent).not.toBeNull();
+    expect(adjacent).toHaveAttribute('aria-pressed', 'false');
+    expect(adjacent).not.toHaveClass('bg-primary/10');
+    expect(adjacent).not.toHaveClass('border-primary');
+  });
+
   it('shows the correct month on date tabs when the five day range crosses a month', async () => {
     serve(professorResponse([], '2026-10-31')); renderTimeline(true, '2026-10-31');
     const tabs = await screen.findByRole('group', { name: 'Días de reservas' });

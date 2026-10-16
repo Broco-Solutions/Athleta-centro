@@ -188,7 +188,7 @@ export function ReservationsTimeline({ date, onDateChange, csrfToken, variant, c
         <div role={variant === 'sala' ? 'group' : undefined} aria-label={variant === 'sala' ? 'Días de reservas' : undefined} className={variant === 'sala' ? 'flex items-center gap-1 sm:gap-2' : 'flex flex-wrap items-end gap-2'}>
           <Button type="button" variant="secondary" aria-label="Día anterior" onClick={() => changeDate(addDays(date, -1))} className="h-10 w-10 shrink-0 px-0"><ChevronLeft size={18} /></Button>
           {variant === 'sala' ? <div className="grid min-w-0 flex-1 grid-cols-5 border-b border-border">
-            {dateTabs(date).map((tabDate) => <button key={tabDate} type="button" aria-label={formatHumanDate(tabDate)} aria-pressed={tabDate === date} onClick={() => changeDate(tabDate)} className={cn('min-h-11 border-b-2 px-1 py-2 text-sm capitalize transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary', tabDate === date ? 'border-primary font-semibold text-foreground' : 'border-transparent text-muted-foreground')}>
+            {dateTabs(date).map((tabDate) => <button key={tabDate} type="button" aria-label={formatHumanDate(tabDate)} aria-pressed={tabDate === date} onClick={() => changeDate(tabDate)} className={cn('min-h-11 rounded-t-md border-b-4 px-1 py-2 text-sm capitalize transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary', tabDate === date ? 'border-primary bg-primary/10 font-semibold text-foreground hover:bg-primary/10' : 'border-transparent text-muted-foreground hover:bg-slate-50')}>
               {formatTabDate(tabDate)}
             </button>)}
           </div> : null}
