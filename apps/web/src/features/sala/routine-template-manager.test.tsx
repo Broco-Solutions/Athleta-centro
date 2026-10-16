@@ -7,7 +7,7 @@ import { RoutineTemplateManager, type RoutineTemplateApi } from './routine-templ
 
 const definitions = [{ id: 'squat', name: 'Sentadilla', primaryMuscle: 'Piernas', isActive: true }, { id: 'plank', name: 'Plancha', primaryMuscle: 'Core', isActive: true }];
 const template = { id: 'template', name: 'Modelo fuerza', days: [
-  { position: 1, name: 'Fuerza', exercises: [{ exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla', isActive: true }, series: '4', repetitions: '10', load: '60 kg', rest: '90 s', notes: 'Técnica' }] },
+  { position: 1, name: 'Fuerza', exercises: [{ exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla', description: 'Descenso controlado', isActive: true }, series: '4', repetitions: '10', load: '60 kg', rest: '90 s', notes: 'Técnica' }] },
   { position: 2, name: 'Core', exercises: [{ exerciseDefinitionId: 'plank', exerciseDefinition: { name: 'Plancha', isActive: true }, duration: '45 s' }] },
 ] };
 function renderManager(rows = [template]) {
@@ -30,6 +30,7 @@ it('lists ordered days and exercises with optional fields', async () => {
   expect(screen.getByText('Fuerza')).toBeInTheDocument(); expect(screen.getByText('Core')).toBeInTheDocument();
   expect(screen.getByText('Sentadilla')).toBeInTheDocument(); expect(screen.getByText('4 series · 10 rep. · Carga 60 kg · Descanso 90 s')).toBeInTheDocument();
   expect(screen.getByText('Observación: Técnica')).toBeInTheDocument(); expect(screen.getByText('Plancha')).toBeInTheDocument(); expect(screen.getByText('Tiempo 45 s')).toBeInTheDocument();
+  expect(screen.getByText('Descenso controlado')).toBeInTheDocument();
   expect(screen.getByText('Rutina seleccionada')).toBeInTheDocument(); expect(screen.getByRole('button', { name: /Modelo fuerza/ })).toHaveAttribute('aria-pressed', 'true');
 });
 it('creates several days and exercises, including optional content and an exercise-only entry', async () => {

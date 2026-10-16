@@ -56,13 +56,15 @@ function fillCatalog() {
 }
 
 it('reads every day and optional value, including historical definitions absent from the active catalog', async () => {
-  renderPanel([routine, { ...routine, id: 'old', status: 'HISTORICAL', version: 1, days: [{ position: 1, name: 'Histórico', exercises: [{ exerciseDefinitionId: 'retired', exerciseDefinition: { name: 'Ejercicio retirado' }, series: null }] }] }]);
+  renderPanel([routine, { ...routine, id: 'old', status: 'HISTORICAL', version: 1, days: [{ position: 1, name: 'Histórico', exercises: [{ exerciseDefinitionId: 'retired', exerciseDefinition: { name: 'Ejercicio retirado', description: 'Descripción conservada' }, series: null }] }] }]);
   expect(await screen.findByText('Fuerza')).toBeInTheDocument();
   expect(screen.getByText('Core')).toBeInTheDocument();
   expect(screen.getByText('Sentadilla')).toBeInTheDocument(); expect(screen.getByText('4 series · 10 rep. · Carga 40 kg · Descanso 30 s')).toBeInTheDocument(); expect(screen.getByText('Observación: Controlar técnica')).toBeInTheDocument();
   expect(screen.getByText('Plancha')).toBeInTheDocument(); expect(screen.getByText('Tiempo 45 s')).toBeInTheDocument();
   fireEvent.click(screen.getByText('Rutinas históricas (1)'));
   expect(screen.getByText('Ejercicio retirado')).toBeInTheDocument();
+  expect(screen.getByText('Descripción conservada')).toBeInTheDocument();
+  expect(screen.queryByText('Sin parámetros adicionales')).not.toBeInTheDocument();
   expect(screen.queryByText(/— series/)).not.toBeInTheDocument();
 });
 

@@ -29,25 +29,50 @@ function renderPortalSala(): void { render(<QueryClientProvider client={new Quer
 it('shows exercise names, descriptions and only populated routine details', async () => {
   server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: {
     reservations: [], fixed: [], evaluations: [], paymentState: 'PENDING',
-    routine: { days: [{ id: 'day-1', name: 'Día 1', exercises: [
-      { exerciseDefinition: { name: 'Sentadilla', description: 'Descenso controlado' }, series: '3', repetitions: '10', duration: null, load: '40 kg', rest: '60 s', notes: 'Controlar técnica' },
-      { exerciseDefinition: { name: 'Plancha', description: null }, series: '3', repetitions: null, duration: '45 s', load: null, rest: '30 s', notes: null },
-      { exerciseDefinition: { name: 'Movilidad', description: '' }, series: '', repetitions: '', duration: '', load: '', rest: '', notes: '' },
+    routine: { days: [{ id: 'day-1', position: 1, name: null, exercises: [
+      { exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla', description: 'Descenso controlado' }, series: '3', repetitions: '10', duration: null, load: '40 kg', rest: '60 s', notes: 'Controlar técnica' },
+      { exerciseDefinitionId: 'plank', exerciseDefinition: { name: 'Plancha', description: null }, series: '3', repetitions: null, duration: '45 s', load: null, rest: '30 s', notes: null },
+      { exerciseDefinitionId: 'mobility', exerciseDefinition: { name: 'Movilidad', description: '' }, series: '', repetitions: '', duration: '', load: '', rest: '', notes: '' },
     ] }] },
   } })));
   renderPortalSala();
   await screen.findByRole('heading', { name: 'Día 1' });
   const routine = within(document.getElementById('rutina')!);
-  expect(routine.getByText('Sentadilla · 3 series · 10 rep. · Carga 40 kg · Descanso 60 s · Observación Controlar técnica')).toBeInTheDocument();
-  expect(routine.getByText('Descenso controlado')).toBeInTheDocument();
-  expect(routine.getByText('Plancha · 3 series · Tiempo 45 s · Descanso 30 s')).toBeInTheDocument();
-  expect(routine.getByText('Movilidad')).toBeInTheDocument();
-  expect(routine.getAllByRole('listitem').map(item => item.textContent)).toEqual([
-    'Sentadilla · 3 series · 10 rep. · Carga 40 kg · Descanso 60 s · Observación Controlar técnicaDescenso controlado',
-    'Plancha · 3 series · Tiempo 45 s · Descanso 30 s',
-    'Movilidad',
-  ]);
-  expect(routine.queryByText(/Ejercicio ·|— series|— rep\.|undefined|null/)).not.toBeInTheDocument();
+  expect(routine.getByRole('heading', { name: 'Mi rutina' })).toBeInTheDocument();
+  expect(routine.getByText('1 día · 3 ejercicios')).toBeInTheDocument();
+  expect(routine.getByRole('heading', { name: 'Día 1' })).toBeInTheDocument();
+  expect(routine.getByText('3 ejercicios')).toBeInTheDocument();
+  const exercises = routine.getAllByRole('listitem');
+  expect(exercises).toHaveLength(3);
+  const squat = within(exercises[0]!);
+  expect(squat.getByText('Sentadilla')).toBeInTheDocument();
+  for (const detail of ['3 series', '10 rep.', 'Carga 40 kg', 'Descanso 60 s']) {
+    expect(squat.getByText((content) => content.split(' · ').includes(detail))).toBeInTheDocument();
+  }
+  expect(squat.getByText('Descenso controlado')).toBeInTheDocument();
+  expect(squat.getByText('Observación: Controlar técnica')).toBeInTheDocument();
+  const plank = within(exercises[1]!);
+  expect(plank.getByText('Plancha')).toBeInTheDocument();
+  for (const detail of ['Tiempo 45 s', 'Descanso 30 s']) {
+    expect(plank.getByText((content) => content.split(' · ').includes(detail))).toBeInTheDocument();
+  }
+  expect(exercises[2]).toHaveTextContent(/^Movilidad$/);
+  expect(document.getElementById('rutina')!.textContent).not.toMatch(/undefined|null|—|Sin informar|Sin parámetros adicionales/);
+  expect(routine.queryByRole('button')).not.toBeInTheDocument();
+  expect(routine.queryByRole('textbox')).not.toBeInTheDocument();
+});
+
+it('shows the empty state when there is no active routine', async () => {
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: {
+    reservations: [], fixed: [], evaluations: [], paymentState: 'PENDING', routine: null,
+  } })));
+  renderPortalSala();
+  await screen.findByText('No hay una rutina activa.');
+  const routine = within(document.getElementById('rutina')!);
+  expect(routine.getByRole('heading', { name: 'Mi rutina' })).toBeInTheDocument();
+  expect(routine.getByText('No hay una rutina activa.')).toBeInTheDocument();
+  expect(routine.queryByRole('list')).not.toBeInTheDocument();
+  expect(routine.queryByRole('button')).not.toBeInTheDocument();
 });
 
 function fixedHandlers(state: { weekday: string; startTime: string; active: boolean }, onChange?: (body: Record<string, string>) => void, onAvailability?: (url: string) => void): void {

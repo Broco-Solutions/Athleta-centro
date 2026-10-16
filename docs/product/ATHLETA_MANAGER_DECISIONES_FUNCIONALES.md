@@ -668,3 +668,19 @@ Estado: **CONFIRMADO / RESUELTO**.
 - Horarios sin lugar continúan visibles para permitir confirmación de sobrecupo; los cerrados no se ofrecen.
 - Sin opciones restantes se informa que no quedan horarios disponibles para hoy y se deshabilita Incorporar.
 - Fechas pasadas conservan incorporación espontánea retrospectiva. Fechas futuras continúan no permitidas.
+
+
+## Portal — Presentación de Rutina — 2026-10-16
+
+Estado: CONFIRMADO / RESUELTO.
+
+La Rutina activa del Portal utiliza el mismo lenguaje visual de lectura que las
+Rutinas del sistema interno: separación por días, cantidad de ejercicios y
+parámetros presentados de forma estructurada.
+
+Portal conserva una experiencia exclusivamente de consulta. No ofrece edición,
+asignación, duplicación ni gestión del catálogo.
+
+Los campos opcionales de un Ejercicio se muestran únicamente cuando tienen
+valor. Descripción y Observación permanecen visibles como información
+secundaria cuando existen.
