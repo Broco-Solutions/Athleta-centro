@@ -182,10 +182,10 @@ export interface UpdateTeamUserDto {
    */
   phone?: string | null;
   /**
-   * @maxLength 30
-   * @nullable
+   * DNI sin puntos, utilizado también como contraseña inicial.
+   * @pattern ^\d{6,8}$
    */
-  dni?: string | null;
+  dni?: string;
   /**
    * @maxLength 250
    * @nullable
@@ -225,10 +225,10 @@ export interface CreateTeamUserDto {
    */
   phone?: string | null;
   /**
-   * @maxLength 30
-   * @nullable
+   * DNI sin puntos, utilizado también como contraseña inicial.
+   * @pattern ^\d{6,8}$
    */
-  dni?: string | null;
+  dni: string;
   /**
    * @maxLength 250
    * @nullable

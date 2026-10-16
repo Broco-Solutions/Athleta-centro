@@ -17,8 +17,8 @@ export class TeamService {
   async create(input: CreateTeamUserDto, permissions: readonly string[]) {
     this.authorizeRoles([], input.roles, permissions);
     this.assertProfileDates(input);
-    const temporaryPassword = this.temporaryPassword();
-    const passwordHash = await this.auth.hashPassword(temporaryPassword);
+    const temporaryPassword = input.dni;
+    const passwordHash = await this.auth.hashInitialCredential(temporaryPassword);
     try {
       const user = await this.users.create({ ...input, credentialPasswordHash: passwordHash });
       return { data: this.safe(user), temporaryPassword };

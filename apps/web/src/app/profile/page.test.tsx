@@ -25,9 +25,10 @@ it('lets a user update personal data without rendering access-management control
   expect(screen.getByText(/años/)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Inactivar acceso' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Resetear credencial' })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('DNI'), { target: { value: '27739784' } });
   fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '351 555 0101' } });
   fireEvent.change(screen.getByLabelText('Profesión'), { target: { value: 'Docente' } });
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
-  await waitFor(() => expect(payload).toMatchObject({ phone: '351 555 0101', profession: 'Docente', dni: null }));
+  await waitFor(() => expect(payload).toMatchObject({ phone: '351 555 0101', profession: 'Docente', dni: '27739784' }));
   expect(await screen.findByRole('status')).toHaveTextContent('Datos actualizados');
 });
