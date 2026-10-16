@@ -185,6 +185,7 @@ export class SalaStudentListItemDto {
   @ApiProperty({ type: () => SalaAgendaProfessionalDto }) professor!: SalaAgendaProfessionalDto;
   @ApiProperty({ type: String, enum: ['ACTIVE', 'MISSING'] }) routineStatus!: 'ACTIVE' | 'MISSING';
   @ApiProperty({ type: String, enum: ['PAID', 'PENDING'] }) paymentStatus!: 'PAID' | 'PENDING';
+  @ApiProperty({ type: String, format: 'date', nullable: true }) currentPaymentPaidAt!: string | null;
 }
 export class SalaStudentListEnvelopeDto {
   @ApiProperty({ type: () => [SalaStudentListItemDto] }) data!: SalaStudentListItemDto[];

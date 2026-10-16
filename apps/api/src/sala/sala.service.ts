@@ -764,9 +764,10 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     const payments = await this.prisma.salaPayment.findMany({
       where: { personId: { in: participations.map((item) => item.person.id) }, reversal: null,
         AND: [{ OR: [{ year: { gt: Math.floor(firstMonth / 12) } }, { year: Math.floor(firstMonth / 12), month: { gte: firstMonth % 12 + 1 } }] }, { OR: [{ year: { lt: year } }, { year, month: { lte: month } }] }] },
-      select: { personId: true, year: true, month: true },
+      select: { personId: true, year: true, month: true, paidAt: true },
     });
     const paidMonths = new Set(payments.map((payment) => `${payment.personId}:${payment.year * 12 + payment.month - 1}`));
+    const currentPayments = new Map(payments.filter(payment => payment.year === year && payment.month === month).map(payment => [payment.personId, payment]));
     const currentMonth = year * 12 + month - 1;
     return participations.map(({ id, startDate, person, plan, mainProfessor, routines }) => {
       const startMonth = startDate.getUTCFullYear() * 12 + startDate.getUTCMonth();
@@ -777,6 +778,7 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
         firstName: person.firstName, lastName: person.lastName, dni: person.dni, plan, professor: mainProfessor,
         routineStatus: routines.length ? 'ACTIVE' : 'MISSING',
         paymentStatus: paidMonths.has(`${person.id}:${currentMonth}`) ? 'PAID' : 'PENDING',
+        currentPaymentPaidAt: currentPayments.get(person.id)?.paidAt.toISOString().slice(0, 10) ?? null,
       };
     });
   }

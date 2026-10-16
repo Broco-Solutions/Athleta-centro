@@ -544,3 +544,38 @@ Estado: **CONFIRMADO / RESUELTO**.
 - Profesor puede crear una nueva Persona/Alumno desde Incorporación espontánea para el día actual, con sus permisos existentes.
 - Se reutiliza el flujo atómico ya implementado de Persona + Sala + presencia.
 - Las reglas para fechas pasadas/futuras no cambian.
+
+
+## Pulido preproducción de Sala — Bloque 2 — Finanzas — 2026-10-16
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+### Ingresos
+
+- Finanzas separa los Alumnos del período operativo actual entre Pendientes y Pagados.
+- Pagados muestra la Fecha real de cobro (`SalaPayment.paidAt`) del Pago válido, no revertido, correspondiente al Mes/Año actual mediante `currentPaymentPaidAt`; para Pendientes el campo es `null`.
+- La búsqueda por Nombre/DNI filtra la pestaña activa; los contadores representan el total de cada estado antes de buscar.
+- Pendiente ofrece Cobrar y Pagado ofrece Ver pagos, con acceso al contexto individual de Finanzas.
+- No se crea un nuevo estado de deuda: se reutiliza `PENDING / PAID`. Se conserva el historial general de ingresos de otros períodos.
+
+### Resumen
+
+- Finanzas Resumen incluye una lista de Cuotas pendientes del período operativo actual, según America/Argentina/Buenos_Aires.
+- Seleccionar un Alumno lleva directamente a su contexto de cobro en un solo click.
+- No se crea deuda contable nueva.
+
+### Cobro individual
+
+- El contexto del Alumno concentra identificación, Plan, alta de Pago e historial, sin duplicar el listado genérico de Ingresos.
+- Se propone automáticamente el primer período desde el mes operativo actual que no posea Pago válido, ignorando revertidos y permitiendo períodos futuros.
+- Un refetch ordinario respeta la selección manual; tras un registro exitoso se propone nuevamente el primer período libre desde el actual.
+- Se conserva selección de varios períodos con importes individuales en un solo envío, ajustes con motivo obligatorio, fecha real de cobro, medios de pago y reversión con motivo.
+- El historial muestra Mes/Año, Fecha de cobro, Medio, Importe, Estado y Reversión, incluyendo pagos revertidos y motivos de ajuste/reversión.
+
+### Gastos
+
+- Gastos se divide visualmente en Registrar gasto y Registros. Quien solo puede leer accede directamente a Registros.
+- Categoría continúa obligatoria, al igual que Medio y Área; se conservan importes enteros ARS mayores a cero, fecha hoy o anterior y áreas Sala / General.
+- El alta de categoría queda como acción secundaria al final del formulario; crearla la selecciona sin perder los otros datos del Gasto.
+- No se crea una pantalla adicional de catálogo. Registros conserva el histórico.
+- Se mantiene la idempotencia de Gastos. No se agregan migraciones ni nuevas reglas financieras; FIN-01 a FIN-09 continúan vigentes.

@@ -17,7 +17,8 @@ beforeEach(() => {
     if (url.endsWith('expense-categories')) {
       if (options?.method === 'POST') {
         if (failCreation) return { ok: false, json: async () => ({ message: 'La categoría ya existe.' }) };
-        categories = [...categories, supplies]; data = supplies;
+        const category = { ...supplies, id: categories.some(item => item.id === supplies.id) ? 'other' : supplies.id, name: JSON.parse(String(options.body)).name as string };
+        categories = [...categories, category]; data = category;
       } else { categoryReads++; data = categories; }
     } else if (url.endsWith('payment-methods')) data = [{ id: 'cash', name: 'Efectivo', isSelectable: true }];
     else throw new Error(`Unexpected request: ${url}`);
@@ -52,6 +53,9 @@ function expectExpensePreserved() {
 it('keeps category required and excludes Clínica from areas', async () => {
   renderForm(); await fillExpense();
   expect(screen.getByLabelText('Categoría')).toBeRequired();
+  const categorySection = screen.getByRole('region', { name: 'Categorías de gastos' });
+  expect(categorySection).toContainElement(screen.getByRole('button', { name: '+ Agregar categoría' }));
+  expect(screen.getByLabelText('Categoría').closest('form')).not.toContainElement(categorySection);
   fireEvent.change(screen.getByLabelText('Categoría'), { target: { value: '' } });
   expect(await screen.findByText('Seleccioná una categoría.')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Registrar gasto' })).toBeDisabled();
@@ -60,7 +64,7 @@ it('keeps category required and excludes Clínica from areas', async () => {
 it('creates a second category inline, refreshes and selects it without losing the expense', async () => {
   const invalidate = renderForm(); await fillExpense();
   expect(screen.queryByLabelText('Nombre de la categoría')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: '+ Nueva categoría' }));
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar categoría' }));
   fireEvent.change(screen.getByLabelText('Nombre de la categoría'), { target: { value: 'Materiales' } });
   fireEvent.click(screen.getByRole('button', { name: 'Crear' }));
   await waitFor(() => expect(screen.getByLabelText('Categoría')).toHaveValue('supplies'));
@@ -69,12 +73,12 @@ it('creates a second category inline, refreshes and selects it without losing th
   expect(categoryReads).toBe(2);
   expectExpensePreserved();
   expect(screen.queryByLabelText('Nombre de la categoría')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: '+ Nueva categoría' }));
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar categoría' }));
   expect(screen.getByLabelText('Nombre de la categoría')).toHaveValue('');
 });
 it('cancels category creation without modifying the expense', async () => {
   renderForm(); await fillExpense();
-  fireEvent.click(screen.getByRole('button', { name: '+ Nueva categoría' }));
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar categoría' }));
   fireEvent.change(screen.getByLabelText('Nombre de la categoría'), { target: { value: 'Descartar' } });
   fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
   expectExpensePreserved();
@@ -82,18 +86,22 @@ it('cancels category creation without modifying the expense', async () => {
   expect(screen.queryByLabelText('Nombre de la categoría')).not.toBeInTheDocument();
   expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
 });
-it('creates the first category immediately and keeps Nueva categoría available', async () => {
+it('creates the first category immediately and keeps Agregar categoría available', async () => {
   categories = []; renderForm();
   expect(await screen.findByText('No hay categorías de gastos configuradas.')).toBeVisible();
   fireEvent.change(screen.getByLabelText('Nombre de la categoría'), { target: { value: 'Materiales' } });
   fireEvent.click(screen.getByRole('button', { name: 'Crear' }));
   await waitFor(() => expect(screen.getByLabelText('Categoría')).toHaveValue('supplies'));
-  expect(screen.getByRole('button', { name: '+ Nueva categoría' })).toBeVisible();
+  expect(screen.getByRole('button', { name: '+ Agregar categoría' })).toBeVisible();
   expect(screen.queryByLabelText('Nombre de la categoría')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar categoría' }));
+  fireEvent.change(screen.getByLabelText('Nombre de la categoría'), { target: { value: 'Otra categoría' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Crear' }));
+  await waitFor(() => expect(categoryReads).toBe(3));
 });
 it('shows backend conflicts without losing expense or simulating success', async () => {
   failCreation = true; renderForm(); await fillExpense();
-  fireEvent.click(screen.getByRole('button', { name: '+ Nueva categoría' }));
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar categoría' }));
   fireEvent.change(screen.getByLabelText('Nombre de la categoría'), { target: { value: 'Alquiler' } });
   fireEvent.click(screen.getByRole('button', { name: 'Crear' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('La categoría ya existe.');
@@ -105,6 +113,6 @@ it('shows backend conflicts without losing expense or simulating success', async
 it('allows existing category selection without catalog management permission', async () => {
   renderForm(false); await fillExpense();
   expect(screen.getByLabelText('Categoría')).toHaveValue('rent');
-  expect(screen.queryByRole('button', { name: '+ Nueva categoría' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '+ Agregar categoría' })).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Nombre de la categoría')).not.toBeInTheDocument();
 });

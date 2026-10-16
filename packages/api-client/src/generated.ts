@@ -350,6 +350,8 @@ export interface SalaStudentListItemDto {
   professor: SalaAgendaProfessionalDto;
   routineStatus: SalaStudentListItemDtoRoutineStatus;
   paymentStatus: SalaStudentListItemDtoPaymentStatus;
+  /** @nullable */
+  currentPaymentPaidAt: string | null;
 }
 
 export interface SalaStudentListEnvelopeDto {

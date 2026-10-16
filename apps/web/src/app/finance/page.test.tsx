@@ -56,7 +56,7 @@ describe('Finance views', () => {
   it('shows readable income and hides the clinical income action for view=income', async () => {
     navigation.search = 'view=income';
     renderPage();
-    expect(await screen.findByRole('heading', { name: 'Ingresos' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Historial de ingresos' })).toBeVisible();
     expect(await screen.findByText('14/10/2026')).toBeVisible();
     expect(screen.getByText('Juan Pérez')).toBeVisible();
     expect(screen.getByText('Transferencia')).toBeVisible();
@@ -70,7 +70,11 @@ describe('Finance views', () => {
   it('shows the expense list for view=expenses', async () => {
     navigation.search = 'view=expenses';
     renderPage();
-    expect(await screen.findByRole('heading', { name: 'Gastos' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Registrar gasto' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Registrar gasto', pressed: true })).toBeVisible();
+    expect(screen.queryByText('Local de Sala')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Registros' }));
+    expect(await screen.findByRole('heading', { name: 'Registros de gastos' })).toBeVisible();
     expect(await screen.findByText('14/10/2026')).toBeVisible();
     expect(screen.getByText('Transferencia')).toBeVisible();
     expect(screen.getByText('$ 250.000')).toBeVisible();
@@ -81,40 +85,43 @@ describe('Finance views', () => {
   });
 });
 
-it('loads selected Persona and Sala payments before filtered income', async () => {
+it('concentrates selected Persona, Plan, registration and history without generic income', async () => {
   navigation.search = 'view=income&personId=person-1';
-  let requestedPerson: string | null = null;
+  let incomeReads = 0;
   server.use(
     http.get('http://localhost:3000/api/people/person-1', () => HttpResponse.json({ data: { id: 'person-1', firstName: 'Lucía', lastName: 'Ejemplo', dni: '88000002' } })),
     http.get('http://localhost:3000/api/sala/participations/person/person-1', () => HttpResponse.json({ data: [{ endDate: null, plan: { id: 'plan', name: '2 veces', monthlyAmount: '10000' } }] })),
     http.get('http://localhost:3000/api/sala/people/person-1/payments', () => HttpResponse.json({ data: [] })),
-    http.get('http://localhost:3000/api/finance/income', ({ request }) => { requestedPerson = new URL(request.url).searchParams.get('personId'); return HttpResponse.json({ data: [] }); }),
+    http.get('http://localhost:3000/api/finance/income', () => { incomeReads++; return HttpResponse.json({ data: [] }); }),
   );
   renderPage();
   expect(await screen.findByText('Lucía Ejemplo')).toBeVisible();
-  expect(screen.getByRole('heading', { name: 'Pago de Sala' })).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Registrar una cuota' })).toBeVisible();
   expect(screen.getByText('DNI 88000002')).toBeVisible();
   expect(await screen.findByLabelText('Fecha de cobro')).toBeVisible();
-  expect(screen.getByRole('link', { name: 'Volver a la ficha de Sala' })).toHaveAttribute('href', '/sala/people/person-1');
+  expect(screen.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/person-1');
   expect(screen.getByRole('link', { name: 'Cambiar alumno' })).toHaveAttribute('href', '/finance?view=income');
-  expect(screen.getByText(/Plan actual:/)).toHaveTextContent('2 veces');
-  expect(screen.getByText(/Precio actual del Plan:/)).toHaveTextContent('$10.000');
-  expect(requestedPerson).toBe('person-1');
+  expect(screen.getByRole('heading', { name: 'Finanzas', level: 1 })).toBeVisible();
+  expect(screen.getByText('2 veces')).toBeVisible();
+  expect(screen.getByText('Precio actual: $10.000 / mes')).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Historial de pagos' })).toBeVisible();
+  expect(screen.queryByRole('heading', { name: 'Historial de ingresos' })).not.toBeInTheDocument();
+  expect(incomeReads).toBe(0);
 });
 it.each([['invalid', 400], ['missing', 404]])('keeps Finance usable when Persona is %s', async (personId, status) => {
   navigation.search = `view=income&personId=${personId}`;
   server.use(http.get(`http://localhost:3000/api/people/${personId}`, () => HttpResponse.json({ message: 'Persona inválida' }, { status })));
   renderPage();
   expect(await screen.findByRole('alert')).toHaveTextContent('La Persona seleccionada no existe o no pudo cargarse.');
-  expect(screen.getByRole('heading', { name: 'Ingresos' })).toBeVisible();
-  expect(screen.queryByRole('button', { name: 'Registrar pago' })).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Finanzas', level: 1 })).toBeVisible();
+  expect(screen.queryByRole('button', { name: /^Registrar pago/ })).not.toBeInTheDocument();
 });
 it('does not load a payment context without management permission', async () => {
   navigation.search = 'view=income&personId=person-1';
   server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: ['FINANCE_OPERATIONAL_READ'] } })));
   renderPage();
-  expect(await screen.findByRole('heading', { name: 'Ingresos' })).toBeVisible();
-  expect(screen.queryByRole('heading', { name: 'Pago de Sala' })).not.toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Finanzas', level: 1 })).toBeVisible();
+  expect(screen.queryByRole('heading', { name: 'Registrar una cuota' })).not.toBeInTheDocument();
 });
 
 it('searches active Sala students by name, surname and formatted DNI using the existing endpoint', async () => {
@@ -123,34 +130,44 @@ it('searches active Sala students by name, surname and formatted DNI using the e
   server.use(http.get('http://localhost:3000/api/sala/students', () => {
     reads++;
     return HttpResponse.json({ data: [
-      { id: 'student-1', firstName: 'Lucía', lastName: 'Ejemplo', dni: '88000002', plan: { name: 'Plan Base' }, paymentStatus: 'PENDING' },
-      { id: 'student-2', firstName: 'Pedro', lastName: 'Prueba', dni: '88000003', plan: { name: 'Plan Completo' }, paymentStatus: 'PAID' },
+      { id: 'student-1', firstName: 'Lucía', lastName: 'Ejemplo', dni: '88000002', plan: { name: 'Plan Base' }, paymentStatus: 'PENDING', currentPaymentPaidAt: null },
+      { id: 'student-2', firstName: 'Pedro', lastName: 'Prueba', dni: '88000003', plan: { name: 'Plan Completo' }, paymentStatus: 'PAID', currentPaymentPaidAt: '2026-10-16' },
     ] });
   }));
   renderPage();
-  expect(await screen.findByRole('heading', { name: 'Registrar cuota' })).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Cuotas de Sala' })).toBeVisible();
   await waitFor(() => expect(reads).toBe(1));
   expect(await screen.findByText('Lucía Ejemplo')).toBeVisible();
-  expect(screen.getByText('Pedro Prueba')).toBeVisible();
-  expect(screen.getAllByRole('link', { name: 'Seleccionar' }).map(link => link.getAttribute('href'))).toEqual(['/finance?view=income&personId=student-1', '/finance?view=income&personId=student-2']);
+  expect(screen.queryByText('Pedro Prueba')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Pendientes 1', pressed: true })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Pagados 1', pressed: false })).toBeVisible();
   const search = screen.getByRole('searchbox', { name: 'Nombre, apellido o DNI' });
   for (const value of ['LUCÍA', 'eJEmPlo', 'Lucía Ejemplo', '88000002', '88.000.002', '88 000 002', '88-000-002']) {
     fireEvent.change(search, { target: { value } });
     expect(await screen.findByText('Lucía Ejemplo')).toBeVisible();
     expect(screen.getByText('DNI 88000002 · Plan Base')).toBeVisible();
     expect(screen.getByText('Pago pendiente')).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Seleccionar' })).toHaveAttribute('href', '/finance?view=income&personId=student-1');
+    expect(screen.getByRole('link', { name: 'Cobrar' })).toHaveAttribute('href', '/finance?view=income&personId=student-1');
     expect(screen.queryByText('Pedro Prueba')).not.toBeInTheDocument();
   }
+  fireEvent.click(screen.getByRole('button', { name: 'Pagados 1' }));
+  expect(screen.queryByText('Lucía Ejemplo')).not.toBeInTheDocument();
+  expect(screen.queryByText('Pedro Prueba')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Pagados 1', pressed: true })).toBeVisible();
   fireEvent.change(search, { target: { value: '88-000-003' } });
   expect(await screen.findByText('Pedro Prueba')).toBeVisible();
-  expect(screen.getByText('Pago registrado')).toBeVisible();
-  expect(screen.getByRole('link', { name: 'Seleccionar' })).toHaveAttribute('href', '/finance?view=income&personId=student-2');
+  expect(screen.getByText('Pagado')).toBeVisible();
+  expect(screen.getByText('Fecha de cobro: 16/10/2026')).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Ver pagos' })).toHaveAttribute('href', '/finance?view=income&personId=student-2');
   fireEvent.change(search, { target: { value: 'Alumno que no fue retornado' } });
   expect(screen.getByText('No se encontraron alumnos.')).toBeVisible();
-  expect(screen.queryByRole('link', { name: 'Seleccionar' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Cobrar' })).not.toBeInTheDocument();
   expect(reads).toBe(1);
 });
+
+function expenseSubmit() {
+  return within(screen.getByRole('heading', { name: 'Registrar gasto' }).closest('section')!).getByRole('button', { name: 'Registrar gasto' });
+}
 
 async function fillExpense(description = '') {
   await screen.findByRole('option', { name: 'Alquiler' });
@@ -159,7 +176,7 @@ async function fillExpense(description = '') {
   fireEvent.change(screen.getByLabelText('Categoría'), { target: { value: 'rent' } });
   fireEvent.change(screen.getByLabelText('Medio de pago'), { target: { value: 'cash' } });
   if (description) fireEvent.change(screen.getByLabelText('Descripción (opcional)'), { target: { value: description } });
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Registrar gasto' })).toBeEnabled());
+  await waitFor(() => expect(expenseSubmit()).toBeEnabled());
 }
 
 it('defaults expenses to the operational day and Sala, limits areas and validates required fields', async () => {
@@ -171,7 +188,7 @@ it('defaults expenses to the operational day and Sala, limits areas and validate
   expect(within(screen.getByLabelText('Área')).getAllByRole('option').map(option => option.textContent)).toEqual(['Sala', 'General']);
   expect(screen.queryByRole('option', { name: 'Clínica' })).not.toBeInTheDocument();
   await fillExpense();
-  const button = screen.getByRole('button', { name: 'Registrar gasto' });
+  const button = expenseSubmit();
   for (const value of ['0', '-1', '2.5', '']) {
     fireEvent.change(screen.getByLabelText('Importe ($ ARS)'), { target: { value } });
     await waitFor(() => expect(button).toBeDisabled());
@@ -199,19 +216,21 @@ it.each(['', 'Compra de materiales'])('registers an expense with optional descri
   );
   const client = renderPage(); const invalidate = vi.spyOn(client, 'invalidateQueries');
   await fillExpense(description);
-  fireEvent.click(screen.getByRole('button', { name: 'Registrar gasto' }));
+  fireEvent.click(expenseSubmit());
   expect(await screen.findByText('Gasto registrado correctamente.')).toBeVisible();
   expect(submitted).toEqual({ cashDate: '2026-10-14', amount: '35000', categoryId: 'rent', paymentMethodId: 'cash', area: 'SALA', ...(description ? { description } : {}), operationId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i) });
   expect(csrf).toBe('csrf'); expect(contentType).toBe('application/json');
-  await waitFor(() => expect(reads).toBe(2));
-  expect(await screen.findByText('$ 35.000')).toBeVisible();
-  expect(screen.getByText('Alquiler', { selector: 'span' })).toBeVisible();
-  expect(screen.getByText('Efectivo', { selector: 'span' })).toBeVisible();
+  expect(reads).toBe(0);
   expect(screen.getByLabelText('Importe ($ ARS)')).toHaveValue('');
   expect(screen.getByLabelText('Descripción (opcional)')).toHaveValue('');
   expect(screen.getByLabelText('Fecha')).toHaveValue('2026-10-14');
   expect(screen.getByLabelText('Área')).toHaveValue('SALA');
   for (const key of ['expenses', 'totals', 'executive-totals']) expect(invalidate).toHaveBeenCalledWith({ queryKey: ['finance', key] });
+  fireEvent.click(screen.getByRole('button', { name: 'Registros' }));
+  expect(await screen.findByText('$ 35.000')).toBeVisible();
+  expect(screen.getByText('Alquiler', { selector: 'span' })).toBeVisible();
+  expect(screen.getByText('Efectivo', { selector: 'span' })).toBeVisible();
+  expect(reads).toBe(1);
 });
 
 it('retains the expense operationId on retry, changes it after edits and after success', async () => {
@@ -222,10 +241,10 @@ it('retains the expense operationId on retry, changes it after edits and after s
     return submissions.length <= 2 ? HttpResponse.json({ message: 'No se pudo confirmar el gasto.' }, { status: 503 }) : HttpResponse.json({ data: {} }, { status: 201 });
   }));
   renderPage(); await fillExpense();
-  const submit = () => fireEvent.click(screen.getByRole('button', { name: 'Registrar gasto' }));
+  const submit = () => fireEvent.click(expenseSubmit());
   submit(); await screen.findByText('No se pudo confirmar el gasto.');
   submit(); await waitFor(() => expect(submissions).toHaveLength(2));
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Registrar gasto' })).toBeEnabled());
+  await waitFor(() => expect(expenseSubmit()).toBeEnabled());
   expect(submissions[1]).toEqual(submissions[0]);
   fireEvent.change(screen.getByLabelText('Descripción (opcional)'), { target: { value: 'Corregido' } });
   submit(); await screen.findByText('Gasto registrado correctamente.');
@@ -260,7 +279,7 @@ it('guides users to payment method configuration and excludes retired methods', 
   expect(await screen.findByText(/No hay medios de pago configurados/)).toBeVisible();
   expect(screen.getByRole('link', { name: /Ir a Resumen/ })).toHaveAttribute('href', '/finance');
   expect(screen.queryByRole('option', { name: 'Retirado' })).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Registrar gasto' })).toBeDisabled();
+  expect(expenseSubmit()).toBeDisabled();
 });
 
 it('preserves expense history without creation permissions and translates clinical historical areas', async () => {
@@ -282,8 +301,8 @@ it('does not fetch students or expose registration without SALA_PAYMENT_MANAGE',
     http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: ['FINANCE_OPERATIONAL_READ'] } })),
     http.get('http://localhost:3000/api/sala/students', () => { reads++; return HttpResponse.json({ data: [] }); }),
   );
-  renderPage(); await screen.findByRole('heading', { name: 'Ingresos' });
-  expect(screen.queryByRole('heading', { name: 'Registrar cuota' })).not.toBeInTheDocument();
+  renderPage(); await screen.findByRole('heading', { name: 'Historial de ingresos' });
+  expect(screen.queryByRole('heading', { name: 'Cuotas de Sala' })).not.toBeInTheDocument();
   expect(reads).toBe(0);
 });
 
@@ -296,7 +315,7 @@ it('does not offer category creation without catalog permission', async () => {
   renderPage();
   expect(await screen.findByText('No hay categorías de gastos configuradas.')).toBeVisible();
   expect(screen.queryByRole('button', { name: 'Crear' })).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Registrar gasto' })).toBeDisabled();
+  expect(expenseSubmit()).toBeDisabled();
 });
 
 it('keeps operational indicators without exposing executive net or clinical breakdown', async () => {
@@ -308,4 +327,23 @@ it('keeps operational indicators without exposing executive net or clinical brea
   const indicators = within(screen.getByRole('region', { name: 'Indicadores financieros' }));
   for (const label of ['Ingresos', 'Sala', 'Gastos']) expect(indicators.getByText(label)).toBeVisible();
   for (const label of ['Clínica', 'Neto']) expect(indicators.queryByText(label)).not.toBeInTheDocument();
+});
+
+it('shows only current pending fees in summary with direct collection links', async () => {
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: [
+    { id: 'pending', firstName: 'Ana', lastName: 'Pendiente', dni: '88000001', plan: { name: 'Plan Base' }, paymentStatus: 'PENDING', currentPaymentPaidAt: null },
+    { id: 'paid', firstName: 'Pedro', lastName: 'Pagado', dni: '88000002', plan: { name: 'Plan Base' }, paymentStatus: 'PAID', currentPaymentPaidAt: '2026-10-16' },
+  ] })));
+  renderPage();
+  const pending = within(await screen.findByRole('region', { name: 'Cuotas pendientes' }));
+  expect(await pending.findByText('Ana Pendiente')).toBeVisible();
+  expect(pending.getByText('Alumnos sin pago registrado para Octubre 2026')).toBeVisible();
+  expect(pending.queryByText('Pedro Pagado')).not.toBeInTheDocument();
+  expect(pending.getByRole('link', { name: 'Cobrar' })).toHaveAttribute('href', '/finance?view=income&personId=pending');
+  expect(screen.getByRole('region', { name: 'Indicadores financieros' })).toBeVisible();
+  expect(screen.getByText('Configuración · Administrar medios de pago')).toBeVisible();
+});
+it('shows an empty pending state for the operational period', async () => {
+  renderPage();
+  expect(await screen.findByText('No hay cuotas pendientes para el período actual.')).toBeVisible();
 });

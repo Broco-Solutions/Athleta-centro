@@ -1233,7 +1233,7 @@ describe('Sala configuration API', () => {
         const professor = index % 2 ? f.other : f.professor;
         expect(row.professor).toEqual({ id: professor.id, firstName: professor.firstName, lastName: professor.lastName });
         expect(row.plan).toEqual({ id: f.plan.id, name: '3 veces' });
-        expect(Object.keys(row).sort()).toEqual(['dni', 'firstName', 'id', 'lastName', 'participationId', 'participationStartDate', 'paymentStatus', 'plan', 'professor', 'routineStatus', 'unpaidConsecutiveMonths']);
+        expect(Object.keys(row).sort()).toEqual(['currentPaymentPaidAt', 'dni', 'firstName', 'id', 'lastName', 'participationId', 'participationStartDate', 'paymentStatus', 'plan', 'professor', 'routineStatus', 'unpaidConsecutiveMonths']);
         expect(row.dni).toBe(f.students[index]!.person.dni);
       }
       expect(Object.keys(result.body)).toEqual(['data']);
@@ -1242,8 +1242,8 @@ describe('Sala configuration API', () => {
       const f = await studentsFixture();
       const result = await request(app.getHttpServer()).get('/api/sala/students').set('Cookie', f.authn.cookie).expect(200);
       const statuses = new Map<string, { routineStatus: string; paymentStatus: string }>(result.body.data.map((row: { id: string; routineStatus: string; paymentStatus: string }) => [row.id, row]));
-      expect(statuses.get(f.students[0]!.person.id)).toMatchObject({ routineStatus: 'ACTIVE', paymentStatus: 'PAID' });
-      for (const index of [1, 2, 3]) expect(statuses.get(f.students[index]!.person.id)).toMatchObject({ routineStatus: 'MISSING', paymentStatus: 'PENDING' });
+      expect(statuses.get(f.students[0]!.person.id)).toMatchObject({ routineStatus: 'ACTIVE', paymentStatus: 'PAID', currentPaymentPaidAt: '2026-10-01' });
+      for (const index of [1, 2, 3]) expect(statuses.get(f.students[index]!.person.id)).toMatchObject({ routineStatus: 'MISSING', paymentStatus: 'PENDING', currentPaymentPaidAt: null });
       // An ACTIVE routine tied to a former participation cannot make the current participation active.
       const previous = await prisma.salaParticipation.create({ data: { personId: f.students[2]!.person.id, mainProfessorId: f.professor.id, planId: f.plan.id, startDate: new Date('2025-01-01'), endDate: new Date('2025-12-31') } });
       await prisma.routine.create({ data: { personId: f.students[2]!.person.id, salaParticipationId: previous.id, version: 1, status: 'ACTIVE' } });
@@ -1303,7 +1303,9 @@ describe('Sala configuration API', () => {
       expect(rows.find(row => row.id === f.students[1]!.person.id)?.unpaidConsecutiveMonths).toBe(1);
       expect(rows.find(row => row.id === f.students[2]!.person.id)).toMatchObject({ unpaidConsecutiveMonths: 0, paymentStatus: 'PAID' });
       const payment = await f.pay(0, 10);
+      expect((await sala.listStudents()).find(row => row.id === f.students[0]!.person.id)).toMatchObject({ paymentStatus: 'PAID', currentPaymentPaidAt: '2026-10-01' });
       await prisma.salaPaymentReversal.create({ data: { paymentId: payment.id, reason: 'Sintético', registeredById: f.actor.id, operationId: randomUUID() } });
+      expect((await sala.listStudents()).find(row => row.id === f.students[0]!.person.id)).toMatchObject({ paymentStatus: 'PENDING', currentPaymentPaidAt: null });
       expect((await sala.listStudents()).find(row => row.id === f.students[0]!.person.id)?.unpaidConsecutiveMonths).toBe(1);
     });
     it('does not carry old unpaid months on reentry and keeps a valid same-month payment', async () => {
