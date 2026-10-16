@@ -1125,6 +1125,7 @@ export interface SalaPaymentDto {
 }
 
 export interface SalaPlanPaymentPeriodDto {
+  planId?: string;
   year: number;
   /**
    * @minimum 1
@@ -1854,6 +1855,15 @@ export type ListPeopleParams = {
 pageSize?: number;
 page?: number;
 search?: string;
+};
+
+export type ListSalaStudentsParams = {
+/**
+ * @minimum 1
+ * @maximum 12
+ */
+month?: number;
+year?: number;
 };
 
 export type JoinSala200Data = { [key: string]: unknown };
@@ -2993,17 +3003,24 @@ export type listSalaStudentsResponseSuccess = (listSalaStudentsResponse200) & {
 
 export type listSalaStudentsResponse = (listSalaStudentsResponseSuccess)
 
-export const getListSalaStudentsUrl = () => {
+export const getListSalaStudentsUrl = (params?: ListSalaStudentsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/sala/students`
+  return stringifiedParams.length > 0 ? `/api/sala/students?${stringifiedParams}` : `/api/sala/students`
 }
 
-export const listSalaStudents = async ( options?: RequestInit): Promise<listSalaStudentsResponse> => {
+export const listSalaStudents = async (params?: ListSalaStudentsParams, options?: RequestInit): Promise<listSalaStudentsResponse> => {
 
-  const res = await fetch(getListSalaStudentsUrl(),
+  const res = await fetch(getListSalaStudentsUrl(params),
   {
     ...options,
     method: 'GET'

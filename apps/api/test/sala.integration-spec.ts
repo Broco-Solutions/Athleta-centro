@@ -695,6 +695,26 @@ describe('Sala configuration API', () => {
     const post = (body: unknown) => request(app.getHttpServer()).post('/api/sala/payments/plan-months').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(body);
     return { person, professor, actor, plan, participation, method, input, post, authn };
   }
+  it('uses each reference Plan price without changing participation, assignments or charges', async () => {
+    const f = await planPaymentFixture();
+    const other = await prisma.salaPlan.create({ data: { name: 'Referencia alternativa', monthlyAmount: 30000 } });
+    const assignments = await prisma.salaPlanAssignment.findMany({ where: { salaParticipationId: f.participation.id } });
+    const charges = await prisma.salaCharge.findMany({ where: { personId: f.person.id } });
+    const result = await f.post({ ...f.input, periods: [{ ...f.input.periods[0], planId: other.id, amount: '30000' }, f.input.periods[1]] }).expect(201);
+    expect(result.body.data.totalAmount).toBe('50000');
+    const saved = await prisma.salaPayment.findMany({ where: { personId: f.person.id }, orderBy: { month: 'asc' } });
+    expect(saved.map(payment => payment.amount.toString())).toEqual(['30000', '20000']);
+    expect(await prisma.salaParticipation.findUniqueOrThrow({ where: { id: f.participation.id } })).toMatchObject({ planId: f.plan.id });
+    expect(await prisma.salaPlanAssignment.findMany({ where: { salaParticipationId: f.participation.id } })).toEqual(assignments);
+    expect(await prisma.salaCharge.findMany({ where: { personId: f.person.id } })).toEqual(charges);
+  });
+  it.each(['adjustment', 'retired', 'missing'])('rejects invalid reference (%s) and rolls back the batch', async kind => {
+    const f = await planPaymentFixture();
+    const other = await prisma.salaPlan.create({ data: { name: 'Referencia alternativa', monthlyAmount: 30000, isSelectable: kind !== 'retired' } });
+    const result = await f.post({ ...f.input, periods: [f.input.periods[0], { ...f.input.periods[1], planId: kind === 'missing' ? randomUUID() : other.id, amount: kind === 'adjustment' ? '29000' : '30000' }] }).expect(400);
+    expect(result.body.code).toBe(kind === 'adjustment' ? 'SALA_PAYMENT_ADJUSTMENT_REASON_REQUIRED' : 'SALA_PLAN_INVALID');
+    expect(await prisma.salaPayment.count({ where: { personId: f.person.id } })).toBe(0);
+  });
   it('registers plan months atomically through HTTP using the current price and monthly allocations', async () => {
     const f = await planPaymentFixture();
     const charge = await prisma.salaCharge.create({ data: { personId: f.person.id, salaParticipationId: f.participation.id, planId: f.plan.id, kind: 'MONTHLY', year: 2026, month: 10, chargeDate: new Date('2026-10-01'), concept: 'Cuota sintética', amount: 20000 } });
@@ -900,6 +920,11 @@ describe('Sala configuration API', () => {
     expect({ startTime: persisted.startTime?.toISOString().slice(11, 16), serviceDurationMinutes: persisted.serviceDurationMinutes, scheduleSlotId: persisted.scheduleSlotId }).toEqual({ startTime: '09:30', serviceDurationMinutes: 45, scheduleSlotId: window.id });
   });
   describe('spontaneous attendance with explicit services', () => {
+    beforeEach(() => {
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'clearImmediate', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance', 'queueMicrotask', 'hrtime'] });
+      jest.setSystemTime(new Date('2026-10-16T11:00:00Z'));
+    });
+    afterEach(() => jest.useRealTimers());
     const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
     const shifted = (offset: number) => new Date(new Date(`${today()}T00:00:00Z`).getTime() + offset * 86400000).toISOString().slice(0, 10);
     async function fixture(date = today(), role: Role = Role.PROFESSOR) {
@@ -917,6 +942,27 @@ describe('Sala configuration API', () => {
       return { authn, actor, professor, person, participation, service, other, plan, slot, input };
     }
     function post(path: string, authn: { cookie: string; csrf: string }, input: object) { return request(app.getHttpServer()).post(`/api/sala/occurrences/spontaneous${path}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(input); }
+    it.each(['08:59', '09:00', '09:01'])('protects current operational minute at %s Argentina', async clock => {
+      const f = await fixture();
+      jest.setSystemTime(new Date(`2026-10-16T${clock}:45-03:00`));
+      const result = await post('', f.authn, f.input).expect(clock === '09:01' ? 400 : 201);
+      if (clock === '09:01') {
+        expect(result.body.code).toBe('SALA_SPONTANEOUS_TIME_PASSED');
+        expect(await prisma.salaOccurrence.count()).toBe(0);
+      } else expect(await prisma.salaOccurrence.count()).toBe(1);
+    });
+    it.each(['/join', '/create-student'])('rolls back onboarding when time has passed (%s)', async path => {
+      const f = await fixture(today(), Role.ADMINISTRATIVE);
+      await sala.leave(f.participation.id);
+      jest.setSystemTime(new Date('2026-10-16T12:01:00Z'));
+      const input = path === '/join' ? { ...f.input, planId: f.plan.id, mainProfessorId: f.professor.id } : { scheduleSlotId: f.slot.id, date: today(), startTime: '09:00', serviceTypeId: f.service.id, planId: f.plan.id, mainProfessorId: f.professor.id, firstName: 'Nueva', lastName: 'Sintética', dni: '88999111', phone: '1123456789', birthDate: '2000-01-01' };
+      const peopleBefore = await prisma.person.count(); const participationsBefore = await prisma.salaParticipation.count();
+      const result = await post(path, f.authn, input).expect(400);
+      expect(result.body.code).toBe('SALA_SPONTANEOUS_TIME_PASSED');
+      expect(await prisma.person.count()).toBe(peopleBefore);
+      expect(await prisma.salaParticipation.count()).toBe(participationsBefore);
+      expect(await prisma.salaOccurrence.count()).toBe(0);
+    });
     it('persists service and a 45-minute snapshot, projects its Professor and occupies only three blocks', async () => {
       const f = await fixture();
       const response = await post('', f.authn, f.input).expect(201);
@@ -1224,6 +1270,20 @@ describe('Sala configuration API', () => {
       await pay(3, 11);
       return { authn, professor, other, plan, students };
     }
+    it('projects payment status for a requested MonthYear and requires both query fields', async () => {
+      const f = await studentsFixture();
+      const personId = f.students[2]!.person.id;
+      const method = await prisma.paymentMethod.create({ data: { name: `Periodo ${randomUUID()}` } });
+      await prisma.salaPayment.create({ data: { personId, year: 2026, month: 9, amount: 1000, paidAt: new Date('2026-10-02'), registeredById: f.professor.id, paymentMethodId: method.id, operationId: randomUUID() } });
+      const read = (query: string) => request(app.getHttpServer()).get(`/api/sala/students${query}`).set('Cookie', f.authn.cookie);
+      const september = await read('?year=2026&month=9').expect(200);
+      expect(september.body.data.find((row: { id: string }) => row.id === personId)).toMatchObject({ paymentStatus: 'PAID', currentPaymentPaidAt: '2026-10-02' });
+      for (const query of ['?year=2026&month=10', '']) {
+        const result = await read(query).expect(200);
+        expect(result.body.data.find((row: { id: string }) => row.id === personId)).toMatchObject({ paymentStatus: 'PENDING', currentPaymentPaidAt: null });
+      }
+      for (const query of ['?year=2026', '?month=9', '?year=2026&month=13', '?year=oops&month=9']) await read(query).expect(400);
+    });
     it('returns every active participant across Professors, in surname/name order and with only the exact DTO fields', async () => {
       const f = await studentsFixture();
       const result = await request(app.getHttpServer()).get('/api/sala/students').set('Cookie', f.authn.cookie).expect(200);

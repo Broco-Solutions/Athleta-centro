@@ -22,6 +22,8 @@ beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' });
 });
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-16T11:00:00Z'));
   navigation.search = '';
   agendaReads = peopleReads = timelineReads = 0;
   server.use(
@@ -227,4 +229,57 @@ it.each(['2026-10-15', '2026-10-17'])('keeps new Person unavailable in spontaneo
   if (date === '2026-10-17') expect(within(dialog).getByText('La incorporación espontánea no se utiliza para fechas futuras. Para una fecha futura usá una Reserva puntual o un Turno fijo.')).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: 'Hoy' }));
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it('shows the month of the selected day across month boundaries', async () => {
+  navigation.search = 'date=2026-10-16'; mockBookings(); renderPage();
+  expect(await screen.findByText('Octubre 2026')).toBeVisible();
+  fireEvent.change(screen.getByLabelText('Fecha de reservas'), { target: { value: '2026-11-01' } });
+  expect(await screen.findByText('Noviembre 2026')).toBeVisible();
+  expect(screen.queryByText('Octubre 2026')).not.toBeInTheDocument();
+});
+it('places current and previous bookings in separate accessible sections with counts', async () => {
+  vi.setSystemTime(new Date('2026-10-16T15:28:00Z'));
+  mockBookings([{ ...booking, startTime: '09:00', durationMinutes: 45 }, { ...booking, id: 'upcoming', startTime: '12:30', person: { ...person, id: 'second', firstName: 'Próxima' } }]);
+  renderPage();
+  const previous = within(await screen.findByRole('region', { name: 'Horarios anteriores' }));
+  const upcoming = within(screen.getByRole('region', { name: 'Ahora y próximos' }));
+  expect(previous.getByRole('button', { name: /Ana Sintética 09:00/ })).toBeVisible();
+  expect(previous.queryByRole('button', { name: /Próxima/ })).not.toBeInTheDocument();
+  expect(upcoming.getByRole('button', { name: /Próxima/ })).toBeVisible();
+  expect(upcoming.queryByRole('button', { name: /Ana Sintética/ })).not.toBeInTheDocument();
+  expect(previous.getByText('1 turno')).toBeVisible(); expect(upcoming.getByText('1 turno')).toBeVisible();
+});
+it.each([
+  ['2026-10-16', '12:28', ['12:30', '12:45']],
+  ['2026-10-16', '12:30', ['12:30', '12:45']],
+  ['2026-10-16', '12:31', ['12:45']],
+  ['2026-10-15', '12:28', ['12:15', '12:30', '12:45']],
+  ['2026-10-16', '13:00', []],
+] as const)('filters spontaneous times for %s at %s Argentina', async (date, clock, expected) => {
+  vi.setSystemTime(new Date(`2026-10-16T${clock}:45-03:00`));
+  navigation.search = `date=${date}`;
+  server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: ['12:15', '12:30', '12:45', '13:00'].map(time => ({ slot: { id: `window:${time}`, scheduleSlotId: 'window', startTime: time, durationMinutes: 15 }, capacity: 1, reserved: time === '12:45' ? 1 : 0, available: time === '12:45' ? 0 : 1, isClosed: time === '13:00', people: [] })) })));
+  renderPage(); fireEvent.click(await screen.findByRole('button', { name: 'Incorporación espontánea' }));
+  await screen.findByRole('dialog', { name: 'Incorporación espontánea' });
+  fireEvent.change(screen.getByLabelText('Persona espontánea'), { target: { value: person.id } });
+  const select = await screen.findByLabelText('Horario espontáneo');
+  const options = within(select).getAllByRole('option').slice(1).map(item => item.textContent?.slice(0, 5));
+  expect(options).toEqual(expected);
+  if (expected.some(time => time === '12:45')) expect(within(select).getByRole('option', { name: '12:45 · Sin lugar' })).toBeVisible();
+  if (!expected.length) {
+    expect(screen.getByText('No quedan horarios disponibles para hoy.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Incorporar' })).toBeDisabled();
+  }
+});
+it('shows a backend time-passed error when the minute changes before confirmation', async () => {
+  server.use(http.post('http://localhost:3000/api/sala/occurrences/spontaneous', () => HttpResponse.json({ code: 'SALA_SPONTANEOUS_TIME_PASSED' }, { status: 400 })));
+  renderPage(); fireEvent.click(await screen.findByRole('button', { name: 'Incorporación espontánea' }));
+  await screen.findByRole('dialog');
+  fireEvent.change(screen.getByLabelText('Persona espontánea'), { target: { value: person.id } });
+  await screen.findByRole('option', { name: 'Musculación · 15 min' });
+  fireEvent.change(screen.getByLabelText('Servicio'), { target: { value: 'service' } });
+  fireEvent.change(screen.getByLabelText('Horario espontáneo'), { target: { value: 'window:09:00' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Incorporar' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Ese horario ya pasó. Elegí un horario actual o posterior.');
 });

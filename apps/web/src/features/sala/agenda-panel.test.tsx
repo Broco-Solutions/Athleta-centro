@@ -11,12 +11,13 @@ const nativeFetch = globalThis.fetch;
 const person = { id: '10000000-0000-4000-8000-000000000001', firstName: 'Ada', lastName: 'Sintética', dni: '20123456', hasSalaParticipation: true };
 const professional = { id: '30000000-0000-4000-8000-000000000001', firstName: 'María', lastName: 'Rossi' };
 const slotId = '20000000-0000-4000-8000-000000000001';
-const operationalToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
+const operationalToday = '2026-10-16';
 const entry = (name: string, startTime = '09:00', durationMinutes = 60, status: 'RESERVED' | 'ATTENDED' | 'ABSENT' | 'CANCELLED' = 'RESERVED') => ({ personId: `${person.id}-${name}`, person: { ...person, id: `${person.id}-${name}`, firstName: name }, origin: 'ONE_OFF' as const, status, startTime, durationMinutes, professional, service: { name: 'Kinesio' } });
 const group = (people: AgendaEntry[] = [entry('Homer')]) => ({ slot: { id: slotId, scheduleSlotId: slotId, startTime: '09:00', durationMinutes: 15 }, capacity: 3, reserved: people.length, available: 3 - people.length, isOverbooked: false, isClosed: false, people });
 function renderAgenda(date = '2026-09-02', people = [person], canManageAgenda = true) { return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><AgendaPanel canManageAgenda={canManageAgenda} canManageParticipation canCreatePerson date={date} onDateChange={() => undefined} csrfToken="csrf" people={people} /></QueryClientProvider>); }
 beforeAll(() => { globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch; server.listen({ onUnhandledRequest: 'error' }); });
-afterEach(() => server.resetHandlers()); afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
+beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-16T11:00:00Z')); });
+afterEach(() => { server.resetHandlers(); vi.useRealTimers(); }); afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 
 it('calculates proportional duration and a 09:30 to 10:15 booking', () => { const bookings = buildTimelineBookings([{ ...group([entry('Homer', '09:00', 60)]), people: [entry('Homer', '09:30', 45)] }]); expect(bookings[0]).toMatchObject({ startMinutes: 570, durationMinutes: 45, endMinutes: 615 }); });
 it('groups simultaneous bookings by professional and assigns overlap levels', () => { const bookings = buildTimelineBookings([{ ...group([entry('Homer'), entry('Marge')]), people: [entry('Homer'), entry('Marge')] }]); const rows = groupTimelineBookings(bookings); expect(rows).toHaveLength(1); expect(rows[0]?.bookings).toHaveLength(2); expect([...overlapLevels(bookings).values()]).toEqual([0, 1]); });

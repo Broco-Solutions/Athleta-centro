@@ -49,6 +49,10 @@ function addDays(date: string, amount: number): string {
 function dateTabs(date: string): string[] {
   return [-2, -1, 0, 1, 2].map((offset) => addDays(date, offset));
 }
+function formatMonthYear(date: string): string {
+  const title = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`)).replace(' de ', ' ');
+  return title.charAt(0).toUpperCase() + title.slice(1);
+}
 function formatTabDate(date: string): string {
   const value = new Date(`${date}T15:00:00Z`);
   return new Intl.DateTimeFormat('es-AR', { timeZone: OPERATIONAL_TIME_ZONE, weekday: 'short', day: 'numeric' }).format(value);
@@ -97,7 +101,14 @@ function SalaAgenda({ bookings, date, onSelect }: { bookings: Booking[]; date: s
   const isToday = date === now.date;
   const renderGroups = (items: typeof groups) => items.map((group) => <section key={group.time} aria-label={`${group.time}, ${group.bookings.length} alumnos`} className="border-t border-border py-4 first:border-t-0"><div className="mb-3 flex items-baseline justify-between gap-2"><h3 className="text-lg font-semibold tabular-nums">{group.time}</h3><span className="text-sm text-muted-foreground">{group.bookings.length} {group.bookings.length === 1 ? 'alumno' : 'alumnos'}</span></div><div className="space-y-2">{group.bookings.map((booking) => <button key={`${booking.source}-${booking.id}-${booking.startTime}-${booking.sourceId ?? ''}`} type="button" aria-label={`${personName(booking.person)} ${booking.startTime} ${statusLabels[booking.status] ?? booking.status}`} onClick={() => onSelect(booking)} className={cn('grid w-full min-w-0 grid-cols-1 gap-2 rounded-md border border-border bg-surface p-3 text-left transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center sm:gap-4', booking.status === 'CANCELLED' && 'opacity-70')}><span className="min-w-0"><span className={cn('block truncate font-semibold', booking.status === 'CANCELLED' && 'line-through')}>{personName(booking.person)}</span><span className="block text-sm text-muted-foreground">{booking.serviceName} · {booking.durationMinutes} min</span></span><span className="text-sm text-muted-foreground">{originLabel(booking.origin)}</span><span><span className={cn('inline-flex w-fit items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium', statusClasses[booking.status])}>{statusIcons[booking.status]}{statusLabels[booking.status] ?? booking.status}</span><BookingIndicators booking={booking} /></span><span className="text-sm font-medium text-foreground">Ver / gestionar <span aria-hidden="true">→</span></span></button>)}</div></section>);
   if (groups.length === 0) return <p className="mt-5 rounded-md border border-border bg-surface p-5 text-sm text-muted-foreground">No hay reservas para esta fecha.</p>;
-  return <div className="mt-6" data-testid="sala-reservations-agenda">{isToday ? <><h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ahora y próximos</h3>{upcoming.length ? renderGroups(upcoming) : <p className="py-2 text-sm text-muted-foreground">No hay próximos turnos.</p>}{previous.length ? <><h3 className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Horarios anteriores</h3>{renderGroups(previous)}</> : null}</> : <><h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Horarios del día</h3>{renderGroups(groups)}</>}</div>;
+  const renderBlock = (title: string, items: AgendaGroup[], muted = false) => {
+    const count = items.reduce((total, group) => total + group.bookings.length, 0);
+    return <section aria-label={title} className={cn('rounded-md border border-border p-4 sm:p-5', muted ? 'bg-surface-muted' : 'bg-surface')}>
+      <header className="mb-4 flex items-center justify-between gap-3"><h3 className="text-xs font-semibold uppercase tracking-wide">{title}</h3><span className="text-sm text-muted-foreground">{count} {count === 1 ? 'turno' : 'turnos'}</span></header>
+      {items.length ? renderGroups(items) : <p className="text-sm text-muted-foreground">{muted ? 'No hay horarios anteriores.' : 'No hay próximos turnos.'}</p>}
+    </section>;
+  };
+  return <div className="mt-6 space-y-6" data-testid="sala-reservations-agenda">{isToday ? <>{renderBlock('Ahora y próximos', upcoming)}{renderBlock('Horarios anteriores', previous, true)}</> : renderBlock('Horarios del día', groups)}</div>;
 }
 
 function TransversalTimeline({ data, hours, onSelect }: { data: TimelineData; hours: number[]; onSelect: (booking: Booking) => void }): React.JSX.Element {
@@ -171,6 +182,7 @@ export function ReservationsTimeline({ date, onDateChange, csrfToken, variant, c
         {headerAction ? <div className="w-full sm:w-auto">{headerAction}</div> : null}
       </div>
       <div className="space-y-3">
+        {variant === 'sala' ? <p className="text-lg font-semibold">{formatMonthYear(date)}</p> : null}
         <div role={variant === 'sala' ? 'group' : undefined} aria-label={variant === 'sala' ? 'Días de reservas' : undefined} className={variant === 'sala' ? 'flex items-center gap-1 sm:gap-2' : 'flex flex-wrap items-end gap-2'}>
           <Button type="button" variant="secondary" aria-label="Día anterior" onClick={() => changeDate(addDays(date, -1))} className="h-10 w-10 shrink-0 px-0"><ChevronLeft size={18} /></Button>
           {variant === 'sala' ? <div className="grid min-w-0 flex-1 grid-cols-5 border-b border-border">

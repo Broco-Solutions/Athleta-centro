@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button } from '@athleta/ui';
-import { registerSalaPlanPayments, listPaymentMethods, listSalaPayments, reverseSalaPayment } from '@athleta/api-client';
+import { registerSalaPlanPayments, listSalaPlans, listPaymentMethods, listSalaPayments, reverseSalaPayment } from '@athleta/api-client';
 import { todayOperational } from '../sala/student-onboarding';
 
 type Payment = { id: string; year: number; month: number; paidAt: string; amount: string; paymentMethod?: { name: string }; adjustmentReason?: string | null; reversal?: { id: string; reason?: string } | null };
@@ -33,10 +33,11 @@ const assertSuccess = (response: ApiResponse): void => {
   }
 };
 
-export function SalaPaymentPanel({ personId, csrfToken, canManage, activePlan }: { personId: string; csrfToken: string; canManage: boolean; activePlan?: Plan | undefined }): React.JSX.Element {
+export function SalaPaymentPanel({ personId, csrfToken, canManage, activePlan, defaultOpen = false }: { personId: string; csrfToken: string; canManage: boolean; activePlan?: Plan | undefined; defaultOpen?: boolean }): React.JSX.Element {
+  const [registerOpen, setRegisterOpen] = useState(defaultOpen);
   const queryClient = useQueryClient();
   const form = useForm<z.infer<typeof formSchema>>({ resolver: zodResolver(formSchema), defaultValues: { paidAt: todayOperational(), month: todayOperational().slice(0, 7), paymentMethodId: '' } });
-  const [selectedPeriods, setSelectedPeriods] = useState<Array<Period & { amount: string; adjustmentReason: string }>>([]);
+  const [selectedPeriods, setSelectedPeriods] = useState<Array<Period & { planId: string; amount: string; adjustmentReason: string }>>([]);
   const [showAdditionalPeriod, setShowAdditionalPeriod] = useState(false);
   const [reversalReason, setReversalReason] = useState('');
   const [feedback, setFeedback] = useState('');
@@ -46,6 +47,8 @@ export function SalaPaymentPanel({ personId, csrfToken, canManage, activePlan }:
   const [paymentToReverse, setPaymentToReverse] = useState<Payment | null>(null);
   const payments = useQuery({ queryKey: ['sala', 'payments', personId], queryFn: async () => { const response = await listSalaPayments(personId, { credentials: 'include' }); assertSuccess(response); return response.data.data; } });
   const methods = useQuery({ queryKey: ['finance', 'payment-methods'], queryFn: async () => unwrap<Method>(await listPaymentMethods({ credentials: 'include' })) });
+  const plans = useQuery({ queryKey: ['sala-plans'], enabled: canManage && Boolean(activePlan), queryFn: async () => { const response = await listSalaPlans({ credentials: 'include' }); assertSuccess(response); return response.data.data as unknown as Plan[]; } });
+  const referencePlan = (period: { planId: string }) => plans.data?.find(plan => plan.id === period.planId) ?? (!plans.isSuccess && activePlan?.id === period.planId ? activePlan : undefined);
   // Initialize only from refreshed history; ordinary refetches preserve manual choices.
   const initialized = useRef(false);
   const [proposalVersion, setProposalVersion] = useState(0);
@@ -57,14 +60,14 @@ export function SalaPaymentPanel({ personId, csrfToken, canManage, activePlan }:
     let cursor = year! * 12 + month! - 1;
     const paidPeriods = new Set(payments.data.map(item => item.reversal == null ? item.year * 12 + item.month - 1 : -1));
     while (paidPeriods.has(cursor)) cursor++;
-    setSelectedPeriods([{ year: Math.floor(cursor / 12), month: cursor % 12 + 1, amount: activePlan.monthlyAmount, adjustmentReason: '' }]);
+    setSelectedPeriods([{ year: Math.floor(cursor / 12), month: cursor % 12 + 1, planId: activePlan.id, amount: activePlan.monthlyAmount, adjustmentReason: '' }]);
   }, [activePlan, payments.isSuccess, payments.isFetching, payments.data, canManage, currentMonthPaid, year, month, proposalVersion]);
   const selectableMethods = (methods.data ?? []).filter((item) => item.isSelectable);
   const method = form.watch('paymentMethodId');
   const paidAt = form.watch('paidAt');
-  const validPeriods = selectedPeriods.every(period => !payments.data?.some(item => item.year === period.year && item.month === period.month && item.reversal == null) && /^\d+$/.test(period.amount) && BigInt(period.amount) > 0n && (BigInt(period.amount) === BigInt(activePlan?.monthlyAmount ?? '0') || Boolean(period.adjustmentReason.trim())));
+  const validPeriods = plans.isSuccess && selectedPeriods.every(period => Boolean(referencePlan(period)) && !payments.data?.some(item => item.year === period.year && item.month === period.month && item.reversal == null) && /^\d+$/.test(period.amount) && BigInt(period.amount) > 0n && (BigInt(period.amount) === BigInt(referencePlan(period)?.monthlyAmount ?? '0') || Boolean(period.adjustmentReason.trim())));
   const totalAmount = selectedPeriods.reduce((total, period) => total + (/^\d+$/.test(period.amount) ? BigInt(period.amount) : 0n), 0n);
-  const updatePeriod = (index: number, values: { amount?: string; adjustmentReason?: string }) => {
+  const updatePeriod = (index: number, values: { planId?: string; amount?: string; adjustmentReason?: string }) => {
     setSelectedPeriods(current => current.map((period, position) => position === index ? { ...period, ...values } : period));
     pendingRequest.current = null;
   };
@@ -87,6 +90,7 @@ export function SalaPaymentPanel({ personId, csrfToken, canManage, activePlan }:
       initialized.current = false;
       setProposalVersion(value => value + 1);
       setShowAdditionalPeriod(false);
+      setRegisterOpen(false);
     },
   });
   const remove = useMutation({
@@ -95,38 +99,45 @@ export function SalaPaymentPanel({ personId, csrfToken, canManage, activePlan }:
     },
     onSuccess: async () => { setPaymentToReverse(null); setReversalReason(''); await invalidate(); },
   });
-  const choosePeriod = (value: string, replacePrimary = false) => {
+  const choosePeriod = (value: string, replaceIndex?: number) => {
     if (!/^\d{4}-\d{2}$/.test(value)) { setFeedback('Seleccioná un Mes/Año válido.'); return; }
     const [year, month] = value.split('-').map(Number);
-    const period = { year: year!, month: month!, amount: activePlan?.monthlyAmount ?? '0', adjustmentReason: '' };
+    const period = { year: year!, month: month!, planId: activePlan?.id ?? '', amount: activePlan?.monthlyAmount ?? '0', adjustmentReason: '' };
     if (period.month < 1 || period.month > 12) { setFeedback('Seleccioná un Mes/Año válido.'); return; }
-    if (selectedPeriods.some((item, index) => (!replacePrimary || index !== 0) && item.year === period.year && item.month === period.month)) { setFeedback('Ese mes ya está seleccionado.'); return; }
+    if (selectedPeriods.some((item, index) => (index !== replaceIndex) && item.year === period.year && item.month === period.month)) { setFeedback('Ese mes ya está seleccionado.'); return; }
     if (payments.data?.some((item) => item.year === period.year && item.month === period.month && item.reversal == null)) { setFeedback('Ese mes ya tiene un pago registrado.'); return; }
-    setSelectedPeriods((current) => replacePrimary ? [period, ...current.slice(1)] : [...current, period]); pendingRequest.current = null; setFeedback(''); setConfirmation('');
+    setSelectedPeriods((current) => replaceIndex !== undefined ? current.map((item, index) => index === replaceIndex ? period : item) : [...current, period]); pendingRequest.current = null; setFeedback(''); setConfirmation('');
   };
   const error = create.error ?? remove.error;
   const inputClass = 'mt-1 h-10 w-full rounded border px-2';
   const primaryPeriod = selectedPeriods[0];
   const monthValue = (period: Period) => `${period.year}-${String(period.month).padStart(2, '0')}`;
+  const renderAdjustment = (period: typeof selectedPeriods[number], index: number) => (!/^\d+$/.test(period.amount) || BigInt(period.amount) !== BigInt(referencePlan(period)?.monthlyAmount ?? '0')) ? <label className="text-sm">Motivo de ajuste *<input aria-label={`Motivo de ajuste ${periodLabel(period)}`} maxLength={300} required value={period.adjustmentReason} onChange={event => updatePeriod(index, { adjustmentReason: event.target.value })} disabled={create.isPending} className={inputClass}/></label> : null;
   const renderPeriod = (period: typeof selectedPeriods[number], index: number) => <div key={`${period.year}-${period.month}`} className="grid items-end gap-3 border-b border-border pb-4 sm:grid-cols-2">
-    {index === 0 ? <label className="text-sm sm:col-span-2">Período a registrar<input type="month" aria-label="Período a registrar" value={monthValue(period)} onChange={event => choosePeriod(event.target.value, true)} required disabled={create.isPending} className={inputClass}/></label> : <p className="text-sm font-medium sm:col-span-2">{periodLabel(period)}</p>}
-    <label className="text-sm">Importe<input aria-label={`Importe ${periodLabel(period)}`} inputMode="numeric" pattern="[0-9]+" required value={period.amount} onChange={event => updatePeriod(index, { amount: event.target.value })} disabled={create.isPending} className={inputClass}/></label>
-    {(!/^\d+$/.test(period.amount) || BigInt(period.amount) !== BigInt(activePlan!.monthlyAmount)) ? <label className="text-sm">Motivo de ajuste<input aria-label={`Motivo de ajuste ${periodLabel(period)}`} maxLength={300} required value={period.adjustmentReason} onChange={event => updatePeriod(index, { adjustmentReason: event.target.value })} disabled={create.isPending} className={inputClass}/></label> : null}
+    {index === 0 ? <label className="text-sm">Mes a pagar<input type="month" aria-label="Mes a pagar" value={monthValue(period)} onChange={event => choosePeriod(event.target.value, 0)} required disabled={create.isPending} className={inputClass}/></label> : <label className="text-sm">{periodLabel(period)}<input type="month" aria-label={`Mes a pagar ${periodLabel(period)}`} value={monthValue(period)} onChange={event => choosePeriod(event.target.value, index)} required disabled={create.isPending} className={inputClass}/></label>}
+    <label className="text-sm">Plan<select aria-label={`Plan ${periodLabel(period)}`} className={inputClass} value={period.planId} disabled={create.isPending || !plans.isSuccess} onChange={event => { const plan = plans.data?.find(item => item.id === event.target.value); if (plan) updatePeriod(index, { planId: plan.id, amount: plan.monthlyAmount, adjustmentReason: '' }); }}>
+      {!plans.data?.some(plan => plan.id === activePlan?.id) ? <option value={activePlan?.id} disabled>Seleccionar Plan</option> : null}
+      {plans.data?.map(plan => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
+    </select></label>
+    <label className="text-sm">Precio<input aria-label={`Precio ${periodLabel(period)}`} inputMode="numeric" pattern="[0-9]+" required value={period.amount} onChange={event => updatePeriod(index, { amount: event.target.value })} disabled={create.isPending} className={inputClass}/></label>
+    {index > 0 ? renderAdjustment(period, index) : null}
     <div className="sm:col-span-2"><Button type="button" variant="secondary" aria-label={`Quitar ${periodLabel(period)}`} disabled={create.isPending} onClick={() => { setSelectedPeriods(current => current.filter(item => item !== period)); pendingRequest.current = null; }}>Quitar</Button></div>
   </div>;
   return <section className="space-y-5">
     {canManage && !activePlan ? <p className="text-sm text-muted-foreground">Se necesita una participación activa de Sala para registrar pagos.</p> : null}
-    {canManage && activePlan ? <form className="overflow-hidden rounded border border-border bg-surface" onSubmit={form.handleSubmit(() => { if (validPeriods && paidAt <= todayOperational() && payments.isSuccess && selectedPeriods.length && selectableMethods.some((item) => item.id === method) && !create.isPending) create.mutate(); })}>
+    {canManage && activePlan ? <Button type="button" variant="secondary" aria-expanded={registerOpen} aria-controls="register-payment-form" onClick={() => setRegisterOpen(value => !value)}>+ Registrar una cuota</Button> : null}
+    {canManage && activePlan && registerOpen ? <form id="register-payment-form" className="overflow-hidden rounded border border-border bg-surface" onSubmit={form.handleSubmit(() => { if (validPeriods && paidAt <= todayOperational() && payments.isSuccess && selectedPeriods.length && selectableMethods.some((item) => item.id === method) && !create.isPending) create.mutate(); })}>
       <div className="grid lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="space-y-5 p-5 sm:p-6">
           <h2 className="text-xl font-semibold">Registrar una cuota</h2>
           {currentMonthPaid ? <p className="text-sm text-muted-foreground">{periodLabel({ year: year!, month: month! }).replace(' ', ' de ')} ya está pagado y no se puede volver a cobrar.</p> : null}
-          <label className="block text-sm">Fecha de cobro<input type="date" max={todayOperational()} aria-label="Fecha de cobro" {...form.register('paidAt', { onChange: () => { pendingRequest.current = null; } })} className={inputClass} disabled={create.isPending} required /></label>
           {primaryPeriod ? renderPeriod(primaryPeriod, 0) : <p className="text-sm text-muted-foreground">Elegí un período para registrar.</p>}
+          <label className="block text-sm">Fecha de cobro<input type="date" max={todayOperational()} aria-label="Fecha de cobro" {...form.register('paidAt', { onChange: () => { pendingRequest.current = null; } })} className={inputClass} disabled={create.isPending} required /></label>
           <fieldset disabled={create.isPending} className="space-y-2"><legend className="mb-2 text-sm font-medium">Medio de pago</legend>
             <div className="flex flex-wrap gap-2">{selectableMethods.map(item => <Button key={item.id} type="button" variant="secondary" aria-pressed={method === item.id} className={method === item.id ? 'border-primary bg-surface-muted ring-1 ring-primary' : ''} onClick={() => { form.setValue('paymentMethodId', item.id, { shouldValidate: true }); pendingRequest.current = null; }}>{item.name}</Button>)}</div>
             {methods.isSuccess && !selectableMethods.length ? <p className="text-sm text-muted-foreground">No hay medios de pago configurados.</p> : null}
           </fieldset>
+          {primaryPeriod ? renderAdjustment(primaryPeriod, 0) : null}
           <Button type="button" variant="secondary" disabled={create.isPending} onClick={() => setShowAdditionalPeriod(value => !value)}>+ Agregar otro mes</Button>
           {showAdditionalPeriod ? <div className="flex flex-wrap items-end gap-2">
             <label className="text-sm">Mes/Año<input type="month" aria-label="Mes/Año" {...form.register('month')} className={inputClass} disabled={create.isPending} /></label>
@@ -136,7 +147,7 @@ export function SalaPaymentPanel({ personId, csrfToken, canManage, activePlan }:
         </div>
         <aside aria-label="Resumen del cobro" className="flex flex-col gap-5 bg-sidebar p-5 text-sidebar-foreground sm:p-6">
           <span className="text-xs font-semibold tracking-wide">SIN REGISTRAR</span>
-          <div><p className="text-lg font-semibold">{selectedPeriods.length > 1 ? `${selectedPeriods.length} períodos` : primaryPeriod ? periodLabel(primaryPeriod).replace(' ', ' de ') : 'Sin período seleccionado'}</p><p className="mt-1 text-sm">Cuota mensual · {activePlan.name}</p></div>
+          <div><p className="text-lg font-semibold">{selectedPeriods.length > 1 ? `${selectedPeriods.length} períodos` : primaryPeriod ? periodLabel(primaryPeriod).replace(' ', ' de ') : 'Sin período seleccionado'}</p><p className="mt-1 text-sm">Cuota mensual · {primaryPeriod ? referencePlan(primaryPeriod)?.name : activePlan.name}</p></div>
           <div className="mt-auto"><p className="text-sm">Total a cobrar</p><p className="mt-1 text-3xl font-semibold">{money(totalAmount)}</p></div>
           <Button type="submit" disabled={create.isPending || !payments.isSuccess || !validPeriods || !paidAt || paidAt > todayOperational() || !selectedPeriods.length || !selectableMethods.some((item) => item.id === method)}>{create.isPending ? 'Registrando…' : selectedPeriods.length > 1 ? 'Registrar pagos' : primaryPeriod ? `Registrar pago de ${new Intl.DateTimeFormat('es-AR', { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(primaryPeriod.year, primaryPeriod.month - 1, 1)))}` : 'Registrar pago'}</Button>
         </aside>
@@ -146,7 +157,7 @@ export function SalaPaymentPanel({ personId, csrfToken, canManage, activePlan }:
     {!canManage ? <p className="text-sm text-muted-foreground">Tu rol permite consultar los pagos, sin registrar ni revertir movimientos.</p> : null}
     {feedback ? <p role="alert" className="mt-2 text-sm">{feedback}</p> : null}
     {confirmation ? <p role="status" className="mt-2 text-sm text-emerald-700">{confirmation}</p> : null}
-    {error || payments.isError || methods.isError ? <p role="alert" className="mt-2 text-sm text-red-700">{error?.message || 'No pudimos cargar los pagos o los medios de pago.'}</p> : null}
+    {error || payments.isError || methods.isError || plans.isError ? <p role="alert" className="mt-2 text-sm text-red-700">{error?.message || 'No pudimos cargar los pagos o los medios de pago.'}</p> : null}
     {paymentToReverse ? <div role="alertdialog" aria-modal="true" aria-labelledby="reverse-payment-title" className="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm"><p id="reverse-payment-title">¿Revertir el pago de {periodLabel(paymentToReverse)} por {money(paymentToReverse.amount)}?</p><label className="mt-3 block">Motivo de reversión<input aria-label="Motivo de reversión" maxLength={500} value={reversalReason} onChange={event => setReversalReason(event.target.value)} className={inputClass} disabled={remove.isPending}/></label><div className="mt-3 flex gap-2"><Button type="button" variant="secondary" onClick={() => setPaymentToReverse(null)}>Cancelar</Button><Button type="button" disabled={remove.isPending || !reversalReason.trim()} onClick={() => remove.mutate(paymentToReverse.id)}>{remove.isPending ? 'Revirtiendo…' : 'Revertir pago'}</Button></div></div> : null}
     <section aria-labelledby="payment-history-title" className="rounded border border-border bg-surface p-5">
       <h2 id="payment-history-title" className="mb-4 text-xl font-semibold">Historial de pagos</h2>

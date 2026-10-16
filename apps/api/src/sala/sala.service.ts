@@ -3,7 +3,7 @@ import { FinancialAdjustmentKind, Prisma, Role, RoutineStatus, SalaChargeKind, S
 import { PeopleService } from '../people/people.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceCatalogService } from '../finance/finance.service';
-import type { SalaStudentListItemDto, SalaDashboardDto, SalaDashboardPersonDto, JoinSpontaneousSalaDto, CreateSpontaneousSalaStudentDto, RegisterSalaPlanPaymentsDto, SalaPaymentDto, CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, CorrectPhysicalEvaluationDto, PhysicalTestResultDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, RoutineTemplateDto, RoutineDayDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
+import type { SalaStudentListQueryDto, SalaStudentListItemDto, SalaDashboardDto, SalaDashboardPersonDto, JoinSpontaneousSalaDto, CreateSpontaneousSalaStudentDto, RegisterSalaPlanPaymentsDto, SalaPaymentDto, CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, CorrectPhysicalEvaluationDto, PhysicalTestResultDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, RoutineTemplateDto, RoutineDayDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
 const physicalTestSelect = { id: true, name: true, type: true, description: true, isActive: true } satisfies Prisma.PhysicalTestDefinitionSelect;
 const physicalEvaluationSelect = {
   id: true, personId: true, salaParticipationId: true, professorId: true, evaluationDate: true, observation: true,
@@ -95,7 +95,11 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
       for (const period of input.periods) {
         const existing = existingOperations.find(payment => payment.operationId === period.operationId);
         const amount = existing?.amount ?? this.positiveMoney(period.amount, 'SALA_PAYMENT_AMOUNT_INVALID');
-        if (!existing) this.validatePaymentAdjustment(amount, proposedAmount, period.adjustmentReason);
+        if (!existing) {
+          const referencePlan = period.planId ? await tx.salaPlan.findUnique({ where: { id: period.planId } }) : participation.plan;
+          if (!referencePlan || (period.planId && !referencePlan.isSelectable)) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'El Plan ya no está disponible.' });
+          this.validatePaymentAdjustment(amount, referencePlan.monthlyAmount, period.adjustmentReason);
+        }
         payments.push(await this.createPaymentWithinTransaction(tx, { ...period, personId: input.personId, paidAt: input.paidAt, paymentMethodId: input.paymentMethodId }, amount, actorId));
       }
       // Retried operations keep their originally recorded amounts, even if the Plan price changed.
@@ -743,10 +747,13 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
       return this.physicalEvaluationResponse(evaluation);
     });
   }
-  async listStudents(): Promise<SalaStudentListItemDto[]> {
+  async listStudents(query: SalaStudentListQueryDto = {}): Promise<SalaStudentListItemDto[]> {
+    if ((query.year === undefined) !== (query.month === undefined)) throw new BadRequestException({ code: 'SALA_PAYMENT_PERIOD_INVALID', message: 'Indicá año y mes juntos.' });
     const today = this.todayOperational();
     const year = Number(today.slice(0, 4));
     const month = Number(today.slice(5, 7));
+    const paymentYear = query.year ?? year;
+    const paymentMonth = query.month ?? month;
     const participations = await this.prisma.salaParticipation.findMany({
       where: { endDate: null },
       orderBy: [{ person: { lastName: 'asc' } }, { person: { firstName: 'asc' } }],
@@ -763,11 +770,11 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     const firstMonth = participations.reduce((min, item) => Math.min(min, item.startDate.getUTCFullYear() * 12 + item.startDate.getUTCMonth()), year * 12 + month - 1);
     const payments = await this.prisma.salaPayment.findMany({
       where: { personId: { in: participations.map((item) => item.person.id) }, reversal: null,
-        AND: [{ OR: [{ year: { gt: Math.floor(firstMonth / 12) } }, { year: Math.floor(firstMonth / 12), month: { gte: firstMonth % 12 + 1 } }] }, { OR: [{ year: { lt: year } }, { year, month: { lte: month } }] }] },
+        OR: [{ year: paymentYear, month: paymentMonth }, { AND: [{ OR: [{ year: { gt: Math.floor(firstMonth / 12) } }, { year: Math.floor(firstMonth / 12), month: { gte: firstMonth % 12 + 1 } }] }, { OR: [{ year: { lt: year } }, { year, month: { lte: month } }] }] }] },
       select: { personId: true, year: true, month: true, paidAt: true },
     });
     const paidMonths = new Set(payments.map((payment) => `${payment.personId}:${payment.year * 12 + payment.month - 1}`));
-    const currentPayments = new Map(payments.filter(payment => payment.year === year && payment.month === month).map(payment => [payment.personId, payment]));
+    const currentPayments = new Map(payments.filter(payment => payment.year === paymentYear && payment.month === paymentMonth).map(payment => [payment.personId, payment]));
     const currentMonth = year * 12 + month - 1;
     return participations.map(({ id, startDate, person, plan, mainProfessor, routines }) => {
       const startMonth = startDate.getUTCFullYear() * 12 + startDate.getUTCMonth();
@@ -777,7 +784,7 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
         id: person.id, participationId: id, participationStartDate: startDate.toISOString().slice(0, 10), unpaidConsecutiveMonths,
         firstName: person.firstName, lastName: person.lastName, dni: person.dni, plan, professor: mainProfessor,
         routineStatus: routines.length ? 'ACTIVE' : 'MISSING',
-        paymentStatus: paidMonths.has(`${person.id}:${currentMonth}`) ? 'PAID' : 'PENDING',
+        paymentStatus: paidMonths.has(`${person.id}:${paymentYear * 12 + paymentMonth - 1}`) ? 'PAID' : 'PENDING',
         currentPaymentPaidAt: currentPayments.get(person.id)?.paidAt.toISOString().slice(0, 10) ?? null,
       };
     });
@@ -919,6 +926,12 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     const durationMinutes = service.durationMinutes;
     this.validateServiceDuration(durationMinutes);
     const startTime = this.time(input.startTime);
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
+    const clock = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    if (input.date === this.todayOperational(now) && this.minutes(startTime) < Number(clock.hour) * 60 + Number(clock.minute)) {
+      throw new BadRequestException({ code: 'SALA_SPONTANEOUS_TIME_PASSED', message: 'Ese horario ya pasó. Elegí un horario actual o posterior.' });
+    }
     const start = this.minutes(startTime);
     const cancelledFixed = new Set((await tx.salaOccurrence.findMany({ where: { personId: input.personId, date: day, status: SalaOccurrenceStatus.CANCELLED, fixedSalaBookingId: { not: null } }, select: { fixedSalaBookingId: true } })).map((item) => item.fixedSalaBookingId));
     const planned = [...fixed.filter((item) => !cancelledFixed.has(item.id)), ...oneOff];

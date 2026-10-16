@@ -625,3 +625,46 @@ Estado: **CONFIRMADO / RESUELTO**.
 - Profesor conserva alta de Nueva Persona/Alumno desde Incorporación espontánea para el día actual, con sus permisos existentes.
 - No cambian reglas de pasado/futuro ni capacidad. No se modifican SAL-TUR-08, SAL-TUR-14 ni SAL-TUR-16.
 - No cambian backend, permisos, contratos HTTP ni esquema de datos.
+
+
+## Ajustes finales de preproducción de Sala — 2026-10-16
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+### Alta de Alumno
+
+- Administrativo y Administrador general utilizan la ficha completa de datos de Persona cuando el DNI es nuevo, conservando la búsqueda inicial por DNI.
+- Plan y Profesor principal son obligatorios y completan la incorporación a Sala, sin checkbox opcional de incorporación.
+- Profesor mantiene el alta simplificada. Una Persona existente conserva su identidad y se incorpora con `joinSala` si no tiene Sala activa.
+- Persona + Sala continúa siendo atómico mediante `createSalaStudent`, con PIN inicial mostrado una sola vez.
+
+### Cobros
+
+- Registrar una cuota es un bloque desplegable. Historial de pagos permanece visible, con ajustes y reversiones.
+- Cobrar abre automáticamente el desplegable; Ver pagos lo deja cerrado.
+- Cada período permite elegir Mes, Plan de referencia y Precio, incluidos varios períodos independientes.
+- Elegir Plan precarga su precio. Un precio diferente exige Motivo de ajuste.
+- El Plan seleccionado para el cobro no modifica el Plan vigente ni el historial de asignaciones del Alumno, ni crea cargos por esa selección.
+- Requests sin Plan de referencia conservan el Plan activo como referencia de precio.
+
+### Resumen financiero
+
+- El Resumen de Sala se consulta por Mes/Año, con navegación mensual y selección directa.
+- Ingresos usan fecha real de cobro (`paidAt`), con filtro `area=SALA`; Gastos usan fecha real del Gasto (`cashDate`).
+- Se muestra detalle de Ingresos y Gastos por Medio de pago, incluyendo medios configurados sin movimientos.
+- Resultado y columna Neto continúan sujetos a `FINANCE_EXECUTIVE_READ`.
+- Cuotas pendientes corresponde al Mes/Año seleccionado y se basa en el período de la cuota (`year`/`month`), no en la fecha de cobro. Por ejemplo, una cuota de septiembre cobrada en octubre figura como pagada en septiembre y como ingreso financiero en octubre.
+
+### Agenda
+
+- La tira de días muestra Mes/Año de la fecha activa, aun cuando las pestañas crucen de mes.
+- Hoy se separan visualmente Ahora y próximos / Horarios anteriores, con cantidad de turnos por bloque.
+- Horarios anteriores permanecen accesibles para correcciones, sin colapsar ni ocultar acciones. Otras fechas mantienen Horarios del día.
+
+### Incorporación espontánea
+
+- Hoy solo ofrece inicios iguales o posteriores al minuto operativo actual en `America/Argentina/Buenos_Aires`, ignorando segundos.
+- El backend protege la misma regla para todos los caminos de incorporación espontánea y devuelve `SALA_SPONTANEOUS_TIME_PASSED` si el horario pasó.
+- Horarios sin lugar continúan visibles para permitir confirmación de sobrecupo; los cerrados no se ofrecen.
+- Sin opciones restantes se informa que no quedan horarios disponibles para hoy y se deshabilita Incorporar.
+- Fechas pasadas conservan incorporación espontánea retrospectiva. Fechas futuras continúan no permitidas.

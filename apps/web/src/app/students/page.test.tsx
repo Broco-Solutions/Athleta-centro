@@ -180,7 +180,7 @@ it('creates a new student atomically with normalized data, CSRF, refetch and one
   await startEnrollment(); await screen.findByLabelText('Nombre');
   expect(searched?.searchParams.get('search')).toBe('88123456');
   expect(searched?.searchParams.get('page')).toBe('1'); expect(searched?.searchParams.get('pageSize')).toBe('25');
-  expect(screen.queryByLabelText(/Obra Social/)).not.toBeInTheDocument();
+  for (const label of ['Obra social (opcional)', 'Email (opcional)', 'Deporte (opcional)', 'Club (opcional)']) expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
   fillNewPerson(); await selectEnrollmentOptions();
   fireEvent.click(screen.getByRole('button', { name: 'Guardar alumno' }));
   expect(await screen.findByLabelText('PIN temporal')).toHaveTextContent('4812');
@@ -194,7 +194,8 @@ it('creates a new student atomically with normalized data, CSRF, refetch and one
   fireEvent.click(screen.getByRole('button', { name: 'Nuevo alumno' }));
   expect(screen.queryByLabelText('PIN temporal')).not.toBeInTheDocument();
 });
-it('reuses only the exact DNI match, joins on the operational date and preserves credentials', async () => {
+it.each(['PROFESSOR', 'ADMINISTRATIVE', 'GENERAL_ADMIN'])('reuses existing identity and joins without new credentials for %s', async role => {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'actor' }, roles: [role], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'PEOPLE_CREATE', 'SALA_PARTICIPATION_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })));
   // At this UTC instant Argentina is still on the previous day.
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-10-15T01:30:00Z'));
@@ -257,4 +258,27 @@ it('validates DNI before searching and requires personal data and both selection
   fireEvent.change(screen.getByLabelText('Fecha de nacimiento'), { target: { value: '2999-01-01' } });
   fireEvent.click(screen.getByRole('button', { name: 'Guardar alumno' }));
   await screen.findByText('El teléfono debe tener 10 dígitos.'); await screen.findByText('La fecha de nacimiento no puede ser futura');
+});
+
+it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('uses the full Person form atomically for %s with a new DNI', async role => {
+  enrollmentHandlers(); let submitted: unknown; let peoplePosts = 0;
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'admin' }, roles: [role, 'PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'PEOPLE_CREATE', 'SALA_PARTICIPATION_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })),
+    http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: [{ id: 'work', name: 'Obra sintética', isSelectable: true }] })),
+    http.post('http://localhost:3000/api/people', () => { peoplePosts++; return HttpResponse.json({}); }),
+    http.post('http://localhost:3000/api/sala/students', async ({ request }) => { submitted = await request.json(); return HttpResponse.json({ data: { initialPin: '4812' } }, { status: 201 }); }),
+  );
+  await startEnrollment(); await screen.findByLabelText('Nombre');
+  expect(screen.getByLabelText('DNI')).toHaveValue('88123456');
+  expect(screen.queryByLabelText('Incorporar también a Sala')).not.toBeInTheDocument();
+  fillNewPerson();
+  for (const [label, value] of [['Email (opcional)', 'synthetic@test.local'], ['Deporte (opcional)', 'Natación'], ['Club (opcional)', 'Club sintético'], ['Contacto de emergencia (opcional)', 'Contacto sintético'], ['Teléfono de emergencia (opcional)', '1122223333']]) fireEvent.change(screen.getByLabelText(label!), { target: { value } });
+  await screen.findByRole('option', { name: 'Obra sintética' });
+  fireEvent.change(screen.getByLabelText('Obra social (opcional)'), { target: { value: 'work' } });
+  fireEvent.change(screen.getByLabelText('Número de afiliado (opcional)'), { target: { value: 'AF-123' } });
+  await selectEnrollmentOptions();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar alumno' }));
+  await screen.findByLabelText('PIN temporal');
+  expect(peoplePosts).toBe(0);
+  expect(submitted).toEqual({ firstName: 'Nueva', lastName: 'Sintética', dni: '88123456', phone: '1123456789', birthDate: '2000-01-02', email: 'synthetic@test.local', sport: 'Natación', club: 'Club sintético', emergencyContactName: 'Contacto sintético', emergencyContactPhone: '1122223333', socialWorkId: 'work', affiliateNumber: 'AF-123', planId: 'plan-new', mainProfessorId: 'prof-new' });
 });

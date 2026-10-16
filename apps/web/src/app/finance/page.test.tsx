@@ -27,8 +27,8 @@ beforeEach(() => {
     http.get('http://localhost:3000/api/finance/expense-categories', () => HttpResponse.json({ data: [{ id: 'rent', name: 'Alquiler', isSelectable: true }, { id: 'retired', name: 'Retirada', isSelectable: false }] })),
     http.get('http://localhost:3000/api/finance/executive-totals', () => HttpResponse.json({ data: { totalIncome: '100', salaIncome: '60', clinicalIncome: '40', expenses: '20', net: '80' } })),
     http.get('http://localhost:3000/api/finance/payment-methods', () => HttpResponse.json({ data: [{ id: 'cash', name: 'Efectivo', isSelectable: true }] })),
-    http.get('http://localhost:3000/api/finance/income', () => HttpResponse.json({ data: [{ id: 'income', cashDate: '2026-10-14', source: 'SALA', amount: '60', person: { firstName: 'Juan', lastName: 'Pérez' }, paymentMethod: { name: 'Transferencia' } }] })),
-    http.get('http://localhost:3000/api/finance/expenses', () => HttpResponse.json({ data: [{ id: 'expense', cashDate: '2026-10-14', area: 'GENERAL', amount: '250000', category: { name: 'Alquiler' }, paymentMethod: { name: 'Transferencia' }, description: 'Local de Sala' }] })),
+    http.get('http://localhost:3000/api/finance/income', () => HttpResponse.json({ data: [{ id: 'income', cashDate: '2026-10-14', source: 'SALA', amount: '60', person: { firstName: 'Juan', lastName: 'Pérez' }, paymentMethod: { id: 'transfer', name: 'Transferencia' } }] })),
+    http.get('http://localhost:3000/api/finance/expenses', () => HttpResponse.json({ data: [{ id: 'expense', cashDate: '2026-10-14', area: 'GENERAL', amount: '250000', category: { name: 'Alquiler' }, paymentMethod: { id: 'transfer', name: 'Transferencia' }, description: 'Local de Sala' }] })),
   );
 });
 afterEach(() => { cleanup(); server.resetHandlers(); vi.useRealTimers(); });
@@ -43,13 +43,13 @@ function renderPage() {
 describe('Finance views', () => {
   it('uses /finance for indicators and payment methods', async () => {
     renderPage();
-    expect(await screen.findByText('$ 100')).toBeVisible();
+    expect(await within(await screen.findByRole('region', { name: 'Indicadores financieros' })).findByText('$ 60')).toBeVisible();
     const indicators = within(screen.getByRole('region', { name: 'Indicadores financieros' }));
     expect(indicators.queryByText('Clínica')).not.toBeInTheDocument();
-    for (const label of ['Ingresos', 'Sala', 'Gastos', 'Neto']) expect(indicators.getByText(label)).toBeVisible();
+    for (const label of ['Ingresos', 'Gastos', 'Resultado']) expect(indicators.getByText(label)).toBeVisible();
     fireEvent.click(screen.getByText('Configuración · Administrar medios de pago'));
     expect(await screen.findByRole('heading', { name: 'Medios de pago' })).toBeVisible();
-    expect(screen.getByText('Efectivo')).toBeVisible();
+    expect(screen.getAllByText('Efectivo').length).toBeGreaterThan(0);
     expect(screen.queryByRole('heading', { name: 'Ingresos' })).not.toBeInTheDocument();
   });
 
@@ -85,10 +85,11 @@ describe('Finance views', () => {
   });
 });
 
-it('concentrates selected Persona, Plan, registration and history without generic income', async () => {
-  navigation.search = 'view=income&personId=person-1';
+it.each(['charge', null])('concentrates payment context with action=%s and keeps history visible', async action => {
+  navigation.search = `view=income&personId=person-1${action ? '&action=charge' : ''}`;
   let incomeReads = 0;
   server.use(
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'plan', name: '2 veces', monthlyAmount: '10000' }] })),
     http.get('http://localhost:3000/api/people/person-1', () => HttpResponse.json({ data: { id: 'person-1', firstName: 'Lucía', lastName: 'Ejemplo', dni: '88000002' } })),
     http.get('http://localhost:3000/api/sala/participations/person/person-1', () => HttpResponse.json({ data: [{ endDate: null, plan: { id: 'plan', name: '2 veces', monthlyAmount: '10000' } }] })),
     http.get('http://localhost:3000/api/sala/people/person-1/payments', () => HttpResponse.json({ data: [] })),
@@ -96,13 +97,15 @@ it('concentrates selected Persona, Plan, registration and history without generi
   );
   renderPage();
   expect(await screen.findByText('Lucía Ejemplo')).toBeVisible();
-  expect(await screen.findByRole('heading', { name: 'Registrar una cuota' })).toBeVisible();
+  await screen.findByRole('button', { name: '+ Registrar una cuota' });
+  expect(screen.getByRole('button', { name: '+ Registrar una cuota' })).toHaveAttribute('aria-expanded', String(action === 'charge'));
   expect(screen.getByText('DNI 88000002')).toBeVisible();
-  expect(await screen.findByLabelText('Fecha de cobro')).toBeVisible();
+  if (action === 'charge') expect(await screen.findByLabelText('Fecha de cobro')).toBeVisible();
+  else expect(screen.queryByLabelText('Fecha de cobro')).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/person-1');
   expect(screen.getByRole('link', { name: 'Cambiar alumno' })).toHaveAttribute('href', '/finance?view=income');
   expect(screen.getByRole('heading', { name: 'Finanzas', level: 1 })).toBeVisible();
-  expect(screen.getByText('2 veces')).toBeVisible();
+  expect(screen.getAllByText('2 veces').length).toBeGreaterThan(0);
   expect(screen.getByText('Precio actual: $10.000 / mes')).toBeVisible();
   expect(screen.getByRole('heading', { name: 'Historial de pagos' })).toBeVisible();
   expect(screen.queryByRole('heading', { name: 'Historial de ingresos' })).not.toBeInTheDocument();
@@ -147,7 +150,7 @@ it('searches active Sala students by name, surname and formatted DNI using the e
     expect(await screen.findByText('Lucía Ejemplo')).toBeVisible();
     expect(screen.getByText('DNI 88000002 · Plan Base')).toBeVisible();
     expect(screen.getByText('Pago pendiente')).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Cobrar' })).toHaveAttribute('href', '/finance?view=income&personId=student-1');
+    expect(screen.getByRole('link', { name: 'Cobrar' })).toHaveAttribute('href', '/finance?view=income&personId=student-1&action=charge');
     expect(screen.queryByText('Pedro Prueba')).not.toBeInTheDocument();
   }
   fireEvent.click(screen.getByRole('button', { name: 'Pagados 1' }));
@@ -323,10 +326,10 @@ it('keeps operational indicators without exposing executive net or clinical brea
     http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: ['ADMINISTRATIVE'], permissions: ['FINANCE_OPERATIONAL_READ'] } })),
     http.get('http://localhost:3000/api/finance/totals', () => HttpResponse.json({ data: { totalIncome: '100', salaIncome: '60', clinicalIncome: '40', expenses: '20' } })),
   );
-  renderPage(); await screen.findByText('$ 100');
+  renderPage(); await screen.findByRole('region', { name: 'Indicadores financieros' });
   const indicators = within(screen.getByRole('region', { name: 'Indicadores financieros' }));
-  for (const label of ['Ingresos', 'Sala', 'Gastos']) expect(indicators.getByText(label)).toBeVisible();
-  for (const label of ['Clínica', 'Neto']) expect(indicators.queryByText(label)).not.toBeInTheDocument();
+  for (const label of ['Ingresos', 'Gastos']) expect(indicators.getByText(label)).toBeVisible();
+  for (const label of ['Clínica', 'Resultado', 'Neto']) expect(indicators.queryByText(label)).not.toBeInTheDocument();
 });
 
 it('shows only current pending fees in summary with direct collection links', async () => {
@@ -339,11 +342,46 @@ it('shows only current pending fees in summary with direct collection links', as
   expect(await pending.findByText('Ana Pendiente')).toBeVisible();
   expect(pending.getByText('Alumnos sin pago registrado para Octubre 2026')).toBeVisible();
   expect(pending.queryByText('Pedro Pagado')).not.toBeInTheDocument();
-  expect(pending.getByRole('link', { name: 'Cobrar' })).toHaveAttribute('href', '/finance?view=income&personId=pending');
+  expect(pending.getByRole('link', { name: 'Cobrar' })).toHaveAttribute('href', '/finance?view=income&personId=pending&action=charge');
   expect(screen.getByRole('region', { name: 'Indicadores financieros' })).toBeVisible();
   expect(screen.getByText('Configuración · Administrar medios de pago')).toBeVisible();
 });
 it('shows an empty pending state for the operational period', async () => {
   renderPage();
-  expect(await screen.findByText('No hay cuotas pendientes para el período actual.')).toBeVisible();
+  expect(await screen.findByText('No hay cuotas pendientes para el mes seleccionado.')).toBeVisible();
+});
+
+it.each([true, false])('consults selected month, aggregates methods and gates executive results (%s)', async executive => {
+  const incomeUrls: URL[] = []; const expenseUrls: URL[] = []; const studentUrls: URL[] = [];
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: session.permissions.filter(permission => executive || permission !== 'FINANCE_EXECUTIVE_READ') } })),
+    http.get('http://localhost:3000/api/finance/payment-methods', () => HttpResponse.json({ data: [{ id: 'cash', name: 'Efectivo', isSelectable: true }, { id: 'transfer', name: 'Transferencia', isSelectable: true }, { id: 'card', name: 'Tarjeta', isSelectable: true }] })),
+    http.get('http://localhost:3000/api/finance/income', ({ request }) => { incomeUrls.push(new URL(request.url)); return HttpResponse.json({ data: [{ amount: '320000', paymentMethod: { id: 'cash', name: 'Efectivo' } }, { amount: '480000', paymentMethod: { id: 'transfer', name: 'Transferencia' } }] }); }),
+    http.get('http://localhost:3000/api/finance/expenses', ({ request }) => { expenseUrls.push(new URL(request.url)); return HttpResponse.json({ data: [{ amount: '80000', paymentMethod: { id: 'cash', name: 'Efectivo' } }, { amount: '140000', paymentMethod: { id: 'transfer', name: 'Transferencia' } }] }); }),
+    http.get('http://localhost:3000/api/sala/students', ({ request }) => { const url = new URL(request.url); studentUrls.push(url); return HttpResponse.json({ data: url.searchParams.get('month') === '9' ? [{ id: 'sept', firstName: 'Septiembre', lastName: 'Pendiente', plan: { name: 'Base' }, paymentStatus: 'PENDING' }] : [] }); }),
+  );
+  renderPage();
+  expect(await screen.findByLabelText('Mes')).toHaveValue('2026-10');
+  await screen.findByText('$ 800.000');
+  const indicators = within(screen.getByRole('region', { name: 'Indicadores financieros' }));
+  expect(Boolean(indicators.queryByText('Resultado'))).toBe(executive);
+  const table = within(screen.getByRole('table', { name: 'Movimientos por medio de pago' }));
+  const cash = within(table.getByRole('rowheader', { name: 'Efectivo' }).closest('tr')!);
+  expect(cash.getByText('$ 320.000')).toBeVisible(); expect(cash.getByText('$ 80.000')).toBeVisible();
+  expect(Boolean(cash.queryByText('$ 240.000'))).toBe(executive);
+  const transfer = within(table.getByRole('rowheader', { name: 'Transferencia' }).closest('tr')!);
+  expect(transfer.getByText('$ 480.000')).toBeVisible(); expect(transfer.getByText('$ 140.000')).toBeVisible();
+  expect(Boolean(table.queryByRole('columnheader', { name: 'Neto' }))).toBe(executive);
+  expect(within(table.getByRole('rowheader', { name: 'Tarjeta' }).closest('tr')!).getAllByText('$ 0')).toHaveLength(executive ? 3 : 2);
+  fireEvent.change(screen.getByLabelText('Mes'), { target: { value: '2026-09' } });
+  expect(await screen.findByText('Septiembre Pendiente')).toBeVisible();
+  await waitFor(() => expect(incomeUrls.at(-1)?.searchParams.get('from')).toBe('2026-09-01'));
+  expect(incomeUrls.at(-1)?.searchParams.get('to')).toBe('2026-09-30'); expect(incomeUrls.at(-1)?.searchParams.get('area')).toBe('SALA');
+  expect(expenseUrls.at(-1)?.searchParams.get('from')).toBe('2026-09-01'); expect(expenseUrls.at(-1)?.searchParams.get('to')).toBe('2026-09-30');
+  expect(studentUrls.at(-1)?.searchParams.get('year')).toBe('2026'); expect(studentUrls.at(-1)?.searchParams.get('month')).toBe('9');
+  fireEvent.click(screen.getByRole('button', { name: 'Mes siguiente' }));
+  await waitFor(() => expect(screen.queryByText('Septiembre Pendiente')).not.toBeInTheDocument());
+  expect(screen.getByLabelText('Mes')).toHaveValue('2026-10');
+  fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }));
+  expect(await screen.findByText('Septiembre Pendiente')).toBeVisible();
 });

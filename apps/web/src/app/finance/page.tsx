@@ -24,6 +24,9 @@ export default function FinancePage(): React.JSX.Element {
 function FinancePageContent(): React.JSX.Element {
   const params = useSearchParams();
   const personId = params.get('personId');
+  const paymentAction = params.get('action');
+  const [summaryMonth, setSummaryMonth] = useState(todayOperational().slice(0, 7));
+  const bounds = monthBounds(summaryMonth);
   const requestedView = params.get('view');
   const view: FinanceView = requestedView === 'income' || requestedView === 'expenses' ? requestedView : 'summary';
   const active = view === 'income' ? 'finance-income' : view === 'expenses' ? 'finance-expenses' : 'finance-summary';
@@ -42,11 +45,18 @@ function FinancePageContent(): React.JSX.Element {
   const period = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${operationalMonth}-01T00:00:00Z`)).replace(' de ', ' ');
   const periodTitle = period.charAt(0).toUpperCase() + period.slice(1);
   const canPay = permissions.includes('SALA_PAYMENT_MANAGE');
-  const students = useQuery({ queryKey: ['sala', 'students'], enabled: canPay && (view === 'summary' || (view === 'income' && !personId)), queryFn: async () => {
-    const response = await listSalaStudents({ credentials: 'include' });
+  const students = useQuery({ queryKey: ['sala', 'students'], enabled: canPay && view === 'income' && !personId, queryFn: async () => {
+    const response = await listSalaStudents(undefined, { credentials: 'include' });
     if (response.status >= 400) throw new Error('No pudimos cargar los alumnos de Sala.');
     return response.data.data;
   } });
+  const summaryStudents = useQuery({ queryKey: ['sala', 'students', 'finance-summary', summaryMonth], enabled: canPay && view === 'summary', queryFn: async () => {
+    const [year, month] = summaryMonth.split('-').map(Number);
+    const response = await listSalaStudents({ year: year!, month: month! }, { credentials: 'include' });
+    if (response.status !== 200) throw new Error('No pudimos cargar los alumnos de Sala.');
+    return response.data.data;
+  } });
+  const summaryPending = (summaryStudents.data ?? []).filter(student => student.paymentStatus === 'PENDING');
   const term = search.trim().toLocaleLowerCase('es');
   const dniDigits = term.replace(/\D/g, '');
   const pendingStudents = (students.data ?? []).filter(student => student.paymentStatus === 'PENDING');
@@ -57,7 +67,8 @@ function FinancePageContent(): React.JSX.Element {
   const [editing, setEditing] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const methods = useQuery<Method[]>({ queryKey: ['finance', 'payment-methods'], queryFn: () => get('payment-methods'), enabled: view === 'summary' && (read || canCatalog) });
-  const totals = useQuery({ queryKey: ['finance', 'totals'], queryFn: () => get(permissions.includes('FINANCE_EXECUTIVE_READ') ? 'executive-totals' : 'totals'), enabled: view === 'summary' && read });
+  const summaryIncome = useQuery<Movement[]>({ queryKey: ['finance', 'income', 'summary', summaryMonth], queryFn: () => get(`income?from=${bounds.from}&to=${bounds.to}&area=SALA`), enabled: view === 'summary' && read });
+  const summaryExpenses = useQuery<Movement[]>({ queryKey: ['finance', 'expenses', 'summary', summaryMonth], queryFn: () => get(`expenses?from=${bounds.from}&to=${bounds.to}`), enabled: view === 'summary' && read });
   const income = useQuery({ queryKey: ['finance', 'income', personId], queryFn: () => get(personId ? `income?personId=${encodeURIComponent(personId)}` : 'income'), enabled: view === 'income' && !personId && read });
   const expenses = useQuery({ queryKey: ['finance', 'expenses'], queryFn: () => get('expenses'), enabled: view === 'expenses' && activeExpenseTab === 'records' && canReadExpenses });
 
@@ -86,22 +97,43 @@ function FinancePageContent(): React.JSX.Element {
     if (response.ok) await qc.invalidateQueries({ queryKey: ['finance', 'payment-methods'] });
   }
   const activePlan = participations.data?.find(item => !item.endDate)?.plan;
-  const totalsData = totals.data as Record<string, unknown> | undefined;
-  const indicatorRows: Array<[string, string]> = [['Ingresos', 'totalIncome'], ['Sala', 'salaIncome'], ['Gastos', 'expenses'], ['Neto', 'net']];
+  const executive = permissions.includes('FINANCE_EXECUTIVE_READ');
+  const incomeTotal = (summaryIncome.data ?? []).reduce((total, row) => total + BigInt(row.amount), 0n);
+  const expenseTotal = (summaryExpenses.data ?? []).reduce((total, row) => total + BigInt(row.amount), 0n);
+  const byMethod = new Map<string, { id: string; name: string; income: bigint; expenses: bigint }>();
+  for (const method of methods.data ?? []) byMethod.set(method.id, { ...method, income: 0n, expenses: 0n });
+  for (const [kind, rows] of [['income', summaryIncome.data ?? []], ['expenses', summaryExpenses.data ?? []]] as const) for (const row of rows) {
+    if (!row.paymentMethod) continue;
+    const method = row.paymentMethod;
+    const group = byMethod.get(method.id) ?? { id: method.id, name: method.name, income: 0n, expenses: 0n };
+    group[kind] += BigInt(row.amount);
+    byMethod.set(method.id, group);
+  }
+  const summaryReady = summaryIncome.isSuccess && summaryExpenses.isSuccess;
   return <WorkspaceShell active={active}><main className="mx-auto max-w-6xl space-y-6">
     <header><h1 className="text-3xl font-semibold">Finanzas</h1><p className="text-sm text-muted-foreground">{selectedPaymentContext ? "La cuenta del alumno, sus cuotas y cada pago en un solo lugar." : "Operación económica · ARS"}</p>{selectedPaymentContext ? <Link className="mt-3 inline-block rounded border px-3 py-2 text-sm" href="/finance?view=income">Cambiar alumno</Link> : null}</header>
+    {view === 'summary' ? <section aria-label="Finanzas del mes" className="space-y-3">
+      <h2 className="text-xl font-semibold">Finanzas del mes</h2>
+      <div className="flex items-center gap-4"><button type="button" aria-label="Mes anterior" onClick={() => setSummaryMonth(previousMonth(summaryMonth))} className="rounded border px-3 py-2">‹</button><p className="font-semibold">{monthTitle(summaryMonth)}</p><button type="button" aria-label="Mes siguiente" onClick={() => setSummaryMonth(nextMonth(summaryMonth))} className="rounded border px-3 py-2">›</button></div>
+      <label className="block text-sm">Mes<input type="month" aria-label="Mes" value={summaryMonth} onChange={event => { if (/^\d{4}-\d{2}$/.test(event.target.value)) setSummaryMonth(event.target.value); }} className="ml-3 h-10 rounded border px-3" /></label>
+    </section> : null}
     {view === 'summary' && read ? <>
-      <section aria-label="Indicadores financieros" className="grid gap-4 md:grid-cols-4">{indicatorRows.slice(0, permissions.includes('FINANCE_EXECUTIVE_READ') ? 4 : 3).map(([label, key]) => <article className="rounded border bg-white p-4" key={key}><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold">$ {String(totalsData?.[key] ?? '0')}</p></article>)}</section>
+      {summaryIncome.isPending || summaryExpenses.isPending ? <p role="status">Cargando movimientos del mes…</p> : null}
+      {summaryIncome.isError || summaryExpenses.isError ? <p role="alert">No pudimos cargar los movimientos del mes.</p> : null}
+      {summaryReady ? <>
+        <section aria-label="Indicadores financieros" className="grid gap-4 md:grid-cols-3">{([['Ingresos', incomeTotal], ['Gastos', expenseTotal], ...(executive ? [['Resultado', incomeTotal - expenseTotal] as const] : [])] as const).map(([label, amount]) => <article className="rounded border bg-surface p-4" key={label}><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold">{formatMoney(amount.toString())}</p></article>)}</section>
+        <section className="space-y-3 rounded border border-border bg-surface p-5"><h2 className="text-lg font-semibold">Movimientos por medio de pago</h2><div className="overflow-x-auto"><table aria-label="Movimientos por medio de pago" className="w-full text-sm"><thead><tr><th className="p-2 text-left">Medio de pago</th><th className="p-2 text-right">Ingresos</th><th className="p-2 text-right">Gastos</th>{executive ? <th className="p-2 text-right">Neto</th> : null}</tr></thead><tbody>{[...byMethod.values()].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(row => <tr key={row.id} className="border-t border-border"><th scope="row" className="p-2 text-left font-medium">{row.name}</th><td className="p-2 text-right">{formatMoney(row.income.toString())}</td><td className="p-2 text-right">{formatMoney(row.expenses.toString())}</td>{executive ? <td className="p-2 text-right">{formatMoney((row.income - row.expenses).toString())}</td> : null}</tr>)}</tbody></table></div></section>
+      </> : null}
     </> : null}
     {view === 'summary' && canPay ? <section aria-labelledby="pending-fees-title" className="space-y-3 rounded border border-border bg-surface p-5">
       <h2 id="pending-fees-title" className="text-xl font-semibold">Cuotas pendientes</h2>
-      <p className="text-sm text-muted-foreground">Alumnos sin pago registrado para {periodTitle}</p>
-      {students.isPending ? <p role="status">Cargando alumnos…</p> : null}
-      {students.isError ? <p role="alert">{students.error.message}</p> : null}
-      {students.isSuccess && !pendingStudents.length ? <p>No hay cuotas pendientes para el período actual.</p> : null}
-      <ul>{pendingStudents.map(student => <li key={student.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-3 text-sm">
+      <p className="text-sm text-muted-foreground">Alumnos sin pago registrado para {monthTitle(summaryMonth)}</p>
+      {summaryStudents.isPending ? <p role="status">Cargando alumnos…</p> : null}
+      {summaryStudents.isError ? <p role="alert">{summaryStudents.error.message}</p> : null}
+      {summaryStudents.isSuccess && !summaryPending.length ? <p>No hay cuotas pendientes para el mes seleccionado.</p> : null}
+      <ul>{summaryPending.map(student => <li key={student.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-3 text-sm">
         <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>{student.plan.name} · Pago pendiente</p></div>
-        <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}`}>Cobrar</Link>
+        <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}&action=charge`}>Cobrar</Link>
       </li>)}</ul>
     </section> : null}
     {view === 'summary' && (read || canCatalog) ? <>
@@ -120,7 +152,7 @@ function FinancePageContent(): React.JSX.Element {
       {students.isSuccess && !results.length ? <p>No se encontraron alumnos.</p> : null}
       <ul>{results.map(student => <li key={student.id} className="flex flex-wrap items-center justify-between gap-3 border-b py-3 text-sm">
         <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>DNI {student.dni} · {student.plan.name}</p>{incomeTab === 'paid' ? <p>Fecha de cobro: {student.currentPaymentPaidAt ? formatDate(student.currentPaymentPaidAt) : '—'}</p> : null}<p>{student.paymentStatus === 'PAID' ? 'Pagado' : 'Pago pendiente'}</p></div>
-        <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}`}>{incomeTab === 'pending' ? 'Cobrar' : 'Ver pagos'}</Link>
+        <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}${incomeTab === 'pending' ? '&action=charge' : ''}`}>{incomeTab === 'pending' ? 'Cobrar' : 'Ver pagos'}</Link>
       </li>)}</ul>
     </section> : null}
     {selectedPaymentContext ? <section className="space-y-3">
@@ -134,7 +166,7 @@ function FinancePageContent(): React.JSX.Element {
           </div>
           {activePlan ? <div className="border-border sm:border-l sm:pl-6"><p className="font-semibold">{activePlan.name}</p><p className="text-sm text-muted-foreground">Precio actual: {formatMoney(activePlan.monthlyAmount).replace('$ ', '$')} / mes</p></div> : null}
         </div>
-        {participations.isSuccess ? <SalaPaymentPanel key={personId} personId={personId!} csrfToken={session.data?.csrfToken ?? ''} canManage activePlan={activePlan}/> : null}
+        {participations.isSuccess ? <SalaPaymentPanel key={`${personId}-${paymentAction}`} defaultOpen={paymentAction === 'charge'} personId={personId!} csrfToken={session.data?.csrfToken ?? ''} canManage activePlan={activePlan}/> : null}
       </> : null}
     </section> : null}
     {view === 'income' && !personId && income.isError ? <p role="alert">No se pudieron cargar los ingresos para este contexto.</p> : null}
@@ -151,6 +183,23 @@ function FinancePageContent(): React.JSX.Element {
   </main></WorkspaceShell>;
 }
 
+function previousMonth(value: string): string { return shiftMonth(value, -1); }
+function nextMonth(value: string): string { return shiftMonth(value, 1); }
+function shiftMonth(value: string, delta: number): string {
+  const [year = 2000, month = 1] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1 + delta, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+function monthBounds(value: string): { from: string; to: string } {
+  const [year = 2000, month = 1] = value.split('-').map(Number);
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return { from: `${value}-01`, to: `${value}-${String(lastDay).padStart(2, '0')}` };
+}
+function monthTitle(value: string): string {
+  const title = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${value}-01T00:00:00Z`)).replace(' de ', ' ');
+  return title.charAt(0).toUpperCase() + title.slice(1);
+}
+
 const tabClass = (active: boolean) => `border-b-2 px-1 py-2 text-sm ${active ? 'border-primary font-semibold' : 'border-transparent text-muted-foreground'}`;
 
 function PaymentMethods({ methods, canCatalog, name, editing, message, onName, onSave, onEdit, onRetire, onCancelEdit }: {
@@ -160,7 +209,7 @@ function PaymentMethods({ methods, canCatalog, name, editing, message, onName, o
   return <section className="rounded border bg-white p-5"><h2 className="font-semibold">Medios de pago</h2>{methods.map((method) => <div className="flex items-center justify-between border-b py-2 text-sm" key={method.id}><span>{method.name}</span><span className="flex items-center gap-3"><span>{method.isSelectable ? 'Disponible' : 'Retirado'}</span>{canCatalog && <>{method.isSelectable && <button className="underline" onClick={() => onEdit(method)}>Editar</button>}{method.isSelectable && <button className="underline" onClick={() => onRetire(method)}>Retirar</button>}</>}</span></div>)}{canCatalog && <form className="mt-4 flex gap-2" onSubmit={onSave}><input aria-label="Nombre del medio de pago" required value={name} onChange={(event) => onName(event.target.value)} className="h-10 flex-1 rounded border px-3" placeholder={editing ? 'Editar medio de pago' : 'Nuevo medio de pago'} /><button className="rounded bg-[#FCCC05] px-3 py-2 text-sm text-black">{editing ? 'Guardar' : 'Crear'}</button>{editing && <button type="button" className="rounded border px-3" onClick={onCancelEdit}>Cancelar</button>}</form>}{message && <p role="status" className="mt-2 text-sm">{message}</p>}</section>;
 }
 
-type Movement = { id: string; cashDate: string; source?: string; area?: string; amount: string; person?: { firstName: string; lastName: string }; category?: { name: string }; paymentMethod?: { name: string }; description?: string | null };
+type Movement = { id: string; cashDate: string; source?: string; area?: string; amount: string; person?: { firstName: string; lastName: string }; category?: { name: string }; paymentMethod?: { id: string; name: string }; description?: string | null };
 const areaLabel = (area?: string) => ({ SALA: 'Sala', GENERAL: 'General', CLINIC: 'Clínica' })[area ?? ''] ?? area;
 const formatDate = (value: string) => value.slice(0, 10).split('-').reverse().join('/');
 const formatMoney = (value: string) => `$ ${BigInt(value).toLocaleString('es-AR')}`;

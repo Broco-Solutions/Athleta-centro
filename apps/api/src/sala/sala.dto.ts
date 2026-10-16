@@ -119,7 +119,12 @@ export class PhysicalTestDefinitionDto { @ApiProperty({ type: String, maxLength:
 export class PhysicalTestResultDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() testDefinitionId!: string; @ApiProperty({ type: String, maxLength: 500 }) @IsString() @MinLength(1) @MaxLength(500) resultText!: string; }
 export class PhysicalEvaluationDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() salaParticipationId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() professorId!: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) evaluationDate!: string; @ApiPropertyOptional({ type: String, nullable: true }) @IsOptional() @IsString() observation?: string | null; @ApiProperty({ type: () => [PhysicalTestResultDto], minItems: 1 }) @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => PhysicalTestResultDto) results!: PhysicalTestResultDto[]; }
 export class SalaPaymentAllocationDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() chargeId!: string; @ApiProperty({ type: String, pattern: '^\\d+$' }) @IsString() @Matches(/^\d+$/) amount!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() operationId!: string; }
+export class SalaStudentListQueryDto {
+  @ApiPropertyOptional({ type: Number }) @IsOptional() @Type(() => Number) @IsInt() year?: number;
+  @ApiPropertyOptional({ type: Number, minimum: 1, maximum: 12 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(12) month?: number;
+}
 export class SalaPlanPaymentPeriodDto {
+  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() planId?: string;
   @ApiProperty({ type: Number }) @Type(() => Number) @IsInt() year!: number;
   @ApiProperty({ type: Number, minimum: 1, maximum: 12 }) @Type(() => Number) @IsInt() @Min(1) @Max(12) month!: number;
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() operationId!: string;

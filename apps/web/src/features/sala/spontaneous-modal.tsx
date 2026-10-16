@@ -20,6 +20,7 @@ const messages: Record<string, string> = {
   SALA_SERVICE_TYPE_INVALID: 'El Servicio ya no está disponible.',
   SALA_REQUIRED_SLOTS_UNAVAILABLE: 'El Servicio no entra completo en el horario seleccionado.',
   SALA_SCHEDULE_CLOSED: 'El horario está cerrado para esa fecha.',
+  SALA_SPONTANEOUS_TIME_PASSED: 'Ese horario ya pasó. Elegí un horario actual o posterior.',
   SALA_SPONTANEOUS_FUTURE_NOT_ALLOWED: 'La incorporación espontánea sólo puede registrarse para hoy o una fecha pasada. Para una fecha futura usá una Reserva puntual o un Turno fijo.',
   SALA_SPONTANEOUS_ONBOARDING_TODAY_ONLY: 'El alta desde incorporación espontánea sólo está disponible para hoy.',
   PERSON_DNI_ALREADY_EXISTS: 'Ya existe una Persona con ese DNI. Seleccionala como Persona existente.',
@@ -35,10 +36,17 @@ function checked<T>(response: { status: number; data: T }): T {
 }
 function minutes(value: string): number { const [hour = 0, minute = 0] = value.split(':').map(Number); return hour * 60 + minute; }
 
+function currentOperationalMinutes(now = new Date()): number {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
+  const clock = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return Number(clock.hour) * 60 + Number(clock.minute);
+}
+
 export function SpontaneousModal({ date, groups, people, initialSlotId, csrfToken, canManageParticipation, canCreatePerson, onSaved, onClose }: {
   date: string; groups: AgendaGroup[]; people: PersonOption[]; initialSlotId: string; csrfToken: string; canManageParticipation: boolean; canCreatePerson: boolean; onSaved: (notice?: Notice) => void; onClose: () => void;
 }): React.JSX.Element {
   const today = todayOperational();
+  const visibleGroups = groups.filter(item => !item.isClosed && (date !== today || minutes(item.slot.startTime) >= currentOperationalMinutes()));
   const future = date > today;
   const [mode, setMode] = useState<'existing' | 'new'>('existing');
   const [search, setSearch] = useState('');
@@ -60,7 +68,7 @@ export function SpontaneousModal({ date, groups, people, initialSlotId, csrfToke
   const plan = plans.data?.find((item) => item.id === planId && item.isSelectable !== false);
   const services = mode === 'existing' && eligibility.data?.eligible ? eligibility.data.services : inline ? plan?.services.filter((service) => service.isSelectable !== false) ?? [] : [];
   const service = services.find((item) => item.id === serviceTypeId);
-  const group = groups.find((item) => item.slot.id === slotId && !item.isClosed);
+  const group = visibleGroups.find((item) => item.slot.id === slotId && !item.isClosed);
   const ready = !future && Boolean(service && group) && (mode === 'existing' && eligibility.data?.eligible ? true : inline && Boolean(plan && professorId)) && (mode === 'new' || Boolean(personId));
   const start = group ? minutes(group.slot.startTime) : 0;
   const full = Boolean(service && group && groups.some((item) => (item.slot.scheduleSlotId ?? item.slot.id) === (group.slot.scheduleSlotId ?? group.slot.id) && minutes(item.slot.startTime) >= start && minutes(item.slot.startTime) < start + service.durationMinutes && item.reserved >= item.capacity));
@@ -104,10 +112,11 @@ export function SpontaneousModal({ date, groups, people, initialSlotId, csrfToke
         </>}
         {(inline || (mode === 'existing' && eligibility.data?.eligible)) && <>
           <label className="text-sm">Servicio<select aria-label="Servicio" className={fieldClass} value={serviceTypeId} onChange={(event) => { setServiceTypeId(event.target.value); setConfirmation(null); mutation.reset(); }}><option value="">Seleccionar Servicio</option>{services.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.durationMinutes} min</option>)}</select></label>
-          <label className="text-sm">Horario<select aria-label="Horario espontáneo" className={fieldClass} value={slotId} onChange={(event) => { setSlotId(event.target.value); setConfirmation(null); }}><option value="">Seleccionar horario</option>{groups.filter((item) => !item.isClosed).map((item) => <option key={item.slot.id} value={item.slot.id}>{item.slot.startTime}{item.available === 0 ? ' · Sin lugar' : ''}</option>)}</select></label>
+          <label className="text-sm">Horario<select aria-label="Horario espontáneo" className={fieldClass} value={slotId} onChange={(event) => { setSlotId(event.target.value); setConfirmation(null); }}><option value="">Seleccionar horario</option>{visibleGroups.map((item) => <option key={item.slot.id} value={item.slot.id}>{item.slot.startTime}{item.available === 0 ? ' · Sin lugar' : ''}</option>)}</select></label>
           {plan && !services.length && <p className="text-sm sm:col-span-2">El Plan seleccionado no tiene servicios disponibles.</p>}
           {eligibility.data?.eligible && !services.length && <p className="text-sm sm:col-span-2">El Plan de la Persona no tiene servicios disponibles.</p>}
         </>}
+        {date === today && visibleGroups.length === 0 && <p className="text-sm sm:col-span-2">No quedan horarios disponibles para hoy.</p>}
         {mutation.isError && (mutation.error as { code?: string }).code !== 'SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED' && <p role="alert" className="text-sm text-red-700 sm:col-span-2">{mutation.error.message}</p>}
         <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="secondary" disabled={mutation.isPending} onClick={onClose}>Cancelar</Button><Button type="submit" disabled={!ready || mutation.isPending}>{mutation.isPending ? 'Incorporando…' : 'Incorporar'}</Button></div>
       </form>
