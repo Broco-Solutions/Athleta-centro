@@ -28,6 +28,10 @@ describe('effectivePermissions', () => {
     expect(professor.has('SALA_AGENDA_MANAGE')).toBe(true);
     expect(professor.has('SALA_ROUTINE_MANAGE')).toBe(true);
     expect(professor.has('SALA_SCHEDULE_MANAGE')).toBe(false);
+    expect(professor.has('SALA_SERVICE_DURATION_MANAGE')).toBe(false);
+    for (const role of [Role.ADMINISTRATIVE, Role.GENERAL_ADMIN]) {
+      expect(effectivePermissions(InternalUserStatus.ACTIVE, [role]).has('SALA_SERVICE_DURATION_MANAGE')).toBe(true);
+    }
     expect(effectivePermissions(InternalUserStatus.ACTIVE, [Role.ADMINISTRATIVE]).has('SALA_SCHEDULE_MANAGE')).toBe(true);
     expect(effectivePermissions(InternalUserStatus.ACTIVE, [Role.GENERAL_ADMIN]).has('SALA_SCHEDULE_MANAGE')).toBe(true);
   });

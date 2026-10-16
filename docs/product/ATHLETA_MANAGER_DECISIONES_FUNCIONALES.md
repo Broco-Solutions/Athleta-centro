@@ -506,3 +506,41 @@ Categoría continúa siendo obligatoria conforme FIN-04. Quien posee `EXPENSE_CA
 ### Navegación
 
 Los encabezados de las áreas administrativas navegan en un click a la primera opción permitida de cada grupo. El grupo correspondiente queda desplegado al ingresar. No se requiere primero desplegar y luego elegir la primera opción. En móvil también se cierra el drawer al navegar y el grupo activo aparece desplegado al reabrirlo.
+
+
+## Pulido preproducción de Sala — Bloque 1 — 2026-10-16
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+### Alumnos
+
+- `/students` conserva búsqueda por Nombre/DNI y filtros Todos, Sin rutina y Pago pendiente.
+- Profesor conserva Mis alumnos como filtro opcional, sin restringir la consulta al resto de Alumnos.
+- Se retiran de la interfaz Meses consecutivos sin pago, selección múltiple y acciones masivas.
+- Las capacidades backend existentes no se eliminan por esta decisión.
+- Esta decisión reemplaza en UI la definición anterior que exponía selección múltiple y Meses consecutivos sin pago.
+
+### Servicios
+
+- Administrativo puede gestionar Servicios y duraciones de Sala.
+- Se incorpora `SALA_SERVICE_DURATION_MANAGE` a `ADMINISTRATIVE`.
+- Profesor continúa sin este permiso. No se amplían permisos de Rutinas ni Evaluaciones físicas.
+
+### Personas
+
+- Nueva Persona puede crearse como identidad general solamente.
+- Administrativo/General Admin con `PEOPLE_CREATE` y `SALA_PARTICIPATION_MANAGE` pueden marcar Incorporar también a Sala, desmarcado por defecto.
+- En ese caso Plan y Profesor principal son obligatorios.
+- Persona + Sala utiliza la operación atómica existente `createSalaStudent`, sin crear primero la Persona y editarla después.
+- Se conserva el aviso de creación y el único PIN inicial devuelto por la operación.
+
+### Profesor
+
+- El alta operativa continúa en `/students → Nuevo alumno`, reutilizando Persona existente por DNI o creando Persona + Sala cuando corresponde.
+- No se agrega Personas a su navegación.
+
+### Incorporación espontánea
+
+- Profesor puede crear una nueva Persona/Alumno desde Incorporación espontánea para el día actual, con sus permisos existentes.
+- Se reutiliza el flujo atómico ya implementado de Persona + Sala + presencia.
+- Las reglas para fechas pasadas/futuras no cambian.

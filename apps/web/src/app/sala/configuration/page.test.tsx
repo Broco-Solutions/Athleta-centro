@@ -159,3 +159,30 @@ it('preloads retired linked services and requires removing them before saving', 
   expect(retired).toBeDisabled();
   expect(within(form).getByRole('button', { name: 'Guardar' })).toBeEnabled();
 });
+
+it('lets Administrative create, edit and retire services with its effective Sala permissions', async () => {
+  let created: unknown;
+  let edited: unknown;
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: ['ADMINISTRATIVE'], permissions: ['SALA_RELATION_READ', 'SALA_PARTICIPATION_MANAGE', 'SALA_PLAN_CATALOG_MANAGE', 'SALA_SCHEDULE_MANAGE', 'SALA_SERVICE_DURATION_MANAGE', 'SALA_PHYSICAL_EVALUATION_READ'] } })),
+    http.post('http://localhost:3000/api/sala/service-types', async ({ request }) => { created = await request.json(); return HttpResponse.json({ data: { id: 'new-service' } }, { status: 201 }); }),
+    http.patch(`http://localhost:3000/api/sala/service-types/${services[0]!.id}`, async ({ request }) => { edited = await request.json(); return HttpResponse.json({ data: services[0] }); }),
+  );
+  renderPage();
+  fireEvent.click(await screen.findByText('Servicios y duraciones'));
+  const section = within(screen.getByText('Servicios y duraciones').closest('details')!);
+  expect(await section.findAllByRole('button', { name: 'Editar' })).toHaveLength(4);
+  expect(section.getAllByRole('button', { name: 'Retirar' })).toHaveLength(3);
+  fireEvent.click(section.getByRole('button', { name: 'Nuevo servicio' }));
+  fireEvent.change(section.getByLabelText('Nombre'), { target: { value: 'Servicio sintético' } });
+  fireEvent.change(section.getByLabelText('Duración (múltiplo de 15)'), { target: { value: '45' } });
+  fireEvent.click(section.getByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(created).toEqual({ name: 'Servicio sintético', durationMinutes: 45 }));
+  fireEvent.click(section.getAllByRole('button', { name: 'Editar' })[0]!);
+  expect(section.getByLabelText('Nombre')).toHaveValue('Musculación');
+  fireEvent.change(section.getByLabelText('Duración (múltiplo de 15)'), { target: { value: '75' } });
+  fireEvent.click(section.getByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(edited).toEqual({ name: 'Musculación', durationMinutes: 75 }));
+  fireEvent.click(screen.getByText('Tests físicos'));
+  expect(screen.queryByRole('button', { name: 'Crear primer test' })).not.toBeInTheDocument();
+});

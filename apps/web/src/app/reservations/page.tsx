@@ -19,6 +19,7 @@ export default function ReservationsPage(): React.JSX.Element {
   const roles = session.data?.roles ?? [];
   const isProfessorOnly = roles.length === 1 && roles.includes('PROFESSOR');
   const isAdministrative = roles.includes('ADMINISTRATIVE') || roles.includes('GENERAL_ADMIN');
+  const canCreatePerson = session.data?.permissions.includes('PEOPLE_CREATE') ?? false;
   const canManageAgenda = session.data?.permissions.includes('SALA_AGENDA_MANAGE') ?? false;
   const canManageParticipation = session.data?.permissions.includes('SALA_PARTICIPATION_MANAGE') ?? false;
 
@@ -28,7 +29,7 @@ export default function ReservationsPage(): React.JSX.Element {
 
   if (session.isPending || isAdministrative) return <main className="p-6" role="status">Cargando…</main>;
   const content = isProfessorOnly
-    ? <SalaReservationsAgenda csrfToken={session.data?.csrfToken ?? ''} isProfessorOnly canManageAgenda={canManageAgenda} canManageParticipation={canManageParticipation} canCreatePerson={false} title="Reservas" description="Turnos fijos, reservas puntuales y asistencia de Sala." />
+    ? <SalaReservationsAgenda csrfToken={session.data?.csrfToken ?? ''} isProfessorOnly canManageAgenda={canManageAgenda} canManageParticipation={canManageParticipation} canCreatePerson={canCreatePerson} title="Reservas" description="Turnos fijos, reservas puntuales y asistencia de Sala." />
     : <ReservationsTimeline canManageSalaAgenda={canManageAgenda} date={date} onDateChange={setDate} csrfToken={session.data?.csrfToken ?? ''} variant="transversal" />;
   return <WorkspaceShell active="reservations"><div className="mx-auto max-w-7xl space-y-5">{content}</div></WorkspaceShell>;
 }

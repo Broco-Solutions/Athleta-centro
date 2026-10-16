@@ -49,7 +49,7 @@ it('reuses spontaneous incorporation for an existing person and refreshes operat
   expect(agendaReads).toBe(0); expect(peopleReads).toBe(0);
   fireEvent.click(screen.getByRole('button', { name: 'Incorporación espontánea' }));
   await screen.findByRole('dialog', { name: 'Incorporación espontánea' });
-  expect(screen.queryByRole('button', { name: 'Nueva Persona' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Nueva Persona' })).toBeVisible();
   fireEvent.change(screen.getByLabelText('Persona espontánea'), { target: { value: person.id } });
   await screen.findByRole('option', { name: 'Musculación · 15 min' });
   fireEvent.change(screen.getByLabelText('Servicio'), { target: { value: 'service' } });
@@ -71,4 +71,26 @@ it('does not add the Professor-specific action to combined roles', async () => {
   server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: ['PROFESSOR', 'KINESIOLOGIST'] } })));
   renderPage(); await screen.findByText('Agenda transversal');
   expect(screen.queryByRole('button', { name: 'Incorporación espontánea' })).not.toBeInTheDocument();
+});
+
+it('lets a pure Professor open the existing new Person form in spontaneous incorporation today', async () => {
+  server.use(
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/professors', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: [] })),
+  );
+  renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: 'Incorporación espontánea' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Nueva Persona' }));
+  expect(screen.getByLabelText('Nombre')).toBeVisible();
+  expect(screen.getByLabelText('Plan')).toBeVisible();
+  expect(screen.getByLabelText('Profesor principal')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Persona existente' })).toBeVisible();
+});
+it('keeps new Person unavailable without PEOPLE_CREATE', async () => {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: session.permissions.filter(permission => permission !== 'PEOPLE_CREATE') } })));
+  renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: 'Incorporación espontánea' }));
+  await screen.findByRole('dialog', { name: 'Incorporación espontánea' });
+  expect(screen.queryByRole('button', { name: 'Nueva Persona' })).not.toBeInTheDocument();
 });

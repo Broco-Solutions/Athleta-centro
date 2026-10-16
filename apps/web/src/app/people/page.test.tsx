@@ -447,3 +447,100 @@ it('edits and clears the shared optional sport and club fields', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
   await waitFor(() => expect(updated).toMatchObject({ sport: 'Tenis', club: '' }));
 });
+
+function salaCreationHandlers(role = 'ADMINISTRATIVE') {
+  let catalogReads = 0;
+  let peoplePosts = 0;
+  let studentPosts = 0;
+  let payload: unknown;
+  let csrf: string | null = null;
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: [role], permissions: [...session.permissions, 'SALA_PARTICIPATION_MANAGE'] } })),
+    http.get('http://localhost:3000/api/sala/plans', () => { catalogReads++; return HttpResponse.json({ data: [{ id: 'plan', name: 'Plan activo', isSelectable: true }, { id: 'retired', name: 'Plan retirado', isSelectable: false }] }); }),
+    http.get('http://localhost:3000/api/sala/professors', () => { catalogReads++; return HttpResponse.json({ data: [{ id: 'professor', firstName: 'Ana', lastName: 'Profesora' }] }); }),
+    http.post('http://localhost:3000/api/people', () => { peoplePosts++; return HttpResponse.json({ data: { ...person, initialPin: '1234' } }, { status: 201 }); }),
+    http.post('http://localhost:3000/api/sala/students', async ({ request }) => { studentPosts++; payload = await request.json(); csrf = request.headers.get('x-csrf-token'); return HttpResponse.json({ data: { ...person, initialPin: '4812' } }, { status: 201 }); }),
+  );
+  return () => ({ catalogReads, peoplePosts, studentPosts, payload, csrf });
+}
+async function enableSalaCreation() {
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Incorporar también a Sala' }));
+  await screen.findByRole('option', { name: 'Plan activo' });
+  await screen.findByRole('option', { name: 'Profesora, Ana' });
+}
+it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('creates only a Person by default without loading Sala catalogs for %s', async (role) => {
+  const state = salaCreationHandlers(role);
+  await openCreation();
+  expect(screen.getByRole('checkbox', { name: 'Incorporar también a Sala' })).not.toBeChecked();
+  expect(screen.queryByLabelText('Plan')).not.toBeInTheDocument();
+  expect(state().catalogReads).toBe(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  await screen.findByRole('dialog', { name: 'Persona guardada correctamente' });
+  expect(state()).toMatchObject({ peoplePosts: 1, studentPosts: 0, catalogReads: 0 });
+});
+it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('creates Person and Sala atomically and displays a single initial PIN for %s', async (role) => {
+  const state = salaCreationHandlers(role);
+  await openCreation('20.123.457', '(341) 555-1234');
+  await enableSalaCreation();
+  expect(state().catalogReads).toBe(2);
+  expect(screen.queryByRole('option', { name: 'Plan retirado' })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Plan'), { target: { value: 'plan' } });
+  fireEvent.change(screen.getByLabelText('Profesor principal'), { target: { value: 'professor' } });
+  fireEvent.change(screen.getByLabelText('Email (opcional)'), { target: { value: 'persona@example.test' } });
+  fireEvent.change(screen.getByLabelText('Deporte (opcional)'), { target: { value: 'Tenis' } });
+  fireEvent.change(screen.getByLabelText('Club (opcional)'), { target: { value: 'Club sintético' } });
+  fireEvent.change(screen.getByLabelText('Contacto de emergencia (opcional)'), { target: { value: 'Contacto sintético' } });
+  fireEvent.change(screen.getByLabelText('Teléfono de emergencia (opcional)'), { target: { value: '(11) 1234-5678' } });
+  await screen.findByRole('option', { name: 'Cobertura A' });
+  fireEvent.change(screen.getByLabelText('Obra social (opcional)'), { target: { value: 'work-a' } });
+  fireEvent.change(screen.getByLabelText('Número de afiliado (opcional)'), { target: { value: '  ABC-123  ' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  await screen.findByRole('dialog', { name: 'Persona guardada correctamente' });
+  expect(state()).toMatchObject({ peoplePosts: 0, studentPosts: 1, csrf: 'csrf-test', payload: {
+    firstName: 'Otra', lastName: 'Persona', dni: '20123457', phone: '3415551234', birthDate: '1990-01-01',
+    email: 'persona@example.test', sport: 'Tenis', club: 'Club sintético', emergencyContactName: 'Contacto sintético', emergencyContactPhone: '1112345678', socialWorkId: 'work-a', affiliateNumber: 'ABC-123', planId: 'plan', mainProfessorId: 'professor',
+  } });
+  expect(screen.getAllByLabelText('PIN temporal')).toHaveLength(1);
+  expect(screen.getByLabelText('PIN temporal')).toHaveTextContent('4812');
+  fireEvent.click(screen.getByRole('button', { name: 'Entendido' }));
+  expect(screen.queryByLabelText('PIN temporal')).not.toBeInTheDocument();
+});
+it('requires Plan and Professor only while incorporation is enabled', async () => {
+  const state = salaCreationHandlers();
+  await openCreation(); await enableSalaCreation();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByText('Seleccioná un Plan.')).toBeVisible();
+  expect(screen.getByText('Seleccioná un Profesor principal.')).toBeVisible();
+  expect(state()).toMatchObject({ peoplePosts: 0, studentPosts: 0 });
+  fireEvent.change(screen.getByLabelText('Plan'), { target: { value: 'plan' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(screen.queryByText('Seleccioná un Plan.')).not.toBeInTheDocument());
+  expect(screen.getByText('Seleccioná un Profesor principal.')).toBeVisible();
+  expect(state().studentPosts).toBe(0);
+  fireEvent.change(screen.getByLabelText('Plan'), { target: { value: '' } });
+  fireEvent.change(screen.getByLabelText('Profesor principal'), { target: { value: 'professor' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByText('Seleccioná un Plan.')).toBeVisible();
+  expect(state().studentPosts).toBe(0);
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Incorporar también a Sala' }));
+  expect(screen.queryByLabelText('Plan')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  await screen.findByRole('dialog', { name: 'Persona guardada correctamente' });
+  expect(state()).toMatchObject({ peoplePosts: 1, studentPosts: 0 });
+});
+it.each([409, 500])('keeps atomic creation failure visible without falling back to Person creation (%s)', async (status) => {
+  const state = salaCreationHandlers();
+  server.use(http.post('http://localhost:3000/api/sala/students', () => HttpResponse.json({ code: status === 409 ? 'PERSON_DNI_ALREADY_EXISTS' : 'INTERNAL_ERROR' }, { status })));
+  await openCreation(); await enableSalaCreation();
+  fireEvent.change(screen.getByLabelText('Plan'), { target: { value: 'plan' } });
+  fireEvent.change(screen.getByLabelText('Profesor principal'), { target: { value: 'professor' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(status === 409 ? 'Ya existe una Persona con ese DNI.' : 'No pudimos guardar los datos.');
+  expect(state().peoplePosts).toBe(0);
+  expect(screen.queryByRole('dialog', { name: 'Persona guardada correctamente' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('PIN temporal')).not.toBeInTheDocument();
+});
+it('does not offer Sala incorporation without participation management', async () => {
+  await openCreation();
+  expect(screen.queryByRole('checkbox', { name: 'Incorporar también a Sala' })).not.toBeInTheDocument();
+});

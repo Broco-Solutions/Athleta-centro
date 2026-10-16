@@ -420,6 +420,7 @@ múltiplos de 15 minutos.
 Roles:
 
 ```text
+ADMINISTRATIVE
 GENERAL_ADMIN
 ```
 
@@ -2064,6 +2065,7 @@ aunque el modelo Prisma permita incluirlos fácilmente.
 | Gestionar participación Sala | ✓ | — | ✓ | ✓ |
 | Gestionar agenda Sala | ✓ | — | ✓ | ✓ |
 | Configurar horarios Sala | — | — | ✓ | ✓ |
+| Gestionar Servicios y duraciones de Sala (`SALA_SERVICE_DURATION_MANAGE`) | — | — | ✓ | ✓ |
 | Consultar Rutinas | ✓ | — | ✓ | ✓ |
 | Diseñar/modificar Rutinas | ✓ | — | — | ✓ |
 | Consultar Evaluaciones físicas | ✓ | — | ✓ | ✓ |

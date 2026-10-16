@@ -260,15 +260,18 @@ test('renders the unified Reservations timeline with Sala and active professiona
 });
 
 
-test('completes student follow-up, individual management and the two atomic bulk actions', async ({ page }) => {
+test('completes student follow-up and individual management without bulk controls', async ({ page }) => {
   fixture('student-follow-up'); await login(page, 'e2e.student-follow-up@athleta.test');
   await page.getByRole('link', { name: 'Alumnos', exact: true }).click();
   await page.getByLabel('Buscar por nombre o DNI').fill('FollowUpE2E');
   await expect(page.getByRole('link', { name: 'Ver ficha' })).toHaveCount(3);
-  await expect(page.getByRole('button', { name: 'Nuevo alumno' })).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Nuevo alumno' })).toBeVisible();
+  await expect(page.getByLabel('Meses consecutivos sin pago')).toHaveCount(0);
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Cambiar profesor principal', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Dar de baja de Sala', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Mis alumnos', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Ver ficha' })).toHaveCount(2);
-  await page.getByLabel('Meses consecutivos sin pago').selectOption('1');
   await page.getByRole('button', { name: 'Sin rutina', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Ver ficha' })).toHaveCount(2);
   await page.getByRole('link', { name: 'Ver ficha' }).first().click();
@@ -286,16 +289,8 @@ test('completes student follow-up, individual management and the two atomic bulk
   await page.getByRole('button', { name: 'Dar de baja de Sala', exact: true }).click(); const leave = page.getByRole('dialog', { name: 'Dar de baja de Sala' });
   await expect(leave.getByRole('button', { name: 'Dar de baja', exact: true })).toBeEnabled(); await leave.getByRole('button', { name: 'Dar de baja', exact: true }).click(); await expect(leave).toBeHidden(); await expect(page.getByText('Sin participación activa', { exact: true }).first()).toBeVisible();
   await page.getByRole('link', { name: 'Alumnos', exact: true }).first().click(); await page.getByLabel('Buscar por nombre o DNI').fill('FollowUpE2E');
-  await expect(page.getByRole('link', { name: 'Ver ficha' })).toHaveCount(2); await page.getByLabel('Seleccionar todos los alumnos filtrados').check();
-  await page.getByRole('button', { name: 'Cambiar profesor principal', exact: true }).click(); const bulkProfessor = page.getByRole('dialog', { name: 'Cambiar profesor principal' });
-  await expect(bulkProfessor.getByText('2 alumnos seleccionados')).toBeVisible(); await bulkProfessor.getByLabel('Nuevo profesor').selectOption({ label: 'Otro FollowUpE2E' });
-  const changed = page.waitForResponse(response => response.url().endsWith('/participations/bulk-change-professor') && response.request().method() === 'POST');
-  await bulkProfessor.getByRole('button', { name: 'Cambiar profesor', exact: true }).click(); expect((await changed).status()).toBe(200); await expect(bulkProfessor).toBeHidden();
-  await expect(page.getByLabel('Seleccionar todos los alumnos filtrados')).not.toBeChecked();
-  await page.getByLabel('Seleccionar todos los alumnos filtrados').check(); await page.getByRole('button', { name: 'Dar de baja de Sala', exact: true }).click();
-  const bulkLeave = page.getByRole('dialog', { name: 'Dar de baja de Sala' }); await expect(bulkLeave.getByText('Se dará de baja de Sala a 2 alumnos.')).toBeVisible();
-  const left = page.waitForResponse(response => response.url().endsWith('/participations/bulk-leave') && response.request().method() === 'POST');
-  await bulkLeave.getByRole('button', { name: 'Dar de baja', exact: true }).click(); expect((await left).status()).toBe(200); await expect(bulkLeave).toBeHidden(); await expect(page.getByRole('link', { name: 'Ver ficha' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Ver ficha' })).toHaveCount(2);
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
 });
 
 test('cancels one Portal fixed date and keeps the weekly recurrence', async ({ page }) => {
