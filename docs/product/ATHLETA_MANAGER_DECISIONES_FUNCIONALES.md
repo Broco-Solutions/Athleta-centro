@@ -594,3 +594,34 @@ Estado: **CONFIRMADO / RESUELTO**.
 - El mismo editor se reutiliza para Rutinas de Alumnos, personalización de copias y Rutinas preestablecidas.
 - Profesor y Administrador general gestionan Rutinas según los permisos actuales. Administrativo mantiene lectura solamente.
 - No cambian versionado, historial, independencia de copias, semántica de preestablecidas ni reglas SAL-RUT. No cambian backend, permisos, contratos HTTP ni esquema de datos.
+
+
+## Pulido preproducción de Sala — Bloque 4 — Operación diaria del Profesor — 2026-10-16
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+### Inicio Profesor
+
+- Los Alumnos visibles en Próximos horarios son accionables. Seleccionar uno abre directamente el detalle de su Turno en Reservas.
+- La actualización del estado reutiliza la misma lógica y reglas de Agenda mediante `BookingDialog`. Inicio no posee una segunda implementación de asistencia.
+- Ver Reservas conserva el Día seleccionado en Inicio.
+
+### Reservas
+
+- Agenda de Sala utiliza una tira de cinco fechas como navegación principal, centrada en el Día seleccionado.
+- Al cambiar fecha se mantiene visible la estructura de la pantalla y se actualiza únicamente el contenido de Agenda, con carga localizada y sin mantener interactivos Turnos de otra fecha.
+- Se conservan Fecha manual, acceso rápido a Hoy y flechas de Día anterior/siguiente. Cambiar fecha cierra el detalle abierto.
+- La experiencia es compartida por Profesor, Administrativo y Administrador general porque utilizan la misma Agenda de Sala.
+
+### Deep-link
+
+- Reservas acepta `date` + `personId` + `startTime` + `origin` (`FIXED` / `ONE_OFF`) para abrir directamente un Turno de Sala. No requiere `sourceId` del Dashboard: las referencias de la operación se obtienen del Turno real de Agenda.
+- La selección inicial se consume una sola vez y no reabre el diálogo después de cerrarlo, modificar el estado o refrescar.
+- Parámetros incompletos, inválidos o sin coincidencia única permiten abrir Reservas normalmente, sin errores técnicos.
+- Se conservan Asistió/Ausente/Cancelar, Corregir estado para estados cerrados y la explicación existente de Pendiente de pago, sin nuevas reglas ni acciones.
+
+### Incorporación espontánea
+
+- Profesor conserva alta de Nueva Persona/Alumno desde Incorporación espontánea para el día actual, con sus permisos existentes.
+- No cambian reglas de pasado/futuro ni capacidad. No se modifican SAL-TUR-08, SAL-TUR-14 ni SAL-TUR-16.
+- No cambian backend, permisos, contratos HTTP ni esquema de datos.

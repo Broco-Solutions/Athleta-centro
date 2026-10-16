@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { cancelSalaOccurrence, correctSalaOccurrence, getReservationsTimeline, type ReservationBookingDto, type ReservationsResponseDto, markSalaOccurrenceAbsent, markSalaOccurrenceAttended } from '@athleta/api-client';
 import { Button, cn } from '@athleta/ui';
 import { Check, ChevronLeft, ChevronRight, Clock3, ExternalLink, ShieldAlert, X } from 'lucide-react';
 import { changeClinicalAppointmentStatus, type ClinicalCoverage } from '../clinic/clinic-api';
+
+export type InitialSalaSelection = { personId: string; startTime: string; origin: 'FIXED' | 'ONE_OFF' };
 
 type Booking = ReservationBookingDto;
 type TimelineData = ReservationsResponseDto;
@@ -43,6 +45,13 @@ function addDays(date: string, amount: number): string {
   const [year, month, day] = date.split('-').map(Number);
   const next = new Date(Date.UTC(year ?? 2000, (month ?? 1) - 1, (day ?? 1) + amount));
   return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-${String(next.getUTCDate()).padStart(2, '0')}`;
+}
+function dateTabs(date: string): string[] {
+  return [-2, -1, 0, 1, 2].map((offset) => addDays(date, offset));
+}
+function formatTabDate(date: string): string {
+  const value = new Date(`${date}T15:00:00Z`);
+  return new Intl.DateTimeFormat('es-AR', { timeZone: OPERATIONAL_TIME_ZONE, weekday: 'short', day: 'numeric' }).format(value);
 }
 function formatHumanDate(date: string): string {
   const [year, month, day] = date.split('-').map(Number);
@@ -96,8 +105,93 @@ function TransversalTimeline({ data, hours, onSelect }: { data: TimelineData; ho
   return <div className="mt-5 overflow-x-auto rounded-md border" data-testid="reservations-timeline"><div className="min-w-max"><div className="grid border-b bg-slate-50" style={{ gridTemplateColumns: '13rem auto' }}><div className="sticky left-0 z-20 border-r bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Fila</div><div className="grid" style={{ gridTemplateColumns: `repeat(${columns}, ${SLOT_WIDTH}px)` }}>{hours.map((hour) => <div key={hour} className="border-r px-1 py-3 text-center text-xs font-semibold" style={{ gridColumn: 'span 4' }}>{formatTime(hour)}</div>)}</div></div>{data.rows.map((row) => { const positioned = positionBookings(row.bookings); const visible = positioned.filter((booking) => booking.level < 3); const hidden = positioned.length - visible.length; return <div key={row.kind === 'SALA' ? 'sala' : row.professional?.id} className="grid border-b last:border-b-0" style={{ gridTemplateColumns: '13rem auto' }}><div className="sticky left-0 z-10 border-r bg-white px-4 py-3"><p className="font-medium">{row.kind === 'SALA' ? 'Sala' : `${row.professional?.firstName} ${row.professional?.lastName}`}</p><p className="text-xs text-muted-foreground">{row.kind === 'SALA' ? 'Turnos de Sala' : row.professional?.discipline ?? 'Profesional'}</p></div><div className="relative" style={{ width: columns * SLOT_WIDTH, height: ROW_HEIGHT }}>{Array.from({ length: columns }, (_, index) => <div key={index} className={cn('absolute inset-y-0 border-r border-slate-100', index % 4 === 0 && 'bg-slate-50/40')} style={{ left: index * SLOT_WIDTH, width: SLOT_WIDTH }} />)}{visible.map((booking) => <button key={`${booking.id}-${booking.startTime}-${booking.sourceId ?? ''}`} type="button" aria-label={`${personName(booking.person)} ${booking.startTime} ${statusLabels[booking.status] ?? booking.status}`} className={cn('absolute z-10 overflow-hidden rounded-md border p-2 text-left text-xs shadow-sm transition hover:z-30 hover:shadow-md', statusClasses[booking.status], booking.status === 'CANCELLED' && 'line-through opacity-70')} style={{ left: (toMinutes(booking.startTime) - start) / 15 * SLOT_WIDTH + booking.level * 4, top: 8 + booking.level * 16, width: Math.max(SLOT_WIDTH, booking.durationMinutes / 15 * SLOT_WIDTH - 4) }} onClick={() => onSelect(booking)}><span className="block truncate font-semibold">{personName(booking.person)}</span><span className="block truncate">{booking.serviceName} · {booking.durationMinutes} min</span><span className="mt-1 inline-flex items-center gap-1 font-medium">{statusIcons[booking.status]}{statusLabels[booking.status] ?? booking.status}</span><BookingIndicators booking={booking} /></button>)}{hidden > 0 ? <button type="button" className="absolute right-2 top-2 z-20 rounded-full border bg-white px-2 py-1 text-xs font-semibold shadow-sm" aria-label={`Ver ${hidden} reservas adicionales`} onClick={() => onSelect(positioned[3] ?? positioned[0] as Booking)}>+{hidden} reservas</button> : null}</div></div>; })}</div></div>;
 }
 
-export function ReservationsTimeline({ date, onDateChange, csrfToken, variant, canManageSalaAgenda, isProfessorOnly = false, headerAction, title, description }: { date: string; onDateChange: (date: string) => void; csrfToken: string; variant: 'sala' | 'transversal'; canManageSalaAgenda: boolean; isProfessorOnly?: boolean; headerAction?: React.ReactNode; title?: string; description?: string }): React.JSX.Element {
-  const [selected, setSelected] = useState<Booking | null>(null); const queryClient = useQueryClient(); const query = useQuery({ queryKey: ['reservations', date], queryFn: async () => { const response = await getReservationsTimeline({ date }, { credentials: 'include' }); if (response.status >= 400) throw new Error('No se pudieron cargar las reservas.'); return response.data.data; } }); const data = query.data; const hours = useMemo(() => data ? timelineHours(data.startTime, data.endTime) : [], [data]); const bookings = useMemo(() => data?.rows.filter((row) => row.kind === 'SALA').flatMap((row) => row.bookings) ?? [], [data]); const today = operationalNow().date; const refresh = async () => { await queryClient.invalidateQueries({ queryKey: ['reservations', date] }); };
+export function ReservationsTimeline({ date, onDateChange, csrfToken, variant, canManageSalaAgenda, isProfessorOnly = false, headerAction, title, description, initialSelection, onSaved }: {
+  initialSelection?: InitialSalaSelection;
+  onSaved?: () => Promise<void>;
+  date: string;
+  onDateChange: (date: string) => void;
+  csrfToken: string;
+  variant: 'sala' | 'transversal';
+  canManageSalaAgenda: boolean;
+  isProfessorOnly?: boolean;
+  headerAction?: React.ReactNode;
+  title?: string;
+  description?: string;
+}): React.JSX.Element {
+  const [selected, setSelected] = useState<Booking | null>(null);
+  const queryClient = useQueryClient();
+  const query = useQuery({ queryKey: ['reservations', date], queryFn: async () => {
+    const response = await getReservationsTimeline({ date }, { credentials: 'include' });
+    if (response.status >= 400) throw new Error('No se pudieron cargar las reservas.');
+    return response.data.data;
+  } });
+  const data = query.data;
+  const hours = useMemo(() => data ? timelineHours(data.startTime, data.endTime) : [], [data]);
+  const bookings = useMemo(() => data?.rows.filter((row) => row.kind === 'SALA').flatMap((row) => row.bookings) ?? [], [data]);
+  const today = operationalNow().date;
+  const refresh = async () => {
+    if (onSaved) await onSaved();
+    else await queryClient.invalidateQueries({ queryKey: ['reservations', date] });
+  };
   const salaOnlyBookings = useMemo(() => bookings.filter((booking) => booking.source === 'SALA'), [bookings]);
-  return <section aria-labelledby="reservations-heading" className="rounded-md border border-border bg-white p-4 sm:p-5"><div className="flex flex-col gap-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-sm text-muted-foreground">{variant === 'sala' ? 'Agenda de Sala' : 'Agenda transversal'}</p><h2 id="reservations-heading" className="text-2xl font-semibold">{title ?? 'Reservas'}</h2><p className="mt-1 text-sm text-muted-foreground">{description ?? (variant === 'sala' ? 'Turnos fijos, reservas puntuales y asistencia de Sala.' : 'Turnos de Sala y Clínica organizados por horario.')}</p></div>{headerAction ? <div className="w-full sm:w-auto">{headerAction}</div> : null}</div><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div className="flex flex-wrap items-end gap-2"><Button type="button" variant="secondary" aria-label="Día anterior" onClick={() => onDateChange(addDays(date, -1))} className="h-10 w-10 px-0"><ChevronLeft size={18} /></Button><Button type="button" variant="secondary" aria-label="Día siguiente" onClick={() => onDateChange(addDays(date, 1))} className="h-10 w-10 px-0"><ChevronRight size={18} /></Button><label className="grid min-w-0 gap-1 text-sm font-medium">Fecha<input aria-label="Fecha de reservas" className="h-10 max-w-full rounded-md border border-border px-3" type="date" value={date} onChange={(event) => onDateChange(event.target.value)} /></label><Button type="button" variant="secondary" onClick={() => onDateChange(today)}>Hoy</Button></div>{variant === 'sala' ? <p className="text-sm font-medium capitalize text-muted-foreground">{formatHumanDate(date)}</p> : null}</div></div>{query.isLoading ? <p role="status" className="mt-5 text-sm text-muted-foreground">Cargando reservas…</p> : null}{query.isError ? <p role="alert" className="mt-5 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">No se pudieron cargar las reservas.</p> : null}{data && !query.isLoading && !query.isError ? variant === 'sala' ? <SalaAgenda bookings={salaOnlyBookings} date={date} onSelect={setSelected} /> : <TransversalTimeline data={data} hours={hours} onSelect={setSelected} /> : null}{variant === 'transversal' ? <p className="mt-3 text-xs text-muted-foreground">Las divisiones internas representan 15 minutos; los encabezados muestran únicamente las horas.</p> : null}{selected ? <BookingDialog canManageSalaAgenda={canManageSalaAgenda} isProfessorOnly={isProfessorOnly} booking={selected} date={date} csrfToken={csrfToken} onClose={() => setSelected(null)} onSaved={refresh} /> : null}</section>;
+  const selectionDate = useRef(date);
+  const openedInitialSelection = useRef<string | null>(null);
+  const personId = initialSelection?.personId;
+  const startTime = initialSelection?.startTime;
+  const origin = initialSelection?.origin;
+  useEffect(() => {
+    if (!personId || !startTime || !origin || date !== selectionDate.current || !query.isSuccess) return;
+    const key = `${date}:${personId}:${startTime}:${origin}`;
+    if (openedInitialSelection.current === key) return;
+    const matches = salaOnlyBookings.filter((booking) => booking.person.id === personId && booking.startTime.slice(0, 5) === startTime && booking.origin === origin);
+    if (matches.length === 1) {
+      openedInitialSelection.current = key;
+      setSelected(matches[0]!);
+    }
+  }, [date, personId, startTime, origin, query.isSuccess, salaOnlyBookings]);
+  const changeDate = (next: string) => {
+    if (!next) return;
+    setSelected(null);
+    onDateChange(next);
+  };
+  const manualDateControls = <>
+    <label className="grid min-w-0 gap-1 text-sm font-medium">Fecha
+      <input aria-label="Fecha de reservas" className="h-10 max-w-full rounded-md border border-border px-3" type="date" value={date} onChange={(event) => changeDate(event.target.value)} />
+    </label>
+    <Button type="button" variant="secondary" onClick={() => changeDate(today)}>Hoy</Button>
+  </>;
+  return <section aria-labelledby="reservations-heading" className="rounded-md border border-border bg-white p-4 sm:p-5">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm text-muted-foreground">{variant === 'sala' ? 'Agenda de Sala' : 'Agenda transversal'}</p>
+          <h2 id="reservations-heading" className="text-2xl font-semibold">{title ?? 'Reservas'}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{description ?? (variant === 'sala' ? 'Turnos fijos, reservas puntuales y asistencia de Sala.' : 'Turnos de Sala y Clínica organizados por horario.')}</p>
+        </div>
+        {headerAction ? <div className="w-full sm:w-auto">{headerAction}</div> : null}
+      </div>
+      <div className="space-y-3">
+        <div role={variant === 'sala' ? 'group' : undefined} aria-label={variant === 'sala' ? 'Días de reservas' : undefined} className={variant === 'sala' ? 'flex items-center gap-1 sm:gap-2' : 'flex flex-wrap items-end gap-2'}>
+          <Button type="button" variant="secondary" aria-label="Día anterior" onClick={() => changeDate(addDays(date, -1))} className="h-10 w-10 shrink-0 px-0"><ChevronLeft size={18} /></Button>
+          {variant === 'sala' ? <div className="grid min-w-0 flex-1 grid-cols-5 border-b border-border">
+            {dateTabs(date).map((tabDate) => <button key={tabDate} type="button" aria-label={formatHumanDate(tabDate)} aria-pressed={tabDate === date} onClick={() => changeDate(tabDate)} className={cn('min-h-11 border-b-2 px-1 py-2 text-sm capitalize transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary', tabDate === date ? 'border-primary font-semibold text-foreground' : 'border-transparent text-muted-foreground')}>
+              {formatTabDate(tabDate)}
+            </button>)}
+          </div> : null}
+          <Button type="button" variant="secondary" aria-label="Día siguiente" onClick={() => changeDate(addDays(date, 1))} className="h-10 w-10 shrink-0 px-0"><ChevronRight size={18} /></Button>
+          {variant === 'transversal' ? manualDateControls : null}
+        </div>
+        {variant === 'sala' ? <div className="flex flex-wrap items-end gap-2">{manualDateControls}</div> : null}
+      </div>
+    </div>
+    <div aria-busy={query.isPending} className="relative min-h-[20rem]">
+      {query.isPending ? <p role="status" className="mt-5 text-sm text-muted-foreground">Cargando reservas…</p> : null}
+      {query.isError ? <p role="alert" className="mt-5 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">No se pudieron cargar las reservas.</p> : null}
+      {data && !query.isPending && !query.isError ? variant === 'sala'
+        ? <SalaAgenda bookings={salaOnlyBookings} date={date} onSelect={setSelected} />
+        : <TransversalTimeline data={data} hours={hours} onSelect={setSelected} /> : null}
+    </div>
+    {variant === 'transversal' ? <p className="mt-3 text-xs text-muted-foreground">Las divisiones internas representan 15 minutos; los encabezados muestran únicamente las horas.</p> : null}
+    {selected ? <BookingDialog canManageSalaAgenda={canManageSalaAgenda} isProfessorOnly={isProfessorOnly} booking={selected} date={date} csrfToken={csrfToken} onClose={() => setSelected(null)} onSaved={refresh} /> : null}
+  </section>;
 }

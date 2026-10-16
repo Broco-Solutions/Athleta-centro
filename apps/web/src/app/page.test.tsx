@@ -24,9 +24,12 @@ it('shows operational Sala information and changes from today to tomorrow in Arg
   expect(await screen.findByText('Hola, Federico')).toBeVisible();
   for (const text of ['Próximos horarios', 'Alumnos esperados', 'Asistencias', 'Cancelados / Ausentes', 'Sin rutina activa', 'Pago pendiente', 'Hoy', 'Mañana']) expect(await screen.findByText(text)).toBeVisible();
   expect(await screen.findByText('Ana Sintética')).toBeVisible();
+  const studentUrl = new URL(screen.getByRole('link', { name: /Ana Sintética.*Gestionar/ }).getAttribute('href')!, 'http://localhost');
+  expect(studentUrl.pathname).toBe('/reservations');
+  expect(Object.fromEntries(studentUrl.searchParams)).toEqual({ date: '2026-10-31', personId: 'student', startTime: '09:00', origin: 'FIXED' });
   expect(screen.getByText('+ 4 alumnos')).toBeVisible();
   expect(screen.getByText('0')).toBeVisible();
-  expect(screen.getByRole('link', { name: 'Ver Reservas' })).toHaveAttribute('href', '/reservations');
+  expect(screen.getByRole('link', { name: 'Ver Reservas' })).toHaveAttribute('href', '/reservations?date=2026-10-31');
   expect(screen.getByRole('link', { name: /Sin rutina activa/ })).toHaveAttribute('href', '/students?filter=without-routine');
   expect(screen.getByRole('link', { name: /Pago pendiente/ })).toHaveAttribute('href', '/students?filter=pending-payment');
   expect(getSalaDashboard).toHaveBeenCalledWith({ date: '2026-10-31' }, { credentials: 'include' });
@@ -34,6 +37,10 @@ it('shows operational Sala information and changes from today to tomorrow in Arg
   expect(await screen.findByText('Marta Sintética')).toBeVisible();
   expect(getSalaDashboard).toHaveBeenCalledWith({ date: '2026-11-01' }, { credentials: 'include' });
   expect(screen.queryByText('Ana Sintética')).not.toBeInTheDocument();
+  const tomorrowUrl = new URL(screen.getByRole('link', { name: /Marta Sintética.*Gestionar/ }).getAttribute('href')!, 'http://localhost');
+  expect(tomorrowUrl.pathname).toBe('/reservations');
+  expect(Object.fromEntries(tomorrowUrl.searchParams)).toEqual({ date: '2026-11-01', personId: 'student', startTime: '09:00', origin: 'FIXED' });
+  expect(screen.getByRole('link', { name: 'Ver Reservas' })).toHaveAttribute('href', '/reservations?date=2026-11-01');
 });
 it.each([['KINESIOLOGIST'], ['PROFESSOR', 'KINESIOLOGIST']])('preserves general Home for roles %j', async (...roles) => {
   vi.mocked(currentSession).mockResolvedValue({ ...session, roles });

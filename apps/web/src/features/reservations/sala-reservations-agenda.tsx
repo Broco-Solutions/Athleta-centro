@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getSalaAgenda, listPeople } from '@athleta/api-client';
 import { Button } from '@athleta/ui';
-import { ReservationsTimeline } from './reservations-timeline';
+import { ReservationsTimeline, type InitialSalaSelection } from './reservations-timeline';
 import { SpontaneousModal } from '../sala/spontaneous-modal';
 import type { AgendaGroup, PersonOption } from '../sala/agenda-panel';
 
@@ -12,7 +12,9 @@ function today(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
 }
 
-export function SalaReservationsAgenda({ csrfToken, isProfessorOnly, canManageAgenda, canManageParticipation, canCreatePerson, title, description }: {
+export function SalaReservationsAgenda({ csrfToken, isProfessorOnly, canManageAgenda, canManageParticipation, canCreatePerson, title, description, initialDate, initialSelection }: {
+  initialDate?: string;
+  initialSelection?: InitialSalaSelection;
   csrfToken: string;
   isProfessorOnly: boolean;
   canManageAgenda: boolean;
@@ -21,7 +23,7 @@ export function SalaReservationsAgenda({ csrfToken, isProfessorOnly, canManageAg
   title: string;
   description: string;
 }): React.JSX.Element {
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(() => initialDate ?? today());
   const [spontaneousOpen, setSpontaneousOpen] = useState(false);
   const client = useQueryClient();
   const agenda = useQuery({ queryKey: ['sala', 'agenda', date], enabled: spontaneousOpen, queryFn: async () => {
@@ -55,6 +57,8 @@ export function SalaReservationsAgenda({ csrfToken, isProfessorOnly, canManageAg
     <ReservationsTimeline
       canManageSalaAgenda={canManageAgenda}
       date={date}
+      {...(initialSelection ? { initialSelection } : {})}
+      onSaved={refresh}
       onDateChange={(next) => { setSpontaneousOpen(false); setDate(next); }}
       csrfToken={csrfToken}
       variant="sala"

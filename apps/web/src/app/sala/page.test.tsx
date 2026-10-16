@@ -20,6 +20,7 @@ it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('%s renders the shared vertical Sal
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SalaPage /></QueryClientProvider>);
   expect(await screen.findByRole('heading', { name: 'Agenda' })).toBeInTheDocument();
   expect(await screen.findByTestId('sala-reservations-agenda')).toHaveTextContent('Ana Alumna');
+  expect(within(screen.getByRole('group', { name: 'Días de reservas' })).getAllByRole('button', { pressed: true })).toHaveLength(1);
   expect(screen.getByTestId('sala-reservations-agenda')).not.toHaveTextContent('Clara Paciente');
   expect(screen.getByRole('link', { name: 'Agenda' })).toHaveAttribute('href', '/sala');
   expect(screen.getByRole('link', { name: 'Alumnos' })).toHaveAttribute('href', '/students');

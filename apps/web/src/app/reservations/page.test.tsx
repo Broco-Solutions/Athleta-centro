@@ -1,13 +1,13 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { HttpResponse, http } from 'msw';
+import { delay, HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import { vi } from 'vitest';
 import ReservationsPage from './page';
 
-const router = vi.hoisted(() => ({ replace: vi.fn() }));
-vi.mock('next/navigation', () => ({ useRouter: () => router }));
+const navigation = vi.hoisted(() => ({ search: '', router: { replace: vi.fn() } }));
+vi.mock('next/navigation', () => ({ useRouter: () => navigation.router, useSearchParams: () => new URLSearchParams(navigation.search) }));
 
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
@@ -22,6 +22,7 @@ beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' });
 });
 beforeEach(() => {
+  navigation.search = '';
   agendaReads = peopleReads = timelineReads = 0;
   server.use(
     http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: session })),
@@ -31,7 +32,7 @@ beforeEach(() => {
     http.get('http://localhost:3000/api/sala/people/student-1/spontaneous-options', () => HttpResponse.json({ data: { eligible: true, participationId: 'participation', plan: { id: 'plan', name: 'Base' }, services: [{ id: 'service', name: 'Musculación', durationMinutes: 15 }] } })),
   );
 });
-afterEach(() => server.resetHandlers());
+afterEach(() => { server.resetHandlers(); vi.useRealTimers(); });
 afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -61,10 +62,10 @@ it('reuses spontaneous incorporation for an existing person and refreshes operat
   expect(timelineReads).toBeGreaterThan(1);
 });
 it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('redirects %s from transversal reservations into Sala', async (role) => {
-  router.replace.mockClear();
+  navigation.router.replace.mockClear();
   server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: [role] } })));
   renderPage();
-  await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/sala'));
+  await waitFor(() => expect(navigation.router.replace).toHaveBeenCalledWith('/sala'));
   expect(timelineReads).toBe(0);
 });
 it('does not add the Professor-specific action to combined roles', async () => {
@@ -93,4 +94,137 @@ it('keeps new Person unavailable without PEOPLE_CREATE', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Incorporación espontánea' }));
   await screen.findByRole('dialog', { name: 'Incorporación espontánea' });
   expect(screen.queryByRole('button', { name: 'Nueva Persona' })).not.toBeInTheDocument();
+});
+
+const booking = { id: 'booking', source: 'SALA', person, startTime: '09:00', durationMinutes: 60, serviceName: 'Musculación', status: 'RESERVED', origin: 'FIXED', scheduleSlotId: 'window', sourceId: 'fixed-booking' };
+function mockBookings(bookings = [booking]): void {
+  server.use(http.get('http://localhost:3000/api/reservations', ({ request }) => {
+    timelineReads++;
+    return HttpResponse.json({ data: { date: new URL(request.url).searchParams.get('date'), startTime: '09:00', endTime: '10:00', rows: [{ kind: 'SALA', bookings }] } });
+  }));
+}
+function deepLink(date = today()): void {
+  navigation.search = new URLSearchParams({ date, personId: person.id, startTime: '09:00', origin: 'FIXED' }).toString();
+}
+it('opens the exact Sala booking from Home and attends it through the existing operation once', async () => {
+  deepLink();
+  // The same person/time in another source or origin must not be selected.
+  mockBookings([{ ...booking, id: 'clinic', source: 'CLINIC', origin: 'APPOINTMENT' }, { ...booking, id: 'one-off', origin: 'ONE_OFF' }, booking]);
+  let submitted: unknown;
+  let csrf: string | null = null;
+  server.use(http.post('http://localhost:3000/api/sala/occurrences/attend', async ({ request }) => {
+    submitted = await request.json(); csrf = request.headers.get('x-csrf-token');
+    return HttpResponse.json({ data: {} });
+  }));
+  const { invalidate } = renderPage();
+  const dialog = await screen.findByRole('dialog', { name: 'Ana Sintética' });
+  expect(screen.getByLabelText('Fecha de reservas')).toHaveValue(today());
+  expect(within(dialog).getByText('Detalle del turno')).toBeVisible();
+  for (const name of ['Asistió', 'Ausente', 'Cancelar']) expect(within(dialog).getByRole('button', { name })).toBeVisible();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Asistió' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(submitted).toEqual({ personId: 'student-1', scheduleSlotId: 'window', date: today(), startTime: '09:00', sourceId: 'fixed-booking' });
+  expect(csrf).toBe('csrf');
+  for (const queryKey of [['reservations', today()], ['sala', 'agenda', today()], ['sala-dashboard'], ['sala', 'students']]) expect(invalidate).toHaveBeenCalledWith({ queryKey });
+  expect(timelineReads).toBeGreaterThan(1);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+it('does not reopen a closed initial selection after refetch', async () => {
+  deepLink(); mockBookings();
+  const { client } = renderPage();
+  const dialog = await screen.findByRole('dialog');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cerrar' }));
+  await act(async () => { await client.invalidateQueries({ queryKey: ['reservations', today()] }); });
+  expect(timelineReads).toBeGreaterThan(1);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+it.each(['ATTENDED', 'ABSENT', 'CANCELLED', 'PENDING_PAYMENT'])('preserves existing detail rules for %s opened from Home', async (status) => {
+  deepLink(); mockBookings([{ ...booking, status }]); renderPage();
+  const dialog = await screen.findByRole('dialog');
+  if (status === 'PENDING_PAYMENT') {
+    expect(within(dialog).getByText('El lugar está reservado, pero requiere el pago del mes antes del inicio.')).toBeVisible();
+    expect(within(dialog).queryByRole('button', { name: 'Corregir estado' })).not.toBeInTheDocument();
+  } else expect(within(dialog).getByRole('button', { name: 'Corregir estado' })).toBeVisible();
+  for (const name of ['Asistió', 'Ausente', 'Cancelar']) expect(within(dialog).queryByRole('button', { name })).not.toBeInTheDocument();
+});
+it.each([
+  'personId=student-1&startTime=invalid&origin=FIXED',
+  'date=invalid&personId=student-1&startTime=9:00&origin=FIXED',
+  'date=2026-10-16&personId=&startTime=09:00&origin=FIXED',
+  'date=2026-10-16&personId=student-1&startTime=09:00&origin=OTHER',
+  'date=2026-10-16&personId=student-1&origin=FIXED',
+  'date=2026-10-16&personId=missing&startTime=09:00&origin=FIXED',
+])('opens normally with incomplete, invalid or unmatched selection: %s', async (search) => {
+  navigation.search = search; mockBookings(); renderPage();
+  await screen.findByTestId('sala-reservations-agenda');
+  expect(screen.getByLabelText('Fecha de reservas')).toHaveValue(!new URLSearchParams(search).get('date') || search.includes('date=invalid') ? today() : '2026-10-16');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+it('does not choose an ambiguous Sala booking', async () => {
+  deepLink(); mockBookings([booking, { ...booking, id: 'duplicate', sourceId: 'other-fixed-booking' }]); renderPage();
+  await screen.findByTestId('sala-reservations-agenda');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+it('shares five centered date buttons and localizes loading to Agenda when changing date', async () => {
+  navigation.search = 'date=2026-10-16';
+  const requested: string[] = [];
+  server.use(http.get('http://localhost:3000/api/reservations', async ({ request }) => {
+    const date = new URL(request.url).searchParams.get('date')!;
+    requested.push(date);
+    if (date === '2026-10-17') await delay(200);
+    return HttpResponse.json({ data: { date, startTime: '09:00', endTime: '10:00', rows: [{ kind: 'SALA', bookings: [booking] }] } });
+  }));
+  renderPage(); await screen.findByTestId('sala-reservations-agenda');
+  const heading = screen.getByRole('heading', { name: 'Reservas' });
+  const days = screen.getByRole('group', { name: 'Días de reservas' });
+  for (const label of ['miércoles, 14 de octubre', 'jueves, 15 de octubre', 'viernes, 16 de octubre', 'sábado, 17 de octubre', 'domingo, 18 de octubre']) expect(within(days).getByRole('button', { name: label })).toBeVisible();
+  expect(within(days).getByRole('button', { name: 'viernes, 16 de octubre' })).toHaveAttribute('aria-pressed', 'true');
+  fireEvent.click(within(days).getByRole('button', { name: 'sábado, 17 de octubre' }));
+  expect(within(days).getByRole('button', { name: 'sábado, 17 de octubre' })).toHaveAttribute('aria-pressed', 'true');
+  const loading = await screen.findByText('Cargando reservas…');
+  expect(loading.closest('[aria-busy]')).toHaveAttribute('aria-busy', 'true');
+  expect(screen.getByRole('heading', { name: 'Reservas' })).toBe(heading);
+  expect(screen.getByRole('button', { name: 'Incorporación espontánea' })).toBeVisible();
+  expect(days).toBeVisible();
+  expect(screen.queryByText('Cargando…', { exact: true })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Ana Sintética 09:00/ })).not.toBeInTheDocument();
+  await screen.findByTestId('sala-reservations-agenda');
+  expect(requested).toEqual(['2026-10-16', '2026-10-17']);
+});
+it('keeps previous/next, manual date and Argentina Today, closing detail on date change', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-17T02:30:00Z'));
+  deepLink('2026-10-16'); mockBookings(); renderPage();
+  await screen.findByRole('dialog');
+  const input = screen.getByLabelText('Fecha de reservas');
+  fireEvent.click(screen.getByRole('button', { name: 'Día anterior' }));
+  expect(input).toHaveValue('2026-10-15');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  await screen.findByTestId('sala-reservations-agenda');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Día siguiente' }));
+  expect(input).toHaveValue('2026-10-16');
+  await screen.findByTestId('sala-reservations-agenda');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  fireEvent.change(input, { target: { value: '2026-11-01' } });
+  expect(input).toHaveValue('2026-11-01');
+  await screen.findByTestId('sala-reservations-agenda');
+  fireEvent.click(screen.getByRole('button', { name: 'Hoy' }));
+  expect(input).toHaveValue('2026-10-16');
+});
+
+it('opens a ONE_OFF booking and matches the five-minute time representation', async () => {
+  navigation.search = new URLSearchParams({ date: today(), personId: person.id, startTime: '09:00', origin: 'ONE_OFF' }).toString();
+  mockBookings([{ ...booking, origin: 'ONE_OFF', startTime: '09:00:00' }]); renderPage();
+  expect(within(await screen.findByRole('dialog')).getByText('Reserva puntual')).toBeVisible();
+});
+it.each(['2026-10-15', '2026-10-17'])('keeps new Person unavailable in spontaneous incorporation for %s', async (date) => {
+  vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-16T15:00:00Z'));
+  navigation.search = `date=${date}`; renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: 'Incorporación espontánea' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Incorporación espontánea' });
+  expect(within(dialog).queryByRole('button', { name: 'Nueva Persona' })).not.toBeInTheDocument();
+  if (date === '2026-10-17') expect(within(dialog).getByText('La incorporación espontánea no se utiliza para fechas futuras. Para una fecha futura usá una Reserva puntual o un Turno fijo.')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Hoy' }));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });
