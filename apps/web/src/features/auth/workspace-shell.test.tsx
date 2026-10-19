@@ -112,38 +112,58 @@ describe('WorkspaceShell', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
   });
 
-  it('muestra las acciones de usuario para una sesión interna normal', async () => {
+  it('muestra identidad y acciones de sesión dentro del sidebar y no en el header', async () => {
     renderShell({ permissions: ['PEOPLE_READ'], roles: ['PROFESSOR'] });
 
-    expect(await screen.findByText('Ana Demo')).toBeVisible();
-    expect(screen.getByText('Profesor')).toBeVisible();
-    expect(await screen.findByRole('link', { name: 'Mi perfil' })).toHaveAttribute('href', '/profile');
-    expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
+    const sidebar = within(await screen.findByRole('complementary'));
+    expect(sidebar.getByText('Ana Demo')).toBeVisible();
+    expect(sidebar.getByText('Profesor')).toBeVisible();
+    expect(sidebar.getByRole('link', { name: 'Mi perfil' })).toHaveAttribute('href', '/profile');
+    expect(sidebar.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
+    const header = document.querySelector('.fixed.inset-x-0.top-0');
+    expect(header).not.toHaveTextContent('Ana Demo');
+    expect(header).not.toHaveTextContent('Profesor');
+    expect(header).not.toHaveTextContent('Mi perfil');
+    expect(header).not.toHaveTextContent('Cerrar sesión');
   });
 
   it('muestra los roles combinados en el orden recibido', async () => {
     renderShell({ roles: ['KINESIOLOGIST', 'OSTEOPATH'] });
 
-    expect(await screen.findByText('Ana Demo')).toBeVisible();
-    expect(screen.getByText('Kinesiólogo · Osteópata')).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Mi perfil' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
+    const sidebar = within(await screen.findByRole('complementary'));
+    expect(sidebar.getByText('Ana Demo')).toBeVisible();
+    expect(sidebar.getByText('Kinesiólogo · Osteópata')).toBeVisible();
+    expect(sidebar.getByRole('link', { name: 'Mi perfil' })).toBeInTheDocument();
+    expect(sidebar.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
   });
 
   it('muestra la etiqueta de Administrador general', async () => {
     renderShell({ roles: ['GENERAL_ADMIN'] });
 
-    expect(await screen.findByText('Administrador general')).toBeVisible();
+    expect(within(await screen.findByRole('complementary')).getByText('Administrador general')).toBeVisible();
   });
 
   it('oculta Mi perfil para BROCO_SUPPORT y conserva Cerrar sesión', async () => {
     renderShell({ roles: ['BROCO_SUPPORT'] });
 
-    await screen.findByRole('navigation', { name: 'Navegación principal' });
-    expect(screen.getByText('Ana Demo')).toBeVisible();
-    expect(screen.getByText('Soporte Broco')).toBeVisible();
-    expect(screen.queryByRole('link', { name: 'Mi perfil' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
+    const sidebar = within(await screen.findByRole('complementary'));
+    expect(sidebar.getByText('Ana Demo')).toBeVisible();
+    expect(sidebar.getByText('Soporte Broco')).toBeVisible();
+    expect(sidebar.queryByRole('link', { name: 'Mi perfil' })).not.toBeInTheDocument();
+    expect(sidebar.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
+  });
+
+  it('muestra identidad y acciones al pie del drawer mobile y cierra al ir a Mi perfil', async () => {
+    renderShell({ roles: ['PROFESSOR'] });
+    fireEvent.click(await screen.findByRole('button', { name: 'Abrir menú' }));
+    const drawer = within(screen.getByRole('dialog', { name: 'Menú principal' }));
+    expect(drawer.getByText('Ana Demo')).toBeVisible();
+    expect(drawer.getByText('Profesor')).toBeVisible();
+    expect(drawer.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
+    const profile = drawer.getByRole('link', { name: 'Mi perfil' });
+    expect(profile).toHaveAttribute('href', '/profile');
+    fireEvent.click(profile);
+    expect(screen.queryByRole('dialog', { name: 'Menú principal' })).not.toBeInTheDocument();
   });
 });
 
@@ -222,30 +242,36 @@ it('shows Rutinas for Administrative combined with Professor through the effecti
   expect(within(nav).getByRole('link', { name: 'Rutinas' })).toHaveAttribute('href', '/routines');
 });
 
-it('collapses and restores the complete desktop sidebar while keeping the session identity visible', async () => {
+it('collapses and restores the complete desktop sidebar including its session footer', async () => {
   const { container } = renderShell({ roles: ['GENERAL_ADMIN'] });
-  expect(await screen.findByRole('complementary')).toBeInTheDocument();
+  const sidebar = within(await screen.findByRole('complementary'));
   expect(screen.getByRole('button', { name: 'Ocultar menú lateral' })).toBeInTheDocument();
-  expect(screen.getByText('Ana Demo')).toBeVisible();
-  expect(screen.getByText('Administrador general')).toBeVisible();
-  expect(screen.getByRole('link', { name: 'Mi perfil' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
+  expect(sidebar.getByText('Ana Demo')).toBeVisible();
+  expect(sidebar.getByText('Administrador general')).toBeVisible();
+  expect(sidebar.getByRole('link', { name: 'Mi perfil' })).toBeInTheDocument();
+  expect(sidebar.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'Ocultar menú lateral' }));
   expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Mostrar menú lateral' })).toBeInTheDocument();
   expect(container.querySelector('main')).toHaveClass('md:ml-0');
+  expect(container.querySelector('main')).toHaveClass('md:pt-14');
   expect(container.querySelector('.fixed.inset-x-0.top-0')).toHaveClass('md:left-0');
-  expect(screen.getByText('Ana Demo')).toBeVisible();
-  expect(screen.getByText('Administrador general')).toBeVisible();
-  expect(screen.getByRole('link', { name: 'Mi perfil' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
+  expect(screen.queryByText('Ana Demo')).not.toBeInTheDocument();
+  expect(screen.queryByText('Administrador general')).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Mi perfil' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Cerrar sesión' })).not.toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'Mostrar menú lateral' }));
-  expect(await screen.findByRole('complementary')).toBeInTheDocument();
+  const restoredSidebar = within(await screen.findByRole('complementary'));
   expect(screen.getByRole('button', { name: 'Ocultar menú lateral' })).toBeInTheDocument();
   expect(container.querySelector('main')).toHaveClass('md:ml-60');
-  expect(container.querySelector('.fixed.inset-x-0.top-0')).toHaveClass('md:left-60');
+  expect(container.querySelector('main')).toHaveClass('md:pt-0');
+  expect(restoredSidebar.getByText('Ana Demo')).toBeVisible();
+  expect(restoredSidebar.getByText('Administrador general')).toBeVisible();
+  expect(restoredSidebar.getByRole('link', { name: 'Mi perfil' })).toBeInTheDocument();
+  expect(restoredSidebar.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
+  expect(container.querySelector('.fixed.inset-x-0.top-0')).toHaveClass('md:hidden');
 });
 
 it('keeps the active group open when its heading is selected', async () => {

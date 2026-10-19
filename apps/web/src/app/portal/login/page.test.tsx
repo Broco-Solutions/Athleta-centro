@@ -35,6 +35,15 @@ it('renders the mobile login composition and official Athleta logo', () => {
   expect(screen.queryByText(/CLIENTES/i)).not.toBeInTheDocument();
 });
 
+it('uses a dynamic viewport height and switches to a two-column desktop composition', () => {
+  renderPage();
+  const main = screen.getByRole('main');
+
+  expect(main).toHaveClass('min-h-dvh');
+  expect(main).toHaveClass('lg:grid');
+  expect(main).toHaveClass('lg:grid-cols-2');
+});
+
 it('shows the PIN as a password by default and toggles visibility', () => {
   renderPage();
   const pin = screen.getByPlaceholderText('Ingresá tu PIN');
