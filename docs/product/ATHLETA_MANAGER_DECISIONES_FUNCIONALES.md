@@ -872,3 +872,15 @@ Estado: **CONFIRMADO / RESUELTO**.
 - Profesor no puede modificar manualmente el valor de una cuota. El importe
   proviene del Precio configurado del Plan. La modificación del Precio del Plan
   corresponde a Administración desde Configuración → Planes.
+
+
+## Sala — Trazabilidad visible de Pagos — 2026-10-19
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+- Cada Pago muestra Nombre y Apellido del usuario interno que lo registró, a partir de `registeredById`, ya persistido en el Pago.
+- Cada reversión muestra también Nombre y Apellido del usuario que la realizó. Registrar y revertir son hechos independientes y conservan ambos actores.
+- La API expone únicamente `id`, `firstName` y `lastName` de cada actor. No se muestra un rol histórico porque el Pago no persiste snapshot del rol.
+- Los Pagos nuevos conservan el Plan seleccionado y su nombre snapshot.
+- Los Pagos históricos sin referencia confiable de Plan no se reconstruyen ni se vinculan artificialmente al Plan actual. La interfaz muestra `Sin referencia de Plan`.
+- Esta mejora no modifica información económica, vigencia ni permisos. No requiere cambios de Prisma, migraciones ni backfill de Planes.

@@ -11,7 +11,9 @@ const personId = '10000000-0000-4000-8000-000000000001';
 const methodId = '20000000-0000-4000-8000-000000000001';
 const activePlan = { id: '30000000-0000-4000-8000-000000000001', name: 'Plan Base', monthlyAmount: '20000' };
 const otherPlan = { id: '30000000-0000-4000-8000-000000000002', name: 'Plan Plus', monthlyAmount: '30000' };
-const payment = { id: 'payment', planId: activePlan.id, planName: activePlan.name, coverageStartDate: '2026-10-20', coverageEndDate: '2026-11-20', paidAt: '2026-10-20', amount: '20000', paymentMethod: { name: 'Efectivo' }, reversal: null };
+const registeredBy = { id: '40000000-0000-4000-8000-000000000001', firstName: 'Juan', lastName: 'Pérez' };
+const reversedBy = { id: '40000000-0000-4000-8000-000000000002', firstName: 'María', lastName: 'Gómez' };
+const payment = { id: 'payment', registeredBy, planId: activePlan.id, planName: activePlan.name, coverageStartDate: '2026-10-20', coverageEndDate: '2026-11-20', paidAt: '2026-10-20', amount: '20000', paymentMethod: { name: 'Efectivo' }, reversal: null };
 const baseUrl = 'http://localhost:3000';
 const paymentsUrl = `${baseUrl}/api/sala/people/${personId}/payments`;
 const createUrl = `${baseUrl}/api/sala/payments`;
@@ -106,20 +108,24 @@ it('keeps the operation on retries and clears it on an edited payment', async ()
 it('shows historical coverage, unknown Plans and preserves reversal with its reason', async () => {
   let reversed = false;
   server.use(
-    http.get(paymentsUrl, () => HttpResponse.json({ data: [{ ...payment, planId: null, planName: null, reversal: reversed ? { id: 'reversal', reason: 'Error' } : null }] })),
+    http.get(paymentsUrl, () => HttpResponse.json({ data: [{ ...payment, planId: null, planName: null, reversal: reversed ? { id: 'reversal', reason: 'Corrección de pago', registeredBy: reversedBy } : null }] })),
     http.post(`${baseUrl}/api/sala/payments/payment/reverse`, () => { reversed = true; return HttpResponse.json({ data: {} }, { status: 201 }); }),
   );
   renderPanel(false);
-  expect(await screen.findByText('Plan no registrado')).toBeVisible();
+  expect(await screen.findByText('Sin referencia de Plan')).toBeVisible();
   expect(screen.getByText('20/10/2026 → 20/11/2026')).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: 'Revertir' }));
   const dialog = within(screen.getByRole('alertdialog'));
   expect(dialog.getByRole('button', { name: 'Revertir pago' })).toBeDisabled();
   fireEvent.change(dialog.getByLabelText('Motivo de reversión'), { target: { value: 'Error' } });
   fireEvent.click(dialog.getByRole('button', { name: 'Revertir pago' }));
-  expect(await screen.findByText('Revertido', { selector: 'td' })).toBeVisible();
+  expect(await screen.findByText('Revertido', { exact: false, selector: 'td' })).toBeVisible();
   expect(screen.getByText('20/10/2026 → 20/11/2026')).toBeVisible();
   expect(screen.getByText('Vigencia actual: Sin vigencia')).toBeVisible();
+  const status = screen.getByText('Revertido por: María Gómez').closest('td')!;
+  expect(within(status).getByText('Motivo: Corrección de pago')).toBeVisible();
+  expect(screen.queryByText('Motivo de reversión: Corrección de pago')).not.toBeInTheDocument();
+  expect(screen.getByText('Juan Pérez')).toBeVisible();
 });
 
 it('registers a Professor renewal with a selectable Plan and automatic price', async () => {
@@ -152,11 +158,11 @@ it('registers a Professor renewal with a selectable Plan and automatic price', a
 });
 it('keeps the history readable without an active participation', async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  server.use(http.get(paymentsUrl, () => HttpResponse.json({ data: [{ ...payment, reversal: { reason: 'Error histórico' } }] })));
+  server.use(http.get(paymentsUrl, () => HttpResponse.json({ data: [{ ...payment, reversal: { id: 'historical-reversal', reason: 'Error histórico', registeredBy: reversedBy } }] })));
   render(<QueryClientProvider client={client}><SalaPaymentPanel personId={personId} csrfToken="csrf" canRegister canSelectPlan canAdjust={false} canReverse={false}/></QueryClientProvider>);
   expect(screen.getByText('Se necesita una participación activa de Sala para registrar pagos.')).toBeVisible();
   expect(await screen.findByText('Revertido')).toBeVisible();
-  expect(screen.getByText('Motivo de reversión: Error histórico')).toBeVisible();
+  expect(screen.getByText('Motivo: Error histórico')).toBeVisible();
   expect(screen.queryByRole('button', { name: '+ Registrar renovación' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Revertir' })).not.toBeInTheDocument();
 });
@@ -175,4 +181,15 @@ it('highlights only the selected payment method with the primary variant', async
   await act(async () => { fireEvent.click(transfer); });
   expect(cash).toHaveAttribute('aria-pressed', 'false'); expect(cash).toHaveClass('bg-white');
   expect(transfer).toHaveAttribute('aria-pressed', 'true'); expect(transfer).toHaveClass('bg-primary');
+});
+
+it('shows the payment actor and real Plan in the Professor history without reversal actions', async () => {
+  server.use(http.get(paymentsUrl, () => HttpResponse.json({ data: [payment] })));
+  renderPanel(false, true, false, false);
+  const actor = await screen.findByText('Juan Pérez');
+  const row = within(actor.closest('tr')!);
+  expect(screen.getByRole('columnheader', { name: 'Registrado por' })).toBeInTheDocument();
+  expect(row.getByText('Plan Base')).toBeVisible();
+  expect(row.queryByText('Sin referencia de Plan')).not.toBeInTheDocument();
+  expect(screen.queryByRole('columnheader', { name: 'Acciones' })).not.toBeInTheDocument();
 });

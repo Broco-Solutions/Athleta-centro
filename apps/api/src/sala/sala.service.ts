@@ -4,6 +4,13 @@ import { PeopleService } from '../people/people.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceCatalogService } from '../finance/finance.service';
 import type { SalaStudentListItemDto, SalaDashboardDto, SalaDashboardPersonDto, JoinSpontaneousSalaDto, CreateSpontaneousSalaStudentDto, SalaPaymentDto, CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, CorrectPhysicalEvaluationDto, PhysicalTestResultDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, RoutineTemplateDto, RoutineDayDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
+const paymentActorSelect = { id: true, firstName: true, lastName: true } satisfies Prisma.InternalUserSelect;
+const paymentResponseInclude = {
+  paymentMethod: true,
+  allocations: true,
+  registeredBy: { select: paymentActorSelect },
+  reversal: { include: { registeredBy: { select: paymentActorSelect } } },
+} satisfies Prisma.SalaPaymentInclude;
 const physicalTestSelect = { id: true, name: true, type: true, description: true, isActive: true } satisfies Prisma.PhysicalTestDefinitionSelect;
 const physicalEvaluationSelect = {
   id: true, personId: true, salaParticipationId: true, professorId: true, evaluationDate: true, observation: true,
@@ -58,10 +65,10 @@ export class SalaService {
   }
   listPaymentMethods() { return this.financeCatalog.listSelectable(); }
   async listPayments(personId: string) {
-    const payments = await this.prisma.salaPayment.findMany({ where: { personId }, include: { paymentMethod: true, allocations: true, reversal: true }, orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }] });
+    const payments = await this.prisma.salaPayment.findMany({ where: { personId }, include: paymentResponseInclude, orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }] });
     return payments.map(payment => this.paymentResponse(payment));
   }
-  private paymentResponse<T extends { paidAt: Date; coverageStartDate: Date; coverageEndDate: Date; amount: Prisma.Decimal; planNameSnapshot: string | null }>(payment: T) {
+  private paymentResponse(payment: Prisma.SalaPaymentGetPayload<{ include: typeof paymentResponseInclude }>) {
     return { ...payment, paidAt: payment.paidAt.toISOString().slice(0, 10), coverageStartDate: payment.coverageStartDate.toISOString().slice(0, 10), coverageEndDate: payment.coverageEndDate.toISOString().slice(0, 10), amount: payment.amount.toString(), planName: payment.planNameSnapshot };
   }
   async createPayment(input: SalaPaymentDto, actorId: string, { canManagePayment } = { canManagePayment: true }) {
@@ -70,7 +77,7 @@ export class SalaService {
     const amount = this.positiveMoney(input.amount, 'SALA_PAYMENT_AMOUNT_INVALID');
     const payment = await this.prisma.$transaction(async (tx) => {
       await this.lockPaymentPerson(tx, input.personId);
-      const existing = await tx.salaPayment.findUnique({ where: { operationId: input.operationId }, include: { paymentMethod: true, reversal: true, allocations: true } });
+      const existing = await tx.salaPayment.findUnique({ where: { operationId: input.operationId }, include: paymentResponseInclude });
       if (existing) {
         const allocations = input.allocations ?? [];
         if (existing.personId !== input.personId || existing.planId !== input.planId || existing.paidAt.toISOString().slice(0, 10) !== input.paidAt || !existing.amount.equals(amount) || existing.paymentMethodId !== input.paymentMethodId || existing.adjustmentReason !== (input.adjustmentReason?.trim() || null) || existing.allocations.length !== allocations.length || allocations.some(allocation => !existing.allocations.some(old => old.chargeId === allocation.chargeId && old.operationId === allocation.operationId && old.amount.equals(allocation.amount)))) {
@@ -98,7 +105,7 @@ export class SalaService {
         coverageStartDate, coverageEndDate, amount, paymentMethodId: input.paymentMethodId,
         registeredById: actorId, operationId: input.operationId, adjustmentReason: input.adjustmentReason?.trim() || null,
         allocations: { create: input.allocations ?? [] },
-      }, include: { paymentMethod: true, reversal: true, allocations: true } });
+      }, include: paymentResponseInclude });
     });
     return this.paymentResponse(payment);
   }

@@ -1058,6 +1058,12 @@ export interface PhysicalEvaluationDto {
   results: PhysicalTestResultDto[];
 }
 
+export interface SalaPaymentActorDto {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
 export interface SalaPaymentMethodResponseDto {
   id: string;
   name: string;
@@ -1065,6 +1071,7 @@ export interface SalaPaymentMethodResponseDto {
 }
 
 export interface SalaPaymentReversalResponseDto {
+  registeredBy: SalaPaymentActorDto;
   id: string;
   reason: string;
 }
@@ -1075,6 +1082,7 @@ export interface SalaPaymentReversalResponseDto {
 export type SalaPaymentResponseDtoReversal = SalaPaymentReversalResponseDto | null;
 
 export interface SalaPaymentResponseDto {
+  registeredBy: SalaPaymentActorDto;
   id: string;
   coverageStartDate: string;
   coverageEndDate: string;

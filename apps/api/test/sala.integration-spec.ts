@@ -702,6 +702,51 @@ describe('Sala configuration API', () => {
       jest.setSystemTime(new Date('2026-11-25T12:00:00Z'));
     });
     afterEach(() => jest.useRealTimers());
+    it.each([Role.PROFESSOR, Role.ADMINISTRATIVE, Role.GENERAL_ADMIN])('returns only the payment actor identity on creation, retry and history for %s', async role => {
+      const f = await paymentFixture();
+      const authn = role === Role.ADMINISTRATIVE ? f.authn : await session(role);
+      const actor = await prisma.internalUser.update({ where: { normalizedEmail: `${role.toLowerCase()}@sala.test` }, data: { firstName: 'Juan', lastName: 'Profesor' } });
+      const expected = { id: actor.id, firstName: 'Juan', lastName: 'Profesor' };
+      const post = () => request(app.getHttpServer()).post('/api/sala/payments').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(f.input).expect(201);
+      const created = await post();
+      const retry = await post();
+      const history = await request(app.getHttpServer()).get(`/api/sala/people/${f.person.id}/payments`).set('Cookie', authn.cookie).expect(200);
+      for (const payment of [created.body.data, retry.body.data, history.body.data[0]]) {
+        expect(payment.registeredBy).toEqual(expected);
+        expect(Object.keys(payment.registeredBy).sort()).toEqual(['firstName', 'id', 'lastName']);
+        expect(payment).toMatchObject({ id: created.body.data.id, planId: f.plan.id, planName: f.plan.name });
+      }
+    });
+    it('preserves different payment and reversal actors in history and an idempotent retry', async () => {
+      const f = await paymentFixture();
+      const professorSession = await session(Role.PROFESSOR);
+      const professor = await prisma.internalUser.findUniqueOrThrow({ where: { normalizedEmail: 'professor@sala.test' } });
+      const post = () => request(app.getHttpServer()).post('/api/sala/payments').set('Cookie', professorSession.cookie).set('x-csrf-token', professorSession.csrf).send(f.input).expect(201);
+      const created = await post();
+      await request(app.getHttpServer()).post(`/api/sala/payments/${created.body.data.id}/reverse`).set('Cookie', f.authn.cookie).set('x-csrf-token', f.authn.csrf).send({ reason: 'Corrección de pago', operationId: randomUUID() }).expect(201);
+      const history = await request(app.getHttpServer()).get(`/api/sala/people/${f.person.id}/payments`).set('Cookie', professorSession.cookie).expect(200);
+      const retry = await post();
+      expect(professor.id).not.toBe(f.actor.id);
+      for (const payment of [history.body.data[0], retry.body.data]) {
+        expect(payment.registeredBy).toEqual({ id: professor.id, firstName: professor.firstName, lastName: professor.lastName });
+        expect(payment.reversal.reason).toBe('Corrección de pago');
+        expect(payment.reversal.registeredBy).toEqual({ id: f.actor.id, firstName: f.actor.firstName, lastName: f.actor.lastName });
+        expect(Object.keys(payment.registeredBy).sort()).toEqual(['firstName', 'id', 'lastName']);
+        expect(Object.keys(payment.reversal.registeredBy).sort()).toEqual(['firstName', 'id', 'lastName']);
+      }
+    });
+    it('leaves a historical payment without a Plan reference unchanged when listing history', async () => {
+      const f = await paymentFixture();
+      const historical = await prisma.salaPayment.create({ data: {
+        personId: f.person.id, planId: null, planNameSnapshot: null,
+        year: 2026, month: 10, paidAt: new Date('2026-10-15'),
+        coverageStartDate: new Date('2026-10-15'), coverageEndDate: new Date('2026-11-15'),
+        amount: 20000, paymentMethodId: f.method.id, registeredById: f.actor.id, operationId: randomUUID(),
+      } });
+      const history = await request(app.getHttpServer()).get(`/api/sala/people/${f.person.id}/payments`).set('Cookie', f.authn.cookie).expect(200);
+      expect(history.body.data[0]).toMatchObject({ id: historical.id, planId: null, planName: null });
+      expect(await prisma.salaPayment.findUniqueOrThrow({ where: { id: historical.id } })).toEqual(historical);
+    });
     it('chains multiple early renewals, including two payments in the same cash month', async () => {
       const f = await paymentFixture();
       const first = await f.post(f.input).expect(201);

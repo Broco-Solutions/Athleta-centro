@@ -359,11 +359,18 @@ export class SalaPaymentMethodResponseDto {
   @ApiProperty({ type: String }) name!: string;
   @ApiProperty({ type: Boolean }) isSelectable!: boolean;
 }
+export class SalaPaymentActorDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String }) firstName!: string;
+  @ApiProperty({ type: String }) lastName!: string;
+}
 export class SalaPaymentReversalResponseDto {
+  @ApiProperty({ type: () => SalaPaymentActorDto }) registeredBy!: SalaPaymentActorDto;
   @ApiProperty({ type: String }) id!: string;
   @ApiProperty({ type: String }) reason!: string;
 }
 export class SalaPaymentResponseDto {
+  @ApiProperty({ type: () => SalaPaymentActorDto }) registeredBy!: SalaPaymentActorDto;
   @ApiProperty({ type: String }) id!: string;
   @ApiProperty({ type: String, format: 'date' }) coverageStartDate!: string;
   @ApiProperty({ type: String, format: 'date' }) coverageEndDate!: string;

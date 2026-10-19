@@ -107,14 +107,15 @@ export function SalaPaymentPanel({ personId, csrfToken, canRegister, canSelectPl
       {payments.isPending ? <p role="status">Cargando pagos…</p> : null}
       {payments.isSuccess && !payments.data.length ? <p className="text-sm text-muted-foreground">No hay pagos registrados todavía.</p> : null}
       <div className="overflow-x-auto"><table className="block w-full text-left text-sm md:table">
-        <thead className="hidden bg-surface-muted md:table-header-group"><tr>{['Fecha de cobro', 'Plan', 'Vigencia', 'Medio de pago', 'Importe', 'Estado', ...(canReverse ? ['Acciones'] : [])].map(label => <th key={label} scope="col" className="p-3 font-medium">{label}</th>)}</tr></thead>
+        <thead className="hidden bg-surface-muted md:table-header-group"><tr>{['Fecha de cobro', 'Plan', 'Vigencia', 'Medio de pago', 'Registrado por', 'Importe', 'Estado', ...(canReverse ? ['Acciones'] : [])].map(label => <th key={label} scope="col" className="p-3 font-medium">{label}</th>)}</tr></thead>
         <tbody className="block md:table-row-group">{(payments.data ?? []).map(payment => <tr key={payment.id} className="grid gap-2 border-b border-border py-3 md:table-row md:py-0">
-          <td className="md:p-3"><time dateTime={payment.paidAt}>{formatDate(payment.paidAt)}</time>{payment.adjustmentReason ? <p>Motivo de ajuste: {payment.adjustmentReason}</p> : null}{payment.reversal?.reason ? <p>Motivo de reversión: {payment.reversal.reason}</p> : null}</td>
-          <td className="md:p-3">{payment.planName ?? 'Plan no registrado'}</td>
+          <td className="md:p-3"><time dateTime={payment.paidAt}>{formatDate(payment.paidAt)}</time>{payment.adjustmentReason ? <p>Motivo de ajuste: {payment.adjustmentReason}</p> : null}</td>
+          <td className="md:p-3">{payment.planName ?? 'Sin referencia de Plan'}</td>
           <td className="md:p-3">{formatDate(payment.coverageStartDate)} → {formatDate(payment.coverageEndDate)}</td>
           <td className="md:p-3">{payment.paymentMethod?.name ?? 'Medio retirado'}</td>
+          <td className="md:p-3">{payment.registeredBy.firstName} {payment.registeredBy.lastName}</td>
           <td className="font-semibold md:p-3">{money(payment.amount)}</td>
-          <td className="md:p-3">{payment.reversal ? 'Revertido' : 'Pagado'}</td>
+          <td className="md:p-3">{payment.reversal ? <>Revertido<p className="mt-2 text-muted-foreground">Revertido por: {payment.reversal.registeredBy.firstName} {payment.reversal.registeredBy.lastName}</p><p className="text-muted-foreground">Motivo: {payment.reversal.reason}</p></> : 'Pagado'}</td>
           {canReverse ? <td className="md:p-3">{!payment.reversal ? <Button type="button" variant="secondary" onClick={() => { setReversalReason(''); setPaymentToReverse(payment); }}>Revertir</Button> : null}</td> : null}
         </tr>)}</tbody>
       </table></div>
