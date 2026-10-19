@@ -80,9 +80,8 @@ export class SalaService {
       }
       const participation = await tx.salaParticipation.findFirst({ where: { personId: input.personId, endDate: null } });
       if (!participation) throw new BadRequestException({ code: 'SALA_PARTICIPATION_REQUIRED', message: 'Se necesita una participación activa de Sala para registrar pagos.' });
-      if (!canManagePayment && input.planId !== participation.planId) throw new ForbiddenException({ code: 'SALA_PAYMENT_PLAN_CHANGE_FORBIDDEN', message: 'La renovación debe utilizar el Plan activo del Alumno.' });
       await this.assertPaymentMethodSelectable(tx, input.paymentMethodId);
-      const plan = await tx.salaPlan.findUnique({ where: { id: canManagePayment ? input.planId : participation.planId } });
+      const plan = await tx.salaPlan.findUnique({ where: { id: input.planId } });
       if (!plan?.isSelectable) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'El Plan ya no está disponible.' });
       if (!canManagePayment && (!amount.equals(plan.monthlyAmount) || input.adjustmentReason?.trim())) throw new ForbiddenException({ code: 'SALA_PAYMENT_AMOUNT_ADJUSTMENT_FORBIDDEN', message: 'La renovación debe utilizar el precio actual del Plan, sin ajustes.' });
       if (canManagePayment) this.validatePaymentAdjustment(amount, plan.monthlyAmount, input.adjustmentReason);
@@ -92,6 +91,7 @@ export class SalaService {
       const coverageStartDate = currentEnd ? new Date(currentEnd.getTime() + 86_400_000) : paidAt;
       const coverageEndDate = this.addCalendarMonthClamped(currentEnd ?? paidAt);
       await this.validateSalaAllocations(tx, input.personId, amount, input.allocations ?? []);
+      if (plan.id !== participation.planId) await this.updateParticipationPlanWithinTransaction(tx, participation.id, plan.id);
       return tx.salaPayment.create({ data: {
         personId: input.personId, planId: plan.id, planNameSnapshot: plan.name,
         paidAt, year: paidAt.getUTCFullYear(), month: paidAt.getUTCMonth() + 1,
@@ -412,9 +412,12 @@ export class SalaService {
   async changePlan(id: string, planId: string) {
     const plan = await this.prisma.salaPlan.findUnique({ where: { id: planId } });
     if (!plan || !plan.isSelectable) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'Plan is not selectable' });
+    return this.prisma.$transaction(tx => this.updateParticipationPlanWithinTransaction(tx, id, planId));
+  }
+  private async updateParticipationPlanWithinTransaction(tx: Prisma.TransactionClient, id: string, planId: string) {
     const today = this.date(this.todayOperational());
     const effectiveFrom = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 1));
-    try { return await this.prisma.salaParticipation.update({ where: { id }, data: { planId, planAssignments: { upsert: { where: { salaParticipationId_effectiveFrom: { salaParticipationId: id, effectiveFrom } }, create: { planId, effectiveFrom }, update: { planId } } } }, include: { plan: true, mainProfessor: true } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_ACTIVE_PARTICIPATION_NOT_FOUND', message: 'Active participation not found' }); throw error; }
+    try { return await tx.salaParticipation.update({ where: { id }, data: { planId, planAssignments: { upsert: { where: { salaParticipationId_effectiveFrom: { salaParticipationId: id, effectiveFrom } }, create: { planId, effectiveFrom }, update: { planId } } } }, include: { plan: true, mainProfessor: true } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_ACTIVE_PARTICIPATION_NOT_FOUND', message: 'Active participation not found' }); throw error; }
   }
   async hasActiveSalaParticipation(personId: string) { return (await this.prisma.salaParticipation.count({ where: { personId, endDate: null } })) > 0; }
   operationalStart(date: string, time: Date): Date {

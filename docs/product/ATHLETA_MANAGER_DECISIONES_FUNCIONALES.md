@@ -649,6 +649,8 @@ Estado: **CONFIRMADO / RESUELTO**.
 
 ## Ajustes finales de preproducción de Sala — 2026-10-16
 
+> Sustituidas las afirmaciones de alta simplificada de Profesor y de Plan del cobro que no modifica el Plan vigente ni su historial. Ver **Profesor — Plan en renovación y alta unificada de Alumno — 2026-10-19**.
+
 > Las reglas de acceso, cuotas y seguimiento mensual de Sala de esta sección fueron sustituidas por **Sala — Vigencia móvil por Pago — 2026-10-19**. El resto conserva su alcance.
 
 Estado: **CONFIRMADO / RESUELTO**.
@@ -709,6 +711,8 @@ secundaria cuando existen.
 
 ## Ajuste final — Alta administrativa de Alumno — 2026-10-16
 
+> Sustituida la afirmación de que Profesor conserva el flujo simplificado DNI-first. Ver **Profesor — Plan en renovación y alta unificada de Alumno — 2026-10-19**.
+
 Estado: **CONFIRMADO / RESUELTO**.
 
 - En `/students`, Administrativo y Administrador general ya no comienzan obligatoriamente el alta por DNI. `Nuevo alumno` presenta inicialmente Persona existente y una acción `Nueva Persona`, dentro del mismo modal.
@@ -721,6 +725,8 @@ Estado: **CONFIRMADO / RESUELTO**.
 
 
 ## Sala — Vigencia móvil por Pago — 2026-10-19
+
+> Sustituida únicamente la afirmación de que el Plan financiero no modifica `SalaParticipation.planId` ni `SalaPlanAssignment`; el cálculo de vigencia móvil conserva su alcance. Ver **Profesor — Plan en renovación y alta unificada de Alumno — 2026-10-19**.
 
 Estado: **CONFIRMADO / RESUELTO**.
 
@@ -762,6 +768,8 @@ El Plan financiero queda referenciado y su nombre se congela al cobrar; no modif
 
 ## Simplificación de Personas en primera salida de Sala — 2026-10-19
 
+> Sustituida la afirmación de que Profesor mantiene Nuevo alumno DNI-first. Ver **Profesor — Plan en renovación y alta unificada de Alumno — 2026-10-19**.
+
 Estado: **CONFIRMADO / RESUELTO**.
 
 - Personas continúa siendo la identidad transversal del sistema. El módulo `/people`,
@@ -785,6 +793,8 @@ Estado: **CONFIRMADO / RESUELTO**.
 
 ## Profesor — Cobro contextual de renovaciones de Sala — 2026-10-19
 
+> Sustituidas las afirmaciones de uso exclusivo del Plan activo y prohibición de seleccionar otro Plan. Se mantienen las restricciones de importe, ajustes, reversión y Finanzas generales. Ver **Profesor — Plan en renovación y alta unificada de Alumno — 2026-10-19**.
+
 Estado: **CONFIRMADO / RESUELTO**.
 
 - Profesor puede cobrar renovaciones desde Alumnos → Alumno → Pagos, consultar
@@ -804,3 +814,35 @@ Estado: **CONFIRMADO / RESUELTO**.
   2026-10-14** que impedía al Profesor registrar Pagos. El historial anterior se conserva.
 - La regla **Sala — Vigencia móvil por Pago — 2026-10-19** permanece sin cambios:
   misma operación, idempotencia y cálculo de renovación anticipada.
+
+
+## Profesor — Plan en renovación y alta unificada de Alumno — 2026-10-19
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+- Profesor puede seleccionar un Plan seleccionable al registrar una renovación.
+- El Precio continúa sin ser editable para Profesor y se obtiene automáticamente
+  del `monthlyAmount` del Plan seleccionado. Backend valida el importe y rechaza
+  ajustes, aun cuando se informe un motivo. Profesor continúa sin reversión.
+- El Plan seleccionado en una renovación pasa a ser también el Plan activo de la
+  participación. Pago y cambio de Plan se realizan atómicamente, manteniendo
+  `SalaPlanAssignment` con la convención temporal existente de `changePlan`.
+- El cambio de Plan no reinicia ni modifica la regla de vigencia móvil.
+  La idempotencia impide repetir Pago, cobertura o asignación en un retry.
+- Revertir un Pago no restaura automáticamente el Plan anterior.
+- Administrativo/General Admin conservan ajustes con motivo y reversión.
+- El Medio de pago seleccionado queda visualmente destacado con la variante
+  primaria existente y mantiene `aria-pressed`.
+- Profesor utiliza el mismo flujo de Nuevo alumno que Administrativo/General Admin:
+  puede buscar Persona existente por Nombre/Apellido/DNI o crear una Nueva Persona
+  usando la ficha general completa, con Plan y Profesor principal.
+- Persona nueva + Sala continúa siendo atómico con `createSalaStudent`.
+  Persona existente conserva `joinSala`, identidad y credenciales.
+- PIN inicial continúa mostrándose una sola vez, con Copiar PIN y Entendido.
+- No cambian permisos: Profesor conserva `SALA_PAYMENT_READ`,
+  `SALA_PAYMENT_REGISTER`, `SALA_PARTICIPATION_MANAGE` y `PEOPLE_CREATE`,
+  sin `SALA_PAYMENT_MANAGE` ni acceso a Finanzas generales.
+- Esta decisión sustituye específicamente las afirmaciones anteriores que mantienen
+  alta simplificada / DNI-first de Profesor, uso exclusivo del Plan activo al cobrar,
+  prohibición de seleccionar otro Plan y Plan del Pago como referencia únicamente
+  financiera que nunca modifica `SalaParticipation.planId` ni su historial.

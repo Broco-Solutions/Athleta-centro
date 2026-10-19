@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Search } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createSalaStudent, joinSala, listSalaPlans, listSalaProfessors, listSalaStudents, type PersonResponseDto } from '@athleta/api-client';
+import { createSalaStudent, joinSala, listSalaPlans, listSalaProfessors, listSalaStudents } from '@athleta/api-client';
 import { Button } from '@athleta/ui';
 import { currentSession } from '../../features/auth/auth';
 import { WorkspaceShell } from '../../features/auth/workspace-shell';
@@ -46,7 +46,6 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
   const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false });
   const canManage = session.data?.permissions.includes('SALA_PARTICIPATION_MANAGE') ?? false;
   const canCreate = canManage && (session.data?.permissions.includes('PEOPLE_CREATE') ?? false);
-  const isAdministrative = session.data?.roles.some(role => role === 'ADMINISTRATIVE' || role === 'GENERAL_ADMIN') ?? false;
   const isProfessor = session.data?.roles.includes('PROFESSOR') ?? false;
   const canUseFinance = Boolean(session.data?.permissions.includes('SALA_PAYMENT_MANAGE') && session.data?.permissions.includes('FINANCE_OPERATIONAL_READ'));
   const canRegister = session.data?.permissions.includes('SALA_PAYMENT_REGISTER') ?? false;
@@ -83,7 +82,7 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
         <td className={cell}><div className="flex flex-wrap justify-end gap-2 xl:justify-start"><Link href={`/sala/people/${student.id}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:min-h-9">Ver ficha</Link>{canUseFinance || canRegister ? <Link href={canUseFinance ? `/finance?view=income&personId=${student.id}${!student.hasValidAccess ? '&action=renew' : ''}` : `/sala/people/${student.id}?tab=payments${!student.hasValidAccess ? '&action=renew' : ''}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted xl:min-h-9">{!student.hasValidAccess ? (canUseFinance ? 'Renovar' : 'Registrar renovación') : 'Ver pagos'}</Link> : null}</div></td>
       </tr>)}</tbody>
     </table>}
-    {creating && canCreate ? <NewStudentDialog isAdministrative={isAdministrative} csrf={session.data?.csrfToken ?? ''} onClose={() => setCreating(false)} onSaved={async (pin) => {
+    {creating && canCreate ? <NewStudentDialog csrf={session.data?.csrfToken ?? ''} onClose={() => setCreating(false)} onSaved={async (pin) => {
       await Promise.all([
         client.invalidateQueries({ queryKey: ['sala', 'students'] }),
         client.invalidateQueries({ queryKey: ['people'] }),
@@ -106,17 +105,12 @@ function todayOperational(): string {
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
 }
-const dniSchema = z.string().refine((value) => !/[^0-9 .-]/.test(value) && /^\d{6,8}$/.test(value.replace(/[^0-9]/g, '')), 'El DNI debe tener entre 6 y 8 dígitos.').transform((value) => value.replace(/[^0-9]/g, ''));
 const inputClass = 'h-11 w-full rounded-md border border-border bg-surface px-3 text-sm';
-type EnrollmentProps = { isAdministrative: boolean; csrf: string; onClose: () => void; onSaved: (pin?: string) => Promise<void> };
+type EnrollmentProps = { csrf: string; onClose: () => void; onSaved: (pin?: string) => Promise<void> };
 
 type StudentCreationMode = 'existing' | 'new';
 
-function NewStudentDialog(props: EnrollmentProps): React.JSX.Element {
-  return props.isAdministrative ? <AdministrativeNewStudentDialog {...props} /> : <ProfessorNewStudentDialog {...props} />;
-}
-
-function AdministrativeNewStudentDialog({ csrf, onClose, onSaved }: EnrollmentProps): React.JSX.Element {
+function NewStudentDialog({ csrf, onClose, onSaved }: EnrollmentProps): React.JSX.Element {
   const [mode, setMode] = useState<StudentCreationMode>('existing');
   const [search, setSearch] = useState('');
   const [personId, setPersonId] = useState('');
@@ -145,7 +139,7 @@ function AdministrativeNewStudentDialog({ csrf, onClose, onSaved }: EnrollmentPr
   }, onSuccess: () => onSaved() });
   const resetSelection = () => { setPersonId(''); setPlanId(''); setMainProfessorId(''); mutation.reset(); };
   const selectablePlans = plans.data?.filter(plan => plan.isSelectable !== false) ?? [];
-  if (mode === 'new') return <AdministrativeEnrollmentForm csrf={csrf} onClose={onClose} onSaved={onSaved} onExisting={() => setMode('existing')} plans={selectablePlans} professors={professors.data ?? []} catalogsReady={plans.isSuccess && professors.isSuccess} catalogsError={plans.isError || professors.isError} />;
+  if (mode === 'new') return <NewPersonEnrollmentForm csrf={csrf} onClose={onClose} onSaved={onSaved} onExisting={() => setMode('existing')} plans={selectablePlans} professors={professors.data ?? []} catalogsReady={plans.isSuccess && professors.isSuccess} catalogsError={plans.isError || professors.isError} />;
   return <ParticipationDialog title="Nuevo alumno" onClose={onClose} busy={mutation.isPending}>
     <Button variant="secondary" disabled={mutation.isPending} onClick={() => { resetSelection(); setMode('new'); }}>Nueva Persona</Button>
     <form className="space-y-4" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}>
@@ -169,76 +163,7 @@ function AdministrativeNewStudentDialog({ csrf, onClose, onSaved }: EnrollmentPr
   </ParticipationDialog>;
 }
 
-function ProfessorNewStudentDialog(props: EnrollmentProps): React.JSX.Element {
-  const [match, setMatch] = useState<{ dni: string; person?: PersonResponseDto | undefined } | null>(null);
-  const form = useForm({ resolver: zodResolver(z.object({ dni: dniSchema })), defaultValues: { dni: '' } });
-  const lookup = useMutation({ mutationFn: async ({ dni }: { dni: string }) => {
-    const result = await fetchPeople({ search: dni, page: 1, pageSize: 25 });
-    setMatch({ dni, person: result.data.find((person) => person.dni === dni) });
-  } });
-  if (match) return <StudentEnrollmentForm {...props} dni={match.dni} person={match.person} />;
-  return <ParticipationDialog title="Nuevo alumno" onClose={props.onClose} busy={lookup.isPending}>
-    <form className="space-y-4" onSubmit={form.handleSubmit((values) => lookup.mutate(values))}>
-      <label className="grid gap-1 text-sm">DNI<input className={inputClass} inputMode="numeric" {...form.register('dni')} /></label>
-      {form.formState.errors.dni ? <p role="alert">{form.formState.errors.dni.message}</p> : null}
-      {lookup.isError ? <p role="alert">No se pudo buscar la Persona. Intentá nuevamente.</p> : null}
-      <div className="flex justify-end gap-2"><Button type="button" variant="secondary" disabled={lookup.isPending} onClick={props.onClose}>Cancelar</Button><Button type="submit" disabled={lookup.isPending}>{lookup.isPending ? 'Buscando…' : 'Continuar'}</Button></div>
-    </form>
-  </ParticipationDialog>;
-}
-
-function StudentEnrollmentForm({ dni, person, csrf, onClose, onSaved }: EnrollmentProps & { dni: string; person?: PersonResponseDto | undefined }): React.JSX.Element {
-  const alreadyActive = person?.hasSalaParticipation === true;
-  const schema = z.object({
-    firstName: z.string().trim().refine((value) => !!person || !!value, 'Ingresá el nombre'),
-    lastName: z.string().trim().refine((value) => !!person || !!value, 'Ingresá el apellido'),
-    phone: z.string().refine((value) => !!person || (!/[^0-9 ().-]/.test(value) && /^[1-9]\d{9}$/.test(value.replace(/[^0-9]/g, ''))), 'El teléfono debe tener 10 dígitos.').transform((value) => value.replace(/[^0-9]/g, '')),
-    birthDate: z.string().refine((value) => !!person || !!value, 'Ingresá la fecha').refine((value) => !!person || value <= todayOperational(), 'La fecha de nacimiento no puede ser futura'),
-    planId: z.string().min(1, 'Seleccioná un Plan.'),
-    mainProfessorId: z.string().min(1, 'Seleccioná un profesor.'),
-  });
-  const form = useForm({ resolver: zodResolver(schema), defaultValues: { firstName: '', lastName: '', phone: '', birthDate: '', planId: '', mainProfessorId: '' } });
-  const plans = useQuery({ queryKey: ['sala-plans'], enabled: !alreadyActive, queryFn: async () => {
-    const response = await listSalaPlans({ credentials: 'include' });
-    if (response.status !== 200) throw new Error('No se pudieron cargar los Planes.');
-    return z.array(z.object({ id: z.string(), name: z.string() }).passthrough()).parse(response.data.data);
-  } });
-  const professors = useQuery({ queryKey: ['sala-professors'], enabled: !alreadyActive, queryFn: async () => {
-    const response = await listSalaProfessors({ credentials: 'include' });
-    if (response.status !== 200) throw new Error('No se pudieron cargar los profesores.');
-    return response.data.data;
-  } });
-  const mutation = useMutation({ mutationFn: async (values: z.infer<typeof schema>) => {
-    if (alreadyActive) throw new Error('Esta Persona ya es alumno activo de Sala.');
-    if (!csrf) throw new Error('Sesión inválida. Volvé a iniciar sesión.');
-    const options = { credentials: 'include', headers: { 'x-csrf-token': csrf } } satisfies RequestInit;
-    const { planId, mainProfessorId } = values;
-    if (person) {
-      const response = await joinSala({ personId: person.id, planId, mainProfessorId, startDate: todayOperational() }, options);
-      if (response.status < 200 || response.status >= 300) throw new Error('No se pudo incorporar la Persona a Sala. Revisá si ya es alumno activo e intentá nuevamente.');
-      return;
-    }
-    const response = await createSalaStudent({ ...values, dni }, options);
-    if (Number(response.status) === 409) throw new Error('Ya existe una Persona con ese DNI. Cerrá el alta y volvé a buscar el DNI.');
-    if (response.status < 200 || response.status >= 300) throw new Error('No se pudo crear el Alumno. Intentá nuevamente.');
-    // Pass the credential directly to the one-time notice, without retaining it in the mutation cache.
-    await onSaved(response.data.data.initialPin);
-  }, onSuccess: async () => { if (person) await onSaved(); } });
-  return <ParticipationDialog title="Nuevo alumno" onClose={onClose} busy={mutation.isPending}>
-    {person ? <p>{person.firstName} {person.lastName} · DNI {dni}</p> : <p>DNI {dni}</p>}
-    {alreadyActive ? <><p role="status">Esta Persona ya es alumno activo de Sala.</p><Button onClick={onClose}>Entendido</Button></> : <form className="space-y-4" onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
-      {!person ? ([['firstName', 'Nombre'], ['lastName', 'Apellido'], ['phone', 'Teléfono'], ['birthDate', 'Fecha de nacimiento']] as const).map(([name, title]) => <label key={name} className="grid gap-1 text-sm">{title}<input className={inputClass} type={name === 'birthDate' ? 'date' : 'text'} {...form.register(name)} /></label>) : null}
-      <label className="grid gap-1 text-sm">Plan<select className={inputClass} {...form.register('planId')}><option value="">Seleccionar Plan</option>{plans.data?.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      <label className="grid gap-1 text-sm">Profesor principal<select className={inputClass} {...form.register('mainProfessorId')}><option value="">Seleccionar profesor</option>{professors.data?.map((item) => <option key={item.id} value={item.id}>{item.firstName} {item.lastName}</option>)}</select></label>
-      {Object.entries(form.formState.errors).map(([name, error]) => <p role="alert" key={name}>{error.message}</p>)}
-      {plans.isError || professors.isError ? <p role="alert">No se pudieron cargar los Planes o Profesores. Cerrá el alta e intentá nuevamente.</p> : null}
-      {mutation.isError ? <p role="alert">{mutation.error.message}</p> : null}
-      <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={onClose} disabled={mutation.isPending}>Cancelar</Button><Button type="submit" disabled={mutation.isPending || !plans.isSuccess || !professors.isSuccess}>{mutation.isPending ? 'Guardando…' : 'Guardar alumno'}</Button></div>
-    </form>}
-  </ParticipationDialog>;
-}
-
-function AdministrativeEnrollmentForm({ csrf, onClose, onSaved, onExisting, plans, professors, catalogsReady, catalogsError }: Omit<EnrollmentProps, 'isAdministrative'> & { onExisting: () => void; plans: Array<{ id: string; name: string }>; professors: Array<{ id: string; firstName: string; lastName: string }>; catalogsReady: boolean; catalogsError: boolean }): React.JSX.Element {
+function NewPersonEnrollmentForm({ csrf, onClose, onSaved, onExisting, plans, professors, catalogsReady, catalogsError }: EnrollmentProps & { onExisting: () => void; plans: Array<{ id: string; name: string }>; professors: Array<{ id: string; firstName: string; lastName: string }>; catalogsReady: boolean; catalogsError: boolean }): React.JSX.Element {
   const schema = personSchema.extend({ planId: z.string().min(1, 'Seleccioná un Plan.'), mainProfessorId: z.string().min(1, 'Seleccioná un profesor.') });
   const form = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema), defaultValues: { ...personDefaults(), planId: '', mainProfessorId: '' } });
   const generalForm: import('react-hook-form').UseFormReturn<PersonValues> = form as unknown as import('react-hook-form').UseFormReturn<PersonValues>;

@@ -410,12 +410,20 @@ it('opens contextual Professor payments with registration and without reversal',
   dashboardHandlers(); navigation.tab = 'payments';
   server.use(
     http.get(`http://localhost:3000/api/sala/people/${personId}/payments`, () => HttpResponse.json({ data: [] })),
-    http.get('http://localhost:3000/api/finance/payment-methods', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/finance/payment-methods', () => HttpResponse.json({ data: [{ id: 'cash', name: 'Efectivo', isSelectable: true }] })),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'plan', name: 'Plan Base', monthlyAmount: '25000' }, { id: 'other', name: 'Plan Completo', monthlyAmount: '30000' }] })),
   );
   renderWorkspace();
   expect(await screen.findByRole('heading', { name: 'Historial de pagos' })).toBeVisible();
   expect(screen.getByRole('link', { name: 'Pagos' })).toHaveAttribute('aria-current', 'page');
-  expect(await screen.findByRole('button', { name: '+ Registrar renovación' })).toBeVisible();
+  fireEvent.click(await screen.findByRole('button', { name: '+ Registrar renovación' }));
+  expect(await screen.findByRole('option', { name: 'Plan Completo' })).toBeVisible();
+  expect(screen.getByLabelText('Plan')).toHaveValue('plan');
+  fireEvent.change(screen.getByLabelText('Plan'), { target: { value: 'other' } });
+  expect(screen.getByText('$30.000')).toBeVisible();
+  expect(screen.queryByLabelText('Precio')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/Motivo de ajuste/)).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Efectivo' })).toBeVisible();
   expect(screen.queryByRole('button', { name: 'Revertir' })).not.toBeInTheDocument();
 });
 it('links the Professor payment card to the student payments and early renewal', async () => {
@@ -612,4 +620,30 @@ it('presents the paired routine creation choices in the student workspace and op
   expect(screen.getByRole('button', { name: '+ Agregar día' })).toBeVisible();
   expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeVisible();
   expect(screen.getByRole('button', { name: 'Cancelar' })).toBeVisible();
+});
+
+it('refreshes the workspace active Plan after a Professor renewal selects another Plan', async () => {
+  dashboardHandlers(); navigation.tab = 'payments';
+  const base = { id: 'plan', name: 'Plan Base', monthlyAmount: '25000' };
+  const other = { id: 'other', name: 'Plan Completo', monthlyAmount: '30000' };
+  let current = base; let reads = 0;
+  server.use(
+    http.get(`http://localhost:3000/api/sala/participations/person/${personId}`, () => { reads++; return HttpResponse.json({ data: [{ id: 'participation', plan: current, mainProfessor: { firstName: 'Profesor', lastName: 'Demo' } }] }); }),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [base, other] })),
+    http.get(`http://localhost:3000/api/sala/people/${personId}/payments`, () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/finance/payment-methods', () => HttpResponse.json({ data: [{ id: 'cash', name: 'Efectivo', isSelectable: true }] })),
+    http.post('http://localhost:3000/api/sala/payments', () => { current = other; return HttpResponse.json({ data: {} }, { status: 201 }); }),
+  );
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><SalaPersonWorkspace personId={personId}/></QueryClientProvider>);
+  fireEvent.click(await screen.findByRole('button', { name: '+ Registrar renovación' }));
+  await screen.findByRole('option', { name: 'Plan Completo' });
+  fireEvent.change(screen.getByLabelText('Plan'), { target: { value: 'other' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Efectivo' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Registrar pago' }));
+  await screen.findByText('Pago registrado correctamente.');
+  await waitFor(() => expect(reads).toBe(2));
+  navigation.tab = 'summary';
+  view.rerender(<QueryClientProvider client={client}><SalaPersonWorkspace personId={personId}/></QueryClientProvider>);
+  expect(await screen.findByText('Plan Completo · Profesor principal: Profesor Demo')).toBeVisible();
 });

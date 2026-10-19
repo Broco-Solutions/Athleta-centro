@@ -39,7 +39,7 @@ function validityEnd(payments: Payment[], reference: string): string | null {
 const assertSuccess = (response: { status: number; data?: unknown }) => {
   if (response.status < 200 || response.status >= 300) throw new Error((response.data as { message?: string })?.message || 'No pudimos guardar el pago.');
 };
-export function SalaPaymentPanel({ personId, csrfToken, canRegister, canAdjust, canReverse, activePlan, defaultOpen = false }: { personId: string; csrfToken: string; canRegister: boolean; canAdjust: boolean; canReverse: boolean; activePlan?: Plan | undefined; defaultOpen?: boolean }): React.JSX.Element {
+export function SalaPaymentPanel({ personId, csrfToken, canRegister, canSelectPlan, canAdjust, canReverse, activePlan, defaultOpen = false }: { personId: string; csrfToken: string; canRegister: boolean; canSelectPlan: boolean; canAdjust: boolean; canReverse: boolean; activePlan?: Plan | undefined; defaultOpen?: boolean }): React.JSX.Element {
   const [registerOpen, setRegisterOpen] = useState(defaultOpen);
   const queryClient = useQueryClient();
   const form = useForm<z.infer<typeof formSchema>>({ resolver: zodResolver(formSchema), defaultValues: { planId: activePlan?.id ?? '', amount: activePlan?.monthlyAmount ?? '', paidAt: todayOperational(), paymentMethodId: '', adjustmentReason: '' } });
@@ -50,9 +50,9 @@ export function SalaPaymentPanel({ personId, csrfToken, canRegister, canAdjust, 
   const [paymentToReverse, setPaymentToReverse] = useState<Payment | null>(null);
   const payments = useQuery({ queryKey: ['sala', 'payments', personId], queryFn: async () => { const response = await listSalaPayments(personId, { credentials: 'include' }); assertSuccess(response); return response.data.data; } });
   const methods = useQuery({ queryKey: ['finance', 'payment-methods'], queryFn: async () => { const response = await listPaymentMethods({ credentials: 'include' }); assertSuccess(response); return (response.data as unknown as { data: Method[] }).data; } });
-  const plans = useQuery({ queryKey: ['sala-plans'], enabled: canAdjust, queryFn: async () => { const response = await listSalaPlans({ credentials: 'include' }); assertSuccess(response); return response.data.data as unknown as Plan[]; } });
+  const plans = useQuery({ queryKey: ['sala-plans'], enabled: canSelectPlan, queryFn: async () => { const response = await listSalaPlans({ credentials: 'include' }); assertSuccess(response); return response.data.data as unknown as Plan[]; } });
   const values = form.watch();
-  const plan = canAdjust ? plans.data?.find(item => item.id === values.planId) : activePlan;
+  const plan = canSelectPlan ? plans.data?.find(item => item.id === values.planId) : activePlan;
   const needsReason = Boolean(canAdjust && plan && /^\d+$/.test(values.amount) && BigInt(values.amount) !== BigInt(plan.monthlyAmount));
   const selectableMethods = (methods.data ?? []).filter(item => item.isSelectable);
   const currentEnd = validityEnd(payments.data ?? [], todayOperational());
@@ -63,13 +63,14 @@ export function SalaPaymentPanel({ personId, csrfToken, canRegister, canAdjust, 
   const preview = !Number.isNaN(previewEnd.getTime()) ? `${formatDate(previewStart.toISOString())} → ${formatDate(previewEnd.toISOString())}` : 'Elegí una fecha válida.';
   const invalidate = () => Promise.all([
     queryClient.invalidateQueries({ queryKey: ['sala'] }),
+    queryClient.invalidateQueries({ queryKey: ['sala-participations', personId] }),
     queryClient.invalidateQueries({ queryKey: ['finance'] }),
     queryClient.invalidateQueries({ queryKey: ['portal', 'sala'] }),
   ]);
   const create = useMutation({
     mutationFn: async () => {
       const { adjustmentReason, ...input } = form.getValues();
-      pendingRequest.current ??= { ...input, ...(!canAdjust && activePlan ? { planId: activePlan.id, amount: activePlan.monthlyAmount } : {}), personId, operationId: crypto.randomUUID(), ...(canAdjust && adjustmentReason.trim() ? { adjustmentReason: adjustmentReason.trim() } : {}) };
+      pendingRequest.current ??= { ...input, ...(!canAdjust && plan ? { amount: plan.monthlyAmount } : {}), personId, operationId: crypto.randomUUID(), ...(canAdjust && adjustmentReason.trim() ? { adjustmentReason: adjustmentReason.trim() } : {}) };
       assertSuccess(await createSalaPayment(pendingRequest.current, { credentials: 'include', headers: { 'x-csrf-token': csrfToken } }));
     },
     onSuccess: async () => { pendingRequest.current = null; setConfirmation('Pago registrado correctamente.'); setRegisterOpen(false); form.setValue('paymentMethodId', ''); await invalidate(); },
@@ -87,12 +88,10 @@ export function SalaPaymentPanel({ personId, csrfToken, canRegister, canAdjust, 
     {canRegister && activePlan && registerOpen ? <form id="register-payment-form" className="rounded border border-border bg-surface p-5 sm:p-6" onSubmit={form.handleSubmit(() => { if (plan && (!needsReason || values.adjustmentReason.trim()) && payments.isSuccess && selectableMethods.some(item => item.id === values.paymentMethodId)) create.mutate(); })}>
       <h2 className="mb-5 text-xl font-semibold">Registrar renovación</h2>
       <fieldset disabled={create.isPending} className="grid gap-5 sm:grid-cols-2">
-        {canAdjust ? <>
-        <label className="text-sm">Plan<select className={inputClass} {...form.register('planId')} onChange={event => { const selected = plans.data?.find(item => item.id === event.target.value); form.setValue('planId', event.target.value); form.setValue('amount', selected?.monthlyAmount ?? ''); form.setValue('adjustmentReason', ''); }}><option value="" disabled>Seleccionar Plan</option>{plans.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label className="text-sm">Precio<input className={inputClass} inputMode="numeric" {...form.register('amount')} /></label>
-        </> : <><div className="text-sm">Plan<p className="mt-1 font-medium">{activePlan?.name}</p></div><div className="text-sm">Precio<p className="mt-1 font-medium">{money(activePlan?.monthlyAmount ?? '0')}</p></div></>}
+        {canSelectPlan ? <label className="text-sm">Plan<select className={inputClass} {...form.register('planId')} onChange={event => { const selected = plans.data?.find(item => item.id === event.target.value); form.setValue('planId', event.target.value); form.setValue('amount', selected?.monthlyAmount ?? ''); form.setValue('adjustmentReason', ''); }}><option value="" disabled>Seleccionar Plan</option>{plans.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : <div className="text-sm">Plan<p className="mt-1 font-medium">{activePlan?.name}</p></div>}
+        {canAdjust ? <label className="text-sm">Precio<input className={inputClass} inputMode="numeric" {...form.register('amount')} /></label> : <div className="text-sm">Precio<p className="mt-1 font-medium">{money(plan?.monthlyAmount ?? '0')}</p></div>}
         <label className="text-sm sm:col-span-2">Fecha de cobro<input type="date" max={todayOperational()} className={inputClass} {...form.register('paidAt')} /></label>
-        <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm">Medio de pago</legend><div className="flex flex-wrap gap-2">{selectableMethods.map(item => <Button key={item.id} type="button" variant="secondary" aria-pressed={values.paymentMethodId === item.id} onClick={() => form.setValue('paymentMethodId', item.id, { shouldValidate: true })}>{item.name}</Button>)}</div>{methods.isSuccess && !selectableMethods.length ? <p>No hay medios de pago configurados.</p> : null}</fieldset>
+        <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm">Medio de pago</legend><div className="flex flex-wrap gap-2">{selectableMethods.map(item => <Button key={item.id} type="button" variant={values.paymentMethodId === item.id ? 'primary' : 'secondary'} aria-pressed={values.paymentMethodId === item.id} onClick={() => form.setValue('paymentMethodId', item.id, { shouldValidate: true })}>{item.name}</Button>)}</div>{methods.isSuccess && !selectableMethods.length ? <p>No hay medios de pago configurados.</p> : null}</fieldset>
         {needsReason ? <label className="text-sm sm:col-span-2">Motivo de ajuste *<input className={inputClass} required {...form.register('adjustmentReason')} /></label> : null}
       </fieldset>
       <div className="my-5 rounded bg-surface-muted p-4"><p>Vigencia actual: {currentEnd ? `Hasta ${formatDate(currentEnd)}` : 'Sin vigencia'}</p><p className="mt-2 font-medium">Con este pago: {preview}</p><p className="mt-2 text-sm">Total a cobrar: {/^\d+$/.test(values.amount) ? money(values.amount) : '—'}</p></div>

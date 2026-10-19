@@ -6,7 +6,7 @@ import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { Test } from '@nestjs/testing';
 import { ValidationPipe, type INestApplication } from '@nestjs/common';
-import { Role, type Person, type SalaParticipation, type SalaWeekday } from '@prisma/client';
+import { Prisma, Role, type Person, type SalaParticipation, type SalaWeekday } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { AuthService } from '../src/auth/auth.service';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -20,7 +20,7 @@ describe('Sala configuration API', () => {
   afterEach(cleanSalaFixtures);
   afterAll(() => app.close());
   const uniqueDni = () => `${Date.now()}${Math.floor(Math.random() * 100000)}`.slice(-12);
-  async function session(role: Role) { const user = await users.create({ firstName: 'Sala', lastName: 'User', email: `${role.toLowerCase()}@sala.test`, roles: [role] }); await auth.provisionCredential(user.id, 'ValidPass1!'); await prisma.internalCredential.update({ where: { internalUserId: user.id }, data: { mustChangePassword: false } }); const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200); return { cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string }; }
+  async function session(role: Role, httpApp = app) { const user = await users.create({ firstName: 'Sala', lastName: 'User', email: `${role.toLowerCase()}@sala.test`, roles: [role] }); await auth.provisionCredential(user.id, 'ValidPass1!'); await prisma.internalCredential.update({ where: { internalUserId: user.id }, data: { mustChangePassword: false } }); const login = await request(httpApp.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200); return { cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string }; }
   it('configures positive capacity, plans, slots and explicit closure/override exceptions', async () => {
     const authn = await session(Role.ADMINISTRATIVE);
     const service = await sala.createServiceType({ name: 'Musculación', durationMinutes: 60 });
@@ -683,8 +683,8 @@ describe('Sala configuration API', () => {
   it('keeps physical test definitions separate from evaluation results and validates the professor', async () => {
     const dni = uniqueDni(); const person = await prisma.person.create({ data: { firstName: 'Eval', lastName: 'Person', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1991-01-01T00:00:00Z') } }); const plan = await prisma.salaPlan.create({ data: { name: `Eval-${dni}`, monthlyAmount: 1000 } }); const professor = await users.create({ firstName: 'Eval', lastName: 'Professor', email: `eval-${dni}@sala.test`, roles: [Role.PROFESSOR] }); const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' }); const test = await sala.createPhysicalTest({ name: `Flex-${dni}`, type: 'MOBILITY' }); const evaluation = await sala.createPhysicalEvaluation({ personId: person.id, salaParticipationId: participation.id, professorId: professor.id, evaluationDate: '2026-08-27', results: [{ testDefinitionId: test.id, resultText: '25 cm' }] }, professor.id); expect(evaluation.results).toHaveLength(1); expect(await prisma.physicalEvaluation.findUnique({ where: { id: evaluation.id } })).toMatchObject({ id: evaluation.id, personId: person.id, salaParticipationId: participation.id }); expect(await prisma.physicalTestResult.findFirst({ where: { evaluationId: evaluation.id, testDefinitionId: test.id } })).toMatchObject({ resultText: '25 cm' }); const listed = await sala.listPhysicalEvaluations(person.id); expect(listed).toHaveLength(1); expect(listed[0]?.results).toEqual(expect.arrayContaining([expect.objectContaining({ testDefinitionId: test.id, resultText: '25 cm' })])); await sala.retirePhysicalTest(test.id); await expect(sala.createPhysicalEvaluation({ personId: person.id, salaParticipationId: participation.id, professorId: professor.id, evaluationDate: '2026-08-28', results: [{ testDefinitionId: test.id, resultText: '26 cm' }] }, professor.id)).rejects.toMatchObject({ response: { code: 'SALA_PHYSICAL_TEST_INVALID' } });
   });
-  async function paymentFixture() {
-    const authn = await session(Role.ADMINISTRATIVE);
+  async function paymentFixture(httpApp = app) {
+    const authn = await session(Role.ADMINISTRATIVE, httpApp);
     const actor = await prisma.internalUser.findFirstOrThrow({ where: { roles: { some: { role: Role.ADMINISTRATIVE } } } });
     const dni = uniqueDni();
     const person = await prisma.person.create({ data: { firstName: 'Pago', lastName: 'Sintético', dni, normalizedDni: dni, phone: '3515550000', birthDate: new Date('1990-01-01') } });
@@ -693,7 +693,7 @@ describe('Sala configuration API', () => {
     const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2020-01-01' });
     const method = await prisma.paymentMethod.create({ data: { name: `Payment-${dni}` } });
     const input = { personId: person.id, planId: plan.id, paidAt: '2026-10-20', paymentMethodId: method.id, amount: '20000', operationId: randomUUID() };
-    const post = (body: unknown) => request(app.getHttpServer()).post('/api/sala/payments').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(body);
+    const post = (body: unknown) => request(httpApp.getHttpServer()).post('/api/sala/payments').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(body);
     return { person, actor, plan, participation, method, input, post, authn };
   }
   describe('rolling payment validity', () => {
@@ -726,20 +726,21 @@ describe('Sala configuration API', () => {
       const f = await paymentFixture();
       expect((await f.post({ ...f.input, paidAt }).expect(201)).body.data).toMatchObject({ coverageStartDate: paidAt, coverageEndDate: end });
     });
-    it('keeps financial Plan snapshots separate from operational assignments and validates adjustments', async () => {
+    it('updates the operational Plan and preserves financial snapshots while validating adjustments', async () => {
       const f = await paymentFixture();
       const other = await prisma.salaPlan.create({ data: { name: 'Plan B', monthlyAmount: 30000 } });
       const assignments = await prisma.salaPlanAssignment.findMany({ where: { salaParticipationId: f.participation.id } });
       const rejected = await f.post({ ...f.input, planId: other.id }).expect(400);
       expect(rejected.body.code).toBe('SALA_PAYMENT_ADJUSTMENT_REASON_REQUIRED');
       expect(await prisma.salaPayment.count()).toBe(0);
+      expect(await prisma.salaPlanAssignment.findMany({ where: { salaParticipationId: f.participation.id } })).toEqual(assignments);
       const saved = await f.post({ ...f.input, planId: other.id, amount: '30000' }).expect(201);
       expect(saved.body.data).toMatchObject({ planId: other.id, planName: 'Plan B', amount: '30000' });
       await prisma.salaPlan.update({ where: { id: other.id }, data: { name: 'Plan B editado', monthlyAmount: 40000, isSelectable: false } });
       expect((await f.post({ ...f.input, planId: other.id, amount: '30000' }).expect(201)).body.data.id).toBe(saved.body.data.id);
       expect((await sala.listPayments(f.person.id))[0]).toMatchObject({ planName: 'Plan B', amount: '30000' });
-      expect(await prisma.salaParticipation.findUniqueOrThrow({ where: { id: f.participation.id } })).toMatchObject({ planId: f.plan.id });
-      expect(await prisma.salaPlanAssignment.findMany({ where: { salaParticipationId: f.participation.id } })).toEqual(assignments);
+      expect(await prisma.salaParticipation.findUniqueOrThrow({ where: { id: f.participation.id } })).toMatchObject({ planId: other.id });
+      expect(await prisma.salaPlanAssignment.findMany({ where: { salaParticipationId: f.participation.id } })).toEqual(expect.arrayContaining([...assignments, expect.objectContaining({ planId: other.id, effectiveFrom: new Date('2026-12-01T00:00:00Z') })]));
       expect(await prisma.salaCharge.count()).toBe(0);
     });
     it('retries once under concurrency, rejects incompatible operations and serializes distinct renewals', async () => {
@@ -777,14 +778,18 @@ describe('Sala configuration API', () => {
       expect(await prisma.salaPayment.count()).toBe(0);
       expect(await prisma.salaPaymentAllocation.count()).toBe(0);
     });
-    it('rolls back payment and coverage when an explicit historical allocation conflicts', async () => {
+    it('rolls back payment, coverage, active Plan and assignments when an allocation conflicts', async () => {
       const f = await paymentFixture();
       const charge = await prisma.salaCharge.create({ data: { personId: f.person.id, kind: 'OPENING_BALANCE', chargeDate: new Date('2026-10-01'), concept: 'Saldo histórico', amount: 50000 } });
       const allocation = { chargeId: charge.id, amount: '10000', operationId: randomUUID() };
       const first = await sala.createPayment({ ...f.input, allocations: [allocation] }, f.actor.id);
-      await expect(sala.createPayment({ ...f.input, operationId: randomUUID(), allocations: [allocation] }, f.actor.id)).rejects.toMatchObject({ code: 'P2002' });
+      const other = await prisma.salaPlan.create({ data: { name: 'Plan Completo', monthlyAmount: 20000 } });
+      const assignments = await prisma.salaPlanAssignment.findMany({ where: { salaParticipationId: f.participation.id } });
+      await expect(sala.createPayment({ ...f.input, planId: other.id, operationId: randomUUID(), allocations: [allocation] }, f.actor.id)).rejects.toMatchObject({ code: 'P2002' });
       expect(await prisma.salaPayment.count()).toBe(1);
       expect(await prisma.salaPaymentAllocation.count()).toBe(1);
+      expect(await prisma.salaParticipation.findUnique({ where: { id: f.participation.id } })).toMatchObject({ planId: f.plan.id });
+      expect(await prisma.salaPlanAssignment.findMany({ where: { salaParticipationId: f.participation.id } })).toEqual(assignments);
       expect((await sala.listPayments(f.person.id))[0]).toMatchObject({ id: first.id, coverageEndDate: '2026-11-20' });
     });
     it.each([Role.PROFESSOR, Role.ADMINISTRATIVE, Role.GENERAL_ADMIN])('preserves payment permissions for %s', async role => {
@@ -810,7 +815,41 @@ describe('Sala configuration API', () => {
       expect(second.body.data).toMatchObject({ coverageStartDate: '2026-11-21', coverageEndDate: '2026-12-20' });
       expect(await prisma.salaPayment.count()).toBe(2);
     });
-    it('rejects Professor Plan changes and adjustments without persisting financial rows or Plan changes', async () => {
+    it.each([Role.PROFESSOR, Role.ADMINISTRATIVE, Role.GENERAL_ADMIN])('renews with another Plan atomically and idempotently for %s', async role => {
+      // Isolate the additional HTTP scenarios without disabling the real rate limiter.
+      const paymentApp = (await Test.createTestingModule({ imports: [AppModule] }).compile()).createNestApplication();
+      paymentApp.use(cookieParser()); paymentApp.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })); paymentApp.setGlobalPrefix('api');
+      await paymentApp.init();
+      try {
+        const f = await paymentFixture(paymentApp); const authn = role === Role.ADMINISTRATIVE ? f.authn : await session(role, paymentApp);
+        const other = await prisma.salaPlan.create({ data: { name: 'Plan Completo', monthlyAmount: 30000 } });
+        const post = (body: unknown) => request(paymentApp.getHttpServer()).post('/api/sala/payments').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(body);
+        const input = { ...f.input, planId: other.id, amount: role === Role.PROFESSOR ? '30000' : '25000', ...(role !== Role.PROFESSOR ? { adjustmentReason: 'Descuento administrativo' } : {}) };
+        if (role !== Role.PROFESSOR) {
+          const rejected = await post({ ...input, adjustmentReason: undefined }).expect(400);
+          expect(rejected.body.code).toBe('SALA_PAYMENT_ADJUSTMENT_REASON_REQUIRED');
+        }
+        const saved = await post(input).expect(201);
+        expect(saved.body.data).toMatchObject({ planId: other.id, planName: other.name, amount: input.amount, coverageStartDate: '2026-10-20', coverageEndDate: '2026-11-20' });
+        expect(await prisma.salaPayment.findUnique({ where: { id: saved.body.data.id } })).toMatchObject({ planId: other.id, planNameSnapshot: other.name, amount: new Prisma.Decimal(input.amount) });
+        expect(await prisma.salaParticipation.findUnique({ where: { id: f.participation.id } })).toMatchObject({ planId: other.id });
+        const assignments = await prisma.salaPlanAssignment.findMany({ where: { salaParticipationId: f.participation.id }, orderBy: { effectiveFrom: 'asc' } });
+        expect(assignments).toHaveLength(2);
+        expect(assignments[1]).toMatchObject({ planId: other.id, effectiveFrom: new Date('2026-12-01T00:00:00Z') });
+        // A retry must not reapply its Plan after another operational Plan change.
+        await sala.changePlan(f.participation.id, f.plan.id);
+        const beforeRetry = await prisma.salaPlanAssignment.findMany({ where: { salaParticipationId: f.participation.id } });
+        await post(input).expect(201);
+        expect(await prisma.salaPayment.count()).toBe(1);
+        expect(await prisma.salaParticipation.findUnique({ where: { id: f.participation.id } })).toMatchObject({ planId: f.plan.id });
+        expect(await prisma.salaPlanAssignment.findMany({ where: { salaParticipationId: f.participation.id } })).toEqual(beforeRetry);
+        // Reversal changes coverage only, even after the operational Plan changes again.
+        await sala.changePlan(f.participation.id, other.id);
+        await sala.reversePayment(saved.body.data.id, 'Error de cobro', randomUUID(), f.actor.id);
+        expect(await prisma.salaParticipation.findUnique({ where: { id: f.participation.id } })).toMatchObject({ planId: other.id });
+      } finally { await paymentApp.close(); }
+    });
+    it('rejects Professor adjustments without persisting financial rows or Plan changes', async () => {
       const f = await paymentFixture(); const authn = await session(Role.PROFESSOR);
       const other = await prisma.salaPlan.create({ data: { name: 'Otro Plan', monthlyAmount: 30000 } });
       const assignments = await prisma.salaPlanAssignment.findMany({ where: { salaParticipationId: f.participation.id } });
@@ -818,7 +857,8 @@ describe('Sala configuration API', () => {
         [{ amount: '15000', adjustmentReason: 'Descuento' }, 'SALA_PAYMENT_AMOUNT_ADJUSTMENT_FORBIDDEN'],
         [{ amount: '15000' }, 'SALA_PAYMENT_AMOUNT_ADJUSTMENT_FORBIDDEN'],
         [{ adjustmentReason: 'Motivo sin ajuste' }, 'SALA_PAYMENT_AMOUNT_ADJUSTMENT_FORBIDDEN'],
-        [{ planId: other.id, amount: '30000' }, 'SALA_PAYMENT_PLAN_CHANGE_FORBIDDEN'],
+        [{ planId: other.id, amount: '25000' }, 'SALA_PAYMENT_AMOUNT_ADJUSTMENT_FORBIDDEN'],
+        [{ planId: other.id, amount: '25000', adjustmentReason: 'Descuento' }, 'SALA_PAYMENT_AMOUNT_ADJUSTMENT_FORBIDDEN'],
       ] as const) {
         const result = await request(app.getHttpServer()).post('/api/sala/payments').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ ...f.input, ...changes }).expect(403);
         expect(result.body.code).toBe(code);

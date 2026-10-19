@@ -1,6 +1,6 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import { SalaPaymentPanel } from './sala-payment-panel';
@@ -31,7 +31,7 @@ afterEach(() => { cleanup(); server.resetHandlers(); vi.useRealTimers(); });
 afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 function renderPanel(defaultOpen = true, canRegister = true, canAdjust = canRegister, canReverse = canAdjust, plan: typeof activePlan | undefined = activePlan) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(<QueryClientProvider client={client}><SalaPaymentPanel personId={personId} csrfToken="csrf" canRegister={canRegister} canAdjust={canAdjust} canReverse={canReverse} activePlan={plan} defaultOpen={defaultOpen} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><SalaPaymentPanel personId={personId} csrfToken="csrf" canRegister={canRegister} canSelectPlan={canRegister} canAdjust={canAdjust} canReverse={canReverse} activePlan={plan} defaultOpen={defaultOpen} /></QueryClientProvider>);
   return client;
 }
 async function selectMethod() { fireEvent.click(await screen.findByRole('button', { name: 'Efectivo' })); }
@@ -122,17 +122,21 @@ it('shows historical coverage, unknown Plans and preserves reversal with its rea
   expect(screen.getByText('Vigencia actual: Sin vigencia')).toBeVisible();
 });
 
-it('registers a Professor renewal with fixed Plan and price without loading the Plan catalog', async () => {
-  const catalog = vi.fn(); let body: unknown; let csrf: string | null = null;
+it('registers a Professor renewal with a selectable Plan and automatic price', async () => {
+  let body: unknown; let csrf: string | null = null;
   server.use(
-    http.get(`${baseUrl}/api/sala/plans`, () => { catalog(); return HttpResponse.json({ data: [] }); }),
     http.get(paymentsUrl, () => HttpResponse.json({ data: [payment] })),
     http.post(createUrl, async ({ request }) => { body = await request.json(); csrf = request.headers.get('x-csrf-token'); return HttpResponse.json({ data: payment }, { status: 201 }); }),
   );
-  renderPanel(true, true, false, false);
+  const client = renderPanel(true, true, false, false);
+  client.setQueryData(['sala-participations', personId], []);
+  client.setQueryData(['unrelated'], []);
   await selectMethod();
   expect(screen.getByRole('heading', { name: 'Registrar renovación' })).toBeVisible();
-  expect(screen.queryByLabelText('Plan')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Plan')).toHaveValue(activePlan.id);
+  await screen.findByRole('option', { name: otherPlan.name });
+  fireEvent.change(screen.getByLabelText('Plan'), { target: { value: otherPlan.id } });
+  expect(screen.getByText('$30.000')).toBeVisible();
   expect(screen.queryByLabelText('Precio')).not.toBeInTheDocument();
   expect(screen.getAllByText('Plan Base').length).toBeGreaterThan(0);
   expect(screen.getAllByText('$20.000').length).toBeGreaterThan(0);
@@ -141,16 +145,34 @@ it('registers a Professor renewal with fixed Plan and price without loading the 
   await screen.findByText('Con este pago: 21/11/2026 → 20/12/2026');
   fireEvent.click(screen.getByRole('button', { name: 'Registrar pago' }));
   await screen.findByText('Pago registrado correctamente.');
-  expect(body).toEqual({ personId, planId: activePlan.id, amount: activePlan.monthlyAmount, paidAt: '2026-10-20', paymentMethodId: methodId, operationId: expect.any(String) });
-  expect(csrf).toBe('csrf'); expect(catalog).not.toHaveBeenCalled();
+  expect(body).toEqual({ personId, planId: otherPlan.id, amount: otherPlan.monthlyAmount, paidAt: '2026-10-20', paymentMethodId: methodId, operationId: expect.any(String) });
+  expect(csrf).toBe('csrf');
+  expect(client.getQueryState(['sala-participations', personId])?.isInvalidated).toBe(true);
+  expect(client.getQueryState(['unrelated'])?.isInvalidated).toBe(false);
 });
 it('keeps the history readable without an active participation', async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   server.use(http.get(paymentsUrl, () => HttpResponse.json({ data: [{ ...payment, reversal: { reason: 'Error histórico' } }] })));
-  render(<QueryClientProvider client={client}><SalaPaymentPanel personId={personId} csrfToken="csrf" canRegister canAdjust={false} canReverse={false}/></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><SalaPaymentPanel personId={personId} csrfToken="csrf" canRegister canSelectPlan canAdjust={false} canReverse={false}/></QueryClientProvider>);
   expect(screen.getByText('Se necesita una participación activa de Sala para registrar pagos.')).toBeVisible();
   expect(await screen.findByText('Revertido')).toBeVisible();
   expect(screen.getByText('Motivo de reversión: Error histórico')).toBeVisible();
   expect(screen.queryByRole('button', { name: '+ Registrar renovación' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Revertir' })).not.toBeInTheDocument();
+});
+
+it('highlights only the selected payment method with the primary variant', async () => {
+  server.use(http.get(`${baseUrl}/api/finance/payment-methods`, () => HttpResponse.json({ data: [
+    { id: methodId, name: 'Efectivo', isSelectable: true },
+    { id: 'transfer', name: 'Transferencia', isSelectable: true },
+  ] })));
+  renderPanel();
+  const cash = await screen.findByRole('button', { name: 'Efectivo' });
+  const transfer = screen.getByRole('button', { name: 'Transferencia' });
+  expect(cash).toHaveAttribute('aria-pressed', 'false'); expect(cash).toHaveClass('bg-white');
+  await act(async () => { fireEvent.click(cash); });
+  expect(cash).toHaveAttribute('aria-pressed', 'true'); expect(cash).toHaveClass('bg-primary', 'text-primary-foreground');
+  await act(async () => { fireEvent.click(transfer); });
+  expect(cash).toHaveAttribute('aria-pressed', 'false'); expect(cash).toHaveClass('bg-white');
+  expect(transfer).toHaveAttribute('aria-pressed', 'true'); expect(transfer).toHaveClass('bg-primary');
 });
