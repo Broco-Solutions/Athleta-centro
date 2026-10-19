@@ -351,7 +351,7 @@ it('shows an empty pending state for the operational period', async () => {
   expect(await screen.findByText('Todos los alumnos tienen vigencia actualmente.')).toBeVisible();
 });
 
-it.each([true, false])('consults selected month, aggregates methods and gates executive results (%s)', async executive => {
+it.each([true, false])('filters summary periods, aggregates methods and gates executive results (%s)', async executive => {
   const incomeUrls: URL[] = []; const expenseUrls: URL[] = []; const studentUrls: URL[] = [];
   server.use(
     http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: session.permissions.filter(permission => executive || permission !== 'FINANCE_EXECUTIVE_READ') } })),
@@ -361,7 +361,16 @@ it.each([true, false])('consults selected month, aggregates methods and gates ex
     http.get('http://localhost:3000/api/sala/students', ({ request }) => { const url = new URL(request.url); studentUrls.push(url); return HttpResponse.json({ data: [{ id: 'sept', firstName: 'Septiembre', lastName: 'Pendiente', plan: { name: 'Base' }, hasValidAccess: false, validUntil: null }] }); }),
   );
   renderPage();
-  expect(await screen.findByLabelText('Mes')).toHaveValue('2026-10');
+  await screen.findByRole('heading', { name: 'Finanzas', level: 1 });
+  const buttons = ['Este mes', 'Mes anterior', 'Este año', 'Total', 'Personalizado'];
+  for (const name of buttons) expect(screen.getByRole('button', { name })).toHaveAttribute('aria-pressed', String(name === 'Este mes'));
+  expect(await screen.findByText('Octubre de 2026')).toBeVisible();
+  await waitFor(() => expect(incomeUrls.length).toBeGreaterThan(0));
+  expect(incomeUrls.at(-1)?.searchParams.get('from')).toBe('2026-10-01');
+  expect(incomeUrls.at(-1)?.searchParams.get('to')).toBe('2026-10-31');
+  expect(incomeUrls.at(-1)?.searchParams.get('area')).toBe('SALA');
+  expect(expenseUrls.at(-1)?.searchParams.get('from')).toBe('2026-10-01');
+  expect(expenseUrls.at(-1)?.searchParams.get('to')).toBe('2026-10-31');
   await screen.findByText('$ 800.000');
   const indicators = within(screen.getByRole('region', { name: 'Indicadores financieros' }));
   expect(Boolean(indicators.queryByText('Resultado'))).toBe(executive);
@@ -373,17 +382,60 @@ it.each([true, false])('consults selected month, aggregates methods and gates ex
   expect(transfer.getByText('$ 480.000')).toBeVisible(); expect(transfer.getByText('$ 140.000')).toBeVisible();
   expect(Boolean(table.queryByRole('columnheader', { name: 'Neto' }))).toBe(executive);
   expect(within(table.getByRole('rowheader', { name: 'Tarjeta' }).closest('tr')!).getAllByText('$ 0')).toHaveLength(executive ? 3 : 2);
-  fireEvent.change(screen.getByLabelText('Mes'), { target: { value: '2026-09' } });
+  const initialStudentReads = studentUrls.length;
+  fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }));
   expect(await screen.findByText('Septiembre Pendiente')).toBeVisible();
+  expect(screen.getByText('Septiembre de 2026')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Mes anterior' })).toHaveAttribute('aria-pressed', 'true');
   await waitFor(() => expect(incomeUrls.at(-1)?.searchParams.get('from')).toBe('2026-09-01'));
   expect(incomeUrls.at(-1)?.searchParams.get('to')).toBe('2026-09-30'); expect(incomeUrls.at(-1)?.searchParams.get('area')).toBe('SALA');
   expect(expenseUrls.at(-1)?.searchParams.get('from')).toBe('2026-09-01'); expect(expenseUrls.at(-1)?.searchParams.get('to')).toBe('2026-09-30');
-  expect(studentUrls.every(url => !url.searchParams.has('year') && !url.searchParams.has('month'))).toBe(true);
-  fireEvent.click(screen.getByRole('button', { name: 'Mes siguiente' }));
-  expect(screen.getByText('Septiembre Pendiente')).toBeVisible();
-  expect(screen.getByLabelText('Mes')).toHaveValue('2026-10');
-  fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }));
-  expect(await screen.findByText('Septiembre Pendiente')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Este año' }));
+  await waitFor(() => expect(incomeUrls.at(-1)?.searchParams.get('from')).toBe('2026-01-01'));
+  expect(incomeUrls.at(-1)?.searchParams.get('to')).toBe(todayOperational());
+  expect(expenseUrls.at(-1)?.searchParams.get('from')).toBe('2026-01-01');
+  expect(expenseUrls.at(-1)?.searchParams.get('to')).toBe(todayOperational());
+  expect(screen.getByText('2026')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Total' }));
+  await waitFor(() => expect(incomeUrls.at(-1)?.searchParams.get('area')).toBe('SALA'));
+  expect(incomeUrls.at(-1)?.searchParams.has('from')).toBe(false);
+  expect(incomeUrls.at(-1)?.searchParams.has('to')).toBe(false);
+  expect(expenseUrls.at(-1)?.searchParams.has('from')).toBe(false);
+  expect(expenseUrls.at(-1)?.searchParams.has('to')).toBe(false);
+  expect(screen.getByText('Todo el historial')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Personalizado' }));
+  expect(screen.getByLabelText('Desde')).toHaveValue('2026-10-01');
+  expect(screen.getByLabelText('Hasta')).toHaveValue(todayOperational());
+  expect(screen.getByLabelText('Hasta')).toHaveAttribute('max', todayOperational());
+  const beforeDraft = incomeUrls.length;
+  fireEvent.change(screen.getByLabelText('Desde'), { target: { value: '2026-07-01' } });
+  fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: '2026-09-30' } });
+  expect(incomeUrls).toHaveLength(beforeDraft);
+  fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
+  await waitFor(() => expect(incomeUrls.at(-1)?.searchParams.get('from')).toBe('2026-07-01'));
+  expect(incomeUrls.at(-1)?.searchParams.get('to')).toBe('2026-09-30');
+  expect(incomeUrls.at(-1)?.searchParams.get('area')).toBe('SALA');
+  expect(expenseUrls.at(-1)?.searchParams.get('from')).toBe('2026-07-01');
+  expect(expenseUrls.at(-1)?.searchParams.get('to')).toBe('2026-09-30');
+  expect(screen.getByText('01/07/2026 — 30/09/2026')).toBeVisible();
+  expect(studentUrls).toHaveLength(initialStudentReads);
+  expect(studentUrls.every(url => !url.searchParams.has('from') && !url.searchParams.has('to') && !url.searchParams.has('year') && !url.searchParams.has('month'))).toBe(true);
+  expect(screen.getByRole('region', { name: 'Estado actual de Sala' })).toBeVisible();
+});
+
+it('rejects invalid custom ranges without requesting them', async () => {
+  const incomeUrls: URL[] = [];
+  server.use(http.get('http://localhost:3000/api/finance/income', ({ request }) => { incomeUrls.push(new URL(request.url)); return HttpResponse.json({ data: [] }); }));
+  renderPage();
+  await screen.findByRole('heading', { name: 'Finanzas', level: 1 });
+  fireEvent.click(screen.getByRole('button', { name: 'Personalizado' }));
+  fireEvent.change(screen.getByLabelText('Desde'), { target: { value: '2026-10-20' } });
+  fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: '2026-10-10' } });
+  await waitFor(() => expect(incomeUrls.at(-1)?.searchParams.get('from')).toBe('2026-10-01'));
+  const requestCount = incomeUrls.length;
+  fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('La fecha Desde no puede ser posterior a Hasta.');
+  expect(incomeUrls).toHaveLength(requestCount);
 });
 
 it.each(['', 'view=income', 'view=expenses', 'view=income&personId=student&action=renew'])('denies Professor direct Finance access without financial requests (%s)', async search => {

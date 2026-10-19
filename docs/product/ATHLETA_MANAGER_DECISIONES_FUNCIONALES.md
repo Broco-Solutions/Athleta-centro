@@ -846,3 +846,29 @@ Estado: **CONFIRMADO / RESUELTO**.
   alta simplificada / DNI-first de Profesor, uso exclusivo del Plan activo al cobrar,
   prohibición de seleccionar otro Plan y Plan del Pago como referencia únicamente
   financiera que nunca modifica `SalaParticipation.planId` ni su historial.
+
+
+## Finanzas — Filtros rápidos de período — 2026-10-19
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+- El Resumen de Finanzas ofrece `Este mes`, `Mes anterior`, `Este año`, `Total` y
+  `Personalizado`.
+- `Este mes` y `Mes anterior` consultan meses calendario completos según la fecha
+  operativa de `America/Argentina/Buenos_Aires`.
+- `Este año` comienza el 01/01 del año operativo y finaliza en la fecha operativa
+  actual.
+- `Total` consulta todo el historial disponible, sin límites de fecha artificiales.
+- `Personalizado` permite indicar Desde/Hasta y actualiza el período únicamente al
+  confirmar con `Aplicar`. Desde y Hasta son obligatorias, Desde no puede ser
+  posterior a Hasta y Hasta no puede ser futura.
+- El período seleccionado afecta Ingresos, Gastos, Resultado y Movimientos por
+  Medio de pago. El estado actual de Sala permanece independiente y representa
+  siempre la situación vigente al día operativo actual.
+- Los Ingresos de Sala se asignan al período por `SalaPayment.paidAt`; la vigencia
+  de una cuota no altera su período financiero. Los Gastos se asignan por
+  `Expense.cashDate`.
+- No se agregan gráficos en esta primera instancia.
+- Profesor no puede modificar manualmente el valor de una cuota. El importe
+  proviene del Precio configurado del Plan. La modificación del Precio del Plan
+  corresponde a Administración desde Configuración → Planes.

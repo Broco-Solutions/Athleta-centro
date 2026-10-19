@@ -4,6 +4,7 @@ import React, { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Button } from '@athleta/ui';
 import { WorkspaceShell } from '../../features/auth/workspace-shell';
 import { getPerson, listPersonSalaParticipations, listSalaStudents } from '@athleta/api-client';
 import { SalaPaymentPanel } from '../../features/finance/sala-payment-panel';
@@ -15,6 +16,8 @@ type Method = { id: string; name: string; isSelectable: boolean };
 type IncomeStatusTab = 'pending' | 'paid';
 type ExpenseTab = 'register' | 'records';
 type FinanceView = 'summary' | 'income' | 'expenses';
+type SummaryPeriod = 'current-month' | 'previous-month' | 'current-year' | 'all' | 'custom';
+type DateRange = { from?: string; to?: string };
 const get = async (path: string) => { const response = await fetch(`/api/finance/${path}`, { credentials: 'include' }); const body = await response.json(); if (!response.ok) throw new Error(body.message ?? 'No pudimos cargar Finanzas'); return body.data?.data ?? body.data; };
 
 export default function FinancePage(): React.JSX.Element {
@@ -25,8 +28,15 @@ function FinancePageContent(): React.JSX.Element {
   const params = useSearchParams();
   const personId = params.get('personId');
   const paymentAction = params.get('action');
-  const [summaryMonth, setSummaryMonth] = useState(todayOperational().slice(0, 7));
-  const bounds = monthBounds(summaryMonth);
+  const today = todayOperational();
+  const [summaryPeriod, setSummaryPeriod] = useState<SummaryPeriod>('current-month');
+  const [draftFrom, setDraftFrom] = useState('');
+  const [draftTo, setDraftTo] = useState('');
+  const [appliedCustomRange, setAppliedCustomRange] = useState<DateRange | null>(null);
+  const [customInitialized, setCustomInitialized] = useState(false);
+  const [customError, setCustomError] = useState('');
+  const summaryRange = resolveSummaryRange(summaryPeriod, today, appliedCustomRange);
+  const summaryPeriodLabel = summaryLabel(summaryPeriod, today, summaryRange);
   const requestedView = params.get('view');
   const view: FinanceView = requestedView === 'income' || requestedView === 'expenses' ? requestedView : 'summary';
   const active = view === 'income' ? 'finance-income' : view === 'expenses' ? 'finance-expenses' : 'finance-summary';
@@ -63,8 +73,8 @@ function FinancePageContent(): React.JSX.Element {
   const [editing, setEditing] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const methods = useQuery<Method[]>({ queryKey: ['finance', 'payment-methods'], queryFn: () => get('payment-methods'), enabled: view === 'summary' && (read || canCatalog) });
-  const summaryIncome = useQuery<Movement[]>({ queryKey: ['finance', 'income', 'summary', summaryMonth], queryFn: () => get(`income?from=${bounds.from}&to=${bounds.to}&area=SALA`), enabled: view === 'summary' && read });
-  const summaryExpenses = useQuery<Movement[]>({ queryKey: ['finance', 'expenses', 'summary', summaryMonth], queryFn: () => get(`expenses?from=${bounds.from}&to=${bounds.to}`), enabled: view === 'summary' && read });
+  const summaryIncome = useQuery<Movement[]>({ queryKey: ['finance', 'income', 'summary', summaryPeriod, summaryRange.from ?? null, summaryRange.to ?? null], queryFn: () => get(financialQuery('income', summaryRange, { area: 'SALA' })), enabled: view === 'summary' && read });
+  const summaryExpenses = useQuery<Movement[]>({ queryKey: ['finance', 'expenses', 'summary', summaryPeriod, summaryRange.from ?? null, summaryRange.to ?? null], queryFn: () => get(financialQuery('expenses', summaryRange)), enabled: view === 'summary' && read });
   const income = useQuery({ queryKey: ['finance', 'income', personId], queryFn: () => get(personId ? `income?personId=${encodeURIComponent(personId)}` : 'income'), enabled: view === 'income' && !personId && read });
   const expenses = useQuery({ queryKey: ['finance', 'expenses'], queryFn: () => get('expenses'), enabled: view === 'expenses' && activeExpenseTab === 'records' && canReadExpenses });
 
@@ -110,14 +120,37 @@ function FinancePageContent(): React.JSX.Element {
   const summaryReady = summaryIncome.isSuccess && summaryExpenses.isSuccess;
   return <WorkspaceShell active={active}><main className="mx-auto max-w-6xl space-y-6">
     <header><h1 className="text-3xl font-semibold">Finanzas</h1><p className="text-sm text-muted-foreground">{selectedPaymentContext ? "La vigencia y cada pago del alumno en un solo lugar." : "Operación económica · ARS"}</p>{selectedPaymentContext ? <Link className="mt-3 inline-block rounded border px-3 py-2 text-sm" href="/finance?view=income">Cambiar alumno</Link> : null}</header>
-    {view === 'summary' ? <section aria-label="Finanzas del mes" className="space-y-3">
-      <h2 className="text-xl font-semibold">Finanzas del mes</h2>
-      <div className="flex items-center gap-4"><button type="button" aria-label="Mes anterior" onClick={() => setSummaryMonth(previousMonth(summaryMonth))} className="rounded border px-3 py-2">‹</button><p className="font-semibold">{monthTitle(summaryMonth)}</p><button type="button" aria-label="Mes siguiente" onClick={() => setSummaryMonth(nextMonth(summaryMonth))} className="rounded border px-3 py-2">›</button></div>
-      <label className="block text-sm">Mes<input type="month" aria-label="Mes" value={summaryMonth} onChange={event => { if (/^\d{4}-\d{2}$/.test(event.target.value)) setSummaryMonth(event.target.value); }} className="ml-3 h-10 rounded border px-3" /></label>
+    {view === 'summary' ? <section aria-label="Período financiero" className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div role="group" aria-label="Período financiero" className="flex flex-wrap gap-2">
+          {([['current-month', 'Este mes'], ['previous-month', 'Mes anterior'], ['current-year', 'Este año'], ['all', 'Total'], ['custom', 'Personalizado']] as const).map(([period, label]) => <Button key={period} type="button" variant={summaryPeriod === period ? 'primary' : 'secondary'} aria-pressed={summaryPeriod === period} onClick={() => {
+            setSummaryPeriod(period);
+            if (period === 'custom' && !customInitialized) {
+              const initialFrom = monthBounds(today.slice(0, 7)).from;
+              setDraftFrom(initialFrom); setDraftTo(today);
+              setAppliedCustomRange({ from: initialFrom, to: today });
+              setCustomInitialized(true);
+              setCustomError('');
+            }
+          }}>{label}</Button>)}
+        </div>
+        <p className="font-semibold">{summaryPeriodLabel}</p>
+      </div>
+      {summaryPeriod === 'custom' ? <div className="flex flex-wrap items-end gap-3">
+        <label className="block text-sm">Desde<input type="date" aria-label="Desde" value={draftFrom} max={draftTo || today} onChange={event => setDraftFrom(event.target.value)} className="mt-1 block h-10 rounded border px-3" /></label>
+        <label className="block text-sm">Hasta<input type="date" aria-label="Hasta" value={draftTo} min={draftFrom || undefined} max={today} onChange={event => setDraftTo(event.target.value)} className="mt-1 block h-10 rounded border px-3" /></label>
+        <Button type="button" onClick={() => {
+          if (!draftFrom || !draftTo) { setCustomError('Completá las fechas Desde y Hasta.'); return; }
+          if (draftFrom > draftTo) { setCustomError('La fecha Desde no puede ser posterior a Hasta.'); return; }
+          if (draftTo > today) { setCustomError('La fecha Hasta no puede ser futura.'); return; }
+          setAppliedCustomRange({ from: draftFrom, to: draftTo }); setCustomError('');
+        }}>Aplicar</Button>
+        {customError ? <p role="alert" className="text-sm text-destructive">{customError}</p> : null}
+      </div> : null}
     </section> : null}
     {view === 'summary' && read ? <>
-      {summaryIncome.isPending || summaryExpenses.isPending ? <p role="status">Cargando movimientos del mes…</p> : null}
-      {summaryIncome.isError || summaryExpenses.isError ? <p role="alert">No pudimos cargar los movimientos del mes.</p> : null}
+      {summaryIncome.isPending || summaryExpenses.isPending ? <p role="status">Cargando movimientos del período…</p> : null}
+      {summaryIncome.isError || summaryExpenses.isError ? <p role="alert">No pudimos cargar los movimientos del período.</p> : null}
       {summaryReady ? <>
         <section aria-label="Indicadores financieros" className="grid gap-4 md:grid-cols-3">{([['Ingresos', incomeTotal], ['Gastos', expenseTotal], ...(executive ? [['Resultado', incomeTotal - expenseTotal] as const] : [])] as const).map(([label, amount]) => <article className="rounded border bg-surface p-4" key={label}><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold">{formatMoney(amount.toString())}</p></article>)}</section>
         <section className="space-y-3 rounded border border-border bg-surface p-5"><h2 className="text-lg font-semibold">Movimientos por medio de pago</h2><div className="overflow-x-auto"><table aria-label="Movimientos por medio de pago" className="w-full text-sm"><thead><tr><th className="p-2 text-left">Medio de pago</th><th className="p-2 text-right">Ingresos</th><th className="p-2 text-right">Gastos</th>{executive ? <th className="p-2 text-right">Neto</th> : null}</tr></thead><tbody>{[...byMethod.values()].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(row => <tr key={row.id} className="border-t border-border"><th scope="row" className="p-2 text-left font-medium">{row.name}</th><td className="p-2 text-right">{formatMoney(row.income.toString())}</td><td className="p-2 text-right">{formatMoney(row.expenses.toString())}</td>{executive ? <td className="p-2 text-right">{formatMoney((row.income - row.expenses).toString())}</td> : null}</tr>)}</tbody></table></div></section>
@@ -180,8 +213,6 @@ function FinancePageContent(): React.JSX.Element {
   </main></WorkspaceShell>;
 }
 
-function previousMonth(value: string): string { return shiftMonth(value, -1); }
-function nextMonth(value: string): string { return shiftMonth(value, 1); }
 function shiftMonth(value: string, delta: number): string {
   const [year = 2000, month = 1] = value.split('-').map(Number);
   const date = new Date(Date.UTC(year, month - 1 + delta, 1));
@@ -193,8 +224,29 @@ function monthBounds(value: string): { from: string; to: string } {
   return { from: `${value}-01`, to: `${value}-${String(lastDay).padStart(2, '0')}` };
 }
 function monthTitle(value: string): string {
-  const title = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${value}-01T00:00:00Z`)).replace(' de ', ' ');
+  const title = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${value}-01T00:00:00Z`));
   return title.charAt(0).toUpperCase() + title.slice(1);
+}
+function resolveSummaryRange(period: SummaryPeriod, today: string, appliedCustomRange: DateRange | null): DateRange {
+  if (period === 'all') return {};
+  if (period === 'current-year') return { from: `${today.slice(0, 4)}-01-01`, to: today };
+  if (period === 'custom') return appliedCustomRange ?? {};
+  const month = period === 'previous-month' ? shiftMonth(today.slice(0, 7), -1) : today.slice(0, 7);
+  return monthBounds(month);
+}
+function financialQuery(path: string, range: DateRange, extra?: Record<string, string>): string {
+  const params = new URLSearchParams();
+  if (range.from) params.set('from', range.from);
+  if (range.to) params.set('to', range.to);
+  for (const [key, value] of Object.entries(extra ?? {})) params.set(key, value);
+  const query = params.toString();
+  return `${path}${query ? `?${query}` : ''}`;
+}
+function summaryLabel(period: SummaryPeriod, today: string, range: DateRange): string {
+  if (period === 'all') return 'Todo el historial';
+  if (period === 'current-year') return today.slice(0, 4);
+  if (period === 'custom') return range.from && range.to ? `${formatDate(range.from)} — ${formatDate(range.to)}` : 'Rango personalizado';
+  return monthTitle(period === 'previous-month' ? shiftMonth(today.slice(0, 7), -1) : today.slice(0, 7));
 }
 
 const tabClass = (active: boolean) => `border-b-2 px-1 py-2 text-sm ${active ? 'border-primary font-semibold' : 'border-transparent text-muted-foreground'}`;
