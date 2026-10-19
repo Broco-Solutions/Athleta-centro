@@ -85,8 +85,8 @@ describe('Finance views', () => {
   });
 });
 
-it.each(['charge', null])('concentrates payment context with action=%s and keeps history visible', async action => {
-  navigation.search = `view=income&personId=person-1${action ? '&action=charge' : ''}`;
+it.each(['renew', null])('concentrates payment context with action=%s and keeps history visible', async action => {
+  navigation.search = `view=income&personId=person-1${action ? '&action=renew' : ''}`;
   let incomeReads = 0;
   server.use(
     http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'plan', name: '2 veces', monthlyAmount: '10000' }] })),
@@ -97,10 +97,10 @@ it.each(['charge', null])('concentrates payment context with action=%s and keeps
   );
   renderPage();
   expect(await screen.findByText('Lucía Ejemplo')).toBeVisible();
-  await screen.findByRole('button', { name: '+ Registrar una cuota' });
-  expect(screen.getByRole('button', { name: '+ Registrar una cuota' })).toHaveAttribute('aria-expanded', String(action === 'charge'));
+  await screen.findByRole('button', { name: '+ Registrar renovación' });
+  expect(screen.getByRole('button', { name: '+ Registrar renovación' })).toHaveAttribute('aria-expanded', String(action === 'renew'));
   expect(screen.getByText('DNI 88000002')).toBeVisible();
-  if (action === 'charge') expect(await screen.findByLabelText('Fecha de cobro')).toBeVisible();
+  if (action === 'renew') expect(await screen.findByLabelText('Fecha de cobro')).toBeVisible();
   else expect(screen.queryByLabelText('Fecha de cobro')).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/person-1');
   expect(screen.getByRole('link', { name: 'Cambiar alumno' })).toHaveAttribute('href', '/finance?view=income');
@@ -124,7 +124,7 @@ it('does not load a payment context without management permission', async () => 
   server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: ['FINANCE_OPERATIONAL_READ'] } })));
   renderPage();
   expect(await screen.findByRole('heading', { name: 'Finanzas', level: 1 })).toBeVisible();
-  expect(screen.queryByRole('heading', { name: 'Registrar una cuota' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Registrar renovación' })).not.toBeInTheDocument();
 });
 
 it('searches active Sala students by name, surname and formatted DNI using the existing endpoint', async () => {
@@ -133,38 +133,38 @@ it('searches active Sala students by name, surname and formatted DNI using the e
   server.use(http.get('http://localhost:3000/api/sala/students', () => {
     reads++;
     return HttpResponse.json({ data: [
-      { id: 'student-1', firstName: 'Lucía', lastName: 'Ejemplo', dni: '88000002', plan: { name: 'Plan Base' }, paymentStatus: 'PENDING', currentPaymentPaidAt: null },
-      { id: 'student-2', firstName: 'Pedro', lastName: 'Prueba', dni: '88000003', plan: { name: 'Plan Completo' }, paymentStatus: 'PAID', currentPaymentPaidAt: '2026-10-16' },
+      { id: 'student-1', firstName: 'Lucía', lastName: 'Ejemplo', dni: '88000002', plan: { name: 'Plan Base' }, hasValidAccess: false, validUntil: null, lastPaymentPaidAt: null },
+      { id: 'student-2', firstName: 'Pedro', lastName: 'Prueba', dni: '88000003', plan: { name: 'Plan Completo' }, hasValidAccess: true, validUntil: '2026-11-20', lastPaymentPaidAt: '2026-10-16' },
     ] });
   }));
   renderPage();
-  expect(await screen.findByRole('heading', { name: 'Cuotas de Sala' })).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Vigencia de Sala' })).toBeVisible();
   await waitFor(() => expect(reads).toBe(1));
   expect(await screen.findByText('Lucía Ejemplo')).toBeVisible();
   expect(screen.queryByText('Pedro Prueba')).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Pendientes 1', pressed: true })).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Pagados 1', pressed: false })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Sin vigencia 1', pressed: true })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Vigentes 1', pressed: false })).toBeVisible();
   const search = screen.getByRole('searchbox', { name: 'Nombre, apellido o DNI' });
   for (const value of ['LUCÍA', 'eJEmPlo', 'Lucía Ejemplo', '88000002', '88.000.002', '88 000 002', '88-000-002']) {
     fireEvent.change(search, { target: { value } });
     expect(await screen.findByText('Lucía Ejemplo')).toBeVisible();
     expect(screen.getByText('DNI 88000002 · Plan Base')).toBeVisible();
-    expect(screen.getByText('Pago pendiente')).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Cobrar' })).toHaveAttribute('href', '/finance?view=income&personId=student-1&action=charge');
+    expect(screen.getByText('Sin vigencia')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Renovar' })).toHaveAttribute('href', '/finance?view=income&personId=student-1&action=renew');
     expect(screen.queryByText('Pedro Prueba')).not.toBeInTheDocument();
   }
-  fireEvent.click(screen.getByRole('button', { name: 'Pagados 1' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Vigentes 1' }));
   expect(screen.queryByText('Lucía Ejemplo')).not.toBeInTheDocument();
   expect(screen.queryByText('Pedro Prueba')).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Pagados 1', pressed: true })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Vigentes 1', pressed: true })).toBeVisible();
   fireEvent.change(search, { target: { value: '88-000-003' } });
   expect(await screen.findByText('Pedro Prueba')).toBeVisible();
-  expect(screen.getByText('Pagado')).toBeVisible();
+  expect(screen.getByText('Vigente hasta 20/11/2026')).toBeVisible();
   expect(screen.getByText('Fecha de cobro: 16/10/2026')).toBeVisible();
   expect(screen.getByRole('link', { name: 'Ver pagos' })).toHaveAttribute('href', '/finance?view=income&personId=student-2');
   fireEvent.change(search, { target: { value: 'Alumno que no fue retornado' } });
   expect(screen.getByText('No se encontraron alumnos.')).toBeVisible();
-  expect(screen.queryByRole('link', { name: 'Cobrar' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Renovar' })).not.toBeInTheDocument();
   expect(reads).toBe(1);
 });
 
@@ -305,7 +305,7 @@ it('does not fetch students or expose registration without SALA_PAYMENT_MANAGE',
     http.get('http://localhost:3000/api/sala/students', () => { reads++; return HttpResponse.json({ data: [] }); }),
   );
   renderPage(); await screen.findByRole('heading', { name: 'Historial de ingresos' });
-  expect(screen.queryByRole('heading', { name: 'Cuotas de Sala' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Vigencia de Sala' })).not.toBeInTheDocument();
   expect(reads).toBe(0);
 });
 
@@ -334,21 +334,21 @@ it('keeps operational indicators without exposing executive net or clinical brea
 
 it('shows only current pending fees in summary with direct collection links', async () => {
   server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: [
-    { id: 'pending', firstName: 'Ana', lastName: 'Pendiente', dni: '88000001', plan: { name: 'Plan Base' }, paymentStatus: 'PENDING', currentPaymentPaidAt: null },
-    { id: 'paid', firstName: 'Pedro', lastName: 'Pagado', dni: '88000002', plan: { name: 'Plan Base' }, paymentStatus: 'PAID', currentPaymentPaidAt: '2026-10-16' },
+    { id: 'pending', firstName: 'Ana', lastName: 'Pendiente', dni: '88000001', plan: { name: 'Plan Base' }, hasValidAccess: false, validUntil: null, lastPaymentPaidAt: null },
+    { id: 'paid', firstName: 'Pedro', lastName: 'Pagado', dni: '88000002', plan: { name: 'Plan Base' }, hasValidAccess: true, validUntil: '2026-11-20', lastPaymentPaidAt: '2026-10-16' },
   ] })));
   renderPage();
-  const pending = within(await screen.findByRole('region', { name: 'Cuotas pendientes' }));
+  const pending = within(await screen.findByRole('region', { name: 'Estado actual de Sala' }));
   expect(await pending.findByText('Ana Pendiente')).toBeVisible();
-  expect(pending.getByText('Alumnos sin pago registrado para Octubre 2026')).toBeVisible();
+  expect(pending.getByText('Alumnos sin vigencia: 1')).toBeVisible();
   expect(pending.queryByText('Pedro Pagado')).not.toBeInTheDocument();
-  expect(pending.getByRole('link', { name: 'Cobrar' })).toHaveAttribute('href', '/finance?view=income&personId=pending&action=charge');
+  expect(pending.getByRole('link', { name: 'Renovar' })).toHaveAttribute('href', '/finance?view=income&personId=pending&action=renew');
   expect(screen.getByRole('region', { name: 'Indicadores financieros' })).toBeVisible();
   expect(screen.getByText('Configuración · Administrar medios de pago')).toBeVisible();
 });
 it('shows an empty pending state for the operational period', async () => {
   renderPage();
-  expect(await screen.findByText('No hay cuotas pendientes para el mes seleccionado.')).toBeVisible();
+  expect(await screen.findByText('Todos los alumnos tienen vigencia actualmente.')).toBeVisible();
 });
 
 it.each([true, false])('consults selected month, aggregates methods and gates executive results (%s)', async executive => {
@@ -358,7 +358,7 @@ it.each([true, false])('consults selected month, aggregates methods and gates ex
     http.get('http://localhost:3000/api/finance/payment-methods', () => HttpResponse.json({ data: [{ id: 'cash', name: 'Efectivo', isSelectable: true }, { id: 'transfer', name: 'Transferencia', isSelectable: true }, { id: 'card', name: 'Tarjeta', isSelectable: true }] })),
     http.get('http://localhost:3000/api/finance/income', ({ request }) => { incomeUrls.push(new URL(request.url)); return HttpResponse.json({ data: [{ amount: '320000', paymentMethod: { id: 'cash', name: 'Efectivo' } }, { amount: '480000', paymentMethod: { id: 'transfer', name: 'Transferencia' } }] }); }),
     http.get('http://localhost:3000/api/finance/expenses', ({ request }) => { expenseUrls.push(new URL(request.url)); return HttpResponse.json({ data: [{ amount: '80000', paymentMethod: { id: 'cash', name: 'Efectivo' } }, { amount: '140000', paymentMethod: { id: 'transfer', name: 'Transferencia' } }] }); }),
-    http.get('http://localhost:3000/api/sala/students', ({ request }) => { const url = new URL(request.url); studentUrls.push(url); return HttpResponse.json({ data: url.searchParams.get('month') === '9' ? [{ id: 'sept', firstName: 'Septiembre', lastName: 'Pendiente', plan: { name: 'Base' }, paymentStatus: 'PENDING' }] : [] }); }),
+    http.get('http://localhost:3000/api/sala/students', ({ request }) => { const url = new URL(request.url); studentUrls.push(url); return HttpResponse.json({ data: [{ id: 'sept', firstName: 'Septiembre', lastName: 'Pendiente', plan: { name: 'Base' }, hasValidAccess: false, validUntil: null }] }); }),
   );
   renderPage();
   expect(await screen.findByLabelText('Mes')).toHaveValue('2026-10');
@@ -378,9 +378,9 @@ it.each([true, false])('consults selected month, aggregates methods and gates ex
   await waitFor(() => expect(incomeUrls.at(-1)?.searchParams.get('from')).toBe('2026-09-01'));
   expect(incomeUrls.at(-1)?.searchParams.get('to')).toBe('2026-09-30'); expect(incomeUrls.at(-1)?.searchParams.get('area')).toBe('SALA');
   expect(expenseUrls.at(-1)?.searchParams.get('from')).toBe('2026-09-01'); expect(expenseUrls.at(-1)?.searchParams.get('to')).toBe('2026-09-30');
-  expect(studentUrls.at(-1)?.searchParams.get('year')).toBe('2026'); expect(studentUrls.at(-1)?.searchParams.get('month')).toBe('9');
+  expect(studentUrls.every(url => !url.searchParams.has('year') && !url.searchParams.has('month'))).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Mes siguiente' }));
-  await waitFor(() => expect(screen.queryByText('Septiembre Pendiente')).not.toBeInTheDocument());
+  expect(screen.getByText('Septiembre Pendiente')).toBeVisible();
   expect(screen.getByLabelText('Mes')).toHaveValue('2026-10');
   fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }));
   expect(await screen.findByText('Septiembre Pendiente')).toBeVisible();

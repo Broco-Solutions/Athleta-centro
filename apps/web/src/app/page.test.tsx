@@ -9,7 +9,7 @@ vi.mock('../features/auth/auth-shell', () => ({ AuthShell: ({ children }: { chil
 vi.mock('../features/auth/auth', () => ({ currentSession: vi.fn() }));
 vi.mock('@athleta/api-client', () => ({ getSalaDashboard: vi.fn(), getReservationsTimeline: vi.fn() }));
 const session: SafeSession = { user: { id: 'prof', firstName: 'Federico', lastName: 'Sintético', email: 'prof@test.local' }, roles: ['PROFESSOR'], permissions: ['PEOPLE_READ', 'SALA_RELATION_READ'], csrfToken: 'csrf', mustChangePassword: false };
-const summary = { date: '2026-10-31', expected: 7, attended: 2, cancelledOrAbsent: 1, upcoming: [{ startTime: '09:00', total: 5, people: [{ id: 'student', firstName: 'Ana', lastName: 'Sintética', origin: 'FIXED' as const }] }], withoutRoutine: { count: 0, personIds: [] }, pendingPayment: { count: 3, personIds: [] } };
+const summary = { date: '2026-10-31', expected: 7, attended: 2, cancelledOrAbsent: 1, upcoming: [{ startTime: '09:00', total: 5, people: [{ id: 'student', firstName: 'Ana', lastName: 'Sintética', origin: 'FIXED' as const }] }], withoutRoutine: { count: 0, personIds: [] }, withoutValidity: { count: 3, personIds: [] } };
 function renderPage(): void { render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><HomePage /></QueryClientProvider>); }
 beforeEach(() => {
   vi.mocked(currentSession).mockResolvedValue(session);
@@ -22,7 +22,7 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.clearAllMocks();
 it('shows operational Sala information and changes from today to tomorrow in Argentina', async () => {
   renderPage();
   expect(await screen.findByText('Hola, Federico')).toBeVisible();
-  for (const text of ['Próximos horarios', 'Alumnos esperados', 'Asistencias', 'Cancelados / Ausentes', 'Sin rutina activa', 'Pago pendiente', 'Hoy', 'Mañana']) expect(await screen.findByText(text)).toBeVisible();
+  for (const text of ['Próximos horarios', 'Alumnos esperados', 'Asistencias', 'Cancelados / Ausentes', 'Sin rutina activa', 'Sin vigencia', 'Hoy', 'Mañana']) expect(await screen.findByText(text)).toBeVisible();
   expect(await screen.findByText('Ana Sintética')).toBeVisible();
   const studentUrl = new URL(screen.getByRole('link', { name: /Ana Sintética.*Gestionar/ }).getAttribute('href')!, 'http://localhost');
   expect(studentUrl.pathname).toBe('/reservations');
@@ -31,7 +31,7 @@ it('shows operational Sala information and changes from today to tomorrow in Arg
   expect(screen.getByText('0')).toBeVisible();
   expect(screen.getByRole('link', { name: 'Ver Reservas' })).toHaveAttribute('href', '/reservations?date=2026-10-31');
   expect(screen.getByRole('link', { name: /Sin rutina activa/ })).toHaveAttribute('href', '/students?filter=without-routine');
-  expect(screen.getByRole('link', { name: /Pago pendiente/ })).toHaveAttribute('href', '/students?filter=pending-payment');
+  expect(screen.getByRole('link', { name: /Sin vigencia/ })).toHaveAttribute('href', '/students?filter=without-validity');
   expect(getSalaDashboard).toHaveBeenCalledWith({ date: '2026-10-31' }, { credentials: 'include' });
   fireEvent.click(screen.getByRole('button', { name: 'Mañana' }));
   expect(await screen.findByText('Marta Sintética')).toBeVisible();
@@ -57,7 +57,7 @@ it.each<SafeSession['roles']>([['GENERAL_ADMIN'], ['GENERAL_ADMIN', 'ADMINISTRAT
   vi.stubGlobal('fetch', fetchMock);
   renderPage();
   expect(await screen.findByRole('heading', { name: 'Hola, Federico' })).toBeVisible();
-  for (const text of ['Resumen general de Athleta', 'Operación de hoy', 'Seguimiento', 'Sin rutina activa', 'Pago pendiente', 'Finanzas del mes', 'Ingresos', 'Gastos', 'Resultado']) expect(await screen.findByText(text)).toBeVisible();
+  for (const text of ['Resumen general de Athleta', 'Operación de hoy', 'Seguimiento', 'Sin rutina activa', 'Sin vigencia', 'Finanzas del mes', 'Ingresos', 'Gastos', 'Resultado']) expect(await screen.findByText(text)).toBeVisible();
   expect(await screen.findByRole('heading', { name: 'Sala' })).toBeVisible();
   expect(screen.getAllByRole('link', { name: 'Ver Agenda' })).toHaveLength(1);
   const salaCard = screen.getByRole('heading', { name: 'Sala' }).closest('article')!;
@@ -75,7 +75,7 @@ it.each<SafeSession['roles']>([['GENERAL_ADMIN'], ['GENERAL_ADMIN', 'ADMINISTRAT
   expect(screen.getByText(/175\.000/)).toBeVisible();
 });
 it('keeps the upcoming empty state and zero counters visible', async () => {
-  vi.mocked(getSalaDashboard).mockResolvedValue({ status: 200, headers: new Headers(), data: { data: { ...summary, upcoming: [], expected: 0, attended: 0, cancelledOrAbsent: 0, pendingPayment: { count: 0, personIds: [] } } } });
+  vi.mocked(getSalaDashboard).mockResolvedValue({ status: 200, headers: new Headers(), data: { data: { ...summary, upcoming: [], expected: 0, attended: 0, cancelledOrAbsent: 0, withoutValidity: { count: 0, personIds: [] } } } });
   renderPage(); expect(await screen.findByText('No hay alumnos previstos para los próximos horarios.')).toBeVisible(); expect(screen.getAllByText('0')).toHaveLength(5);
 });
 it('keeps loading and errors localized inside the workspace', async () => {
@@ -94,7 +94,7 @@ it.each<SafeSession['roles']>([['ADMINISTRATIVE'], ['ADMINISTRATIVE', 'PROFESSOR
   vi.stubGlobal('fetch', fetchMock);
   renderPage();
   expect(await screen.findByRole('heading', { name: 'Hola, Federico' })).toBeVisible();
-  for (const text of ['Operación administrativa de hoy', 'Operación de hoy', 'Seguimiento', 'Sin rutina activa', 'Pago pendiente', 'Accesos operativos']) expect(screen.getByText(text)).toBeVisible();
+  for (const text of ['Operación administrativa de hoy', 'Operación de hoy', 'Seguimiento', 'Sin rutina activa', 'Sin vigencia', 'Accesos operativos']) expect(screen.getByText(text)).toBeVisible();
   const salaCard = screen.getByRole('heading', { name: 'Sala' }).closest('article')!;
   await waitFor(() => {
     expect(within(salaCard).getByText('Alumnos esperados').parentElement).toHaveTextContent(String(summary.expected));
@@ -105,8 +105,8 @@ it.each<SafeSession['roles']>([['ADMINISTRATIVE'], ['ADMINISTRATIVE', 'PROFESSOR
   const followUp = screen.getByRole('region', { name: 'Seguimiento' });
   expect(within(followUp).getByRole('link', { name: /Sin rutina activa/ })).toHaveAttribute('href', '/students?filter=without-routine');
   expect(within(followUp).getByRole('link', { name: /Sin rutina activa/ })).toHaveTextContent(String(summary.withoutRoutine.count));
-  expect(within(followUp).getByRole('link', { name: /Pago pendiente/ })).toHaveAttribute('href', '/students?filter=pending-payment');
-  expect(within(followUp).getByRole('link', { name: /Pago pendiente/ })).toHaveTextContent(String(summary.pendingPayment.count));
+  expect(within(followUp).getByRole('link', { name: /Sin vigencia/ })).toHaveAttribute('href', '/students?filter=without-validity');
+  expect(within(followUp).getByRole('link', { name: /Sin vigencia/ })).toHaveTextContent(String(summary.withoutValidity.count));
   const shortcuts = screen.getByRole('region', { name: 'Accesos operativos' });
   for (const [name, href] of [['Alumnos', '/students'], ['Personas', '/people'], ['Ingresos / Pagos', '/finance?view=income'], ['Gastos', '/finance?view=expenses']]) {
     expect(within(shortcuts).getByRole('link', { name: new RegExp(name!) })).toHaveAttribute('href', href);

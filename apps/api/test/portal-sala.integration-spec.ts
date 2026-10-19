@@ -156,16 +156,16 @@ describe('Portal Sala services from the current plan', () => {
     const method = await prisma.paymentMethod.create({ data: { name: `Portal efectivo ${crypto.randomUUID()}` } });
     paymentMethodId = method.id;
     const day = new Date(`${date}T00:00:00.000Z`);
-    // A different cash date and amount prove that only the monthly period enables Portal reservations.
+    // Coverage is independent of cash date, legacy metadata and amount.
     return prisma.salaPayment.create({ data: {
       personId, year: day.getUTCFullYear(), month: day.getUTCMonth() + 1,
-      paidAt: new Date('2000-01-01'), amount: 1, paymentMethodId, registeredById: professorId, operationId: crypto.randomUUID(),
+      coverageStartDate: day, coverageEndDate: sala.addCalendarMonthClamped(day), paidAt: new Date('2000-01-01'), amount: 1, paymentMethodId, registeredById: professorId, operationId: crypto.randomUUID(),
     } });
   }
   async function reverse(paymentId: string) {
     return prisma.salaPaymentReversal.create({ data: { paymentId, reason: 'Reversión sintética', registeredById: professorId, operationId: crypto.randomUUID() } });
   }
-  it('derives each fixed occurrence from the matching payment period and counts pending capacity', async () => {
+  it('derives each fixed occurrence from the coverage dates and counts pending capacity', async () => {
     const f = await fixture('2026-10-20');
     await prisma.salaScheduleSlot.update({ where: { id: windowId }, data: { specificCapacity: 1 } });
     const fixed = await sala.createFixed({ personId, salaParticipationId: f.participation.id, scheduleSlotId: windowId, serviceTypeId: f.muscle.id, startTime: '09:00', startDate: '2026-10-13' });
@@ -178,7 +178,7 @@ describe('Portal Sala services from the current plan', () => {
     expect(portal.body.data.fixedOccurrences).toEqual(expect.arrayContaining([expect.objectContaining({ date: '2026-10-20', status: 'PENDING_PAYMENT' })]));
     await payment('2026-11-20');
     expect(await sala.fixedOccurrenceStates(personId, ['2026-10-20'])).toEqual([expect.objectContaining({ status: 'PENDING_PAYMENT' })]);
-    const paid = await prisma.salaPayment.create({ data: { personId, year: 2026, month: 10, paidAt: new Date('2026-10-08'), amount: 1, paymentMethodId, registeredById: professorId, operationId: crypto.randomUUID() } });
+    const paid = await prisma.salaPayment.create({ data: { personId, year: 2026, month: 10, coverageStartDate: new Date('2026-10-08'), coverageEndDate: new Date('2026-11-08'), paidAt: new Date('2026-10-08'), amount: 1, paymentMethodId, registeredById: professorId, operationId: crypto.randomUUID() } });
     expect(await sala.fixedOccurrenceStates(personId, ['2026-10-20'])).toEqual([expect.objectContaining({ status: 'RESERVED' })]);
     await reverse(paid.id);
     expect(await sala.fixedOccurrenceStates(personId, ['2026-10-20'])).toEqual([expect.objectContaining({ status: 'PENDING_PAYMENT' })]);
@@ -381,20 +381,20 @@ describe('Portal Sala services from the current plan', () => {
       jest.useRealTimers();
     }
   });
-  it.each(['2026-10-01', '2026-10-10', '2026-10-15'])('allows the unpaid reserved date %s in the first fortnight', async date => {
+  it.each(['2026-10-01', '2026-10-10', '2026-10-15'])('rejects a date without validity, including %s before midmonth', async date => {
     operationalDate.mockReturnValue(date === '2026-10-01' ? date : '2026-10-05');
     const f = await fixture(date);
-    await reserve(f).expect(201);
+    expect((await reserve(f).expect(403)).body.code).toBe('PORTAL_SALA_VALIDITY_REQUIRED');
     expect(await prisma.salaPayment.count({ where: { personId } })).toBe(0);
-    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
   });
   it.each(['2026-10-16', '2026-10-20', '2026-10-25', '2026-10-31'])('blocks the unpaid reserved date %s even when today is October 5', async date => {
     operationalDate.mockReturnValue('2026-10-05');
     const f = await fixture(date);
     const denied = await reserve(f).expect(403);
     expect(denied.body).toMatchObject({
-      statusCode: 403, code: 'PORTAL_SALA_PAYMENT_REQUIRED', details: { year: 2026, month: 10 },
-      message: 'Para reservar en octubre necesitás tener registrado el pago de octubre.',
+      statusCode: 403, code: 'PORTAL_SALA_VALIDITY_REQUIRED',
+      message: 'Necesitás tener vigencia de Sala para reservar esa fecha.',
     });
     expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
   });
@@ -405,18 +405,18 @@ describe('Portal Sala services from the current plan', () => {
     await reserve(f).expect(201);
     expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);
   });
-  it.each(['2026-11-05', '2026-11-15'])('allows an unpaid future-month date %s in the first fortnight', async date => {
+  it.each(['2026-11-05', '2026-11-15'])('rejects a future date %s without coverage', async date => {
     operationalDate.mockReturnValue('2026-10-20');
     const f = await fixture(date);
-    await reserve(f).expect(201);
+    expect((await reserve(f).expect(403)).body.code).toBe('PORTAL_SALA_VALIDITY_REQUIRED');
     expect(await prisma.salaPayment.count({ where: { personId } })).toBe(0);
-    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
   });
   it.each(['2026-11-16', '2026-11-20'])('blocks an unpaid future-month date %s in the second fortnight', async date => {
     operationalDate.mockReturnValue('2026-10-25');
     const f = await fixture(date);
     const denied = await reserve(f).expect(403);
-    expect(denied.body).toMatchObject({ code: 'PORTAL_SALA_PAYMENT_REQUIRED', details: { year: 2026, month: 11 } });
+    expect(denied.body).toMatchObject({ code: 'PORTAL_SALA_VALIDITY_REQUIRED' });
     expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
   });
   it('allows a paid future-month date in the second fortnight', async () => {
@@ -437,29 +437,36 @@ describe('Portal Sala services from the current plan', () => {
     expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(status === 201 ? 1 : 0);
   });
 
-  it('allows the same Portal reservation after registering its month from the active Plan', async () => {
+  it('allows the inclusive end across months and rejects the following day and reversed coverage', async () => {
+    operationalDate.mockReturnValue('2026-11-01');
+    const f = await fixture('2026-11-20');
+    const paid = await payment('2026-10-20');
+    expect((await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200)).body.data.validity).toEqual({ hasValidAccess: true, validUntil: '2026-11-20' });
+    await reserve(f).expect(201);
+    const next = { ...f, body: { ...f.body, date: '2026-11-21' } };
+    expect((await reserve(next).expect(403)).body.code).toBe('PORTAL_SALA_VALIDITY_REQUIRED');
+    await reverse(paid.id);
+    expect((await reserve(f).expect(403)).body.code).toBe('PORTAL_SALA_VALIDITY_REQUIRED');
+  });
+  it('allows the same Portal reservation after renewing validity', async () => {
     const f = await fixture();
     const denied = await reserve(f).expect(403);
-    expect(denied.body.code).toBe('PORTAL_SALA_PAYMENT_REQUIRED');
+    expect(denied.body.code).toBe('PORTAL_SALA_VALIDITY_REQUIRED');
     expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
     const method = await prisma.paymentMethod.create({ data: { name: `Portal manual ${crypto.randomUUID()}` } });
     paymentMethodId = method.id;
-    const [year, month] = f.body.date.split('-').map(Number);
-    const registered = await sala.registerPlanPayments({ personId, paidAt: '2020-01-01', paymentMethodId, periods: [{ year: year!, month: month!, amount: '20000', operationId: crypto.randomUUID() }] }, professorId);
-    expect(registered.payments[0]!.amount.toString()).toBe('20000');
+    const registered = await sala.createPayment({ personId, planId, paidAt: operationalDate.getMockImplementation()!(), paymentMethodId, amount: '20000', operationId: crypto.randomUUID() }, professorId);
+    expect(registered.amount).toBe('20000');
     await reserve(f).expect(201);
     expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);
   });
-  it('requires payment for the requested month and creates no reservation without it', async () => {
+  it('requires validity for the requested date and creates no reservation without it', async () => {
     const f = await fixture();
     const denied = await reserve(f).expect(403);
-    const day = new Date(f.body.date);
-    expect(denied.body).toMatchObject({ code: 'PORTAL_SALA_PAYMENT_REQUIRED', details: { year: day.getUTCFullYear(), month: day.getUTCMonth() + 1 } });
-    const month = new Intl.DateTimeFormat('es-AR', { month: 'long', timeZone: 'UTC' }).format(day);
-    expect(denied.body.message).toBe(`Para reservar en ${month} necesitás tener registrado el pago de ${month}.`);
+    expect(denied.body).toMatchObject({ code: 'PORTAL_SALA_VALIDITY_REQUIRED', message: 'Necesitás tener vigencia de Sala para reservar esa fecha.' });
     expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
   });
-  it('accepts the matching period regardless of cash date or amount and preserves a reservation after reversal', async () => {
+  it('accepts coverage independently of cash date or amount and preserves a reservation after reversal', async () => {
     const f = await fixture();
     const paid = await payment(f.body.date);
     const created = await reserve(f).expect(201);
@@ -490,30 +497,30 @@ describe('Portal Sala services from the current plan', () => {
     const other = new Date(f.body.date); other.setUTCMonth(other.getUTCMonth() + 1, 1);
     await payment(other.toISOString().slice(0, 10));
     const denied = await reserve(f).expect(403);
-    expect(denied.body.code).toBe('PORTAL_SALA_PAYMENT_REQUIRED');
+    expect(denied.body.code).toBe('PORTAL_SALA_VALIDITY_REQUIRED');
     expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
   });
-  it.each([['2026-11-10', 201], ['2026-11-20', 403]])('treats reversed payment as pending for reserved date %s', async (date, status) => {
+  it.each([['2026-11-10', 403], ['2026-11-20', 403]])('treats reversed payment as pending for reserved date %s', async (date, status) => {
     operationalDate.mockReturnValue('2026-10-25');
     const f = await fixture(date);
     const paid = await payment(f.body.date);
     await reverse(paid.id);
     expect(await prisma.salaPayment.findUniqueOrThrow({ where: { id: paid.id } })).toEqual(paid);
     const result = await reserve(f).expect(status);
-    if (status === 403) expect(result.body).toMatchObject({ code: 'PORTAL_SALA_PAYMENT_REQUIRED', details: { year: 2026, month: 11 } });
+    if (status === 403) expect(result.body).toMatchObject({ code: 'PORTAL_SALA_VALIDITY_REQUIRED' });
     expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(status === 201 ? 1 : 0);
   });
-  it.each(['2026-10-05', '2026-10-15', '2026-10-16', '2026-10-25'])('reports current-month payment state independently of operational day %s', async today => {
+  it.each(['2026-10-05', '2026-10-15', '2026-10-16', '2026-10-25'])('reports current validity independently of operational day %s', async today => {
     operationalDate.mockReturnValue(today);
     const f = await fixture();
     const pending = await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
-    expect(pending.body.data.paymentState).toBe('PENDING');
+    expect(pending.body.data.validity).toEqual({ hasValidAccess: false, validUntil: null });
     const paid = await payment('2026-10-01');
     const before = await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
-    expect(before.body.data.paymentState).toBe('PAID');
+    expect(before.body.data.validity).toEqual({ hasValidAccess: true, validUntil: '2026-11-01' });
     await reverse(paid.id);
     const after = await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
-    expect(after.body.data.paymentState).toBe('PENDING');
+    expect(after.body.data.validity).toEqual({ hasValidAccess: false, validUntil: null });
   });
   it.each([Role.PROFESSOR, Role.ADMINISTRATIVE, Role.GENERAL_ADMIN])('allows an internal reservation as %s without any monthly payment', async role => {
     const f = await fixture();

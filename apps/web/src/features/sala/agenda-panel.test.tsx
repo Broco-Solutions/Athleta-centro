@@ -27,12 +27,12 @@ it('marks a booking attended through the existing mutation and refreshes', async
 it('distinguishes pending payment and automatic cancellation from absence', async () => {
   server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [group([{ ...entry('Homer'), origin: 'FIXED', status: 'PENDING_PAYMENT' }, { ...entry('Marge'), origin: 'FIXED', status: 'CANCELLED', cancelledForNonPayment: true }])] })));
   renderAgenda();
-  fireEvent.click(await screen.findByRole('button', { name: /Homer Sintética 09:00 Pendiente de pago/ }));
-  expect(screen.getByRole('dialog')).toHaveTextContent('El lugar está reservado, pero requiere el pago');
+  fireEvent.click(await screen.findByRole('button', { name: /Homer Sintética 09:00 Pendiente de renovación/ }));
+  expect(screen.getByRole('dialog')).toHaveTextContent('El lugar está reservado, pero la fecha no está cubierta por la vigencia actual');
   expect(screen.queryByRole('button', { name: 'Asistió' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
   fireEvent.click(screen.getByRole('button', { name: /Marge Sintética 09:00 Cancelado/ }));
-  expect(screen.getByRole('dialog')).toHaveTextContent('Por falta de pago');
+  expect(screen.getByRole('dialog')).toHaveTextContent('Por falta de vigencia');
 });
 
 it('keeps direct initial actions for RESERVED', async () => {

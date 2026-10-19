@@ -690,7 +690,7 @@ Esto permite unificar la operación diaria y la asistencia independientemente de
 
 **Estado técnico:** `LAZY_MATERIALIZATION`
 
-Las ocurrencias futuras de `FixedSalaBooking` no se pre-materializan masivamente. La agenda proyecta `RESERVED` o `PENDING_PAYMENT` para una fecha concreta combinando bookings, Pagos y excepciones. `PENDING_PAYMENT` es una condición derivada que ocupa cupo. Una `SalaOccurrence` se persiste cuando existe una operación explícita sobre esa fecha (`ATTENDED`, `ABSENT`, `CANCELLED`, corrección o incorporación `SPONTANEOUS`) o cuando vence impaga una ocurrencia fija. Esta cancelación libera cupo y no finaliza la recurrencia.
+Las ocurrencias futuras de `FixedSalaBooking` no se pre-materializan masivamente. La agenda proyecta `RESERVED` o `PENDING_PAYMENT` para una fecha concreta combinando bookings, Pagos y excepciones. `PENDING_PAYMENT` es una condición derivada que ocupa cupo. Una `SalaOccurrence` se persiste cuando existe una operación explícita sobre esa fecha (`ATTENDED`, `ABSENT`, `CANCELLED`, corrección o incorporación `SPONTANEOUS`) o cuando comienza sin cobertura una ocurrencia fija. Esta cancelación libera cupo y no finaliza la recurrencia.
 
 Esta estrategia es reversible y no modifica el comportamiento funcional externo.
 
@@ -810,24 +810,37 @@ PhysicalTestResult
 
 # 32. SalaPayment
 
-**Tipo:** Aggregate Root
-
-Representa el pago mensual de Sala.
-
-Pertenece conceptualmente al dominio Sala, no a Finance.
+**Tipo:** Aggregate Root. Pago / renovación de Sala, consultable por Finance.
 
 ```text
-SalaPayment
-- person
-- month/year
-- payment date
-- amount
-- payment method
-- registeredBy
-- adjustment reason?
+person
+paidAt (Fecha de cobro, DATE)
+planId? / planNameSnapshot? (Plan de referencia histórico)
+amount (Decimal ARS)
+paymentMethod
+coverageStartDate (DATE)
+coverageEndDate (DATE)
+registeredBy
+operationId
+adjustmentReason?
 ```
 
-Finance podrá consultarlo mediante sus Read Models.
+Cada Pago / renovación de Sala otorga un mes calendario, con extremos incluidos.
+Sin cobertura en la Fecha de cobro, comienza en `paidAt` y termina un mes después.
+Si la Fecha de cobro está cubierta, se recorre toda la cadena continua no revertida
+(coberturas contiguas o solapadas): el nuevo tramo comienza al día siguiente de su
+final y termina un mes calendario después de ese final. Se suma el mes en DateOnly/UTC,
+con clamp al último día real del mes destino (31/01/2026 → 28/02/2026;
+31/01/2028 → 29/02/2028; 28/02/2026 → 28/03/2026).
+No hay gracia ni vencimiento mensual fijo. Se permiten varios Pagos en un mismo mes.
+La reversión invalida su cobertura sin reescribir coberturas posteriores.
+`operationId` es la única clave de idempotencia; se serializa por Persona con advisory lock.
+El Plan financiero queda referenciado y su nombre se congela al cobrar; no modifica
+`SalaParticipation.planId` ni `SalaPlanAssignment`. Ingresos financieros se agrupan por `paidAt`.
+
+`year/month` se mantienen físicamente como metadata legacy/compatibilidad,
+derivada de `paidAt` en nuevos Pagos. No define acceso ni filtros operativos.
+Para históricos sin evidencia, Plan y snapshot quedan en null.
 
 ---
 
@@ -1423,7 +1436,7 @@ Se consideran conceptualmente derivados:
 PersonStatus
 isStudent
 isPatient
-currentMonthPaymentStatus
+currentSalaValidity
 lastClinicalAttention
 treatmentWithoutRecentAttention
 socialWorkOrderExpired

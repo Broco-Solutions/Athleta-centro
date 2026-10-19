@@ -41,26 +41,22 @@ function FinancePageContent(): React.JSX.Element {
   const canCreateExpense = permissions.includes('EXPENSE_CREATE');
   const canReadExpenses = read || permissions.includes('EXPENSE_HISTORY_READ');
   const activeExpenseTab = canCreateExpense ? expenseTab : 'records';
-  const operationalMonth = todayOperational().slice(0, 7);
-  const period = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${operationalMonth}-01T00:00:00Z`)).replace(' de ', ' ');
-  const periodTitle = period.charAt(0).toUpperCase() + period.slice(1);
   const canPay = permissions.includes('SALA_PAYMENT_MANAGE');
   const students = useQuery({ queryKey: ['sala', 'students'], enabled: canPay && view === 'income' && !personId, queryFn: async () => {
-    const response = await listSalaStudents(undefined, { credentials: 'include' });
+    const response = await listSalaStudents({ credentials: 'include' });
     if (response.status >= 400) throw new Error('No pudimos cargar los alumnos de Sala.');
     return response.data.data;
   } });
-  const summaryStudents = useQuery({ queryKey: ['sala', 'students', 'finance-summary', summaryMonth], enabled: canPay && view === 'summary', queryFn: async () => {
-    const [year, month] = summaryMonth.split('-').map(Number);
-    const response = await listSalaStudents({ year: year!, month: month! }, { credentials: 'include' });
+  const summaryStudents = useQuery({ queryKey: ['sala', 'students'], enabled: canPay && view === 'summary', queryFn: async () => {
+    const response = await listSalaStudents({ credentials: 'include' });
     if (response.status !== 200) throw new Error('No pudimos cargar los alumnos de Sala.');
     return response.data.data;
   } });
-  const summaryPending = (summaryStudents.data ?? []).filter(student => student.paymentStatus === 'PENDING');
+  const withoutValidity = (summaryStudents.data ?? []).filter(student => !student.hasValidAccess);
   const term = search.trim().toLocaleLowerCase('es');
   const dniDigits = term.replace(/\D/g, '');
-  const pendingStudents = (students.data ?? []).filter(student => student.paymentStatus === 'PENDING');
-  const paidStudents = (students.data ?? []).filter(student => student.paymentStatus === 'PAID');
+  const pendingStudents = (students.data ?? []).filter(student => !student.hasValidAccess);
+  const paidStudents = (students.data ?? []).filter(student => student.hasValidAccess);
   const tabStudents = incomeTab === 'pending' ? pendingStudents : paidStudents;
   const results = term ? tabStudents.filter(student => `${student.firstName} ${student.lastName}`.toLocaleLowerCase('es').includes(term) || (dniDigits && /^[\d\s.-]+$/.test(term) && student.dni.replace(/\D/g, '').includes(dniDigits))) : tabStudents;
   const [name, setName] = useState('');
@@ -111,7 +107,7 @@ function FinancePageContent(): React.JSX.Element {
   }
   const summaryReady = summaryIncome.isSuccess && summaryExpenses.isSuccess;
   return <WorkspaceShell active={active}><main className="mx-auto max-w-6xl space-y-6">
-    <header><h1 className="text-3xl font-semibold">Finanzas</h1><p className="text-sm text-muted-foreground">{selectedPaymentContext ? "La cuenta del alumno, sus cuotas y cada pago en un solo lugar." : "Operación económica · ARS"}</p>{selectedPaymentContext ? <Link className="mt-3 inline-block rounded border px-3 py-2 text-sm" href="/finance?view=income">Cambiar alumno</Link> : null}</header>
+    <header><h1 className="text-3xl font-semibold">Finanzas</h1><p className="text-sm text-muted-foreground">{selectedPaymentContext ? "La vigencia y cada pago del alumno en un solo lugar." : "Operación económica · ARS"}</p>{selectedPaymentContext ? <Link className="mt-3 inline-block rounded border px-3 py-2 text-sm" href="/finance?view=income">Cambiar alumno</Link> : null}</header>
     {view === 'summary' ? <section aria-label="Finanzas del mes" className="space-y-3">
       <h2 className="text-xl font-semibold">Finanzas del mes</h2>
       <div className="flex items-center gap-4"><button type="button" aria-label="Mes anterior" onClick={() => setSummaryMonth(previousMonth(summaryMonth))} className="rounded border px-3 py-2">‹</button><p className="font-semibold">{monthTitle(summaryMonth)}</p><button type="button" aria-label="Mes siguiente" onClick={() => setSummaryMonth(nextMonth(summaryMonth))} className="rounded border px-3 py-2">›</button></div>
@@ -126,33 +122,32 @@ function FinancePageContent(): React.JSX.Element {
       </> : null}
     </> : null}
     {view === 'summary' && canPay ? <section aria-labelledby="pending-fees-title" className="space-y-3 rounded border border-border bg-surface p-5">
-      <h2 id="pending-fees-title" className="text-xl font-semibold">Cuotas pendientes</h2>
-      <p className="text-sm text-muted-foreground">Alumnos sin pago registrado para {monthTitle(summaryMonth)}</p>
+      <h2 id="pending-fees-title" className="text-xl font-semibold">Estado actual de Sala</h2>
+      <p className="text-sm text-muted-foreground">Alumnos sin vigencia: {withoutValidity.length}</p>
       {summaryStudents.isPending ? <p role="status">Cargando alumnos…</p> : null}
       {summaryStudents.isError ? <p role="alert">{summaryStudents.error.message}</p> : null}
-      {summaryStudents.isSuccess && !summaryPending.length ? <p>No hay cuotas pendientes para el mes seleccionado.</p> : null}
-      <ul>{summaryPending.map(student => <li key={student.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-3 text-sm">
-        <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>{student.plan.name} · Pago pendiente</p></div>
-        <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}&action=charge`}>Cobrar</Link>
+      {summaryStudents.isSuccess && !withoutValidity.length ? <p>Todos los alumnos tienen vigencia actualmente.</p> : null}
+      <ul>{withoutValidity.map(student => <li key={student.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-3 text-sm">
+        <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>{student.plan.name} · Sin vigencia</p></div>
+        <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}&action=renew`}>Renovar</Link>
       </li>)}</ul>
     </section> : null}
     {view === 'summary' && (read || canCatalog) ? <>
       <details className="rounded border bg-white p-4"><summary className="cursor-pointer font-semibold">Configuración · Administrar medios de pago</summary><PaymentMethods methods={methods.data ?? []} canCatalog={canCatalog} name={name} editing={editing} message={message} onName={setName} onSave={save} onEdit={(method) => { setEditing(method.id); setName(method.name); }} onRetire={(method) => { void retire(method); }} onCancelEdit={() => { setEditing(null); setName(''); }} /></details>
     </> : null}
     {view === 'income' && canPay && !personId ? <section className="space-y-3 rounded border bg-white p-5">
-      <h2 className="text-xl font-semibold">Cuotas de Sala</h2>
-      <p className="text-sm text-muted-foreground">{periodTitle}</p>
+      <h2 className="text-xl font-semibold">Vigencia de Sala</h2>
       <div className="flex gap-4" aria-label="Estado de cuotas">
-        <button type="button" aria-pressed={incomeTab === 'pending'} className={tabClass(incomeTab === 'pending')} onClick={() => setIncomeTab('pending')}>Pendientes {pendingStudents.length}</button>
-        <button type="button" aria-pressed={incomeTab === 'paid'} className={tabClass(incomeTab === 'paid')} onClick={() => setIncomeTab('paid')}>Pagados {paidStudents.length}</button>
+        <button type="button" aria-pressed={incomeTab === 'pending'} className={tabClass(incomeTab === 'pending')} onClick={() => setIncomeTab('pending')}>Sin vigencia {pendingStudents.length}</button>
+        <button type="button" aria-pressed={incomeTab === 'paid'} className={tabClass(incomeTab === 'paid')} onClick={() => setIncomeTab('paid')}>Vigentes {paidStudents.length}</button>
       </div>
       <label className="block text-sm">Nombre, apellido o DNI<input type="search" value={search} onChange={event => setSearch(event.target.value)} className="mt-1 h-10 w-full rounded border px-3" /></label>
       {students.isPending ? <p role="status">Cargando alumnos…</p> : null}
       {students.isError ? <p role="alert">{students.error.message}</p> : null}
       {students.isSuccess && !results.length ? <p>No se encontraron alumnos.</p> : null}
       <ul>{results.map(student => <li key={student.id} className="flex flex-wrap items-center justify-between gap-3 border-b py-3 text-sm">
-        <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>DNI {student.dni} · {student.plan.name}</p>{incomeTab === 'paid' ? <p>Fecha de cobro: {student.currentPaymentPaidAt ? formatDate(student.currentPaymentPaidAt) : '—'}</p> : null}<p>{student.paymentStatus === 'PAID' ? 'Pagado' : 'Pago pendiente'}</p></div>
-        <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}${incomeTab === 'pending' ? '&action=charge' : ''}`}>{incomeTab === 'pending' ? 'Cobrar' : 'Ver pagos'}</Link>
+        <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>DNI {student.dni} · {student.plan.name}</p>{incomeTab === 'paid' ? <p>Fecha de cobro: {student.lastPaymentPaidAt ? formatDate(student.lastPaymentPaidAt) : '—'}</p> : null}<p>{student.hasValidAccess ? `Vigente hasta ${student.validUntil ? formatDate(student.validUntil) : '—'}` : 'Sin vigencia'}</p></div>
+        <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}${incomeTab === 'pending' ? '&action=renew' : ''}`}>{incomeTab === 'pending' ? 'Renovar' : 'Ver pagos'}</Link>{incomeTab === 'paid' ? <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}&action=renew`}>Renovar</Link> : null}
       </li>)}</ul>
     </section> : null}
     {selectedPaymentContext ? <section className="space-y-3">
@@ -166,7 +161,7 @@ function FinancePageContent(): React.JSX.Element {
           </div>
           {activePlan ? <div className="border-border sm:border-l sm:pl-6"><p className="font-semibold">{activePlan.name}</p><p className="text-sm text-muted-foreground">Precio actual: {formatMoney(activePlan.monthlyAmount).replace('$ ', '$')} / mes</p></div> : null}
         </div>
-        {participations.isSuccess ? <SalaPaymentPanel key={`${personId}-${paymentAction}`} defaultOpen={paymentAction === 'charge'} personId={personId!} csrfToken={session.data?.csrfToken ?? ''} canManage activePlan={activePlan}/> : null}
+        {participations.isSuccess ? <SalaPaymentPanel key={`${personId}-${paymentAction}`} defaultOpen={paymentAction === 'renew'} personId={personId!} csrfToken={session.data?.csrfToken ?? ''} canManage activePlan={activePlan}/> : null}
       </> : null}
     </section> : null}
     {view === 'income' && !personId && income.isError ? <p role="alert">No se pudieron cargar los ingresos para este contexto.</p> : null}

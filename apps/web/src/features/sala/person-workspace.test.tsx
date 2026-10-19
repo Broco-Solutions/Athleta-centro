@@ -291,7 +291,7 @@ function dashboardHandlers() {
     http.get(`http://localhost:3000/api/sala/participations/person/${personId}`, () => HttpResponse.json({ data: [{ id: 'participation', plan: { id: 'plan', name: 'Plan Base', monthlyAmount: '25000' }, mainProfessor: { firstName: 'Profesor', lastName: 'Demo' } }] })),
     http.get(`http://localhost:3000/api/sala/people/${personId}/routines`, () => HttpResponse.json({ data: [workspaceRoutine] })),
     http.get(`http://localhost:3000/api/sala/people/${personId}/physical-evaluations`, () => HttpResponse.json({ data: [{ id: 'old', evaluationDate: '2026-09-30' }, { id: 'latest', evaluationDate: '2026-10-02' }] })),
-    http.get(`http://localhost:3000/api/sala/people/${personId}/payments`, () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: [] })),
     http.get(`http://localhost:3000/api/sala/people/${personId}/clinical-indications`, () => HttpResponse.json({ data: [] })),
   );
 }
@@ -309,7 +309,7 @@ it('shows the Professor header, exact tabs and four explicit dashboard actions',
   expect(await screen.findByText('Activa')).toBeInTheDocument();
   expect(screen.getByText('1 día')).toBeInTheDocument();
   expect(await screen.findByText('Última: 02/10/2026')).toBeInTheDocument();
-  expect(await screen.findByText('Pago pendiente')).toBeInTheDocument();
+  expect(await screen.findByText('Sin vigencia')).toBeInTheDocument();
   for (const [label, tab] of [['Ver / editar rutina', 'routine'], ['Gestionar turnos', 'turns'], ['Ver evaluaciones', 'evaluations']] as const) {
     expect(screen.getByRole('link', { name: label })).toHaveAttribute('href', `/sala/people/${personId}?tab=${tab}`);
   }
@@ -348,14 +348,11 @@ it('finds the next non-cancelled future reservation from an unordered list using
   expect(screen.getByText('13/10/2026 · 18:30')).toBeInTheDocument();
   expect(screen.queryByText('12/10/2026 · 19:00')).not.toBeInTheDocument();
 });
-it.each([null, { id: 'reversal' }])('shows current-month payment only when not reversed (reversal=%s)', async reversal => {
+it.each([null, { id: 'reversal' }])('shows current validity only when not reversed (reversal=%s)', async reversal => {
   dashboardHandlers();
-  server.use(http.get(`http://localhost:3000/api/sala/people/${personId}/payments`, () => HttpResponse.json({ data: [
-    { id: 'current', year: 2026, month: 10, reversal }, { id: 'other-year', year: 2025, month: 10 }, { id: 'other-month', year: 2026, month: 9 },
-  ] })));
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: [{ id: personId, hasValidAccess: !reversal, validUntil: reversal ? null : '2026-11-20' }] })));
   renderWorkspace();
-  expect(await screen.findByText(reversal ? 'Pago pendiente' : 'Pago registrado')).toBeInTheDocument();
-  expect(screen.getByText('octubre 2026')).toBeInTheDocument();
+  expect(await screen.findByText(reversal ? 'Sin vigencia' : 'Vigente hasta 20/11/2026')).toBeInTheDocument();
 });
 it('keeps dashboard queries independent on HTTP errors and does not turn failures into empty states', async () => {
   dashboardHandlers();
@@ -365,7 +362,7 @@ it('keeps dashboard queries independent on HTTP errors and does not turn failure
   );
   renderWorkspace();
   expect(await screen.findByText('Activa')).toBeInTheDocument();
-  expect(await screen.findByText('Pago pendiente')).toBeInTheDocument();
+  expect(await screen.findByText('Sin vigencia')).toBeInTheDocument();
   await waitFor(() => expect(screen.getAllByText('No pudimos cargar esta información.')).toHaveLength(2));
   expect(screen.queryByText('Sin evaluaciones')).not.toBeInTheDocument();
   expect(screen.queryByText('Sin indicaciones especiales para entrenar.')).not.toBeInTheDocument();
@@ -411,7 +408,7 @@ it.each(['turns', 'reservations', 'fixed'])('combines both existing booking sect
 });
 it('keeps the Professor payment card informational even for the old payments URL', async () => {
   dashboardHandlers(); navigation.tab = 'payments'; renderWorkspace();
-  expect(await screen.findByText('Pago pendiente')).toBeVisible();
+  expect(await screen.findByText('Sin vigencia')).toBeVisible();
   expect(screen.getByRole('heading', { name: 'Pago' })).toBeVisible();
   for (const name of ['Pagos', 'Gestionar pagos', 'Registrar pago', 'Ver pago']) expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Mes/Año')).not.toBeInTheDocument();
@@ -426,7 +423,7 @@ it('shows the header and other cards while a dashboard query is still loading', 
   renderWorkspace();
   expect(await screen.findByText('Plan Base · Profesor principal: Profesor Demo')).toBeInTheDocument();
   expect(await screen.findByText('Activa')).toBeInTheDocument();
-  expect(await screen.findByText('Pago pendiente')).toBeInTheDocument();
+  expect(await screen.findByText('Sin vigencia')).toBeInTheDocument();
   expect(screen.getByText('Cargando…')).toBeInTheDocument();
   finishRequest();
   expect(await screen.findByText('Sin evaluaciones')).toBeInTheDocument();
@@ -435,7 +432,7 @@ it('keeps consultation available without offering routine/evaluation creation fo
   dashboardHandlers();
   server.use(http.get(`http://localhost:3000/api/sala/participations/person/${personId}`, () => HttpResponse.json({ data: [] })));
   renderWorkspace();
-  await screen.findByText('Pago pendiente');
+  await screen.findByText('Sin vigencia');
   expect(screen.getAllByText('Sin participación activa')).toHaveLength(2);
   expect(screen.queryByRole('link', { name: 'Crear rutina' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Crear evaluación' })).not.toBeInTheDocument();
@@ -444,18 +441,18 @@ it('reuses the panel cache keys and updates the dashboard after payment invalida
   dashboardHandlers();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(<QueryClientProvider client={client}><SalaPersonWorkspace personId={personId}/></QueryClientProvider>);
-  await screen.findByText('Pago pendiente'); await screen.findByText('Última: 02/10/2026'); await screen.findByText('Activa');
+  await screen.findByText('Sin vigencia'); await screen.findByText('Última: 02/10/2026'); await screen.findByText('Activa');
   expect(client.getQueryData(['sala-routines', personId])).toEqual([workspaceRoutine]);
   expect(client.getQueryData(['sala', 'physical-evaluations', personId])).toHaveLength(2);
-  expect(client.getQueryData(['sala', 'payments', personId])).toEqual([]);
-  server.use(http.get(`http://localhost:3000/api/sala/people/${personId}/payments`, () => HttpResponse.json({ data: [{ id: 'paid', year: 2026, month: 10, reversal: null }] })));
-  await client.invalidateQueries({ queryKey: ['sala', 'payments', personId] });
-  expect(await screen.findByText('Pago registrado')).toBeInTheDocument();
+  expect(client.getQueryData(['sala', 'students'])).toEqual([]);
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: [{ id: personId, hasValidAccess: true, validUntil: '2026-11-20' }] })));
+  await client.invalidateQueries({ queryKey: ['sala', 'students'] });
+  expect(await screen.findByText('Vigente hasta 20/11/2026')).toBeInTheDocument();
 });
 it.each([['ADMINISTRATIVE'], ['GENERAL_ADMIN'], ['KINESIOLOGIST'], ['OSTEOPATH'], ['PROFESSOR', 'KINESIOLOGIST']])('preserves the existing sections for roles %s', async (...roles) => {
   navigation.tab = 'summary';
   server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'staff', firstName: 'Staff', lastName: 'Demo' }, roles, permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_MANAGE', ...(roles.some(role => ['ADMINISTRATIVE', 'GENERAL_ADMIN', 'PROFESSOR'].includes(role)) ? ['SALA_PHYSICAL_EVALUATION_READ'] : [])], csrfToken: 'csrf', mustChangePassword: false } })),
-    http.get(`http://localhost:3000/api/sala/people/${personId}/payments`, () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: [] })),
     http.get('http://localhost:3000/api/finance/payment-methods', () => HttpResponse.json({ data: [] })),
   );
   renderWorkspace(); await screen.findByText('Workspace Sala');
@@ -582,12 +579,12 @@ it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('shows contextual Finance actions i
   routineSession([...professorPermissions, 'SALA_PAYMENT_MANAGE'], [role]);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><SalaPersonWorkspace personId={personId}/></QueryClientProvider>);
-  expect(await screen.findByRole('link', { name: 'Registrar pago' })).toHaveAttribute('href', `/finance?view=income&personId=${personId}`);
+  expect(await screen.findByRole('link', { name: 'Renovar' })).toHaveAttribute('href', `/finance?view=income&personId=${personId}&action=renew`);
   expect(screen.queryByLabelText('Mes/Año')).not.toBeInTheDocument();
-  server.use(http.get(`http://localhost:3000/api/sala/people/${personId}/payments`, () => HttpResponse.json({ data: [{ year: 2026, month: 10, reversal: null }] })));
-  await client.invalidateQueries({ queryKey: ['sala', 'payments', personId] });
-  expect(await screen.findByText('Pago registrado')).toBeVisible();
-  expect(screen.getByRole('link', { name: 'Ver pago' })).toHaveAttribute('href', `/finance?view=income&personId=${personId}`);
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: [{ id: personId, hasValidAccess: true, validUntil: '2026-11-20' }] })));
+  await client.invalidateQueries({ queryKey: ['sala', 'students'] });
+  expect(await screen.findByText('Vigente hasta 20/11/2026')).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Ver pagos' })).toHaveAttribute('href', `/finance?view=income&personId=${personId}`);
 });
 
 it('presents the paired routine creation choices in the student workspace and opens the shared day editor', async () => {

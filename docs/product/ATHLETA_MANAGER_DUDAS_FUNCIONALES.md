@@ -1,5 +1,12 @@
 # ATHLETA_MANAGER_DUDAS_FUNCIONALES.md
 
+> Actualización confirmada 2026-10-19: las definiciones históricas de acceso,
+> cuotas y seguimiento de Sala por Mes/Año o día 15 quedan sustituidas por
+> [Sala — Vigencia móvil por Pago](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md#sala--vigencia-móvil-por-pago--2026-10-19).
+> Cada Pago tiene cobertura propia; el Plan financiero elegido no cambia el operativo.
+> Las entradas anteriores se conservan como historial, sin vigencia normativa en esos puntos.
+
+
 ## 1. Objetivo y criterio de actualización
 
 Este documento actualiza las dudas funcionales originalmente relevadas para Athleta Manager tomando como base **“Athleta Manager — Descripción Integral del Sistema”** y las definiciones funcionales expresamente aprobadas. Desde el 2026-10-02 incorpora la consolidación de decisiones históricas ratificadas documentada en el [Registro de Decisiones Funcionales](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md). El código local de `ramiro`, incluidos los cambios sin commit, se utiliza como evidencia para verificar la alternativa adoptada en esas decisiones; no constituye por sí solo aprobación de decisiones nuevas. Las futuras definiciones requieren análisis y aprobación antes de incorporarse como reglas vigentes. El PDF de la Descripción Integral permanece sin modificar y su sincronización queda para una actualización posterior.

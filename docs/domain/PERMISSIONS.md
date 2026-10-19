@@ -526,7 +526,7 @@ GENERAL_ADMIN
 
 # 24. SALA_PAYMENT_READ
 
-Permite consultar el estado mensual de Pagos de Sala dentro del contexto operativo. El Profesor ve Pago registrado / Pago pendiente y no registra ni revierte.
+Permite consultar Pagos y vigencia actual de Sala dentro del contexto operativo. El Profesor ve Vigente hasta / Sin vigencia y no registra ni revierte. Los roles autorizados no cambian.
 
 Roles:
 

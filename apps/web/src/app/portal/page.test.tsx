@@ -10,7 +10,7 @@ const base = 'http://localhost:3000/api/portal/';
 configure({ asyncUtilTimeout: 3000 });
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
-const sala = { reservations: [{ id: 'reservation', date: '2026-10-09', startTime: '17:00' }], fixedOccurrences: [], routine: null, paymentState: 'PAID' };
+const sala = { reservations: [{ id: 'reservation', date: '2026-10-09', startTime: '17:00' }], fixedOccurrences: [], routine: null, validity: { hasValidAccess: true, validUntil: '2026-11-20' } };
 function renderHome(): void {
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><PortalHome /></QueryClientProvider>);
 }
@@ -40,8 +40,8 @@ it('greets the real person and links to booking and existing Sala sections with 
   expect(await screen.findByRole('link', { name: 'Reservar en Sala' })).toHaveAttribute('href', '/portal/sala/reservar');
   expect(await screen.findByText(/viernes, 09 de octubre · 17:00/i)).toBeInTheDocument();
   expect(screen.getByText('Reservado')).toBeInTheDocument();
-  expect(screen.getByText('Pago registrado')).toBeInTheDocument();
-  expect(screen.getByText('octubre de 2026')).toBeInTheDocument();
+  expect(screen.getByText('Vigente hasta 20/11/2026')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Vigencia de Sala' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: /Mis turnos fijos/ })).toHaveAttribute('href', '/portal/sala#turnos-fijos');
   expect(screen.getByRole('link', { name: /Evaluaciones físicas/ })).toHaveAttribute('href', '/portal/sala#evaluaciones');
   expect(screen.queryByRole('heading', { name: 'Tu rutina activa' })).not.toBeInTheDocument();
@@ -50,7 +50,7 @@ it('greets the real person and links to booking and existing Sala sections with 
 });
 
 it('shows the earliest future noncancelled fixed commitment without a cancellation action', async () => {
-  server.use(http.get(base + 'sala', () => HttpResponse.json({ data: { ...sala, paymentState: 'PENDING', reservations: [
+  server.use(http.get(base + 'sala', () => HttpResponse.json({ data: { ...sala, validity: { hasValidAccess: false, validUntil: null }, reservations: [
     { id: 'past', date: '2026-10-08', startTime: '09:00' },
     { id: 'cancelled', date: '2026-10-08', startTime: '16:00', cancelledAt: '2026-10-08' },
     ...sala.reservations,
@@ -60,8 +60,8 @@ it('shows the earliest future noncancelled fixed commitment without a cancellati
   ] } })));
   renderHome();
   expect(await screen.findByText(/jueves, 08 de octubre · 18:00/i)).toBeInTheDocument();
-  expect(screen.getByText('Pendiente de pago')).toBeInTheDocument();
-  expect(screen.getByText('Pago pendiente')).toBeInTheDocument();
+  expect(screen.getByText('Pendiente de renovación')).toBeInTheDocument();
+  expect(screen.getByText('Sin vigencia')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Cancelar turno' })).not.toBeInTheDocument();
 });
 
@@ -114,5 +114,5 @@ it('omits Sala actions when Sala is unavailable and keeps the compact empty turn
 it('calculates the payment month in Buenos Aires at the UTC month boundary', async () => {
   vi.setSystemTime(new Date('2026-11-01T01:00:00Z'));
   renderHome();
-  expect(await screen.findByText('octubre de 2026')).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Vigencia de Sala' })).toBeInTheDocument();
 });

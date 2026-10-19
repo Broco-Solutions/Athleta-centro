@@ -51,12 +51,16 @@ export default function PortalReserve(): React.JSX.Element {
   const [calendar, setCalendar] = useState(false);
   const [message, setMessage] = useState('');
   const services = useQuery({ queryKey: ['portal', 'sala', 'services'], queryFn: () => portalFetch<Service[]>('sala/services') });
+  const sala = useQuery({ queryKey: ['portal', 'sala'], queryFn: () => portalFetch<{ validity: { hasValidAccess: boolean; validUntil: string | null } }>('sala') });
+  const validUntil = sala.data?.validity.validUntil;
+  const maxDate = validUntil && validUntil < addDays(currentDate, 30) ? validUntil : addDays(currentDate, 30);
+  const hasValidity = sala.data?.validity.hasValidAccess === true;
   const service = services.data?.length === 1 ? services.data[0]?.id ?? '' : serviceId;
   const selectedService = services.data?.find(item => item.id === service);
   const availability = useQuery({
     queryKey: ['portal', 'sala', 'availability', date],
     queryFn: async () => (await portalFetch<Slot[]>('sala/availability?date=' + date)).map(item => ({ ...item, startTime: formatTime(item.startTime), endTime: formatTime(item.endTime) })),
-    enabled: Boolean(selectedService),
+    enabled: Boolean(selectedService) && hasValidity,
   });
   const options = starts(availability.data ?? [], selectedService).filter(item => {
     if (date < currentDate) return false;
@@ -67,7 +71,7 @@ export default function PortalReserve(): React.JSX.Element {
   const selectedSlot = options.find(item => item.key === selection && item.available);
   const reserve = useMutation({
     mutationFn: async () => {
-      if (!selectedSlot || !selectedService) throw new Error('SLOT_REQUIRED');
+      if (!selectedSlot || !selectedService || !hasValidity || date > maxDate) throw new Error('SLOT_REQUIRED');
       const token = (await portalFetch<{ csrfToken: string }>('auth/session')).csrfToken;
       return portalFetch('sala/reservations', {
         method: 'POST',
@@ -85,21 +89,24 @@ export default function PortalReserve(): React.JSX.Element {
     },
   });
   const chooseDate = (value: string): void => {
-    if (!value || value < currentDate || value > addDays(currentDate, 30)) return;
+    if (!value || value < currentDate || value > maxDate) return;
     setDate(value); setSelection(''); setMessage('');
   };
   const quickDates = [0, 1, 2].map(offset => addDays(currentDate, offset));
   const hasServices = Boolean(services.data?.length);
 
+  if (sala.isPending) return <PortalFrame title="Reservar en Sala" backToHome><p role="status">Cargando vigencia…</p></PortalFrame>;
+  if (sala.isError) return <PortalFrame title="Reservar en Sala" backToHome><p role="alert">No pudimos cargar tu vigencia. Intentá nuevamente.</p></PortalFrame>;
+  if (!hasValidity) return <PortalFrame title="Reservar en Sala" backToHome><h2>Vigencia de Sala</h2><p>Sin vigencia</p><p>Necesitás renovar tu vigencia para realizar nuevas reservas.</p></PortalFrame>;
   return <PortalFrame title="Reservar en Sala" subtitle="Elegí cuándo querés venir a entrenar." backToHome>
     <div className="max-w-4xl space-y-8 rounded-xl border bg-surface p-5 sm:p-8">
       <Step number={1} title="Elegí el servicio">
         {services.isLoading ? <p role="status" className="text-sm text-muted-foreground">Cargando servicios…</p> : services.isError ? <p role="alert">No pudimos cargar los servicios. Intentá nuevamente.</p> : !hasServices ? <p className="text-sm text-muted-foreground">Tu Plan actual no tiene servicios disponibles. Consultá con Athleta.</p> : <div className="grid gap-3 sm:grid-cols-2">{services.data?.map(item => <button type="button" key={item.id} aria-label={item.name + ' ' + item.durationMinutes + ' min'} aria-pressed={service === item.id} disabled={reserve.isPending} className={choiceClass(service === item.id)} onClick={() => { setServiceId(item.id); setSelection(''); setMessage(''); }}><span><span className="block font-medium">{item.name}</span><span className="text-sm text-muted-foreground">{item.durationMinutes} min</span></span>{service === item.id ? <Check size={20} className="text-primary-hover" aria-hidden="true" /> : null}</button>)}</div>}
       </Step>
       <Step number={2} title="Elegí la fecha">
-        <div className="grid grid-cols-3 gap-2 sm:gap-3">{quickDates.map((value, index) => <button type="button" key={value} aria-label={(index === 0 ? 'Hoy' : index === 1 ? 'Mañana' : dateLabel(value, { weekday: 'long' })) + ' ' + shortDate(value) + ' ' + dateLabel(value, { weekday: 'long' })} disabled={!hasServices || reserve.isPending} aria-pressed={date === value} className={choiceClass(date === value) + ' relative justify-center px-2'} onClick={() => chooseDate(value)}><span className="text-center"><span className="block text-sm font-medium">{index === 0 ? 'Hoy' : index === 1 ? 'Mañana' : dateLabel(value, { weekday: 'long' })}</span><strong className="my-1 block">{shortDate(value)}</strong><span className="block text-xs capitalize text-muted-foreground">{dateLabel(value, { weekday: 'long' })}</span></span>{date === value ? <Check size={12} aria-hidden="true" className="absolute right-2 top-2 text-primary-hover" /> : null}</button>)}</div>
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">{quickDates.map((value, index) => <button type="button" key={value} aria-label={(index === 0 ? 'Hoy' : index === 1 ? 'Mañana' : dateLabel(value, { weekday: 'long' })) + ' ' + shortDate(value) + ' ' + dateLabel(value, { weekday: 'long' })} disabled={!hasServices || reserve.isPending || value > maxDate} aria-pressed={date === value} className={choiceClass(date === value) + ' relative justify-center px-2'} onClick={() => chooseDate(value)}><span className="text-center"><span className="block text-sm font-medium">{index === 0 ? 'Hoy' : index === 1 ? 'Mañana' : dateLabel(value, { weekday: 'long' })}</span><strong className="my-1 block">{shortDate(value)}</strong><span className="block text-xs capitalize text-muted-foreground">{dateLabel(value, { weekday: 'long' })}</span></span>{date === value ? <Check size={12} aria-hidden="true" className="absolute right-2 top-2 text-primary-hover" /> : null}</button>)}</div>
         <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm capitalize text-muted-foreground">{dateLabel(date, { month: 'long', year: 'numeric' })}</p><button type="button" disabled={!hasServices || reserve.isPending} aria-expanded={calendar} aria-controls="reservation-date" className="inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-sm disabled:opacity-50" onClick={() => setCalendar(!calendar)}><CalendarDays size={16} aria-hidden="true" />Ver calendario</button></div>
-        {calendar ? <label className="grid gap-2 text-sm">Fecha<input id="reservation-date" type="date" className="min-h-11 rounded-lg border px-3" value={date} min={currentDate} max={addDays(currentDate, 30)} disabled={!hasServices || reserve.isPending} onChange={event => chooseDate(event.target.value)} /></label> : null}
+        {calendar ? <label className="grid gap-2 text-sm">Fecha<input id="reservation-date" type="date" className="min-h-11 rounded-lg border px-3" value={date} min={currentDate} max={maxDate} disabled={!hasServices || reserve.isPending} onChange={event => chooseDate(event.target.value)} /></label> : null}
       </Step>
       <Step number={3} title="Elegí el horario">
         <div><p className="text-sm capitalize">{date === currentDate ? 'Hoy, ' : ''}{dateLabel(date, { weekday: 'long' }) + ' ' + shortDate(date)}</p>{selectedService ? <p className="mt-1 text-sm text-muted-foreground">{selectedService.name} · {selectedService.durationMinutes} min</p> : null}</div>

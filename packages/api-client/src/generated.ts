@@ -328,20 +328,9 @@ export const SalaStudentListItemDtoRoutineStatus = {
   MISSING: 'MISSING',
 } as const;
 
-export type SalaStudentListItemDtoPaymentStatus = typeof SalaStudentListItemDtoPaymentStatus[keyof typeof SalaStudentListItemDtoPaymentStatus];
-
-
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export const SalaStudentListItemDtoPaymentStatus = {
-  PAID: 'PAID',
-  PENDING: 'PENDING',
-} as const;
-
 export interface SalaStudentListItemDto {
   participationId: string;
   participationStartDate: string;
-  /** @minimum 0 */
-  unpaidConsecutiveMonths: number;
   id: string;
   firstName: string;
   lastName: string;
@@ -349,9 +338,11 @@ export interface SalaStudentListItemDto {
   plan: SalaStudentPlanDto;
   professor: SalaAgendaProfessionalDto;
   routineStatus: SalaStudentListItemDtoRoutineStatus;
-  paymentStatus: SalaStudentListItemDtoPaymentStatus;
+  hasValidAccess: boolean;
   /** @nullable */
-  currentPaymentPaidAt: string | null;
+  validUntil: string | null;
+  /** @nullable */
+  lastPaymentPaidAt: string | null;
 }
 
 export interface SalaStudentListEnvelopeDto {
@@ -609,7 +600,7 @@ export interface SalaDashboardDto {
   /** @maxItems 3 */
   upcoming: SalaDashboardUpcomingDto[];
   withoutRoutine: SalaDashboardFollowUpDto;
-  pendingPayment: SalaDashboardFollowUpDto;
+  withoutValidity: SalaDashboardFollowUpDto;
 }
 
 export interface SalaDashboardEnvelopeDto {
@@ -1085,8 +1076,12 @@ export type SalaPaymentResponseDtoReversal = SalaPaymentReversalResponseDto | nu
 
 export interface SalaPaymentResponseDto {
   id: string;
-  year: number;
-  month: number;
+  coverageStartDate: string;
+  coverageEndDate: string;
+  /** @nullable */
+  planId: string | null;
+  /** @nullable */
+  planName: string | null;
   paidAt: string;
   amount: string;
   /** @nullable */
@@ -1109,12 +1104,7 @@ export interface SalaPaymentAllocationDto {
 
 export interface SalaPaymentDto {
   personId: string;
-  year: number;
-  /**
-   * @minimum 1
-   * @maximum 12
-   */
-  month: number;
+  planId: string;
   paidAt: string;
   /** @pattern ^\d+$ */
   amount: string;
@@ -1124,27 +1114,8 @@ export interface SalaPaymentDto {
   allocations?: SalaPaymentAllocationDto[];
 }
 
-export interface SalaPlanPaymentPeriodDto {
-  planId?: string;
-  year: number;
-  /**
-   * @minimum 1
-   * @maximum 12
-   */
-  month: number;
-  operationId: string;
-  /** @pattern ^\d+$ */
-  amount: string;
-  /** @maxLength 300 */
-  adjustmentReason?: string;
-}
-
-export interface RegisterSalaPlanPaymentsDto {
-  personId: string;
-  /** @minItems 1 */
-  periods: SalaPlanPaymentPeriodDto[];
-  paidAt: string;
-  paymentMethodId: string;
+export interface SalaPaymentEnvelopeDto {
+  data: SalaPaymentResponseDto;
 }
 
 export interface FinancialReasonDto {
@@ -1171,10 +1142,6 @@ export interface SalaChargeAdjustmentDto {
   operationId: string;
   /** @pattern ^-?\d+$ */
   amount: string;
-}
-
-export interface ActivateSalaBillingDto {
-  cutoverDate: string;
 }
 
 export interface UpdateSalaConfigurationDto {
@@ -1857,15 +1824,6 @@ page?: number;
 search?: string;
 };
 
-export type ListSalaStudentsParams = {
-/**
- * @minimum 1
- * @maximum 12
- */
-month?: number;
-year?: number;
-};
-
 export type JoinSala200Data = { [key: string]: unknown };
 
 export type JoinSala200 = {
@@ -1904,25 +1862,6 @@ date: string;
 
 export type GetPersonSalaSpontaneousOptionsParams = {
 date: string;
-};
-
-export type RegisterSalaPlanPayments201DataPaymentsItem = { [key: string]: unknown };
-
-export type RegisterSalaPlanPayments201DataPlan = {
-  id: string;
-  name: string;
-  monthlyAmount: string;
-};
-
-export type RegisterSalaPlanPayments201Data = {
-  payments: RegisterSalaPlanPayments201DataPaymentsItem[];
-  plan: RegisterSalaPlanPayments201DataPlan;
-  months: number;
-  totalAmount: string;
-};
-
-export type RegisterSalaPlanPayments201 = {
-  data: RegisterSalaPlanPayments201Data;
 };
 
 export type ListSalaPlans200DataItem = { [key: string]: unknown };
@@ -3003,24 +2942,17 @@ export type listSalaStudentsResponseSuccess = (listSalaStudentsResponse200) & {
 
 export type listSalaStudentsResponse = (listSalaStudentsResponseSuccess)
 
-export const getListSalaStudentsUrl = (params?: ListSalaStudentsParams,) => {
-  const normalizedParams = new URLSearchParams();
+export const getListSalaStudentsUrl = () => {
 
-  Object.entries(params || {}).forEach(([key, value]) => {
 
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : value.toString())
-    }
-  });
 
-  const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0 ? `/api/sala/students?${stringifiedParams}` : `/api/sala/students`
+  return `/api/sala/students`
 }
 
-export const listSalaStudents = async (params?: ListSalaStudentsParams, options?: RequestInit): Promise<listSalaStudentsResponse> => {
+export const listSalaStudents = async ( options?: RequestInit): Promise<listSalaStudentsResponse> => {
 
-  const res = await fetch(getListSalaStudentsUrl(params),
+  const res = await fetch(getListSalaStudentsUrl(),
   {
     ...options,
     method: 'GET'
@@ -4899,47 +4831,8 @@ export const listSalaPayments = async (personId: string, options?: RequestInit):
 
 
 
-export type getSalaPaymentSummaryResponse200 = {
-  data: void
-  status: 200
-}
-
-export type getSalaPaymentSummaryResponseSuccess = (getSalaPaymentSummaryResponse200) & {
-  headers: Headers;
-};
-;
-
-export type getSalaPaymentSummaryResponse = (getSalaPaymentSummaryResponseSuccess)
-
-export const getGetSalaPaymentSummaryUrl = (personId: string,) => {
-
-
-
-
-  return `/api/sala/people/${personId}/payment-summary`
-}
-
-export const getSalaPaymentSummary = async (personId: string, options?: RequestInit): Promise<getSalaPaymentSummaryResponse> => {
-
-  const res = await fetch(getGetSalaPaymentSummaryUrl(personId),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getSalaPaymentSummaryResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getSalaPaymentSummaryResponse
-}
-
-
-
 export type createSalaPaymentResponse201 = {
-  data: void
+  data: SalaPaymentEnvelopeDto
   status: 201
 }
 
@@ -4974,46 +4867,6 @@ export const createSalaPayment = async (salaPaymentDto: SalaPaymentDto, options?
 
   const data: createSalaPaymentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createSalaPaymentResponse
-}
-
-
-
-export type registerSalaPlanPaymentsResponse201 = {
-  data: RegisterSalaPlanPayments201
-  status: 201
-}
-
-export type registerSalaPlanPaymentsResponseSuccess = (registerSalaPlanPaymentsResponse201) & {
-  headers: Headers;
-};
-;
-
-export type registerSalaPlanPaymentsResponse = (registerSalaPlanPaymentsResponseSuccess)
-
-export const getRegisterSalaPlanPaymentsUrl = () => {
-
-
-
-
-  return `/api/sala/payments/plan-months`
-}
-
-export const registerSalaPlanPayments = async (registerSalaPlanPaymentsDto: RegisterSalaPlanPaymentsDto, options?: RequestInit): Promise<registerSalaPlanPaymentsResponse> => {
-
-  const res = await fetch(getRegisterSalaPlanPaymentsUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      registerSalaPlanPaymentsDto,)
-  }
-)
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: registerSalaPlanPaymentsResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as registerSalaPlanPaymentsResponse
 }
 
 
@@ -5216,46 +5069,6 @@ export const reverseSalaCharge = async (id: string,
 
   const data: reverseSalaChargeResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as reverseSalaChargeResponse
-}
-
-
-
-export type activateSalaBillingResponse201 = {
-  data: void
-  status: 201
-}
-
-export type activateSalaBillingResponseSuccess = (activateSalaBillingResponse201) & {
-  headers: Headers;
-};
-;
-
-export type activateSalaBillingResponse = (activateSalaBillingResponseSuccess)
-
-export const getActivateSalaBillingUrl = () => {
-
-
-
-
-  return `/api/sala/billing/activate`
-}
-
-export const activateSalaBilling = async (activateSalaBillingDto: ActivateSalaBillingDto, options?: RequestInit): Promise<activateSalaBillingResponse> => {
-
-  const res = await fetch(getActivateSalaBillingUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      activateSalaBillingDto,)
-  }
-)
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: activateSalaBillingResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as activateSalaBillingResponse
 }
 
 

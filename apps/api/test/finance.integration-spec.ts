@@ -29,7 +29,7 @@ describe('Finance API', () => {
     const actor = await prisma.internalUser.findFirstOrThrow();
     const person = await prisma.person.create({ data: { firstName: 'Ingreso', lastName: 'Sintético', dni: '88000003', normalizedDni: '88000003', phone: '3515550000', birthDate: new Date('1990-01-01') } });
     const method = await prisma.paymentMethod.create({ data: { name: 'Efectivo' } });
-    const payment = await prisma.salaPayment.create({ data: { personId: person.id, year: 2026, month: 10, paidAt: new Date('2026-10-01'), amount: 9000, paymentMethodId: method.id, registeredById: actor.id, operationId: randomUUID(), adjustmentReason: 'Descuento' } });
+    const payment = await prisma.salaPayment.create({ data: { personId: person.id, year: 2026, month: 10, coverageStartDate: new Date('2026-10-01'), coverageEndDate: new Date('2026-11-01'), paidAt: new Date('2026-10-01'), amount: 9000, paymentMethodId: method.id, registeredById: actor.id, operationId: randomUUID(), adjustmentReason: 'Descuento' } });
     const income = await request(app.getHttpServer()).get(`/api/finance/income?personId=${person.id}`).set(headers).expect(200);
     expect(income.body.data).toEqual([expect.objectContaining({ id: payment.id, amount: '9000' })]);
     for (const path of ['totals', 'executive-totals']) {

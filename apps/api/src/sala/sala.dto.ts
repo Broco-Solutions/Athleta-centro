@@ -1,6 +1,6 @@
 import { CreatePersonDto, PersonResponseDto } from '../people/person.dto';
 import { Type } from 'class-transformer';
-import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, IntersectionType, PickType } from '@nestjs/swagger';
 import { SalaOccurrenceStatus, SalaScheduleExceptionType, SalaWeekday } from '@prisma/client';
 
@@ -79,7 +79,7 @@ export class SalaDashboardDto {
   @ApiProperty({ type: Number }) cancelledOrAbsent!: number;
   @ApiProperty({ type: () => [SalaDashboardUpcomingDto], maxItems: 3 }) upcoming!: SalaDashboardUpcomingDto[];
   @ApiProperty({ type: () => SalaDashboardFollowUpDto }) withoutRoutine!: SalaDashboardFollowUpDto;
-  @ApiProperty({ type: () => SalaDashboardFollowUpDto }) pendingPayment!: SalaDashboardFollowUpDto;
+  @ApiProperty({ type: () => SalaDashboardFollowUpDto }) withoutValidity!: SalaDashboardFollowUpDto;
 }
 export class SalaDashboardEnvelopeDto {
   @ApiProperty({ type: () => SalaDashboardDto }) data!: SalaDashboardDto;
@@ -119,29 +119,10 @@ export class PhysicalTestDefinitionDto { @ApiProperty({ type: String, maxLength:
 export class PhysicalTestResultDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() testDefinitionId!: string; @ApiProperty({ type: String, maxLength: 500 }) @IsString() @MinLength(1) @MaxLength(500) resultText!: string; }
 export class PhysicalEvaluationDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() salaParticipationId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() professorId!: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) evaluationDate!: string; @ApiPropertyOptional({ type: String, nullable: true }) @IsOptional() @IsString() observation?: string | null; @ApiProperty({ type: () => [PhysicalTestResultDto], minItems: 1 }) @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => PhysicalTestResultDto) results!: PhysicalTestResultDto[]; }
 export class SalaPaymentAllocationDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() chargeId!: string; @ApiProperty({ type: String, pattern: '^\\d+$' }) @IsString() @Matches(/^\d+$/) amount!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() operationId!: string; }
-export class SalaStudentListQueryDto {
-  @ApiPropertyOptional({ type: Number }) @IsOptional() @Type(() => Number) @IsInt() year?: number;
-  @ApiPropertyOptional({ type: Number, minimum: 1, maximum: 12 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(12) month?: number;
-}
-export class SalaPlanPaymentPeriodDto {
-  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() planId?: string;
-  @ApiProperty({ type: Number }) @Type(() => Number) @IsInt() year!: number;
-  @ApiProperty({ type: Number, minimum: 1, maximum: 12 }) @Type(() => Number) @IsInt() @Min(1) @Max(12) month!: number;
-  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() operationId!: string;
-  @ApiProperty({ type: String, pattern: '^\\d+$' }) @IsString() @Matches(/^\d+$/) amount!: string;
-  @ApiPropertyOptional({ type: String, maxLength: 300 }) @IsOptional() @IsString() @MaxLength(300) adjustmentReason?: string;
-}
-export class RegisterSalaPlanPaymentsDto {
-  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string;
-  @ApiProperty({ type: () => [SalaPlanPaymentPeriodDto], minItems: 1 }) @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => SalaPlanPaymentPeriodDto) periods!: SalaPlanPaymentPeriodDto[];
-  @ApiProperty({ type: String, format: 'date' }) @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) paidAt!: string;
-  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() paymentMethodId!: string;
-}
-export class SalaPaymentDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string; @ApiProperty({ type: Number }) @Type(() => Number) @IsInt() year!: number; @ApiProperty({ type: Number, minimum: 1, maximum: 12 }) @Type(() => Number) @IsInt() @Min(1) @Max(12) month!: number; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) paidAt!: string; @ApiProperty({ type: String, pattern: '^\\d+$' }) @IsString() @Matches(/^\d+$/) amount!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() paymentMethodId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() operationId!: string; @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() @MaxLength(300) adjustmentReason?: string; @ApiPropertyOptional({ type: () => [SalaPaymentAllocationDto] }) @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => SalaPaymentAllocationDto) allocations?: SalaPaymentAllocationDto[]; }
+export class SalaPaymentDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() planId!: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) paidAt!: string; @ApiProperty({ type: String, pattern: '^\\d+$' }) @IsString() @Matches(/^\d+$/) amount!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() paymentMethodId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() operationId!: string; @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() @MaxLength(300) adjustmentReason?: string; @ApiPropertyOptional({ type: () => [SalaPaymentAllocationDto] }) @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => SalaPaymentAllocationDto) allocations?: SalaPaymentAllocationDto[]; }
 export class FinancialReasonDto { @ApiProperty({ type: String, maxLength: 500 }) @IsString() @MinLength(1) @MaxLength(500) reason!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() operationId!: string; }
 export class SalaChargeAdjustmentDto extends FinancialReasonDto { @ApiProperty({ type: String, pattern: '^-?\\d+$' }) @IsString() @Matches(/^-?\d+$/) amount!: string; }
 export class SalaOpeningBalanceDto extends FinancialReasonDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) chargeDate!: string; @ApiProperty({ type: String, pattern: '^\\d+$' }) @IsString() @Matches(/^\d+$/) amount!: string; @ApiPropertyOptional({ type: String, maxLength: 200 }) @IsOptional() @IsString() @MaxLength(200) concept?: string; }
-export class ActivateSalaBillingDto { @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) cutoverDate!: string; }
 
 export class CreateSalaStudentDto extends CreatePersonDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() mainProfessorId!: string;
@@ -181,7 +162,6 @@ export class SalaStudentPlanDto {
 export class SalaStudentListItemDto {
   @ApiProperty({ type: String, format: 'uuid' }) participationId!: string;
   @ApiProperty({ type: String, format: 'date' }) participationStartDate!: string;
-  @ApiProperty({ type: 'integer', minimum: 0 }) unpaidConsecutiveMonths!: number;
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
   @ApiProperty({ type: String }) firstName!: string;
   @ApiProperty({ type: String }) lastName!: string;
@@ -189,8 +169,9 @@ export class SalaStudentListItemDto {
   @ApiProperty({ type: () => SalaStudentPlanDto }) plan!: SalaStudentPlanDto;
   @ApiProperty({ type: () => SalaAgendaProfessionalDto }) professor!: SalaAgendaProfessionalDto;
   @ApiProperty({ type: String, enum: ['ACTIVE', 'MISSING'] }) routineStatus!: 'ACTIVE' | 'MISSING';
-  @ApiProperty({ type: String, enum: ['PAID', 'PENDING'] }) paymentStatus!: 'PAID' | 'PENDING';
-  @ApiProperty({ type: String, format: 'date', nullable: true }) currentPaymentPaidAt!: string | null;
+  @ApiProperty({ type: Boolean }) hasValidAccess!: boolean;
+  @ApiProperty({ type: String, format: 'date', nullable: true }) validUntil!: string | null;
+  @ApiProperty({ type: String, format: 'date', nullable: true }) lastPaymentPaidAt!: string | null;
 }
 export class SalaStudentListEnvelopeDto {
   @ApiProperty({ type: () => [SalaStudentListItemDto] }) data!: SalaStudentListItemDto[];
@@ -384,13 +365,18 @@ export class SalaPaymentReversalResponseDto {
 }
 export class SalaPaymentResponseDto {
   @ApiProperty({ type: String }) id!: string;
-  @ApiProperty({ type: Number }) year!: number;
-  @ApiProperty({ type: Number }) month!: number;
+  @ApiProperty({ type: String, format: 'date' }) coverageStartDate!: string;
+  @ApiProperty({ type: String, format: 'date' }) coverageEndDate!: string;
+  @ApiProperty({ type: String, format: 'uuid', nullable: true }) planId!: string | null;
+  @ApiProperty({ type: String, nullable: true }) planName!: string | null;
   @ApiProperty({ type: String }) paidAt!: string;
   @ApiProperty({ type: String }) amount!: string;
   @ApiProperty({ type: String, nullable: true }) adjustmentReason!: string | null;
   @ApiProperty({ type: () => SalaPaymentMethodResponseDto }) paymentMethod!: SalaPaymentMethodResponseDto;
   @ApiProperty({ type: () => SalaPaymentReversalResponseDto, nullable: true }) reversal!: SalaPaymentReversalResponseDto | null;
+}
+export class SalaPaymentEnvelopeDto {
+  @ApiProperty({ type: () => SalaPaymentResponseDto }) data!: SalaPaymentResponseDto;
 }
 export class SalaPaymentListEnvelopeDto {
   @ApiProperty({ type: () => [SalaPaymentResponseDto] }) data!: SalaPaymentResponseDto[];

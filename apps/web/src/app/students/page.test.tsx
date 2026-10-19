@@ -10,9 +10,9 @@ vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(n
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
 const students = [
-  { id: 'student-1', participationId: 'participation-1', participationStartDate: '2026-10-01', unpaidConsecutiveMonths: 0, firstName: 'Ana', lastName: 'Alumna', dni: '88000001', plan: { id: 'plan-1', name: '3 veces' }, professor: { id: 'prof-1', firstName: 'Federico', lastName: 'Sintético' }, routineStatus: 'ACTIVE', paymentStatus: 'PAID' },
-  { id: 'student-2', participationId: 'participation-2', participationStartDate: '2026-05-01', unpaidConsecutiveMonths: 6, firstName: 'Lucía', lastName: 'Ejemplo', dni: '88000002', plan: { id: 'plan-2', name: '2 veces' }, professor: { id: 'prof-2', firstName: 'Ramiro', lastName: 'Demostración' }, routineStatus: 'MISSING', paymentStatus: 'PENDING' },
-  { id: 'student-3', participationId: 'participation-3', participationStartDate: '2026-08-01', unpaidConsecutiveMonths: 3, firstName: 'Pedro', lastName: 'Prueba', dni: '88000003', plan: { id: 'plan-1', name: '3 veces' }, professor: { id: 'prof-1', firstName: 'Federico', lastName: 'Sintético' }, routineStatus: 'ACTIVE', paymentStatus: 'PENDING' },
+  { id: 'student-1', participationId: 'participation-1', participationStartDate: '2026-10-01', firstName: 'Ana', lastName: 'Alumna', dni: '88000001', plan: { id: 'plan-1', name: '3 veces' }, professor: { id: 'prof-1', firstName: 'Federico', lastName: 'Sintético' }, routineStatus: 'ACTIVE', hasValidAccess: true, validUntil: '2026-11-20' },
+  { id: 'student-2', participationId: 'participation-2', participationStartDate: '2026-05-01', firstName: 'Lucía', lastName: 'Ejemplo', dni: '88000002', plan: { id: 'plan-2', name: '2 veces' }, professor: { id: 'prof-2', firstName: 'Ramiro', lastName: 'Demostración' }, routineStatus: 'MISSING', hasValidAccess: false, validUntil: null },
+  { id: 'student-3', participationId: 'participation-3', participationStartDate: '2026-08-01', firstName: 'Pedro', lastName: 'Prueba', dni: '88000003', plan: { id: 'plan-1', name: '3 veces' }, professor: { id: 'prof-1', firstName: 'Federico', lastName: 'Sintético' }, routineStatus: 'ACTIVE', hasValidAccess: false, validUntil: null },
 ];
 beforeAll(() => {
   globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch;
@@ -42,10 +42,10 @@ it('shows all students, full Professor names, plan and follow-up states with con
   expect(row.getByText('Ramiro Demostración', { exact: false })).toBeInTheDocument();
   expect(row.getByText('2 veces', { exact: false })).toBeInTheDocument();
   expect(row.getByText('Sin rutina')).toBeInTheDocument();
-  expect(row.getByText('Pago pendiente')).toBeInTheDocument();
+  expect(row.getByText('Sin vigencia')).toBeInTheDocument();
   expect(list().getAllByText('Federico Sintético', { exact: false })).toHaveLength(2);
   expect(list().getAllByText('Activa')).toHaveLength(2);
-  expect(list().getByText('Pago registrado')).toBeInTheDocument();
+  expect(list().getByText('Vigente hasta 20/11/2026')).toBeInTheDocument();
   expect(row.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/student-2');
   expect(screen.queryByText('Nueva Persona')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Nuevo alumno' })).toBeInTheDocument();
@@ -57,7 +57,7 @@ it.each([['Lucía', 'Lucía Ejemplo'], ['88000001', 'Ana Alumna']])('searches lo
   expect(list().getByText(name)).toBeInTheDocument();
   expect(list().getAllByRole('link', { name: 'Ver ficha' })).toHaveLength(1);
 });
-it.each([['Sin rutina', 1], ['Pago pendiente', 2]])('filters by %s and returns to Todos', async (name, count) => {
+it.each([['Sin rutina', 1], ['Sin vigencia', 2]])('filters by %s and returns to Todos', async (name, count) => {
   renderPage(); await screen.findByText('Ana Alumna');
   fireEvent.click(screen.getByRole('button', { name }));
   expect(screen.getByRole('button', { name })).toHaveAttribute('aria-pressed', 'true');
@@ -66,7 +66,7 @@ it.each([['Sin rutina', 1], ['Pago pendiente', 2]])('filters by %s and returns t
   fireEvent.click(screen.getByRole('button', { name: 'Todos' }));
   expect(list().getAllByRole('link', { name: 'Ver ficha' })).toHaveLength(3);
 });
-it.each([['without-routine', 'Sin rutina', 1], ['pending-payment', 'Pago pendiente', 2]])('activates URL filter %s', async (filter, label, count) => {
+it.each([['without-routine', 'Sin rutina', 1], ['without-validity', 'Sin vigencia', 2]])('activates URL filter %s', async (filter, label, count) => {
   navigation.filter = filter; renderPage(); await screen.findByText('Lucía Ejemplo');
   expect(screen.getByRole('button', { name: label })).toHaveAttribute('aria-pressed', 'true');
   expect(list().getAllByRole('link', { name: 'Ver ficha' })).toHaveLength(count);
@@ -123,18 +123,18 @@ it('combines search, Mis alumnos and Sin rutina', async () => {
 });
 it('shows only payment states to Professor', async () => {
   renderPage(); await screen.findByText('Ana Alumna');
-  expect(list().getByText('Pago registrado')).toBeVisible();
-  expect(list().getAllByText('Pago pendiente')).toHaveLength(2);
-  expect(screen.queryByRole('link', { name: 'Registrar pago' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('link', { name: 'Ver pago' })).not.toBeInTheDocument();
+  expect(list().getByText('Vigente hasta 20/11/2026')).toBeVisible();
+  expect(list().getAllByText('Sin vigencia')).toHaveLength(2);
+  expect(screen.queryByRole('link', { name: 'Renovar' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Ver pagos' })).not.toBeInTheDocument();
 });
 it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('links %s to contextual Finance and preserves Ver ficha', async role => {
   server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'admin' }, roles: [role], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })));
   renderPage(); await screen.findByText('Ana Alumna');
   const pending = within(list().getByText('Lucía Ejemplo').closest('tr')!);
-  expect(pending.getByRole('link', { name: 'Registrar pago' })).toHaveAttribute('href', '/finance?view=income&personId=student-2');
+  expect(pending.getByRole('link', { name: 'Renovar' })).toHaveAttribute('href', '/finance?view=income&personId=student-2&action=renew');
   expect(pending.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/student-2');
-  expect(list().getByRole('link', { name: 'Ver pago' })).toHaveAttribute('href', '/finance?view=income&personId=student-1');
+  expect(list().getByRole('link', { name: 'Ver pagos' })).toHaveAttribute('href', '/finance?view=income&personId=student-1');
 });
 
 

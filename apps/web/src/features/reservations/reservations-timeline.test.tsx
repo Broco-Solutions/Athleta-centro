@@ -168,7 +168,7 @@ describe('Sala occurrence corrections and projections', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Homer Simpson 09:00/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Corregir estado' }));
     const select = screen.getByRole('combobox', { name: 'Nuevo estado' });
-    expect(within(select).queryByRole('option', { name: 'Pendiente de pago' })).not.toBeInTheDocument();
+    expect(within(select).queryByRole('option', { name: 'Pendiente de renovación' })).not.toBeInTheDocument();
     expect(within(select).getAllByRole('option')).toHaveLength(4);
     fireEvent.change(select, { target: { value: nextStatus } });
     expect(within(select).getByRole('option', { name: label })).toBeInTheDocument();
@@ -213,19 +213,19 @@ describe('Sala occurrence corrections and projections', () => {
 
   it('shows pending payment and its explanation without manual actions', async () => {
     serve(professorResponse([{ ...salaBooking, status: 'PENDING_PAYMENT' }])); renderTimeline(true);
-    expect(await screen.findByText('Pendiente de pago')).toBeInTheDocument();
+    expect(await screen.findByText('Pendiente de renovación')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Homer Simpson/ }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('Pendiente de pago');
-    expect(screen.getByText('El lugar está reservado, pero requiere el pago del mes antes del inicio.')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveTextContent('Pendiente de renovación');
+    expect(screen.getByText('El lugar está reservado, pero la fecha no está cubierta por la vigencia actual. La vigencia debe renovarse antes del inicio.')).toBeInTheDocument();
     for (const name of ['Asistió', 'Ausente', 'Cancelar', 'Corregir estado']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
   });
 
   it('identifies automatic nonpayment cancellation and allows correction', async () => {
     serve(professorResponse([{ ...salaBooking, status: 'CANCELLED', cancelledForNonPayment: true }])); renderTimeline(true);
-    expect(await screen.findByText('Por falta de pago')).toBeInTheDocument();
+    expect(await screen.findByText('Por falta de vigencia')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Homer Simpson/ }));
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveTextContent('Cancelado'); expect(dialog).toHaveTextContent('Por falta de pago');
+    expect(dialog).toHaveTextContent('Cancelado'); expect(dialog).toHaveTextContent('Por falta de vigencia');
     expect(within(dialog).getByRole('button', { name: 'Corregir estado' })).toBeInTheDocument();
   });
 

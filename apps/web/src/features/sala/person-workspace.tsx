@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, ArrowRight, CalendarDays, Dumbbell, ShieldAlert, WalletCards, type LucideIcon } from 'lucide-react';
 import { formatOperationalDate } from '../../lib/operational-date';
 import { Button } from '@athleta/ui';
-import { getSalaClinicalIndicationProjection, listPersonPhysicalEvaluations, listSalaPayments, cancelSalaReservation, changeFixedSalaBooking, createFixedSalaBooking, createSalaExerciseDefinition, duplicateSalaRoutine, updateSalaExerciseDefinition, retireSalaExerciseDefinition, createSalaReservation, endFixedSalaBooking, getPerson, getSalaAvailability, listFixedSalaBookings, listPersonSalaParticipations, listPersonSalaRoutines, listSalaExerciseDefinitions, listSalaRoutineTemplates, listSalaReservations, listPersonSalaServices, replaceSalaRoutine, type ChangeFixedBookingDto, type FixedBookingDto, type OneOffReservationDto } from '@athleta/api-client';
+import { getSalaClinicalIndicationProjection, listPersonPhysicalEvaluations, listSalaStudents, cancelSalaReservation, changeFixedSalaBooking, createFixedSalaBooking, createSalaExerciseDefinition, duplicateSalaRoutine, updateSalaExerciseDefinition, retireSalaExerciseDefinition, createSalaReservation, endFixedSalaBooking, getPerson, getSalaAvailability, listFixedSalaBookings, listPersonSalaParticipations, listPersonSalaRoutines, listSalaExerciseDefinitions, listSalaRoutineTemplates, listSalaReservations, listPersonSalaServices, replaceSalaRoutine, type ChangeFixedBookingDto, type FixedBookingDto, type OneOffReservationDto } from '@athleta/api-client';
 import { currentSession } from '../auth/auth';
 import { WorkspaceShell } from '../auth/workspace-shell';
 import { RoutinePanel, type RoutineApi } from './routine-panel';
@@ -165,19 +165,18 @@ function ProfessorDashboard({ personId, active, fixed, reservations, permissions
 }
 
 function SalaPaymentStatus({ personId, canManage }: { personId: string; canManage: boolean }): React.JSX.Element {
-  const payments = useQuery({ queryKey: ['sala', 'payments', personId], queryFn: async () => {
-    const response = await listSalaPayments(personId, { credentials: 'include' });
+  const payments = useQuery({ queryKey: ['sala', 'students'], queryFn: async () => {
+    const response = await listSalaStudents({ credentials: 'include' });
     assertRoutineResponse(response);
     return response.data.data;
   } });
-  const [year, month] = today().split('-').map(Number);
-  const paid = payments.data?.some(payment => payment.year === year && payment.month === month && payment.reversal == null);
+  const student = payments.data?.find(item => item.id === personId);
+  const paid = student?.hasValidAccess;
+
   return <article className="rounded-md border border-border bg-surface p-5">
     <h3 className="flex items-center gap-2 font-semibold"><WalletCards aria-hidden="true" className="h-5 w-5"/>Pago</h3>
-    <p className="mt-3 text-sm text-muted-foreground">Estado del mes</p>
-    <p className="capitalize text-sm text-muted-foreground">{new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${today().slice(0, 7)}-01T00:00:00Z`)).replace(' de ', ' ')}</p>
-    <DashboardFeedback query={payments}><p className={`font-semibold ${paid ? 'text-emerald-700' : 'text-amber-800'}`}>{paid ? 'Pago registrado' : 'Pago pendiente'}</p>
-      {canManage ? <Link className="mt-3 inline-flex min-h-11 items-center rounded-md border px-3 text-sm" href={`/finance?view=income&personId=${personId}`}>{paid ? 'Ver pago' : 'Registrar pago'}</Link> : null}
+    <DashboardFeedback query={payments}><p className={`font-semibold ${paid ? 'text-emerald-700' : 'text-amber-800'}`}>{paid ? `Vigente hasta ${formatOperationalDate(student!.validUntil!)}` : 'Sin vigencia'}</p>
+      {canManage ? <Link className="mt-3 inline-flex min-h-11 items-center rounded-md border px-3 text-sm" href={`/finance?view=income&personId=${personId}${!paid ? '&action=renew' : ''}`}>{paid ? 'Ver pagos' : 'Renovar'}</Link> : null}
     </DashboardFeedback>
   </article>;
 }

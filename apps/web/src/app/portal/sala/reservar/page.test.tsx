@@ -38,6 +38,7 @@ beforeEach(() => {
   vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-10-08T09:00:00-03:00').getTime());
   submitted = undefined; csrfHeader = null; availabilityCalls = 0;
   server.use(
+    http.get(base + 'sala', () => HttpResponse.json({ data: { validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
     http.get(base + 'sala/services', () => HttpResponse.json({ data: [services[0]] })),
     http.get(base + 'sala/availability', () => { availabilityCalls++; return HttpResponse.json({ data: blocks() }); }),
     http.get(base + 'auth/session', () => HttpResponse.json({ data: { csrfToken: 'csrf' } })),
@@ -187,7 +188,7 @@ it('preserves the exact payload and CSRF token, refreshes queries and retains th
 });
 
 it.each([
-  ['PORTAL_SALA_PAYMENT_REQUIRED', 'Para reservar esta fecha necesitás tener abonado el mes correspondiente.'],
+  ['PORTAL_SALA_VALIDITY_REQUIRED', 'Necesitás tener vigencia de Sala para reservar esa fecha.'],
   ['SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED', 'No hay lugar disponible para ese horario.'],
   ['SALA_CAPACITY_FULL', 'No hay lugar disponible para ese horario.'],
   ['SALA_RESERVATION_DUPLICATE', 'Ya tenés una actividad reservada en ese horario. Elegí otro horario.'],
@@ -247,4 +248,18 @@ it('turns a stale selected time into a disabled full time after a capacity rejec
   expect(await screen.findByRole('alert')).toHaveTextContent('No hay lugar disponible para ese horario.');
   expect(await screen.findByRole('button', { name: '17:00–18:00 Sin lugar' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeDisabled();
+});
+
+it('blocks the dedicated reservation route when current validity is missing', async () => {
+  server.use(http.get(base + 'sala', () => HttpResponse.json({ data: { validity: { hasValidAccess: false, validUntil: null } } })));
+  renderReserve();
+  expect(await screen.findByText('Sin vigencia')).toBeVisible();
+  expect(screen.getByText('Necesitás renovar tu vigencia para realizar nuevas reservas.')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Reservar en Sala' })).not.toBeInTheDocument();
+});
+it('limits the dedicated reservation calendar to the end of current validity', async () => {
+  server.use(http.get(base + 'sala', () => HttpResponse.json({ data: { validity: { hasValidAccess: true, validUntil: '2026-10-09' } } })));
+  renderReserve();
+  fireEvent.click(await screen.findByRole('button', { name: 'Ver calendario' }));
+  expect(screen.getByLabelText('Fecha')).toHaveAttribute('max', '2026-10-09');
 });

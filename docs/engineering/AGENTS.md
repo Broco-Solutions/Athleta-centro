@@ -1238,7 +1238,7 @@ Ejemplos:
 ```text
 one active SalaParticipation
 one active Routine
-same Person + MonthYear payment
+same SalaPayment operationId retry / concurrent renewals
 last Sala capacity slot
 optimistic version
 ```

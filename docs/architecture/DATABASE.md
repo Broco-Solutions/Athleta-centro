@@ -256,22 +256,7 @@ No representan timestamps independientes.
 
 ## 13. MonthYear
 
-Para conceptos mensuales se almacenarán columnas separadas.
-
-Ejemplo `SalaPayment`:
-
-```text
-year
-month
-```
-
-Con:
-
-```text
-CHECK (month BETWEEN 1 AND 12)
-```
-
-No utilizar una fecha ficticia para representar Mes/Año.
+Para conceptos financieros mensuales se mantienen year/month con CHECK del mes. SalaPayment conserva esas columnas únicamente como metadata legacy/compatibilidad, derivadas de paidAt; el acceso utiliza cobertura DATE.
 
 ---
 
@@ -872,7 +857,7 @@ lastModifiedBy
 lastModifiedAt
 ```
 
-Se utiliza materialización lazy: las reservas proyectan `RESERVED` o, para Turnos fijos posteriores al día 15 sin Pago válido, `PENDING_PAYMENT`. La cancelación por impago se persiste al vencer la hora de inicio. La DB garantiza unicidad de ocurrencia por booking de origen y fecha; una Persona puede tener varias actividades no superpuestas en la misma fecha y ventana. Las Reservas puntuales activas son únicas por Persona, ventana, fecha e inicio. Se mantienen FKs históricas `RESTRICT` y coherencia entre `origin` y la referencia de booking mediante `CHECK`.
+Se utiliza materialización lazy: las reservas proyectan `RESERVED` o, para Turnos fijos sin cobertura válida en su fecha, `PENDING_PAYMENT`. La cancelación por impago se persiste al llegar la hora de inicio. La DB garantiza unicidad de ocurrencia por booking de origen y fecha; una Persona puede tener varias actividades no superpuestas en la misma fecha y ventana. Las Reservas puntuales activas son únicas por Persona, ventana, fecha e inicio. Se mantienen FKs históricas `RESTRICT` y coherencia entre `origin` y la referencia de booking mediante `CHECK`.
 
 ---
 
@@ -1430,30 +1415,33 @@ No se implementará una tabla universal de idempotencia inicialmente.
 
 ## 77. SalaPayment
 
-Campos conceptuales:
+Campos: personId, paidAt DATE, amount DECIMAL(14,0), paymentMethodId,
+registeredById, operationId UNIQUE, adjustmentReason, coverageStartDate DATE NOT NULL,
+coverageEndDate DATE NOT NULL, planId UUID nullable FK RESTRICT a SalaPlan,
+planNameSnapshot VARCHAR(120) nullable. CHECK coverage_start_date <= coverage_end_date.
+Índice (personId, coverageStartDate, coverageEndDate).
 
-```text
-id
-personId
-year
-month
-amount
-paymentMethodId
-paidAt/cashDate
-registeredById
-operationId?
-adjustmentReason?
-createdAt
-updatedAt
-```
+year/month son metadata legacy, derivadas de paidAt, sin unicidad funcional.
+No se infiere Plan histórico a partir del Plan operativo actual.
 
-Constraint principal:
+Cada Pago / renovación de Sala otorga un mes calendario, con extremos incluidos.
+Sin cobertura en la Fecha de cobro, comienza en `paidAt` y termina un mes después.
+Si la Fecha de cobro está cubierta, se recorre toda la cadena continua no revertida
+(coberturas contiguas o solapadas): el nuevo tramo comienza al día siguiente de su
+final y termina un mes calendario después de ese final. Se suma el mes en DateOnly/UTC,
+con clamp al último día real del mes destino (31/01/2026 → 28/02/2026;
+31/01/2028 → 29/02/2028; 28/02/2026 → 28/03/2026).
+No hay gracia ni vencimiento mensual fijo. Se permiten varios Pagos en un mismo mes.
+La reversión invalida su cobertura sin reescribir coberturas posteriores.
+`operationId` es la única clave de idempotencia; se serializa por Persona con advisory lock.
+El Plan financiero queda referenciado y su nombre se congela al cobrar; no modifica
+`SalaParticipation.planId` ni `SalaPlanAssignment`. Ingresos financieros se agrupan por `paidAt`.
 
-```text
-UNIQUE(personId, year, month)
-```
-
-bajo el modelo funcional actual.
+La migración 20261019120000_sala_rolling_validity agrega cobertura nullable, procesa
+TODOS los pagos por Persona en orden paid_at/created_at/id (también revertidos),
+y recién después exige NOT NULL. PostgreSQL suma INTERVAL '1 month' con clamp.
+No elimina tablas de cargos, allocations, ajustes o configuración histórica.
+No existe generación automática de cargos mensuales.
 
 ---
 
@@ -1698,7 +1686,7 @@ FixedSalaBooking.personId
 SalaOccurrence.personId + date/startAt
 SalaOccurrence.date/startAt
 Routine.personId + status
-SalaPayment.personId + year + month
+SalaPayment.personId + coverageStartDate + coverageEndDate
 ```
 
 Más los partial unique indexes necesarios.
@@ -1724,7 +1712,7 @@ ClinicalIncome(personId, cashDate)
 ```text
 Expense.cashDate
 ClinicalIncome.cashDate
-SalaPayment year/month
+SalaPayment coverage dates (year/month are legacy metadata)
 ExchangeRate year/month
 ```
 
@@ -1908,7 +1896,7 @@ Deben existir pruebas para invariantes como:
 ```text
 one active SalaParticipation
 one active Routine
-one SalaPayment per Person/Month
+unique SalaPayment operationId
 normalizedEmail unique
 FK restrictions
 Appointment attended creates Attention atomically
@@ -2042,7 +2030,7 @@ Person identity → persons
 current Sala participation → sala_participations where end_date IS NULL
 Treatment status → treatments.status
 Appointment status → clinical_appointments.status
-monthly Sala payment → sala_payments
+Sala payment / renewal → sala_payments
 file location → file_assets.storage_key
 ```
 

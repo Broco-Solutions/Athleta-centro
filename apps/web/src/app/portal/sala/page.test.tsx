@@ -16,7 +16,7 @@ beforeAll(() => {
 });
 beforeEach(() => {
   server.use(
-    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, evaluations: [], paymentState: 'PENDING' } })),
+    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
     http.get('http://localhost:3000/api/portal/sala/services', () => HttpResponse.json({ data: [{ id: 'service', name: 'Rehabilitación', durationMinutes: 45 }] })),
     http.get('http://localhost:3000/api/portal/sala/availability', ({ request }) => HttpResponse.json({ data: baseBlocks(new URL(request.url).searchParams.get('date') ?? undefined) })),
     http.get('http://localhost:3000/api/portal/auth/session', () => HttpResponse.json({ data: { csrfToken: 'csrf' } })),
@@ -28,7 +28,7 @@ function renderPortalSala(): void { render(<QueryClientProvider client={new Quer
 
 it('shows exercise names, descriptions and only populated routine details', async () => {
   server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: {
-    reservations: [], fixed: [], evaluations: [], paymentState: 'PENDING',
+    reservations: [], fixed: [], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' },
     routine: { days: [{ id: 'day-1', position: 1, name: null, exercises: [
       { exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla', description: 'Descenso controlado' }, series: '3', repetitions: '10', duration: null, load: '40 kg', rest: '60 s', notes: 'Controlar técnica' },
       { exerciseDefinitionId: 'plank', exerciseDefinition: { name: 'Plancha', description: null }, series: '3', repetitions: null, duration: '45 s', load: null, rest: '30 s', notes: null },
@@ -64,7 +64,7 @@ it('shows exercise names, descriptions and only populated routine details', asyn
 
 it('shows the empty state when there is no active routine', async () => {
   server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: {
-    reservations: [], fixed: [], evaluations: [], paymentState: 'PENDING', routine: null,
+    reservations: [], fixed: [], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' }, routine: null,
   } })));
   renderPortalSala();
   await screen.findByText('No hay una rutina activa.');
@@ -77,7 +77,7 @@ it('shows the empty state when there is no active routine', async () => {
 
 function fixedHandlers(state: { weekday: string; startTime: string; active: boolean }, onChange?: (body: Record<string, string>) => void, onAvailability?: (url: string) => void): void {
   server.use(
-    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: state.active ? [{ id: 'fixed-1', startDate: '2026-09-07', startTime: state.startTime, serviceType: { id: 'service', name: 'Rehabilitación', durationMinutes: 45 }, scheduleSlot: { id: 'window', weekday: state.weekday } }] : [], routine: null, evaluations: [], paymentState: 'PENDING' } })),
+    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: state.active ? [{ id: 'fixed-1', startDate: '2026-09-07', startTime: state.startTime, serviceType: { id: 'service', name: 'Rehabilitación', durationMinutes: 45 }, scheduleSlot: { id: 'window', weekday: state.weekday } }] : [], routine: null, evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
     http.get('http://localhost:3000/api/portal/sala/availability', ({ request }) => { onAvailability?.(request.url); return HttpResponse.json({ data: baseBlocks(new URL(request.url).searchParams.get('date') ?? '2026-09-07') }); }),
     http.post('http://localhost:3000/api/portal/sala/fixed-bookings/fixed-1/change', async ({ request }) => { onChange?.(await request.json() as Record<string, string>); return HttpResponse.json({ data: {} }); }),
     http.post('http://localhost:3000/api/portal/sala/fixed-bookings/fixed-1/end', () => { state.active = false; return HttpResponse.json({ data: {} }); }),
@@ -99,11 +99,11 @@ it('shows fixed bookings as the main Sala section and no persistent editor', asy
 it('keeps fixed occurrence statuses and presents service duration and translated weekday', async () => {
   server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [{ id: 'fixed-1', startDate: '2026-10-12', startTime: '17:00', serviceType: { id: 'service', name: 'Musculación', durationMinutes: 60 }, scheduleSlot: { id: 'window', weekday: 'MONDAY' } }], fixedOccurrences: [
     ...(['RESERVED', 'PENDING_PAYMENT', 'CANCELLED', 'ATTENDED', 'ABSENT'] as const).map((status, index) => ({ fixedSalaBookingId: 'fixed-1', date: `2026-10-${String(12 + index).padStart(2, '0')}`, startTime: '17:00', status, cancelledForNonPayment: false })),
-  ], routine: null, evaluations: [], paymentState: 'PENDING' } })));
+  ], routine: null, evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })));
   renderPortalSala();
   expect(await screen.findByText('Musculación · 60 min')).toBeInTheDocument();
   expect(screen.getByText('Lunes · 17:00–18:00')).toBeInTheDocument();
-  for (const status of ['Reservado', 'Pendiente de pago', 'Cancelado', 'Asistió', 'Ausente']) expect(screen.getByText(status)).toBeInTheDocument();
+  for (const status of ['Reservado', 'Pendiente de renovación', 'Cancelado', 'Asistió', 'Ausente']) expect(screen.getByText(status)).toBeInTheDocument();
 });
 
 it('opens a responsive common creation editor, auto-selects one service, and creates with exactly four fields', async () => {
@@ -195,7 +195,7 @@ it('opens modification in the same editor with allowed service and time preselec
 });
 
 it('does not add a historical service to current options and requires a currently allowed service', async () => {
-  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [{ id: 'old-fixed', startDate: '2026-09-07', startTime: '09:00', serviceType: { id: 'old', name: 'Calistenia' }, scheduleSlot: { id: 'window', weekday: 'MONDAY' } }], routine: null, evaluations: [], paymentState: 'PENDING' } })));
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [{ id: 'old-fixed', startDate: '2026-09-07', startTime: '09:00', serviceType: { id: 'old', name: 'Calistenia' }, scheduleSlot: { id: 'window', weekday: 'MONDAY' } }], routine: null, evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })));
   renderPortalSala();
   expect(await screen.findByText('Calistenia')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Modificar' }));
@@ -242,19 +242,21 @@ it('keeps a generic fetch error when the response is not structured', async () =
   await expect(portalFetch('sala/services')).rejects.toThrow('No pudimos cargar esta información.');
 });
 
-it.each(['2026-10-05', '2026-10-15', '2026-10-16', '2026-10-25'])('shows the same pending payment guidance for operational date %s', async date => {
+it.each(['2026-10-05', '2026-10-15', '2026-10-16', '2026-10-25'])('prevents a new reservation without validity on %s', async date => {
   vi.spyOn(portalUi, 'today').mockReturnValue(date);
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, evaluations: [], validity: { hasValidAccess: false, validUntil: null } } })));
   renderPortalSala();
-  expect(await screen.findByText('Pago pendiente')).toBeInTheDocument();
-  expect(screen.getByText('Con el pago pendiente podés reservar únicamente fechas del 1 al 15 inclusive.')).toBeInTheDocument();
+  expect(await screen.findByText('Sin vigencia')).toBeInTheDocument();
+  expect(screen.getByText('Necesitás renovar tu vigencia para realizar nuevas reservas.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Reservar horario' })).toBeDisabled();
 });
 it('shows registered payment without pending guidance', async () => {
   vi.spyOn(portalUi, 'today').mockReturnValue('2026-10-16');
-  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, evaluations: [], paymentState: 'PAID' } })));
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })));
   renderPortalSala();
-  expect(await screen.findByText('Pago registrado')).toBeInTheDocument();
-  expect(screen.queryByText('Pago pendiente')).not.toBeInTheDocument();
-  expect(screen.queryByText('Con el pago pendiente podés reservar únicamente fechas del 1 al 15 inclusive.')).not.toBeInTheDocument();
+  expect(await screen.findByText('Vigente hasta 20/11/2026')).toBeInTheDocument();
+  expect(screen.queryByText('Sin vigencia')).not.toBeInTheDocument();
+  expect(screen.queryByText('Necesitás renovar tu vigencia para realizar nuevas reservas.')).not.toBeInTheDocument();
 });
 
 async function openReservation(now = '2026-10-16T12:49:00Z'): Promise<HTMLElement> {
@@ -327,7 +329,7 @@ it('expires a selected start automatically below 20 minutes and refreshes the cl
 });
 it.each([
   ['PORTAL_SALA_TIME_PASSED', 'Ese horario ya no admite reservas porque quedan menos de 20 minutos de actividad. Elegí otro horario.'],
-  ['PORTAL_SALA_PAYMENT_REQUIRED', 'Para reservar esta fecha necesitás tener abonado el mes correspondiente.'],
+  ['PORTAL_SALA_VALIDITY_REQUIRED', 'Necesitás tener vigencia de Sala para reservar esa fecha.'],
 ])('shows the reservation rejection %s', async (code, message) => {
   server.use(http.post('http://localhost:3000/api/portal/sala/reservations', () => HttpResponse.json({ code, message: 'Rechazado' }, { status: 400 })));
   const dialog = await openReservation();
@@ -336,7 +338,7 @@ it.each([
   expect(await within(dialog).findByRole('alert')).toHaveTextContent(message);
 });
 it('shows a cancelled future reservation without a cancel action', async () => {
-  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [{ id: 'cancelled', date: '2026-10-20', startTime: '09:30', cancelledAt: '2026-10-16T12:00:00Z', serviceType: { name: 'Rehabilitación' } }], fixed: [], evaluations: [], paymentState: 'PENDING' } })));
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [{ id: 'cancelled', date: '2026-10-20', startTime: '09:30', cancelledAt: '2026-10-16T12:00:00Z', serviceType: { name: 'Rehabilitación' } }], fixed: [], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })));
   renderPortalSala();
   expect(await screen.findByText('Rehabilitación · Cancelado')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Cancelar' })).not.toBeInTheDocument();
@@ -344,7 +346,7 @@ it('shows a cancelled future reservation without a cancel action', async () => {
 
 it('groups physical results by test chronologically, preserving repeated results and hiding internal observation', async () => {
   const strength = { id: 'strength', name: 'Test Fuerza' }; const mobility = { id: 'mobility', name: 'Movilidad' };
-  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, paymentState: 'PENDING', evaluations: [
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, validity: { hasValidAccess: true, validUntil: '2026-11-20' }, evaluations: [
     { id: 'oct', evaluationDate: '2026-10-01', observation: 'Nota interna del Profesor', professor: { firstName: 'Secreto' }, results: [{ testDefinition: strength, resultText: '90 kg' }] },
     { id: 'aug', evaluationDate: '2026-08-01', results: [{ testDefinition: strength, resultText: '80 kg' }, { testDefinition: strength, resultText: '81 kg' }] },
     { id: 'sep', evaluationDate: '2026-09-01', results: [{ testDefinition: strength, resultText: '85 kg' }] },
@@ -359,20 +361,20 @@ it('groups physical results by test chronologically, preserving repeated results
 });
 
 it.each(['RESERVED', 'PENDING_PAYMENT', 'CANCELLED', 'ATTENDED', 'ABSENT'])('offers date cancellation only for eligible %s occurrences', async status => {
-  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], evaluations: [], paymentState: 'PENDING', fixedOccurrences: [{ fixedSalaBookingId: 'fixed-1', date: '2026-10-20', startTime: '17:00', status, cancelledForNonPayment: false }] } })));
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' }, fixedOccurrences: [{ fixedSalaBookingId: 'fixed-1', date: '2026-10-20', startTime: '17:00', status, cancelledForNonPayment: false }] } })));
   renderPortalSala();
   await screen.findByRole('heading', { name: 'Próximos turnos fijos' });
   const button = screen.queryByRole('button', { name: 'Cancelar esta fecha' });
   if (status === 'RESERVED' || status === 'PENDING_PAYMENT') expect(button).toBeInTheDocument();
   else expect(button).not.toBeInTheDocument();
-  expect(screen.getByText(({ RESERVED: 'Reservado', PENDING_PAYMENT: 'Pendiente de pago', CANCELLED: 'Cancelado', ATTENDED: 'Asistió', ABSENT: 'Ausente' })[status]!)).toBeInTheDocument();
+  expect(screen.getByText(({ RESERVED: 'Reservado', PENDING_PAYMENT: 'Pendiente de renovación', CANCELLED: 'Cancelado', ATTENDED: 'Asistió', ABSENT: 'Ausente' })[status]!)).toBeInTheDocument();
 });
 
 it.each([false, true])('confirms one date with CSRF and preserves the recurrence (error=%s)', async fail => {
   let cancelled = false;
   let submitted: { method: string; csrf: string | null; body: string } | undefined;
   server.use(
-    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [{ id: 'fixed-1', startDate: '2026-10-13', startTime: '17:00', serviceType: { id: 'service', name: 'Rehabilitación', durationMinutes: 45 }, scheduleSlot: { id: 'window', weekday: 'TUESDAY' } }], fixedOccurrences: [{ fixedSalaBookingId: 'fixed-1', date: '2026-10-20', startTime: '17:00', status: cancelled ? 'CANCELLED' : 'RESERVED', cancelledForNonPayment: false }], evaluations: [], paymentState: 'PENDING' } })),
+    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [{ id: 'fixed-1', startDate: '2026-10-13', startTime: '17:00', serviceType: { id: 'service', name: 'Rehabilitación', durationMinutes: 45 }, scheduleSlot: { id: 'window', weekday: 'TUESDAY' } }], fixedOccurrences: [{ fixedSalaBookingId: 'fixed-1', date: '2026-10-20', startTime: '17:00', status: cancelled ? 'CANCELLED' : 'RESERVED', cancelledForNonPayment: false }], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
     http.post('http://localhost:3000/api/portal/sala/fixed-bookings/fixed-1/occurrences/2026-10-20/cancel', async ({ request }) => {
       submitted = { method: request.method, csrf: request.headers.get('x-csrf-token'), body: await request.text() };
       if (fail) return HttpResponse.json({ code: 'PORTAL_FIXED_OCCURRENCE_STARTED', message: 'El turno ya comenzó.' }, { status: 409 });
@@ -402,4 +404,13 @@ it.each([false, true])('confirms one date with CSRF and preserves the recurrence
   expect(screen.getByText('Martes · 17:00–17:45')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Modificar' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Finalizar' })).toBeInTheDocument();
+});
+
+it.each([['2026-10-20', '2026-10-20'], ['2026-12-20', '2026-11-15']])('caps reservation dates at coverage %s and the general 30-day window', async (validUntil, expectedMax) => {
+  vi.spyOn(portalUi, 'today').mockReturnValue('2026-10-16');
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, evaluations: [], validity: { hasValidAccess: true, validUntil } } })));
+  renderPortalSala();
+  const open = await screen.findByRole('button', { name: 'Reservar horario' });
+  await waitFor(() => expect(open).toBeEnabled()); fireEvent.click(open);
+  expect(await screen.findByLabelText('Fecha de la reserva')).toHaveAttribute('max', expectedMax);
 });

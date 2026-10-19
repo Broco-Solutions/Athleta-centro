@@ -574,6 +574,7 @@ model SalaPlan {
   participations SalaParticipation[]
   assignments    SalaPlanAssignment[]
   charges        SalaCharge[]
+  payments       SalaPayment[]
   services       SalaPlanService[]
 
   @@map("sala_plans")
@@ -914,6 +915,11 @@ model SalaPayment {
   year             Int
   month            Int
   paidAt           DateTime                @map("paid_at") @db.Date
+  coverageStartDate DateTime @map("coverage_start_date") @db.Date
+  coverageEndDate DateTime @map("coverage_end_date") @db.Date
+  planId String? @map("plan_id") @db.Uuid
+  planNameSnapshot String? @map("plan_name_snapshot") @db.VarChar(120)
+  plan SalaPlan? @relation(fields: [planId], references: [id], onDelete: Restrict)
   amount           Decimal                 @db.Decimal(14, 0)
   paymentMethodId  String                  @map("payment_method_id") @db.Uuid
   registeredById   String                  @map("registered_by_id") @db.Uuid
@@ -932,6 +938,7 @@ model SalaPayment {
 
   @@unique([operationId])
   @@index([personId, year, month])
+  @@index([personId, coverageStartDate, coverageEndDate])
   @@map("sala_payments")
 }
 

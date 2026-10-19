@@ -37,6 +37,8 @@ Las siguientes 16 decisiones son las expresamente aprobadas para esta consolidac
 
 ## Decisiones aprobadas posteriormente
 
+> Las reglas de acceso, cuotas y seguimiento mensual de Sala de esta sección fueron sustituidas por **Sala — Vigencia móvil por Pago — 2026-10-19**. El resto conserva su alcance.
+
 ### SAL-RUT-10 — Rutinas preestablecidas
 
 Fecha: **2026-10-09**. Estado: **RESUELTO**. Fuente: **Definición aprobada 2026-10-09**.
@@ -49,7 +51,7 @@ Definiciones aprobadas el **2026-10-07** para los Bloques 1 y 2 de Planes y Serv
 |---|---|---|---|---|
 | SAL-PLA-01 — Servicios incluidos en Planes | Definir la relación entre Planes y Servicios de Sala. | Relación muchos-a-muchos explícita; precio mensual en el Plan. | Un Servicio de Sala representa una actividad y su duración. Un Plan define precio mensual y uno o más Servicios incluidos. El Servicio no tiene precio propio. Un Servicio puede estar incluido en varios Planes. Un Plan nuevo requiere al menos un Servicio. Por ahora los Servicios no poseen disponibilidad horaria ni capacidad propia: utilizan la grilla y capacidad generales de Sala. Los Planes anteriores pueden quedar sin Servicios hasta que un usuario los edite; no se asignan asociaciones automáticamente. | `apps/api/prisma/schema.prisma` — SalaPlanService; `apps/api/src/sala/sala.service.ts` — validación y actualización atómica; `apps/web/src/app/sala/configuration/page.tsx` — selección de Servicios en el editor de Plan. |
 | SAL-PLA-02 — Servicios habilitados según Plan actual | Definir los Servicios disponibles para la operación interna y Portal. | Derivarlos exclusivamente del Plan de la participación activa; validación compartida en backend. | Una Persona que participa de Sala sólo puede crear nuevas Reservas y Turnos fijos para Servicios incluidos en su Plan actual. Los Servicios que se muestran en Portal y en la operación interna del Alumno se derivan de ese Plan. Un Servicio retirado no puede utilizarse para nuevas operaciones. Los registros ya existentes no se cancelan ni reescriben automáticamente cuando cambia el Plan o su composición de Servicios. La modificación de un Turno fijo exige también un Servicio permitido; las nuevas operaciones requieren Servicio explícito. | `apps/api/src/sala/sala.service.ts` — listPersonServiceTypes y validateBooking; `apps/api/src/portal/portal.service.ts` — delegación a Sala; `apps/web/src/features/sala/person-workspace.tsx` y `apps/web/src/app/portal/sala/page.tsx` — Servicios del Plan y selección válida al editar. |
-| POR-SAL-08 — Pago mensual para nuevas Reservas puntuales del Portal | Definir la habilitación por Pago sin extenderla a operaciones internas o Turnos fijos. | Pago válido del Mes/Año reservado o fecha reservada entre los días 1 y 15 inclusive. | Las nuevas Reservas puntuales creadas por el Alumno desde Portal se habilitan según el Mes/Año y el día de la fecha que se desea reservar, no según el día actual. Si existe un Pago de Sala válido y no revertido para ese Mes/Año, el Alumno puede reservar cualquier fecha permitida de ese mes. Si el Pago de ese Mes/Año está pendiente, el Alumno puede reservar únicamente fechas comprendidas entre el día 1 y el día 15 inclusive. Las fechas desde el día 16 hasta fin de mes requieren que ese Mes/Año tenga un Pago válido registrado. La regla se aplica de igual manera a meses actuales y futuros: un mes futuro pendiente no habilita automáticamente fechas posteriores al día 15. El Pago continúa identificado como PENDING hasta que se registre un Pago válido. La posibilidad de reservar los días 1 al 15 no equivale a un Pago registrado. Con un Pago válido el estado es PAID. Un Pago revertido vuelve a considerarse no válido para esta regla. La reversión conserva el Pago original. La fecha real de cobro no define la vigencia. La restricción aplica únicamente a nuevas Reservas puntuales creadas por el Alumno desde Portal. No aplica a operaciones internas ni a Turnos fijos del Portal. La falta de Pago o la reversión posterior de un Pago no cancela ni modifica Reservas ya existentes. El Pago continúa siendo registrado manualmente en Athleta Manager; no existe procesamiento automático de cobros en el alcance actual. | `apps/api/src/portal/portal.service.ts` — assertSalaReservationPaymentEligibility y paymentState; `apps/web/src/app/portal/sala/page.tsx` — mensaje de bloqueo e información del formulario. |
+| POR-SAL-08 — Pago mensual para nuevas Reservas puntuales del Portal (**SUSTITUIDA: vigencia móvil, 2026-10-19**) | Definir la habilitación por Pago sin extenderla a operaciones internas o Turnos fijos. | Pago válido del Mes/Año reservado o fecha reservada entre los días 1 y 15 inclusive. | Las nuevas Reservas puntuales creadas por el Alumno desde Portal se habilitan según el Mes/Año y el día de la fecha que se desea reservar, no según el día actual. Si existe un Pago de Sala válido y no revertido para ese Mes/Año, el Alumno puede reservar cualquier fecha permitida de ese mes. Si el Pago de ese Mes/Año está pendiente, el Alumno puede reservar únicamente fechas comprendidas entre el día 1 y el día 15 inclusive. Las fechas desde el día 16 hasta fin de mes requieren que ese Mes/Año tenga un Pago válido registrado. La regla se aplica de igual manera a meses actuales y futuros: un mes futuro pendiente no habilita automáticamente fechas posteriores al día 15. El Pago continúa identificado como PENDING hasta que se registre un Pago válido. La posibilidad de reservar los días 1 al 15 no equivale a un Pago registrado. Con un Pago válido el estado es PAID. Un Pago revertido vuelve a considerarse no válido para esta regla. La reversión conserva el Pago original. La fecha real de cobro no define la vigencia. La restricción aplica únicamente a nuevas Reservas puntuales creadas por el Alumno desde Portal. No aplica a operaciones internas ni a Turnos fijos del Portal. La falta de Pago o la reversión posterior de un Pago no cancela ni modifica Reservas ya existentes. El Pago continúa siendo registrado manualmente en Athleta Manager; no existe procesamiento automático de cobros en el alcance actual. | `apps/api/src/portal/portal.service.ts` — assertSalaReservationPaymentEligibility y paymentState; `apps/web/src/app/portal/sala/page.tsx` — mensaje de bloqueo e información del formulario. |
 
 ## Decisiones todavía no consolidadas
 
@@ -93,6 +95,8 @@ La incorporación espontánea puede iniciar desde un Alumno de Sala, una Persona
 
 ## POR-SAL-08 — Pago mensual para nuevas Reservas puntuales del Portal
 
+> Las reglas de acceso, cuotas y seguimiento mensual de Sala de esta sección fueron sustituidas por **Sala — Vigencia móvil por Pago — 2026-10-19**. El resto conserva su alcance.
+
 Estado: **RESUELTO**. Definición aprobada 2026-10-07.
 
 Las nuevas Reservas puntuales creadas por el Alumno desde Portal se habilitan según el Mes/Año y el día de la fecha que se desea reservar, no según el día actual.
@@ -129,6 +133,8 @@ Los registros históricos existentes con inicio :15 o :45 se conservan y no se r
 
 ## SAL-TUR-15 / SAL-TUR-16 / SAL-HOR-10 — Ajustes UAT de reservas de Sala
 
+> Las reglas de acceso, cuotas y seguimiento mensual de Sala de esta sección fueron sustituidas por **Sala — Vigencia móvil por Pago — 2026-10-19**. El resto conserva su alcance.
+
 Estado: **RESUELTO**. Definición aprobada 2026-10-08.
 
 Una Persona puede reservar varias actividades en una misma fecha, incluidas varias Reservas puntuales o un Turno fijo con una Reserva puntual, siempre que sus intervalos completos no se superpongan y exista capacidad. Las actividades consecutivas son válidas. La identidad de cada Reserva puntual considera su hora de inicio dentro de la ventana semanal. Cada ocurrencia conserva su origen para corregir el estado de la actividad exacta.
@@ -146,6 +152,8 @@ El Portal no permite crear Reservas puntuales para fechas pasadas. En el día ac
 La validación compara el fin real de la actividad con el instante actual en `America/Argentina/Buenos_Aires`, usando el inicio elegido y la duración real del Servicio resueltos por Sala dentro de la transacción de creación. Un inicio que ya ocurrió sigue siendo válido si quedan 20 minutos o más hasta ese fin. El error `PORTAL_SALA_TIME_PASSED` rechaza horarios con menos de 20 minutos restantes. El Portal actualiza las opciones con un reloj local cada minuto mientras la pantalla o el flujo de Reserva permanece abierto y toma el instante actual al abrirlo, sin polling al backend. Availability del Portal rechaza fechas anteriores a hoy. La restricción aplica únicamente a Reservas puntuales creadas por el Alumno desde Portal; no afecta la operación interna retrospectiva ni Turnos fijos. POR-SAL-08 continúa vigente.
 
 ## Inicio operativo del Profesor — decisiones aprobadas 2026-10-13
+
+> Las reglas de acceso, cuotas y seguimiento mensual de Sala de esta sección fueron sustituidas por **Sala — Vigencia móvil por Pago — 2026-10-19**. El resto conserva su alcance.
 
 Para una cuenta cuyo único rol efectivo sea `PROFESSOR`, Inicio se orienta exclusivamente a la operación de Sala: bienvenida breve, Hoy/Mañana, Próximos horarios como bloque principal, Resumen del día y Seguimiento. Otros roles y roles combinados conservan por ahora el Inicio general. Se mantiene sidebar oscuro, workspace claro, cards blancas y amarillo como acento; sin gráficos, tendencias ni widgets configurables.
 
@@ -207,6 +215,8 @@ La vista transversal de Sala + Clínica puede conservar la timeline actual para 
 La definición anterior permitía al Profesor administrar Pagos desde una pestaña Pagos de Sala. Queda sustituida explícitamente por la siguiente regla vigente.
 
 ## Pagos de Sala centralizados en Finanzas — 2026-10-14
+
+> Las reglas de acceso, cuotas y seguimiento mensual de Sala de esta sección fueron sustituidas por **Sala — Vigencia móvil por Pago — 2026-10-19**. El resto conserva su alcance.
 
 **Estado: CONFIRMADO / RESUELTO.**
 
@@ -299,6 +309,8 @@ de navegación queda **PENDIENTE DE DEFINICIÓN FUNCIONAL**.
 
 
 ## Objetivo de Sala y reingreso — 2026-10-14
+
+> Las reglas de acceso, cuotas y seguimiento mensual de Sala de esta sección fueron sustituidas por **Sala — Vigencia móvil por Pago — 2026-10-19**. El resto conserva su alcance.
 
 Estado: **CONFIRMADO / RESUELTO**.
 
@@ -413,6 +425,8 @@ Solo al crear una Persona nueva se presenta el `initialPin` devuelto por backend
 
 ## Inicio operativo del Administrativo — 2026-10-15
 
+> Las reglas de acceso, cuotas y seguimiento mensual de Sala de esta sección fueron sustituidas por **Sala — Vigencia móvil por Pago — 2026-10-19**. El resto conserva su alcance.
+
 Estado: **CONFIRMADO / RESUELTO**.
 
 El Administrativo posee un Inicio propio orientado a la gestión diaria del centro:
@@ -471,6 +485,8 @@ este bloque. INI-06 e INI-07 conservan su estado pendiente.
 
 ## Finanzas operativas para salida de Sala — 2026-10-15
 
+> Las reglas de acceso, cuotas y seguimiento mensual de Sala de esta sección fueron sustituidas por **Sala — Vigencia móvil por Pago — 2026-10-19**. El resto conserva su alcance.
+
 Estado: **CONFIRMADO / RESUELTO**.
 
 Finanzas conserva las vistas Resumen, Ingresos y Gastos. Ingresos permite iniciar el cobro buscando un Alumno activo de Sala por Nombre, Apellido o DNI; la búsqueda local ignora mayúsculas en nombres y separadores visuales del DNI. Seleccionar un Alumno reutiliza la URL contextual y el mismo flujo centralizado de Pago de Sala, con acceso para cambiar de Alumno y volver a su ficha.
@@ -510,6 +526,8 @@ Los encabezados de las áreas administrativas navegan en un click a la primera o
 
 ## Pulido preproducción de Sala — Bloque 1 — 2026-10-16
 
+> Las reglas de acceso, cuotas y seguimiento mensual de Sala de esta sección fueron sustituidas por **Sala — Vigencia móvil por Pago — 2026-10-19**. El resto conserva su alcance.
+
 Estado: **CONFIRMADO / RESUELTO**.
 
 ### Alumnos
@@ -547,6 +565,8 @@ Estado: **CONFIRMADO / RESUELTO**.
 
 
 ## Pulido preproducción de Sala — Bloque 2 — Finanzas — 2026-10-16
+
+> Las reglas de acceso, cuotas y seguimiento mensual de Sala de esta sección fueron sustituidas por **Sala — Vigencia móvil por Pago — 2026-10-19**. El resto conserva su alcance.
 
 Estado: **CONFIRMADO / RESUELTO**.
 
@@ -629,6 +649,8 @@ Estado: **CONFIRMADO / RESUELTO**.
 
 ## Ajustes finales de preproducción de Sala — 2026-10-16
 
+> Las reglas de acceso, cuotas y seguimiento mensual de Sala de esta sección fueron sustituidas por **Sala — Vigencia móvil por Pago — 2026-10-19**. El resto conserva su alcance.
+
 Estado: **CONFIRMADO / RESUELTO**.
 
 ### Alta de Alumno
@@ -696,3 +718,43 @@ Estado: **CONFIRMADO / RESUELTO**.
 - Nueva Persona + Sala continúa siendo atómico mediante `createSalaStudent`. El PIN inicial se muestra una sola vez solamente para Persona nueva.
 - Profesor conserva el flujo simplificado DNI-first definido en PROF-01.
 - Esta decisión sustituye, para Administrativo y Administrador general, la definición anterior que conservaba la búsqueda inicial obligatoria por DNI.
+
+
+## Sala — Vigencia móvil por Pago — 2026-10-19
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+Sustituye todas las decisiones anteriores que habilitaban acceso por Mes/Año o por
+el día del mes. La regla del día 15 queda completamente derogada, sin período de gracia.
+
+Cada Pago / renovación de Sala otorga un mes calendario, con extremos incluidos.
+Sin cobertura en la Fecha de cobro, comienza en `paidAt` y termina un mes después.
+Si la Fecha de cobro está cubierta, se recorre toda la cadena continua no revertida
+(coberturas contiguas o solapadas): el nuevo tramo comienza al día siguiente de su
+final y termina un mes calendario después de ese final. Se suma el mes en DateOnly/UTC,
+con clamp al último día real del mes destino (31/01/2026 → 28/02/2026;
+31/01/2028 → 29/02/2028; 28/02/2026 → 28/03/2026).
+No hay gracia ni vencimiento mensual fijo. Se permiten varios Pagos en un mismo mes.
+La reversión invalida su cobertura sin reescribir coberturas posteriores.
+`operationId` es la única clave de idempotencia; se serializa por Persona con advisory lock.
+El Plan financiero queda referenciado y su nombre se congela al cobrar; no modifica
+`SalaParticipation.planId` ni `SalaPlanAssignment`. Ingresos financieros se agrupan por `paidAt`.
+
+- Ejemplo inicial: Pago 20/10 → cobertura 20/10–20/11 inclusive.
+- Renovación 10/11 → siguiente tramo 21/11–20/12; otra renovación 15/11 → 21/12–20/01.
+- Vencida 20/11 y cobro 25/11 → 25/11–25/12, sin rellenar el intervalo.
+- El Portal reserva únicamente fechas cubiertas por Pagos no revertidos. La UI muestra
+  vigencia actual y limita fechas a min(hoy+30, validUntil); backend verifica la fecha.
+- Turno fijo puede crearse/modificarse sin vigencia. Cada ocurrencia sin cobertura
+  es Pendiente de renovación (`PENDING_PAYMENT`), ocupa capacidad y al inicio se
+  cancela por falta de vigencia. Un Pago posterior no reactiva esa fecha.
+- Cronología pasada: Pago creado antes o al inicio y reversión inexistente o posterior
+  a ese inicio. Un Pago registrado tarde no cubre retroactivamente la actividad.
+- Reservas internas e incorporaciones espontáneas no se bloquean por vigencia.
+- Alumnos, Dashboard e Inicio muestran vigencia actual, sin selector de Mes/Año.
+- Finanzas conserva su Resumen mensual por Fecha de cobro (`paidAt`) y Gastos por
+  `cashDate`. Estado actual de Sala es independiente del mes financiero consultado.
+- Registrar renovación es singular, con Plan, Precio, Fecha de cobro, Medio y motivo
+  cuando el precio difiere del Plan. Historial muestra Plan y cobertura, incluso revertida.
+- No cambian permisos, Clínica, Rutinas, capacidad, servicios, ventana de 30 días,
+  umbral de 20 minutos del Portal ni el flujo de Nuevo alumno / Nueva Persona.

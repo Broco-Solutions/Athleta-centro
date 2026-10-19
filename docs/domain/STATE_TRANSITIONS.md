@@ -538,7 +538,7 @@ RESERVED
 
 hasta que un usuario autorizado corrija su estado.
 
-Excepción funcional: una ocurrencia de Turno fijo posterior al día 15 sin Pago válido se proyecta como `PENDING_PAYMENT`, condición derivada que ocupa cupo. Si llega su hora de inicio sin Pago válido, se persiste `CANCELLED` para esa ocurrencia y se libera el cupo. Un Pago posterior no la reactiva; el Turno fijo semanal y sus ocurrencias futuras continúan. Esto no implica una transición automática a `ABSENT`.
+Una ocurrencia de Turno fijo sin cobertura para su fecha se proyecta como `PENDING_PAYMENT` (Pendiente de renovación) y ocupa cupo. Al llegar el inicio sin cobertura válida en ese instante, se persiste `CANCELLED` con `cancelledForNonPaymentAt` y se libera el cupo. No hay período de gracia. Un Pago previo al inicio puede habilitar la proyección `RESERVED`; un Pago posterior no reactiva una cancelación materializada. La recurrencia continúa. No implica transición automática a `ABSENT`.
 
 ---
 
@@ -1647,64 +1647,36 @@ VOIDED
 
 # 76. SalaPayment
 
-No utiliza lifecycle enum.
-
-Conceptualmente:
-
-```text
-valid record exists
-```
-
-o:
-
-```text
-record was corrected/deleted
-```
+Cada Pago / renovación de Sala otorga un mes calendario, con extremos incluidos.
+Sin cobertura en la Fecha de cobro, comienza en `paidAt` y termina un mes después.
+Si la Fecha de cobro está cubierta, se recorre toda la cadena continua no revertida
+(coberturas contiguas o solapadas): el nuevo tramo comienza al día siguiente de su
+final y termina un mes calendario después de ese final. Se suma el mes en DateOnly/UTC,
+con clamp al último día real del mes destino (31/01/2026 → 28/02/2026;
+31/01/2028 → 29/02/2028; 28/02/2026 → 28/03/2026).
+No hay gracia ni vencimiento mensual fijo. Se permiten varios Pagos en un mismo mes.
+La reversión invalida su cobertura sin reescribir coberturas posteriores.
+`operationId` es la única clave de idempotencia; se serializa por Persona con advisory lock.
+El Plan financiero queda referenciado y su nombre se congela al cobrar; no modifica
+`SalaParticipation.planId` ni `SalaPlanAssignment`. Ingresos financieros se agrupan por `paidAt`.
 
 ---
 
 # 77. Corrección de SalaPayment
 
-Puede modificarse por un usuario autorizado.
-
-No existe:
-
-```text
-CORRECTED
-```
-
-como estado.
-
-El movimiento continúa siendo el mismo registro.
+Los Pagos y sus coberturas son históricos inmutables. Una corrección financiera se realiza mediante reversión con motivo y una nueva operación explícita.
 
 ---
 
 # 78. Eliminación de SalaPayment
 
-La eliminación es física cuando la regla funcional lo permite.
-
-No se transforma en:
-
-```text
-VOIDED
-CANCELLED
-REVERSED
-```
+No se elimina el Pago para corregirlo: se conserva junto con su reversión. Las coberturas de Pagos posteriores nunca se desplazan.
 
 ---
 
 # 79. Efecto sobre PaymentStatus
 
-Si se elimina el único pago válido del mes actual:
-
-```text
-CurrentMonthPaymentStatus
-PAID → PENDING
-```
-
-de forma derivada.
-
-`PaymentStatus` no se modifica directamente.
+La vigencia actual se deriva de las coberturas no revertidas que incluyen hoy operativo de Argentina y del final de su cadena continua. Sin cobertura: `hasValidAccess=false`, `validUntil=null`. Para una actividad pasada se exige que el Pago existiera al inicio y no estuviera revertido entonces; una reversión posterior no cambia retrospectivamente esa actividad.
 
 ---
 
@@ -2064,7 +2036,7 @@ Ejemplos de condiciones derivadas:
 ```text
 Person is Active
 SocialWorkOrder is expired
-Student has pending payment
+Student has no valid Sala coverage
 Treatment has no recent Attention
 Sala slot has capacity
 ClinicalAppointment is future

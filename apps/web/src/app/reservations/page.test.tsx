@@ -144,7 +144,7 @@ it.each(['ATTENDED', 'ABSENT', 'CANCELLED', 'PENDING_PAYMENT'])('preserves exist
   deepLink(); mockBookings([{ ...booking, status }]); renderPage();
   const dialog = await screen.findByRole('dialog');
   if (status === 'PENDING_PAYMENT') {
-    expect(within(dialog).getByText('El lugar está reservado, pero requiere el pago del mes antes del inicio.')).toBeVisible();
+    expect(within(dialog).getByText('El lugar está reservado, pero la fecha no está cubierta por la vigencia actual. La vigencia debe renovarse antes del inicio.')).toBeVisible();
     expect(within(dialog).queryByRole('button', { name: 'Corregir estado' })).not.toBeInTheDocument();
   } else expect(within(dialog).getByRole('button', { name: 'Corregir estado' })).toBeVisible();
   for (const name of ['Asistió', 'Ausente', 'Cancelar']) expect(within(dialog).queryByRole('button', { name })).not.toBeInTheDocument();

@@ -1,9 +1,9 @@
-import { BadRequestException, ForbiddenException, ConflictException, Injectable, Logger, NotFoundException, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { FinancialAdjustmentKind, Prisma, Role, RoutineStatus, SalaChargeKind, SalaOccurrenceOrigin, SalaOccurrenceStatus, SalaScheduleExceptionType, InternalUserStatus, SalaWeekday } from '@prisma/client';
 import { PeopleService } from '../people/people.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceCatalogService } from '../finance/finance.service';
-import type { SalaStudentListQueryDto, SalaStudentListItemDto, SalaDashboardDto, SalaDashboardPersonDto, JoinSpontaneousSalaDto, CreateSpontaneousSalaStudentDto, RegisterSalaPlanPaymentsDto, SalaPaymentDto, CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, CorrectPhysicalEvaluationDto, PhysicalTestResultDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, RoutineTemplateDto, RoutineDayDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
+import type { SalaStudentListItemDto, SalaDashboardDto, SalaDashboardPersonDto, JoinSpontaneousSalaDto, CreateSpontaneousSalaStudentDto, SalaPaymentDto, CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, CorrectPhysicalEvaluationDto, PhysicalTestResultDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, RoutineTemplateDto, RoutineDayDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
 const physicalTestSelect = { id: true, name: true, type: true, description: true, isActive: true } satisfies Prisma.PhysicalTestDefinitionSelect;
 const physicalEvaluationSelect = {
   id: true, personId: true, salaParticipationId: true, professorId: true, evaluationDate: true, observation: true,
@@ -20,92 +20,85 @@ const planServicesInclude = {
 } satisfies Prisma.SalaPlanInclude;
 type PlanWithServices = Prisma.SalaPlanGetPayload<{ include: typeof planServicesInclude }>;
 @Injectable()
-export class SalaService implements OnApplicationBootstrap, OnApplicationShutdown {
-  private readonly logger = new Logger(SalaService.name);
-  private billingTimer?: NodeJS.Timeout;
+export class SalaService {
   constructor(private readonly prisma: PrismaService, private readonly financeCatalog: FinanceCatalogService, private readonly people: PeopleService) {}
-  async onApplicationBootstrap(): Promise<void> {
-    await this.runScheduledBilling();
-    this.billingTimer = setInterval(() => void this.runScheduledBilling(), 24 * 60 * 60 * 1000);
-    this.billingTimer.unref();
+
+  addCalendarMonthClamped(date: Date): Date {
+    const year = date.getUTCFullYear();
+    const month = date.getUTCMonth() + 1;
+    const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    return new Date(Date.UTC(year, month, Math.min(date.getUTCDate(), lastDay)));
   }
-  onApplicationShutdown(): void { if (this.billingTimer) clearInterval(this.billingTimer); }
-  private async runScheduledBilling(): Promise<void> { try { await this.reconcileSalaCharges(); } catch (error) { this.logger.error('Sala charge reconciliation failed', error instanceof Error ? error.stack : undefined); } }
+
+  paymentCoversDate(payment: { coverageStartDate: Date; coverageEndDate: Date; createdAt: Date; reversal?: { createdAt: Date } | null }, date: Date, activityStart?: Date): boolean {
+    if (payment.coverageStartDate > date || payment.coverageEndDate < date) return false;
+    if (activityStart && activityStart <= new Date()) {
+      return payment.createdAt <= activityStart && (!payment.reversal || payment.reversal.createdAt > activityStart);
+    }
+    return !payment.reversal;
+  }
+
+  continuousValidityEnd(payments: Array<{ coverageStartDate: Date; coverageEndDate: Date; reversal?: unknown }>, referenceDate: Date): Date | null {
+    const ordered = payments.filter(payment => !payment.reversal).sort((a, b) => a.coverageStartDate.getTime() - b.coverageStartDate.getTime());
+    let end: Date | null = null;
+    for (const payment of ordered) {
+      if (!end) {
+        if (payment.coverageStartDate <= referenceDate && referenceDate <= payment.coverageEndDate) end = payment.coverageEndDate;
+      } else if (payment.coverageStartDate.getTime() <= end.getTime() + 86_400_000) {
+        if (payment.coverageEndDate > end) end = payment.coverageEndDate;
+      } else break;
+    }
+    return end;
+  }
+
+  async validity(personId: string, referenceDate = this.todayOperational()) {
+    const payments = await this.prisma.salaPayment.findMany({ where: { personId, reversal: null, coverageEndDate: { gte: this.date(referenceDate) } } });
+    const end = this.continuousValidityEnd(payments, this.date(referenceDate));
+    return { hasValidAccess: end !== null, validUntil: end?.toISOString().slice(0, 10) ?? null };
+  }
   listPaymentMethods() { return this.financeCatalog.listSelectable(); }
-  async listPayments(personId: string) { return this.prisma.salaPayment.findMany({ where: { personId }, include: { paymentMethod: true, allocations: true, reversal: true }, orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }] }); }
-  async paymentSummary(personId: string, year: number, month: number) {
-    const [charge, participation] = await Promise.all([
-      this.prisma.salaCharge.findFirst({ where: { personId, kind: SalaChargeKind.MONTHLY, year, month }, include: { adjustments: true, allocations: { where: { payment: { reversal: null } } } } }),
-      this.prisma.salaParticipation.findFirst({ where: { personId, endDate: null }, include: { plan: true } }),
-    ]);
-    if (!charge) return { status: participation ? 'PENDING' : 'NOT_APPLICABLE', proposedAmount: participation?.plan.monthlyAmount.toString() ?? null, charge: null };
-    const total = charge.adjustments.reduce((amount, adjustment) => amount.plus(adjustment.amount), charge.amount);
-    const allocated = charge.allocations.reduce((amount, allocation) => amount.plus(allocation.amount), new Prisma.Decimal(0));
-    const outstanding = Prisma.Decimal.max(total.minus(allocated), 0);
-    return { status: outstanding.isZero() ? 'SETTLED' : allocated.isZero() ? 'PENDING' : 'PARTIAL', proposedAmount: total.toString(), outstanding: outstanding.toString(), charge };
+  async listPayments(personId: string) {
+    const payments = await this.prisma.salaPayment.findMany({ where: { personId }, include: { paymentMethod: true, allocations: true, reversal: true }, orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }] });
+    return payments.map(payment => this.paymentResponse(payment));
+  }
+  private paymentResponse<T extends { paidAt: Date; coverageStartDate: Date; coverageEndDate: Date; amount: Prisma.Decimal; planNameSnapshot: string | null }>(payment: T) {
+    return { ...payment, paidAt: payment.paidAt.toISOString().slice(0, 10), coverageStartDate: payment.coverageStartDate.toISOString().slice(0, 10), coverageEndDate: payment.coverageEndDate.toISOString().slice(0, 10), amount: payment.amount.toString(), planName: payment.planNameSnapshot };
   }
   async createPayment(input: SalaPaymentDto, actorId: string) {
-    this.validatePaymentPeriod(input.year, input.month);
+    input = { ...input, personId: input.personId.toLowerCase(), planId: input.planId.toLowerCase(), paymentMethodId: input.paymentMethodId.toLowerCase(), operationId: input.operationId.toLowerCase() };
     this.validatePaidAt(input.paidAt);
-    const paymentAmount = this.positiveMoney(input.amount, 'SALA_PAYMENT_AMOUNT_INVALID');
-    return this.prisma.$transaction(async (tx) => {
+    const amount = this.positiveMoney(input.amount, 'SALA_PAYMENT_AMOUNT_INVALID');
+    const payment = await this.prisma.$transaction(async (tx) => {
       await this.lockPaymentPerson(tx, input.personId);
-      await this.assertPaymentMethodSelectable(tx, input.paymentMethodId);
-      const existing = await tx.salaPayment.findUnique({ where: { operationId: input.operationId } });
-      if (!existing) {
-        const participation = await tx.salaParticipation.findFirst({ where: { personId: input.personId, endDate: null }, include: { plan: true } });
-        if (participation) this.validatePaymentAdjustment(paymentAmount, participation.plan.monthlyAmount, input.adjustmentReason);
-      }
-      return this.createPaymentWithinTransaction(tx, input, paymentAmount, actorId);
-    });
-  }
-  async registerPlanPayments(input: RegisterSalaPlanPaymentsDto, actorId: string) {
-    input = { ...input, personId: input.personId.toLowerCase(), periods: input.periods.map((period) => ({ ...period, operationId: period.operationId.toLowerCase() })) };
-    this.validatePaidAt(input.paidAt);
-    if (!input.periods.length) throw new BadRequestException({ code: 'SALA_PAYMENT_PERIOD_REQUIRED', message: 'Seleccioná al menos un período.' });
-    const periods = new Set<string>();
-    const operations = new Set<string>();
-    for (const period of input.periods) {
-      this.validatePaymentPeriod(period.year, period.month);
-      const key = `${period.year}-${period.month}`;
-      if (periods.has(key)) throw new BadRequestException({ code: 'SALA_PAYMENT_PERIOD_DUPLICATE', message: 'Un período aparece más de una vez.' });
-      if (operations.has(period.operationId)) throw new BadRequestException({ code: 'SALA_PAYMENT_OPERATION_DUPLICATE', message: 'Un operationId aparece más de una vez.' });
-      periods.add(key);
-      operations.add(period.operationId);
-    }
-    return this.prisma.$transaction(async (tx) => {
-      await this.lockPaymentPerson(tx, input.personId);
-      await this.assertPaymentMethodSelectable(tx, input.paymentMethodId);
-      const participation = await tx.salaParticipation.findFirst({ where: { personId: input.personId, endDate: null }, include: { plan: true } });
-      if (!participation) throw new BadRequestException({ code: 'SALA_PARTICIPATION_REQUIRED', message: 'Se necesita una participación activa de Sala para registrar pagos.' });
-      const proposedAmount = participation.plan.monthlyAmount;
-      const existingOperations = await tx.salaPayment.findMany({ where: { operationId: { in: [...operations] } } });
-      for (const existing of existingOperations) {
-        const period = input.periods.find((item) => item.operationId === existing.operationId)!;
-        if (existing.personId !== input.personId || existing.year !== period.year || existing.month !== period.month) {
+      const existing = await tx.salaPayment.findUnique({ where: { operationId: input.operationId }, include: { paymentMethod: true, reversal: true, allocations: true } });
+      if (existing) {
+        const allocations = input.allocations ?? [];
+        if (existing.personId !== input.personId || existing.planId !== input.planId || existing.paidAt.toISOString().slice(0, 10) !== input.paidAt || !existing.amount.equals(amount) || existing.paymentMethodId !== input.paymentMethodId || existing.adjustmentReason !== (input.adjustmentReason?.trim() || null) || existing.allocations.length !== allocations.length || allocations.some(allocation => !existing.allocations.some(old => old.chargeId === allocation.chargeId && old.operationId === allocation.operationId && old.amount.equals(allocation.amount)))) {
           throw new ConflictException({ code: 'SALA_PAYMENT_OPERATION_CONFLICT', message: 'El operationId ya pertenece a otro pago.' });
         }
+        return existing;
       }
-      const paid = await tx.salaPayment.findMany({ where: { personId: input.personId, reversal: null, OR: input.periods.map(({ year, month }) => ({ year, month })) } });
-      for (const payment of paid) {
-        const period = input.periods.find((item) => item.year === payment.year && item.month === payment.month)!;
-        if (payment.operationId !== period.operationId) this.paymentAlreadyExists(payment.year, payment.month);
-      }
-      const payments = [];
-      for (const period of input.periods) {
-        const existing = existingOperations.find(payment => payment.operationId === period.operationId);
-        const amount = existing?.amount ?? this.positiveMoney(period.amount, 'SALA_PAYMENT_AMOUNT_INVALID');
-        if (!existing) {
-          const referencePlan = period.planId ? await tx.salaPlan.findUnique({ where: { id: period.planId } }) : participation.plan;
-          if (!referencePlan || (period.planId && !referencePlan.isSelectable)) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'El Plan ya no está disponible.' });
-          this.validatePaymentAdjustment(amount, referencePlan.monthlyAmount, period.adjustmentReason);
-        }
-        payments.push(await this.createPaymentWithinTransaction(tx, { ...period, personId: input.personId, paidAt: input.paidAt, paymentMethodId: input.paymentMethodId }, amount, actorId));
-      }
-      // Retried operations keep their originally recorded amounts, even if the Plan price changed.
-      const totalAmount = payments.reduce((total, payment) => total.plus(payment.amount), new Prisma.Decimal(0));
-      return { payments, plan: { id: participation.plan.id, name: participation.plan.name, monthlyAmount: proposedAmount.toString() }, months: payments.length, totalAmount: totalAmount.toString() };
+      const participation = await tx.salaParticipation.findFirst({ where: { personId: input.personId, endDate: null } });
+      if (!participation) throw new BadRequestException({ code: 'SALA_PARTICIPATION_REQUIRED', message: 'Se necesita una participación activa de Sala para registrar pagos.' });
+      await this.assertPaymentMethodSelectable(tx, input.paymentMethodId);
+      const plan = await tx.salaPlan.findUnique({ where: { id: input.planId } });
+      if (!plan?.isSelectable) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'El Plan ya no está disponible.' });
+      this.validatePaymentAdjustment(amount, plan.monthlyAmount, input.adjustmentReason);
+      const paidAt = this.date(input.paidAt);
+      const payments = await tx.salaPayment.findMany({ where: { personId: input.personId, reversal: null, coverageEndDate: { gte: paidAt } } });
+      const currentEnd = this.continuousValidityEnd(payments, paidAt);
+      const coverageStartDate = currentEnd ? new Date(currentEnd.getTime() + 86_400_000) : paidAt;
+      const coverageEndDate = this.addCalendarMonthClamped(currentEnd ?? paidAt);
+      await this.validateSalaAllocations(tx, input.personId, amount, input.allocations ?? []);
+      return tx.salaPayment.create({ data: {
+        personId: input.personId, planId: plan.id, planNameSnapshot: plan.name,
+        paidAt, year: paidAt.getUTCFullYear(), month: paidAt.getUTCMonth() + 1,
+        coverageStartDate, coverageEndDate, amount, paymentMethodId: input.paymentMethodId,
+        registeredById: actorId, operationId: input.operationId, adjustmentReason: input.adjustmentReason?.trim() || null,
+        allocations: { create: input.allocations ?? [] },
+      }, include: { paymentMethod: true, reversal: true, allocations: true } });
     });
+    return this.paymentResponse(payment);
   }
   private validatePaymentAdjustment(amount: Prisma.Decimal, proposedAmount: Prisma.Decimal, reason?: string): void {
     if (!amount.equals(proposedAmount) && !reason?.trim()) {
@@ -116,10 +109,6 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     const lockPersonId = personId.toLowerCase();
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockPersonId}, 0))`;
   }
-  private validatePaymentPeriod(year: number, month: number): void {
-    if (!Number.isInteger(month) || month < 1 || month > 12) throw new BadRequestException({ code: 'SALA_PAYMENT_MONTH_INVALID', message: 'Month is invalid' });
-    if (!Number.isInteger(year)) throw new BadRequestException({ code: 'SALA_PAYMENT_PERIOD_INVALID', message: 'El Mes/Año es inválido.' });
-  }
   private validatePaidAt(paidAt: string): void {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(paidAt) || Number.isNaN(new Date(`${paidAt}T00:00:00Z`).getTime()) || new Date(`${paidAt}T00:00:00Z`).toISOString().slice(0, 10) !== paidAt) throw new BadRequestException({ code: 'SALA_PAYMENT_DATE_INVALID', message: 'La fecha de cobro es inválida.' });
     if (paidAt > this.todayOperational()) throw new BadRequestException({ code: 'SALA_PAYMENT_DATE_FUTURE', message: 'Paid date cannot be future' });
@@ -128,41 +117,18 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     const method = await tx.paymentMethod.findUnique({ where: { id: paymentMethodId } });
     if (!method || !method.isSelectable) throw new BadRequestException({ code: 'PAYMENT_METHOD_NOT_SELECTABLE', message: 'Payment method is not selectable' });
   }
-  private paymentAlreadyExists(year: number, month: number): never {
-    const label = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month - 1, 1)));
-    throw new ConflictException({ code: 'SALA_PAYMENT_ALREADY_EXISTS', message: `El período ${label} ya tiene un pago registrado.` });
-  }
-  private async createPaymentWithinTransaction(tx: Prisma.TransactionClient, input: SalaPaymentDto, paymentAmount: Prisma.Decimal, actorId: string) {
-    const existing = await tx.salaPayment.findUnique({ where: { operationId: input.operationId }, include: { paymentMethod: true, allocations: true, reversal: true } });
-    if (existing) {
-      if (existing.personId !== input.personId.toLowerCase() || existing.year !== input.year || existing.month !== input.month) {
-        throw new ConflictException({ code: 'SALA_PAYMENT_OPERATION_CONFLICT', message: 'El operationId ya pertenece a otro pago.' });
-      }
-      return existing;
-    }
-    const paid = await tx.salaPayment.findFirst({ where: { personId: input.personId, year: input.year, month: input.month, reversal: null }, select: { id: true } });
-    if (paid) this.paymentAlreadyExists(input.year, input.month);
-    const person = await tx.person.findUnique({ where: { id: input.personId }, select: { id: true } });
-    if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
-    let requested = input.allocations;
-    if (!requested?.length) {
-      const monthly = await tx.salaCharge.findFirst({ where: { personId: input.personId, kind: SalaChargeKind.MONTHLY, year: input.year, month: input.month }, include: { adjustments: true, allocations: { where: { payment: { reversal: null } } } } });
-      if (monthly) {
-        const due = monthly.adjustments.reduce((amount, adjustment) => amount.plus(adjustment.amount), monthly.amount).minus(monthly.allocations.reduce((amount, allocation) => amount.plus(allocation.amount), new Prisma.Decimal(0)));
-        const automatic = Prisma.Decimal.min(paymentAmount, Prisma.Decimal.max(due, 0));
-        if (automatic.greaterThan(0)) requested = [{ chargeId: monthly.id, amount: automatic.toString(), operationId: input.operationId }];
-      }
-    }
-    await this.validateSalaAllocations(tx, input.personId, paymentAmount, requested ?? []);
-    return tx.salaPayment.create({ data: { personId: input.personId, year: input.year, month: input.month, paidAt: this.date(input.paidAt), amount: paymentAmount, paymentMethodId: input.paymentMethodId, registeredById: actorId, operationId: input.operationId, adjustmentReason: input.adjustmentReason?.trim() || null, allocations: { create: (requested ?? []).map((allocation) => ({ chargeId: allocation.chargeId, amount: allocation.amount, operationId: allocation.operationId })) } }, include: { paymentMethod: true, allocations: true, reversal: true } });
-  }
   async reversePayment(id: string, reason: string, operationId: string, actorId: string) {
     const value = this.requiredReason(reason);
     return this.prisma.$transaction(async (tx) => {
+      const reference = await tx.salaPayment.findUnique({ where: { id }, select: { personId: true } });
+      if (!reference) throw new NotFoundException({ code: 'SALA_PAYMENT_NOT_FOUND', message: 'Payment not found' });
+      await this.lockPaymentPerson(tx, reference.personId);
       const old = await tx.salaPaymentReversal.findUnique({ where: { operationId } });
-      if (old) return old;
-      const payment = await tx.salaPayment.findUnique({ where: { id }, include: { reversal: true } });
-      if (!payment) throw new NotFoundException({ code: 'SALA_PAYMENT_NOT_FOUND', message: 'Payment not found' });
+      if (old) {
+        if (old.paymentId !== id || old.reason !== value) throw new ConflictException({ code: 'SALA_PAYMENT_OPERATION_CONFLICT', message: 'El operationId ya pertenece a otra reversión.' });
+        return old;
+      }
+      const payment = await tx.salaPayment.findUniqueOrThrow({ where: { id }, include: { reversal: true } });
       if (payment.reversal) throw new ConflictException({ code: 'SALA_PAYMENT_ALREADY_REVERSED', message: 'Payment was already reversed' });
       return tx.salaPaymentReversal.create({ data: { paymentId: id, reason: value, operationId, registeredById: actorId } });
     });
@@ -226,38 +192,6 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     const paymentsTotal = paymentRows.filter((payment) => payment.status === 'ACTIVE').reduce((total, payment) => total.plus(payment.amount), new Prisma.Decimal(0));
     const allocatedTotal = chargeRows.reduce((total, charge) => total.plus(charge.allocatedAmount), new Prisma.Decimal(0));
     return { person, summary: { charges: chargesTotal.toString(), payments: paymentsTotal.toString(), allocated: allocatedTotal.toString(), credit: Prisma.Decimal.max(paymentsTotal.minus(allocatedTotal), 0).toString(), balance: chargesTotal.minus(paymentsTotal).toString() }, charges: chargeRows, payments: paymentRows };
-  }
-  async activateBilling(cutoverDate: string): Promise<{ cutoverDate: Date; activatedAt: Date; createdCharges: number }> {
-    const cutover = this.date(cutoverDate);
-    const existing = await this.prisma.salaBillingConfiguration.findUnique({ where: { id: 'default' } });
-    if (existing && existing.cutoverDate.getTime() !== cutover.getTime()) throw new ConflictException({ code: 'SALA_BILLING_ALREADY_ACTIVATED', message: 'Sala billing was already activated with another cutover date' });
-    const config = existing ?? await this.prisma.salaBillingConfiguration.create({ data: { id: 'default', cutoverDate: cutover } });
-    const createdCharges = await this.reconcileSalaCharges(this.todayOperational());
-    return { cutoverDate: config.cutoverDate, activatedAt: config.activatedAt, createdCharges };
-  }
-  async reconcileSalaCharges(asOf = this.todayOperational()): Promise<number> {
-    const config = await this.prisma.salaBillingConfiguration.findUnique({ where: { id: 'default' } });
-    if (!config) return 0;
-    const through = this.date(asOf);
-    if (through < config.cutoverDate) return 0;
-    const participations = await this.prisma.salaParticipation.findMany({ where: { startDate: { lte: through }, OR: [{ endDate: null }, { endDate: { gte: config.cutoverDate } }] }, include: { planAssignments: { include: { plan: true }, orderBy: { effectiveFrom: 'asc' } }, plan: true } });
-    let created = 0;
-    for (const participation of participations) {
-      const first = new Date(Math.max(config.cutoverDate.getTime(), participation.startDate.getTime()));
-      const last = new Date(Math.min(through.getTime(), participation.endDate?.getTime() ?? through.getTime()));
-      for (const period of this.monthsBetween(first, last)) {
-        const monthEnd = new Date(Date.UTC(period.getUTCFullYear(), period.getUTCMonth() + 1, 0));
-        const assignment = [...participation.planAssignments].reverse().find((item) => item.effectiveFrom <= monthEnd);
-        const plan = assignment?.plan ?? participation.plan;
-        const chargeDate = new Date(Math.max(period.getTime(), participation.startDate.getTime(), config.cutoverDate.getTime()));
-        try {
-          await this.prisma.salaCharge.create({ data: { personId: participation.personId, salaParticipationId: participation.id, planId: plan.id, kind: SalaChargeKind.MONTHLY, year: period.getUTCFullYear(), month: period.getUTCMonth() + 1, chargeDate, concept: `Plan de Sala ${plan.name} ${period.getUTCFullYear()}-${String(period.getUTCMonth() + 1).padStart(2, '0')}`, amount: plan.monthlyAmount, planNameSnapshot: plan.name } });
-          created += 1;
-        } catch (error) { if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) throw error; }
-      }
-    }
-    await this.prisma.salaBillingConfiguration.update({ where: { id: 'default' }, data: { lastRunAt: new Date() } });
-    return created;
   }
   async configuration() { return (await this.prisma.salaConfiguration.findUnique({ where: { id: 'default' } })) ?? { id: 'default', generalCapacity: 10 }; }
   async updateConfiguration(input: UpdateSalaConfigurationDto) { return this.prisma.salaConfiguration.upsert({ where: { id: 'default' }, create: { id: 'default', generalCapacity: input.capacity }, update: { generalCapacity: input.capacity } }); }
@@ -379,9 +313,6 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     try {
       const startDate = this.date(input.startDate);
       const participation = await tx.salaParticipation.create({ data: { personId: input.personId, mainProfessorId: input.mainProfessorId, planId: input.planId, startDate, planAssignments: { create: { planId: input.planId, effectiveFrom: startDate } } }, include: { plan: true, mainProfessor: true } });
-      const billing = await tx.salaBillingConfiguration.findUnique({ where: { id: 'default' } });
-      const today = this.date(this.todayOperational());
-      if (billing && startDate <= today && startDate >= billing.cutoverDate) await tx.salaCharge.create({ data: { personId: input.personId, salaParticipationId: participation.id, planId: plan.id, kind: SalaChargeKind.MONTHLY, year: startDate.getUTCFullYear(), month: startDate.getUTCMonth() + 1, chargeDate: startDate, concept: `Plan de Sala ${plan.name} ${startDate.getUTCFullYear()}-${String(startDate.getUTCMonth() + 1).padStart(2, '0')}`, amount: plan.monthlyAmount, planNameSnapshot: plan.name } });
       return participation;
     } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_ACTIVE_PARTICIPATION_EXISTS', message: 'Person already has an active Sala participation' }); throw error; }
   }
@@ -514,7 +445,7 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   private async reconcileUnpaidFixed(date: string, client: Prisma.TransactionClient | PrismaService): Promise<void> {
-    if (Number(date.slice(8, 10)) <= 15 || date > this.todayOperational()) return;
+    if (date > this.todayOperational()) return;
     const day = this.date(date);
     const fixed = await client.fixedSalaBooking.findMany({
       where: { startDate: { lte: day }, scheduleSlot: { weekday: this.weekday(day) }, OR: [{ endDate: null }, { endDate: { gte: day } }] },
@@ -522,14 +453,14 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     });
     if (!fixed.length) return;
     const [payments, occurrences] = await Promise.all([
-      client.salaPayment.findMany({ where: { personId: { in: [...new Set(fixed.map((item) => item.personId))] }, year: day.getUTCFullYear(), month: day.getUTCMonth() + 1 }, include: { reversal: true } }),
+      client.salaPayment.findMany({ where: { personId: { in: [...new Set(fixed.map((item) => item.personId))] }, coverageStartDate: { lte: day }, coverageEndDate: { gte: day } }, include: { reversal: true } }),
       client.salaOccurrence.findMany({ where: { date: day, fixedSalaBookingId: { in: fixed.map((item) => item.id) } } }),
     ]);
     const existing = new Map(occurrences.map((item) => [item.fixedSalaBookingId, item]));
     const now = new Date();
     for (const booking of fixed) {
       const startsAt = this.operationalStart(date, booking.startTime ?? booking.scheduleSlot.startTime);
-      if (startsAt > now || booking.createdAt > startsAt || payments.some((payment) => payment.personId === booking.personId && payment.createdAt <= startsAt && (!payment.reversal || payment.reversal.createdAt > startsAt))) continue;
+      if (startsAt > now || booking.createdAt > startsAt || payments.some((payment) => payment.personId === booking.personId && this.paymentCoversDate(payment, day, startsAt))) continue;
       const occurrence = existing.get(booking.id);
       if (occurrence) {
         if (occurrence.status === SalaOccurrenceStatus.RESERVED && !occurrence.cancelledForNonPaymentAt) {
@@ -549,13 +480,13 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     const days = relevantDates.map((date) => this.date(date));
     const [occurrences, payments] = await Promise.all([
       this.prisma.salaOccurrence.findMany({ where: { personId, date: { in: days }, fixedSalaBookingId: { not: null } } }),
-      this.prisma.salaPayment.findMany({ where: { personId, OR: relevantDates.map((date) => ({ year: Number(date.slice(0, 4)), month: Number(date.slice(5, 7)) })) }, include: { reversal: true } }),
+      this.prisma.salaPayment.findMany({ where: { personId, OR: days.map(day => ({ coverageStartDate: { lte: day }, coverageEndDate: { gte: day } })) }, include: { reversal: true } }),
     ]);
     return relevantDates.flatMap((date) => bookings.filter((booking) => booking.scheduleSlot.weekday === this.weekday(this.date(date)) && booking.startDate <= this.date(date) && (!booking.endDate || booking.endDate >= this.date(date))).map((booking) => {
       const occurrence = occurrences.find((item) => item.fixedSalaBookingId === booking.id && item.date.getTime() === this.date(date).getTime());
       const startsAt = this.operationalStart(date, booking.startTime ?? booking.scheduleSlot.startTime);
-      const paid = payments.some((payment) => payment.year === Number(date.slice(0, 4)) && payment.month === Number(date.slice(5, 7)) && (startsAt > new Date() ? !payment.reversal : payment.createdAt <= startsAt && (!payment.reversal || payment.reversal.createdAt > startsAt)));
-      const status = occurrence?.status ?? (Number(date.slice(8, 10)) > 15 && !paid && (startsAt > new Date() || booking.createdAt <= startsAt) ? 'PENDING_PAYMENT' : 'RESERVED');
+      const paid = payments.some((payment) => this.paymentCoversDate(payment, this.date(date), startsAt));
+      const status = occurrence?.status ?? (!paid && (startsAt > new Date() || booking.createdAt <= startsAt) ? 'PENDING_PAYMENT' : 'RESERVED');
       return { fixedSalaBookingId: booking.id, date, startTime: this.formatMinutes(this.minutes(occurrence?.startTime ?? booking.startTime ?? booking.scheduleSlot.startTime)), status, cancelledForNonPayment: Boolean(occurrence?.cancelledForNonPaymentAt) };
     }));
   }
@@ -747,13 +678,8 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
       return this.physicalEvaluationResponse(evaluation);
     });
   }
-  async listStudents(query: SalaStudentListQueryDto = {}): Promise<SalaStudentListItemDto[]> {
-    if ((query.year === undefined) !== (query.month === undefined)) throw new BadRequestException({ code: 'SALA_PAYMENT_PERIOD_INVALID', message: 'Indicá año y mes juntos.' });
-    const today = this.todayOperational();
-    const year = Number(today.slice(0, 4));
-    const month = Number(today.slice(5, 7));
-    const paymentYear = query.year ?? year;
-    const paymentMonth = query.month ?? month;
+  async listStudents(): Promise<SalaStudentListItemDto[]> {
+    const today = this.date(this.todayOperational());
     const participations = await this.prisma.salaParticipation.findMany({
       where: { endDate: null },
       orderBy: [{ person: { lastName: 'asc' } }, { person: { firstName: 'asc' } }],
@@ -767,25 +693,26 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
         routines: { where: { status: RoutineStatus.ACTIVE }, select: { id: true }, take: 1 },
       },
     });
-    const firstMonth = participations.reduce((min, item) => Math.min(min, item.startDate.getUTCFullYear() * 12 + item.startDate.getUTCMonth()), year * 12 + month - 1);
     const payments = await this.prisma.salaPayment.findMany({
-      where: { personId: { in: participations.map((item) => item.person.id) }, reversal: null,
-        OR: [{ year: paymentYear, month: paymentMonth }, { AND: [{ OR: [{ year: { gt: Math.floor(firstMonth / 12) } }, { year: Math.floor(firstMonth / 12), month: { gte: firstMonth % 12 + 1 } }] }, { OR: [{ year: { lt: year } }, { year, month: { lte: month } }] }] }] },
-      select: { personId: true, year: true, month: true, paidAt: true },
+      where: { personId: { in: participations.map(item => item.person.id) }, reversal: null },
+      select: { personId: true, coverageStartDate: true, coverageEndDate: true, paidAt: true },
+      orderBy: { paidAt: 'desc' },
     });
-    const paidMonths = new Set(payments.map((payment) => `${payment.personId}:${payment.year * 12 + payment.month - 1}`));
-    const currentPayments = new Map(payments.filter(payment => payment.year === paymentYear && payment.month === paymentMonth).map(payment => [payment.personId, payment]));
-    const currentMonth = year * 12 + month - 1;
+    const byPerson = new Map<string, typeof payments>();
+    for (const payment of payments) {
+      const rows = byPerson.get(payment.personId) ?? [];
+      rows.push(payment);
+      byPerson.set(payment.personId, rows);
+    }
     return participations.map(({ id, startDate, person, plan, mainProfessor, routines }) => {
-      const startMonth = startDate.getUTCFullYear() * 12 + startDate.getUTCMonth();
-      let unpaidConsecutiveMonths = 0;
-      for (let cursor = currentMonth; cursor >= startMonth && !paidMonths.has(`${person.id}:${cursor}`); cursor--) unpaidConsecutiveMonths++;
+      const rows = byPerson.get(person.id) ?? [];
+      const end = this.continuousValidityEnd(rows, today);
       return {
-        id: person.id, participationId: id, participationStartDate: startDate.toISOString().slice(0, 10), unpaidConsecutiveMonths,
+        id: person.id, participationId: id, participationStartDate: startDate.toISOString().slice(0, 10),
         firstName: person.firstName, lastName: person.lastName, dni: person.dni, plan, professor: mainProfessor,
         routineStatus: routines.length ? 'ACTIVE' : 'MISSING',
-        paymentStatus: paidMonths.has(`${person.id}:${paymentYear * 12 + paymentMonth - 1}`) ? 'PAID' : 'PENDING',
-        currentPaymentPaidAt: currentPayments.get(person.id)?.paidAt.toISOString().slice(0, 10) ?? null,
+        hasValidAccess: end !== null, validUntil: end?.toISOString().slice(0, 10) ?? null,
+        lastPaymentPaidAt: rows[0]?.paidAt.toISOString().slice(0, 10) ?? null,
       };
     });
   }
@@ -795,15 +722,13 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
     const entries = agenda.flatMap((group) => group.people);
     const today = this.todayOperational();
     const now = new Date();
-    const year = Number(today.slice(0, 4));
-    const month = Number(today.slice(5, 7));
-    const [withoutRoutine, pendingPayment] = await Promise.all([
+    const [withoutRoutine, withoutValidity] = await Promise.all([
       this.prisma.salaParticipation.findMany({
         where: { endDate: null, person: { routines: { none: { status: RoutineStatus.ACTIVE } } } },
         select: { personId: true }, orderBy: { personId: 'asc' },
       }),
       this.prisma.salaParticipation.findMany({
-        where: { endDate: null, person: { salaPayments: { none: { year, month, reversal: null } } } },
+        where: { endDate: null, person: { salaPayments: { none: { coverageStartDate: { lte: this.date(today) }, coverageEndDate: { gte: this.date(today) }, reversal: null } } } },
         select: { personId: true }, orderBy: { personId: 'asc' },
       }),
     ]);
@@ -825,7 +750,7 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
       upcoming: [...upcomingByTime.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(0, 3)
         .map(([startTime, people]) => ({ startTime, total: people.length, people: people.slice(0, 3) })),
       withoutRoutine: followUp(withoutRoutine),
-      pendingPayment: followUp(pendingPayment),
+      withoutValidity: followUp(withoutValidity),
     };
   }
   async agenda(date: string) {
@@ -836,7 +761,7 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
       this.prisma.salaScheduleSlot.findMany({ where: { weekday: this.weekday(day), startsAt: { lte: day }, OR: [{ endedAt: null }, { endedAt: { gte: day } }] }, include: { fixedBookings: { where: { startDate: { lte: day }, OR: [{ endDate: null }, { endDate: { gte: day } }] }, include: { person: { select: personSelect }, serviceType: true, salaParticipation: { include: { mainProfessor: { select: { id: true, firstName: true, lastName: true } } } } } }, reservations: { where: { date: day }, include: { person: { select: personSelect }, serviceType: true, salaParticipation: { include: { mainProfessor: { select: { id: true, firstName: true, lastName: true } } } } } } } }),
       this.prisma.salaOccurrence.findMany({ where: { date: day }, include: { serviceType: true, person: { select: personSelect }, fixedSalaBooking: { include: { serviceType: true, salaParticipation: { include: { mainProfessor: { select: { id: true, firstName: true, lastName: true } } } } } }, oneOffReservation: { include: { serviceType: true, salaParticipation: { include: { mainProfessor: { select: { id: true, firstName: true, lastName: true } } } } } } } }),
       this.prisma.salaParticipation.findMany({ where: { startDate: { lte: day }, OR: [{ endDate: null }, { endDate: { gte: day } }] }, include: { mainProfessor: { select: { id: true, firstName: true, lastName: true } } }, orderBy: { startDate: 'desc' } }),
-      this.prisma.salaPayment.findMany({ where: { year: day.getUTCFullYear(), month: day.getUTCMonth() + 1 }, include: { reversal: true } }),
+      this.prisma.salaPayment.findMany({ where: { coverageStartDate: { lte: day }, coverageEndDate: { gte: day } }, include: { reversal: true } }),
     ]);
     return availability.map((state) => {
       const window = windows.find((candidate) => candidate.id === state.scheduleSlotId)!;
@@ -848,8 +773,8 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
       const entries = new Map<string, { person: typeof window.fixedBookings[number]['person']; origin: SalaOccurrenceOrigin; status: SalaOccurrenceStatus | 'PENDING_PAYMENT'; sourceId: string; isMaterialized: boolean; cancelledForNonPayment: boolean; details: AgendaDetails }>();
       for (const booking of window.fixedBookings.filter((item) => occupies(item) && startsInBlock(item))) {
         const startsAt = this.operationalStart(date, booking.startTime ?? window.startTime);
-        const paid = payments.some((payment) => payment.personId === booking.personId && (startsAt > new Date() ? !payment.reversal : payment.createdAt <= startsAt && (!payment.reversal || payment.reversal.createdAt > startsAt)));
-        const pending = day.getUTCDate() > 15 && !paid && (startsAt > new Date() || booking.createdAt <= startsAt);
+        const paid = payments.some((payment) => payment.personId === booking.personId && this.paymentCoversDate(payment, day, startsAt));
+        const pending = !paid && (startsAt > new Date() || booking.createdAt <= startsAt);
         entries.set(`fixed:${booking.id}`, { person: booking.person, origin: SalaOccurrenceOrigin.FIXED, status: state.isClosed ? SalaOccurrenceStatus.CANCELLED : pending ? 'PENDING_PAYMENT' : SalaOccurrenceStatus.RESERVED, sourceId: booking.id, isMaterialized: false, cancelledForNonPayment: false, details: details(booking) });
       }
       for (const reservation of window.reservations.filter((item) => occupies(item) && startsInBlock(item))) entries.set(`oneOff:${reservation.id}`, { person: reservation.person, origin: SalaOccurrenceOrigin.ONE_OFF, status: reservation.cancelledAt || state.isClosed ? SalaOccurrenceStatus.CANCELLED : SalaOccurrenceStatus.RESERVED, sourceId: reservation.id, isMaterialized: false, cancelledForNonPayment: false, details: details(reservation) });
@@ -984,7 +909,7 @@ export class SalaService implements OnApplicationBootstrap, OnApplicationShutdow
   private positiveMoney(value: string, code: string): Prisma.Decimal { if (!/^\d+$/.test(value)) throw new BadRequestException({ code, message: 'Amount must be a positive whole ARS value' }); const amount = new Prisma.Decimal(value); if (!amount.greaterThan(0)) throw new BadRequestException({ code, message: 'Amount must be positive' }); return amount; }
   private signedMoney(value: string, code: string): Prisma.Decimal { if (!/^-?\d+$/.test(value)) throw new BadRequestException({ code, message: 'Amount must be a non-zero whole ARS value' }); const amount = new Prisma.Decimal(value); if (amount.isZero()) throw new BadRequestException({ code, message: 'Amount must be non-zero' }); return amount; }
   private requiredReason(value: string): string { const reason = value.trim(); if (!reason) throw new BadRequestException({ code: 'FINANCIAL_REASON_REQUIRED', message: 'Reason is required' }); return reason; }
-  private monthsBetween(first: Date, last: Date): Date[] { const months: Date[] = []; const cursor = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), 1)); const end = new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth(), 1)); while (cursor <= end) { months.push(new Date(cursor)); cursor.setUTCMonth(cursor.getUTCMonth() + 1); } return months; }
+
   private async validateSalaAllocations(tx: Prisma.TransactionClient, personId: string, paymentAmount: Prisma.Decimal, allocations: Array<{ chargeId: string; amount: string; operationId: string }>): Promise<void> {
     if (new Set(allocations.map((allocation) => allocation.operationId)).size !== allocations.length) throw new BadRequestException({ code: 'SALA_PAYMENT_ALLOCATION_OPERATION_DUPLICATE', message: 'Allocation operation ids must be unique' });
     const requested = allocations.map((allocation) => ({ ...allocation, value: this.positiveMoney(allocation.amount, 'SALA_PAYMENT_ALLOCATION_AMOUNT_INVALID') }));
