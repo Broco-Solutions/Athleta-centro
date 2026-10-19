@@ -287,3 +287,28 @@ it.each([
   await openFlow(); await choosePerson(); fireEvent.click(screen.getByRole('button', { name: 'Incorporar' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(message); expect(screen.getByLabelText('Servicio')).toHaveValue(serviceId);
 });
+
+it('uses the shared wide Person form and submits sport, club and coverage in the atomic spontaneous creation', async () => {
+  mockFlow();
+  let submitted: Record<string, unknown> | undefined;
+  server.use(http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: [{ id: 'work', name: 'Cobertura', isSelectable: true }] })), http.post('http://localhost:3000/api/sala/occurrences/spontaneous/create-student', async ({ request }) => {
+    submitted = await request.json() as Record<string, unknown>;
+    return HttpResponse.json({ data: { person: { id: 'new-person', firstName: 'Ana', lastName: 'Nueva', initialPin: '1234' } } }, { status: 201 });
+  }));
+  await openFlow();
+  await fillNew();
+  const dialog = screen.getByRole('dialog', { name: 'Incorporación espontánea' });
+  expect(dialog).toHaveClass('max-w-4xl');
+  for (const heading of ['Datos personales', 'Contacto de emergencia', 'Cobertura médica', 'Entrenamiento', 'Incorporación']) expect(within(dialog).getByRole('heading', { name: heading })).toBeVisible();
+  for (const label of ['Email (opcional)', 'Deporte (opcional)', 'Club (opcional)', 'Contacto de emergencia (opcional)', 'Teléfono de emergencia (opcional)', 'Obra social (opcional)', 'Número de afiliado (opcional)', 'Plan', 'Profesor principal', 'Servicio', 'Horario espontáneo']) expect(within(dialog).getByLabelText(label)).toBeVisible();
+  fireEvent.change(screen.getByLabelText('Deporte (opcional)'), { target: { value: '  Natación  ' } });
+  fireEvent.change(screen.getByLabelText('Club (opcional)'), { target: { value: ' Athleta Test ' } });
+  await screen.findByRole('option', { name: 'Cobertura' });
+  fireEvent.change(screen.getByLabelText('Obra social (opcional)'), { target: { value: 'work' } });
+  fireEvent.change(screen.getByLabelText('Número de afiliado (opcional)'), { target: { value: '  ABC  ' } });
+  await screen.findByRole('option', { name: 'Funcional · 45 min' });
+  fireEvent.change(screen.getByLabelText('Servicio'), { target: { value: serviceId } });
+  fireEvent.click(screen.getByRole('button', { name: 'Incorporar' }));
+  await waitFor(() => expect(submitted).toMatchObject({ firstName: 'Ana', lastName: 'Nueva', dni: '30123456', phone: '3415551234', sport: 'Natación', club: 'Athleta Test', socialWorkId: 'work', affiliateNumber: 'ABC', planId, mainProfessorId: professional.id, date: operationalToday, serviceTypeId: serviceId }));
+  expect(submitted).toHaveProperty('email', null);
+});

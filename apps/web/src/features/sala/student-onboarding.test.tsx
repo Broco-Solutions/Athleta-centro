@@ -50,7 +50,10 @@ it('shows both incorporation actions and creates a student through one atomic re
   renderStudents();
   expect(await screen.findByRole('button', { name: 'Incorporar Persona existente' })).toBeVisible();
   await fillNewStudent();
-  for (const label of ['Nombre', 'Apellido', 'DNI', 'Teléfono', 'Fecha de nacimiento', 'Email (opcional)', 'Contacto de emergencia (opcional)', 'Teléfono de emergencia (opcional)', 'Obra social (opcional)', 'Número de afiliado (opcional)', 'Plan', 'Profesor principal']) expect(screen.getByLabelText(label)).toBeVisible();
+  const formDialog = screen.getByRole('dialog', { name: 'Nuevo alumno' });
+  expect(formDialog.firstElementChild).toHaveClass('max-w-4xl');
+  for (const heading of ['Datos personales', 'Contacto de emergencia', 'Cobertura médica', 'Entrenamiento']) expect(within(formDialog).getByRole('heading', { name: heading })).toBeVisible();
+  for (const label of ['Nombre', 'Apellido', 'DNI', 'Teléfono', 'Fecha de nacimiento', 'Email (opcional)', 'Deporte (opcional)', 'Club (opcional)', 'Contacto de emergencia (opcional)', 'Teléfono de emergencia (opcional)', 'Obra social (opcional)', 'Número de afiliado (opcional)', 'Plan', 'Profesor principal']) expect(within(formDialog).getByLabelText(label)).toBeVisible();
   expect(screen.queryByLabelText('Fecha de inicio')).not.toBeInTheDocument();
   expect(screen.queryByRole('option', { name: 'Retirado' })).not.toBeInTheDocument();
   expect(screen.queryByRole('option', { name: 'Obra retirada' })).not.toBeInTheDocument();

@@ -6,21 +6,19 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@athleta/ui';
-import { createSalaStudent, joinSala, listPeople, listSalaPlans, listSalaProfessors, listSocialWorks } from '@athleta/api-client';
+import { createSalaStudent, joinSala, listPeople, listSalaPlans, listSalaProfessors } from '@athleta/api-client';
+import { GeneralPersonFields, personDefaults, personInput, personSchema, type PersonValues } from '../people/general-person-form';
 
 export function todayOperational(): string {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
 }
-export const personSchema = z.object({ firstName: z.string().trim().min(1, 'Ingresá el nombre'), lastName: z.string().trim().min(1, 'Ingresá el apellido'), dni: z.string().refine((value) => !/[^0-9 .-]/.test(value) && /^\d{6,8}$/.test(value.replace(/[^0-9]/g, '')), 'El DNI debe tener entre 6 y 8 dígitos.').transform((value) => value.replace(/[^0-9]/g, '')), phone: z.string().refine((value) => !/[^0-9 ().-]/.test(value) && /^[1-9]\d{9}$/.test(value.replace(/[^0-9]/g, '')), 'El teléfono debe tener 10 dígitos.').transform((value) => value.replace(/[^0-9]/g, '')), birthDate: z.string().min(1, 'Ingresá la fecha').refine((value) => value <= todayOperational(), 'La fecha de nacimiento no puede ser futura'), email: z.union([z.literal(''), z.email('Email inválido')]).optional(), emergencyContactName: z.string().trim().max(150), emergencyContactPhone: z.string().refine((value) => !value.trim() || (!/[^0-9 ().-]/.test(value) && /^[1-9]\d{9}$/.test(value.replace(/[^0-9]/g, ''))), 'El teléfono de emergencia debe tener 10 dígitos.').transform((value) => value.replace(/[^0-9]/g, '')), socialWorkId: z.string(), affiliateNumber: z.string().max(100) });
-
 const assignmentSchema = z.object({ planId: z.string().min(1, 'Seleccioná un Plan'), mainProfessorId: z.string().min(1, 'Seleccioná un Profesor principal') });
 export const studentSchema = personSchema.extend(assignmentSchema.shape);
 export type StudentValues = z.infer<typeof studentSchema>;
 export type Notice = { pin: string; firstName: string; lastName: string };
 type Plan = { id: string; name: string; isSelectable?: boolean };
-type SocialWork = { id: string; name: string; isSelectable: boolean };
 const fieldClass = 'mt-1 h-10 w-full rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-ring';
 function checked<T>(response: { status: number; data: T }): T {
   if (response.status < 200 || response.status >= 300) throw Object.assign(new Error('No pudimos guardar los datos.'), { status: response.status, response: response.data });
@@ -51,10 +49,9 @@ function OnboardingDialog({ mode, csrfToken, canPlanManage, onClose, onSaved }: 
   const options = { credentials: 'include', headers: { 'x-csrf-token': csrfToken } } satisfies RequestInit;
   const plans = useQuery({ queryKey: ['sala-plans'], queryFn: async () => checked(await listSalaPlans(options)).data as unknown as Plan[] });
   const professors = useQuery({ queryKey: ['sala-professors'], queryFn: async () => checked(await listSalaProfessors(options)).data });
-  const works = useQuery({ queryKey: ['social-works'], enabled: mode === 'new', queryFn: async () => (checked(await listSocialWorks(options)) as unknown as { data: SocialWork[] }).data });
   const selectablePlans = plans.data?.filter((plan) => plan.isSelectable !== false) ?? [];
   const ready = selectablePlans.length > 0 && (professors.data?.length ?? 0) > 0 && !plans.isError && !professors.isError;
-  const form = useForm<StudentValues>({ resolver: zodResolver(studentSchema), defaultValues: { firstName: '', lastName: '', dni: '', phone: '', birthDate: '', email: '', emergencyContactName: '', emergencyContactPhone: '', socialWorkId: '', affiliateNumber: '', planId: '', mainProfessorId: '' } });
+  const form = useForm<StudentValues>({ resolver: zodResolver(studentSchema), defaultValues: { ...personDefaults(), planId: '', mainProfessorId: '' } });
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [personId, setPersonId] = useState('');
@@ -63,23 +60,23 @@ function OnboardingDialog({ mode, csrfToken, canPlanManage, onClose, onSaved }: 
     if (!csrfToken) throw new Error('Sesión inválida');
     if (mode === 'existing') { checked(await joinSala({ personId, planId: form.getValues('planId'), mainProfessorId: form.getValues('mainProfessorId'), startDate: todayOperational() }, options)); return; }
     if (!values) throw new Error('Datos incompletos');
-    const { email, socialWorkId, affiliateNumber, ...general } = values;
-    const result = checked(await createSalaStudent({ ...general, ...(email ? { email } : {}), socialWorkId: socialWorkId || null, affiliateNumber: socialWorkId ? affiliateNumber.trim() : '' }, options)).data;
+    const { planId, mainProfessorId, ...generalPerson } = values;
+    const result = checked(await createSalaStudent({ ...personInput(generalPerson), planId, mainProfessorId }, options)).data;
     return result.initialPin ? { pin: result.initialPin, firstName: result.firstName, lastName: result.lastName } : undefined;
   }, onSuccess: onSaved });
   const error = mutation.error as { status?: number; response?: { code?: string } } | null;
-  return <div role="dialog" aria-modal="true" aria-labelledby="student-form-title" className="fixed inset-0 z-20 grid place-items-center bg-black/40 p-4"><div className="max-h-[90vh] w-full max-w-xl overflow-auto rounded-md bg-white p-6 shadow-sm">
+  return <div role="dialog" aria-modal="true" aria-labelledby="student-form-title" className="fixed inset-0 z-20 grid place-items-center bg-black/40 p-4"><div className={`max-h-[90vh] w-full ${mode === 'new' ? 'max-w-4xl' : 'max-w-xl'} overflow-auto rounded-md bg-white p-6 shadow-sm`}>
     <h2 id="student-form-title" className="mb-5 text-xl font-semibold">{mode === 'new' ? 'Nuevo alumno' : 'Incorporar Persona existente'}</h2>
     <form className="grid gap-4 sm:grid-cols-2" onSubmit={mode === 'new' ? form.handleSubmit((values) => mutation.mutate(values)) : (event) => { event.preventDefault(); if (personId && form.getValues('planId') && form.getValues('mainProfessorId')) mutation.mutate(undefined); }}>
-      {mode === 'new' ? <StudentPersonFields form={form} works={works.data ?? []} worksError={works.isError} /> : <div className="space-y-3 sm:col-span-2">
+      {mode === 'new' ? <GeneralPersonFields form={form as unknown as UseFormReturn<PersonValues>} /> : <div className="space-y-3 sm:col-span-2">
         <label className="text-sm">Buscar Persona<input aria-label="Buscar Persona" placeholder="Nombre o DNI" className={fieldClass} value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} /></label>
         <label className="block text-sm">Persona<select aria-label="Persona" required className={fieldClass} value={personId} onChange={(event) => setPersonId(event.target.value)}><option value="">Seleccionar Persona</option>{candidates.data?.data.filter((person) => !person.hasSalaParticipation).map((person) => <option key={person.id} value={person.id}>{person.lastName}, {person.firstName} · {person.dni}</option>)}</select></label>
         {candidates.isLoading && <p role="status">Buscando Personas…</p>}{candidates.isError && <p role="alert">No pudimos buscar Personas.</p>}
         {candidates.data && !candidates.data.data.some((person) => !person.hasSalaParticipation) && <p className="text-sm text-muted-foreground">No hay Personas disponibles en esta página.</p>}
         {(candidates.data?.meta.totalPages ?? 0) > 1 && <div className="flex gap-2"><Button type="button" variant="secondary" disabled={page === 1} onClick={() => setPage(page - 1)}>Anterior</Button><Button type="button" variant="secondary" disabled={page >= (candidates.data?.meta.totalPages ?? 1)} onClick={() => setPage(page + 1)}>Siguiente</Button></div>}
       </div>}
-      <label className="text-sm">Plan<select aria-label="Plan" required className={fieldClass} {...form.register('planId')}><option value="">Seleccionar Plan</option>{selectablePlans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select><span className="text-xs text-red-700">{form.formState.errors.planId?.message}</span></label>
-      <label className="text-sm">Profesor principal<select aria-label="Profesor principal" required className={fieldClass} {...form.register('mainProfessorId')}><option value="">Seleccionar Profesor</option>{professors.data?.map((professor) => <option key={professor.id} value={professor.id}>{professor.lastName}, {professor.firstName}</option>)}</select><span className="text-xs text-red-700">{form.formState.errors.mainProfessorId?.message}</span></label>
+      {mode === 'new' ? <section className="border-t border-border pt-4 sm:col-span-2"><h3 className="mb-3 text-sm font-semibold">Entrenamiento</h3><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm">Plan<select aria-label="Plan" required className={fieldClass} {...form.register('planId')}><option value="">Seleccionar Plan</option>{selectablePlans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select><span className="text-xs text-red-700">{form.formState.errors.planId?.message}</span></label>
+      <label className="text-sm">Profesor principal<select aria-label="Profesor principal" required className={fieldClass} {...form.register('mainProfessorId')}><option value="">Seleccionar Profesor</option>{professors.data?.map((professor) => <option key={professor.id} value={professor.id}>{professor.lastName}, {professor.firstName}</option>)}</select><span className="text-xs text-red-700">{form.formState.errors.mainProfessorId?.message}</span></label></div></section> : <><label className="text-sm">Plan<select aria-label="Plan" required className={fieldClass} {...form.register('planId')}><option value="">Seleccionar Plan</option>{selectablePlans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></label><label className="text-sm">Profesor principal<select aria-label="Profesor principal" required className={fieldClass} {...form.register('mainProfessorId')}><option value="">Seleccionar Profesor</option>{professors.data?.map((professor) => <option key={professor.id} value={professor.id}>{professor.lastName}, {professor.firstName}</option>)}</select></label></>}
       {plans.isLoading || professors.isLoading ? <p role="status">Cargando Planes y Profesores…</p> : <>
         {!plans.isError && !selectablePlans.length && <p className="text-sm sm:col-span-2">No hay Planes disponibles para incorporar alumnos. {canPlanManage && <Link className="underline" href="/sala/configuration">Configurar Planes</Link>}</p>}
         {!professors.isError && !professors.data?.length && <p className="text-sm sm:col-span-2">No hay Profesores activos disponibles.</p>}
@@ -101,14 +98,4 @@ export function TemporaryPortalPin({ notice, onClose }: { notice: Notice; onClos
       <div className="mt-5 flex justify-center gap-2"><Button variant="secondary" onClick={async () => { try { await navigator.clipboard.writeText(notice.pin); setCopied(true); } catch { setCopied(false); } }}>Copiar PIN</Button><Button onClick={() => { onClose(); setCopied(false); }}>Entendido</Button></div>
       {copied && <p role="status" className="mt-3 text-sm text-green-700">PIN copiado</p>}
     </div></div>;
-}
-
-export function StudentPersonFields({ form, works, worksError }: { form: UseFormReturn<StudentValues>; works: SocialWork[]; worksError: boolean }): React.JSX.Element {
-  const socialWorkId = form.watch('socialWorkId');
-  return <>
-        {([['firstName','Nombre'],['lastName','Apellido'],['dni','DNI'],['phone','Teléfono'],['birthDate','Fecha de nacimiento'],['email','Email (opcional)'],['emergencyContactName','Contacto de emergencia (opcional)'],['emergencyContactPhone','Teléfono de emergencia (opcional)']] as const).map(([name,label]) => <label key={name} className="text-sm">{label}<input aria-label={label} type={name === 'birthDate' ? 'date' : name === 'email' ? 'email' : 'text'} inputMode={name === 'dni' ? 'numeric' : name === 'phone' || name === 'emergencyContactPhone' ? 'tel' : undefined} maxLength={name === 'emergencyContactName' ? 150 : undefined} className={fieldClass} {...form.register(name)} /><span className="text-xs text-red-700">{form.formState.errors[name]?.message}</span></label>)}
-        <label className="text-sm">Obra social (opcional)<select aria-label="Obra social (opcional)" className={fieldClass} {...form.register('socialWorkId', { onChange: (event: React.ChangeEvent<HTMLSelectElement>) => { if (!event.target.value) form.setValue('affiliateNumber', ''); } })}><option value="">Sin obra social</option>{works.filter((work) => work.isSelectable).map((work) => <option key={work.id} value={work.id}>{work.name}</option>)}</select></label>
-        <label className="text-sm">Número de afiliado (opcional)<input aria-label="Número de afiliado (opcional)" maxLength={100} disabled={!socialWorkId} className={fieldClass} {...form.register('affiliateNumber')} /></label>
-        {worksError && <p role="alert">No pudimos cargar las obras sociales.</p>}
-  </>;
 }
