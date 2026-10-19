@@ -1,7 +1,8 @@
 'use client';
 import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Check, Circle, Minus } from 'lucide-react';
+import Link from 'next/link';
+import { AlertTriangle, ArrowLeft, CalendarDays, Check, Circle, Minus } from 'lucide-react';
 import { PortalFrame, portalFetch, formatTime, today, bookingError } from '../../portal-ui';
 
 type Service = { id: string; name: string; durationMinutes: number };
@@ -97,7 +98,24 @@ export default function PortalReserve(): React.JSX.Element {
 
   if (sala.isPending) return <PortalFrame title="Reservar en Sala" backToHome><p role="status">Cargando vigencia…</p></PortalFrame>;
   if (sala.isError) return <PortalFrame title="Reservar en Sala" backToHome><p role="alert">No pudimos cargar tu vigencia. Intentá nuevamente.</p></PortalFrame>;
-  if (!hasValidity) return <PortalFrame title="Reservar en Sala" backToHome><h2>Vigencia de Sala</h2><p>Sin vigencia</p><p>Necesitás renovar tu vigencia para realizar nuevas reservas.</p></PortalFrame>;
+  if (!hasValidity) return <PortalFrame title="Reservar en Sala" backToHome>
+    <section aria-labelledby="reservation-validity-title" className="w-full max-w-2xl rounded-lg border border-amber-200 bg-amber-50 p-5 sm:p-6">
+      <div className="flex items-start gap-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-800">
+          <AlertTriangle aria-hidden="true" size={18} />
+        </span>
+        <div className="min-w-0">
+          <h2 id="reservation-validity-title" className="font-semibold text-amber-900">Cuota sin vigencia</h2>
+          <p className="mt-2 text-base text-foreground">No podés realizar nuevas reservas por el momento.</p>
+          <p className="mt-1 text-sm text-amber-900/80">Consultá en recepción para renovar tu cuota y volver a reservar.</p>
+          <Link href="/portal/sala" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-medium text-foreground hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <ArrowLeft aria-hidden="true" size={16} />
+            Volver a Sala
+          </Link>
+        </div>
+      </div>
+    </section>
+  </PortalFrame>;
   return <PortalFrame title="Reservar en Sala" subtitle="Elegí cuándo querés venir a entrenar." backToHome>
     <div className="max-w-4xl space-y-8 rounded-xl border bg-surface p-5 sm:p-8">
       <Step number={1} title="Elegí el servicio">

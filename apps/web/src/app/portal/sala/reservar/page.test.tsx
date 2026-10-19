@@ -253,8 +253,13 @@ it('turns a stale selected time into a disabled full time after a capacity rejec
 it('blocks the dedicated reservation route when current validity is missing', async () => {
   server.use(http.get(base + 'sala', () => HttpResponse.json({ data: { validity: { hasValidAccess: false, validUntil: null } } })));
   renderReserve();
-  expect(await screen.findByText('Sin vigencia')).toBeVisible();
-  expect(screen.getByText('Necesitás renovar tu vigencia para realizar nuevas reservas.')).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Cuota sin vigencia' })).toBeVisible();
+  expect(screen.getByText('No podés realizar nuevas reservas por el momento.')).toBeVisible();
+  expect(screen.getByText('Consultá en recepción para renovar tu cuota y volver a reservar.')).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Volver a Sala' })).toHaveAttribute('href', '/portal/sala');
+  expect(screen.queryByText('Vigencia de Sala')).not.toBeInTheDocument();
+  expect(screen.queryByText('Sin vigencia')).not.toBeInTheDocument();
+  expect(screen.queryByText('Necesitás renovar tu vigencia para realizar nuevas reservas.')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Reservar en Sala' })).not.toBeInTheDocument();
 });
 it('limits the dedicated reservation calendar to the end of current validity', async () => {
