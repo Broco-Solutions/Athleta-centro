@@ -113,7 +113,6 @@ function AdministrativeHome({ firstName }: { firstName: string }): React.JSX.Ele
   ];
   const shortcuts = [
     { label: 'Alumnos', href: '/students', description: 'Seguimiento de Sala', icon: Dumbbell },
-    { label: 'Personas', href: '/people', description: 'Datos generales', icon: Users },
     { label: 'Ingresos / Pagos', href: '/finance?view=income', description: 'Pagos de Sala e ingresos', icon: Wallet },
     { label: 'Gastos', href: '/finance?view=expenses', description: 'Gestión de gastos', icon: ClipboardList },
   ];

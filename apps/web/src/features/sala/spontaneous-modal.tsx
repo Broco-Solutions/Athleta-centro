@@ -6,7 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@athleta/ui';
 import { createSalaStudentAndSpontaneousOccurrence, createSpontaneousSalaOccurrence, getPersonSalaSpontaneousOptions, joinSalaAndCreateSpontaneousOccurrence, listSalaPlans, listSalaProfessors, listSocialWorks } from '@athleta/api-client';
-import type { AgendaGroup, PersonOption } from './agenda-panel';
+import { fetchPeople } from '../people/people-api';
+import type { AgendaGroup } from './agenda-panel';
 import { StudentPersonFields, studentSchema, todayOperational, type Notice, type StudentValues } from './student-onboarding';
 
 type Service = { id: string; name: string; durationMinutes: number; isSelectable?: boolean };
@@ -42,8 +43,8 @@ function currentOperationalMinutes(now = new Date()): number {
   return Number(clock.hour) * 60 + Number(clock.minute);
 }
 
-export function SpontaneousModal({ date, groups, people, initialSlotId, csrfToken, canManageParticipation, canCreatePerson, onSaved, onClose }: {
-  date: string; groups: AgendaGroup[]; people: PersonOption[]; initialSlotId: string; csrfToken: string; canManageParticipation: boolean; canCreatePerson: boolean; onSaved: (notice?: Notice) => void; onClose: () => void;
+export function SpontaneousModal({ date, groups, initialSlotId, csrfToken, canManageParticipation, canCreatePerson, onSaved, onClose }: {
+  date: string; groups: AgendaGroup[]; initialSlotId: string; csrfToken: string; canManageParticipation: boolean; canCreatePerson: boolean; onSaved: (notice?: Notice) => void; onClose: () => void;
 }): React.JSX.Element {
   const today = todayOperational();
   const visibleGroups = groups.filter(item => !item.isClosed && (date !== today || minutes(item.slot.startTime) >= currentOperationalMinutes()));
@@ -51,6 +52,8 @@ export function SpontaneousModal({ date, groups, people, initialSlotId, csrfToke
   const [mode, setMode] = useState<'existing' | 'new'>('existing');
   const [search, setSearch] = useState('');
   const [personId, setPersonId] = useState('');
+  const term = search.trim();
+  const people = useQuery({ queryKey: ['people', 'spontaneous-search', term], enabled: !future && mode === 'existing' && term.length > 0, queryFn: () => fetchPeople({ search: term, page: 1, pageSize: 10 }) });
   const [slotId, setSlotId] = useState(initialSlotId);
   const [serviceTypeId, setServiceTypeId] = useState('');
   const [confirmation, setConfirmation] = useState<Submission | null>(null);
@@ -97,8 +100,14 @@ export function SpontaneousModal({ date, groups, people, initialSlotId, csrfToke
       {date === today && canManageParticipation && canCreatePerson && <Button className="mt-4" variant="secondary" onClick={() => { setMode(mode === 'new' ? 'existing' : 'new'); resetSelection(); }}>{mode === 'new' ? 'Persona existente' : 'Nueva Persona'}</Button>}
       <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={mode === 'new' ? form.handleSubmit(submit) : (event) => { event.preventDefault(); submit(); }}>
         {mode === 'new' ? <StudentPersonFields form={form} works={works.data ?? []} worksError={works.isError} /> : <div className="grid gap-3 sm:col-span-2">
-          <label className="text-sm">Buscar Persona<input aria-label="Buscar Persona" placeholder="Nombre, apellido o DNI" className={fieldClass} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-          <label className="text-sm">Persona<select aria-label="Persona espontánea" className={fieldClass} value={personId} onChange={(event) => { setPersonId(event.target.value); resetSelection(); }}><option value="">Seleccionar Persona</option>{people.filter((person) => `${person.firstName} ${person.lastName} ${person.dni}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())).map((person) => <option key={person.id} value={person.id}>{person.lastName}, {person.firstName} · {person.dni}</option>)}</select></label>
+          <label className="text-sm">Buscar Persona<input aria-label="Buscar Persona" placeholder="Nombre, apellido o DNI" className={fieldClass} value={search} disabled={mutation.isPending} onChange={(event) => { setSearch(event.target.value); setPersonId(''); resetSelection(); }} /></label>
+          {term ? people.isFetching ? <p role="status">Buscando Personas…</p> : people.isError ? <p role="alert">No pudimos buscar Personas. Intentá nuevamente.</p> : people.isSuccess && !people.data.data.length ? <p role="status">No encontramos una Persona con esa búsqueda.</p> : people.isSuccess ? <div className="grid gap-2" role="group" aria-label="Resultados">
+            <p className="text-sm font-medium">Resultados</p>
+            {people.data.data.map(person => <button key={person.id} type="button" aria-label={`${person.firstName} ${person.lastName} · DNI ${person.dni}`} aria-pressed={personId === person.id} disabled={mutation.isPending} className={`w-full rounded-md border p-3 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${personId === person.id ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-muted'}`} onClick={() => { setPersonId(person.id); resetSelection(); }}>
+              <span className="block font-medium">{person.firstName} {person.lastName}</span>
+              <span className="block text-muted-foreground">DNI {person.dni}</span>
+            </button>)}
+          </div> : null : null}
           {eligibility.isLoading && <p role="status">Consultando participación de Sala…</p>}
           {eligibility.isError && <p role="alert">No pudimos consultar la participación de Sala.</p>}
           {needsJoin && date < today && <p>La Persona no tenía una participación de Sala vigente en esa fecha.</p>}

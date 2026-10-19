@@ -758,3 +758,26 @@ El Plan financiero queda referenciado y su nombre se congela al cobrar; no modif
   cuando el precio difiere del Plan. Historial muestra Plan y cobertura, incluso revertida.
 - No cambian permisos, Clínica, Rutinas, capacidad, servicios, ventana de 30 días,
   umbral de 20 minutos del Portal ni el flujo de Nuevo alumno / Nueva Persona.
+
+
+## Simplificación de Personas en primera salida de Sala — 2026-10-19
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+- Personas continúa siendo la identidad transversal del sistema. El módulo `/people`,
+  sus permisos y el modelo de dominio no se eliminan.
+- Durante la primera salida enfocada en Sala, `ADMINISTRATIVE` y `GENERAL_ADMIN`
+  no ven un acceso general a Personas en sidebar, Home ni header de Sala.
+- Las operaciones necesarias sobre Personas se realizan contextualmente desde
+  Alumnos e Incorporación espontánea.
+- Nuevo alumno administrativo permite buscar una Persona existente por Nombre,
+  Apellido o DNI, o crear una Nueva Persona. Incorporación espontánea utiliza
+  el mismo patrón.
+- Los resultados aparecen directamente bajo el buscador y se seleccionan con un
+  click. No existe selector global `Seleccionar Persona`.
+- No se precarga un padrón completo de Personas ni se consulta con búsqueda vacía.
+  Cada búsqueda solicita la primera página con un máximo de 10 resultados.
+- El backend existente de búsqueda de People continúa siendo la fuente de resultados.
+- Profesor mantiene su flujo de Nuevo alumno DNI-first.
+- Esta decisión simplifica la experiencia visual y operativa; no elimina People
+  del modelo de dominio ni cambia las reglas de alta, incorporación o vigencia.

@@ -178,14 +178,14 @@ it('preserves permission navigation for PROFESSOR + KINESIOLOGIST', async () => 
 });
 
 it.each([{ roles: ['GENERAL_ADMIN'] }, { roles: ['GENERAL_ADMIN', 'PROFESSOR'] }, { roles: ['GENERAL_ADMIN', 'KINESIOLOGIST'] }, { roles: ['ADMINISTRATIVE'] }, { roles: ['ADMINISTRATIVE', 'OSTEOPATH'] }])('uses administrative grouped navigation for roles %j on desktop and mobile', async ({ roles }) => {
-  renderShell({ roles, permissions: ['PEOPLE_READ', 'SALA_RELATION_READ', 'SALA_AGENDA_MANAGE', 'SALA_PARTICIPATION_MANAGE', 'SALA_SCHEDULE_MANAGE', 'SALA_ROUTINE_MANAGE', 'CLINIC_OPERATIONAL_READ', 'FINANCE_OPERATIONAL_READ', 'TEAM_READ'] });
+  renderShell({ roles, permissions: ['PEOPLE_READ', 'PEOPLE_CREATE', 'PEOPLE_UPDATE_GENERAL', 'SALA_RELATION_READ', 'SALA_AGENDA_MANAGE', 'SALA_PARTICIPATION_MANAGE', 'SALA_SCHEDULE_MANAGE', 'SALA_ROUTINE_MANAGE', 'CLINIC_OPERATIONAL_READ', 'FINANCE_OPERATIONAL_READ', 'TEAM_READ'] });
   await screen.findByRole('link', { name: 'Inicio' });
   fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
   for (const name of ['Navegación principal', 'Navegación móvil']) {
     const nav = within(screen.getByRole('navigation', { name }));
     expect(nav.getByRole('link', { name: 'Resumen' })).toHaveAttribute('href', '/');
     for (const [label, href] of [['Inicio', '/'], ['Sala', '/sala'], ['Finanzas', '/finance'], ['Equipo', '/team']]) expect(nav.getByRole('link', { name: label! })).toHaveAttribute('href', href);
-    for (const label of ['Clínica', 'Pacientes', 'Turnos']) expect(nav.queryByText(label)).not.toBeInTheDocument();
+    for (const label of ['Clínica', 'Pacientes', 'Turnos', 'Personas']) expect(nav.queryByText(label)).not.toBeInTheDocument();
     expect(nav.getByRole('link', { name: 'Inicio' })).toHaveAttribute('aria-expanded', 'true');
     expect(nav.queryByRole('link', { name: 'Agenda' })).not.toBeInTheDocument();
     expect(nav.queryByRole('link', { name: 'Reservas' })).not.toBeInTheDocument();
@@ -256,7 +256,7 @@ it('keeps the active group open when its heading is selected', async () => {
   fireEvent.click(home);
   expect(home).toHaveAttribute('aria-expanded', 'true');
   expect(nav.getByRole('link', { name: 'Resumen' })).toBeVisible();
-  expect(nav.getByRole('link', { name: 'Personas' })).toBeVisible();
+  expect(nav.queryByRole('link', { name: 'Personas' })).not.toBeInTheDocument();
 });
 
 it('opens the active General Admin group and only one group at a time, with active updates', async () => {
@@ -302,7 +302,7 @@ it('links group headings to the first permitted item', async () => {
 });
 
 it.each([
-  ['Inicio', '/', 'home', 'Personas'],
+  ['Inicio', '/', 'home', 'Resumen'],
   ['Sala', '/sala', 'sala-agenda', 'Agenda'],
   ['Finanzas', '/finance', 'finance-summary', 'Ingresos'],
   ['Equipo', '/team', 'team', 'Equipo'],

@@ -27,6 +27,7 @@ it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('%s renders the shared vertical Sal
   expect(screen.getByRole('link', { name: 'Rutinas' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Configuración' })).toHaveAttribute('href', '/sala/configuration');
   expect(screen.queryByRole('navigation', { name: 'Secciones de Sala' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Ver Personas' })).not.toBeInTheDocument();
 });
 
 function renderStudents(): void { searchParams = new URLSearchParams(); render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SalaPage/></QueryClientProvider>); }
@@ -52,16 +53,28 @@ it.each([true, false])('shows spontaneous incorporation only with agenda permiss
   else { await screen.findByRole('button', { name: /Cerrar sesión/ }); expect(screen.queryByRole('button', { name: 'Incorporación espontánea' })).not.toBeInTheDocument(); }
 });
 
-it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('%s can keep using spontaneous incorporation from the shared Sala agenda', async (role) => {
+it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('%s searches Persons only after typing in spontaneous incorporation', async (role) => {
+  const requests: URL[] = [];
   server.use(
     http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: [role] } })),
-    http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [{ slot: { id: 'window:09:00', scheduleSlotId: 'window', startTime: '09:00', durationMinutes: 15 }, capacity: 10, reserved: 0, available: 10, isOverbooked: false, isClosed: false, people: [] }] })),
-    http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: [], meta: { page: 1, pageSize: 100, total: 0, totalPages: 1 } })),
+    http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/people', ({ request }) => { requests.push(new URL(request.url)); return HttpResponse.json({ data: [{ id: 'person', firstName: 'Ada', lastName: 'Sintética', dni: '20123456' }] }); }),
+    http.get('http://localhost:3000/api/sala/people/person/spontaneous-options', () => HttpResponse.json({ data: { eligible: true, plan: { name: 'Base' }, services: [] } })),
   );
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SalaPage /></QueryClientProvider>);
   fireEvent.click(await screen.findByRole('button', { name: 'Incorporación espontánea' }));
   expect(await screen.findByRole('dialog', { name: 'Incorporación espontánea' })).toBeVisible();
   expect(screen.getByRole('button', { name: 'Nueva Persona' })).toBeVisible();
+  expect(screen.getByLabelText('Buscar Persona')).toBeVisible();
+  expect(screen.queryByText('Seleccionar Persona')).not.toBeInTheDocument();
+  expect(screen.queryByText('Resultados')).not.toBeInTheDocument();
+  expect(requests).toHaveLength(0);
+  fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: '20123456' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Ada Sintética · DNI 20123456' }));
+  expect(requests).toHaveLength(1);
+  expect(Object.fromEntries(requests[0]!.searchParams)).toEqual({ search: '20123456', page: '1', pageSize: '10' });
+  expect(screen.getByRole('button', { name: 'Ada Sintética · DNI 20123456' })).toHaveAttribute('aria-pressed', 'true');
+  expect(await screen.findByLabelText('Servicio')).toBeVisible();
 });
 
 it.each([{ roles: ['PROFESSOR'], visible: false }, { roles: ['PROFESSOR', 'KINESIOLOGIST'], visible: true }])('applies provisional new-person visibility to spontaneous incorporation: $roles', async ({ roles, visible }) => {

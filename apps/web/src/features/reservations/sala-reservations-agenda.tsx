@@ -2,11 +2,11 @@
 
 import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getSalaAgenda, listPeople } from '@athleta/api-client';
+import { getSalaAgenda } from '@athleta/api-client';
 import { Button } from '@athleta/ui';
 import { ReservationsTimeline, type InitialSalaSelection } from './reservations-timeline';
 import { SpontaneousModal } from '../sala/spontaneous-modal';
-import type { AgendaGroup, PersonOption } from '../sala/agenda-panel';
+import type { AgendaGroup } from '../sala/agenda-panel';
 
 function today(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
@@ -31,19 +31,6 @@ export function SalaReservationsAgenda({ csrfToken, isProfessorOnly, canManageAg
     if (response.status !== 200) throw new Error('No se pudo cargar la disponibilidad.');
     return response.data.data as AgendaGroup[];
   } });
-  const people = useQuery({ queryKey: ['people', 'spontaneous-options'], enabled: spontaneousOpen, queryFn: async () => {
-    const result: PersonOption[] = [];
-    let page = 1;
-    let totalPages = 1;
-    do {
-      const response = await listPeople({ page, pageSize: 100 }, { credentials: 'include' });
-      if (response.status !== 200) throw new Error('No se pudieron cargar las Personas existentes.');
-      result.push(...response.data.data);
-      totalPages = response.data.meta.totalPages;
-      page++;
-    } while (page <= totalPages);
-    return result;
-  } });
   const refresh = async () => {
     setSpontaneousOpen(false);
     await Promise.all([
@@ -67,8 +54,8 @@ export function SalaReservationsAgenda({ csrfToken, isProfessorOnly, canManageAg
       description={description}
       headerAction={canManageAgenda ? <Button className="w-full sm:w-auto" onClick={() => setSpontaneousOpen(true)}>Incorporación espontánea</Button> : undefined}
     />
-    {spontaneousOpen && (agenda.isPending || people.isPending) ? <p role="status">Cargando incorporación espontánea…</p> : null}
-    {spontaneousOpen && (agenda.isError || people.isError) ? <p role="alert">No se pudo preparar la incorporación espontánea. <Button variant="secondary" onClick={() => { void agenda.refetch(); void people.refetch(); }}>Reintentar</Button><Button variant="ghost" onClick={() => setSpontaneousOpen(false)}>Cerrar</Button></p> : null}
-    {spontaneousOpen && canManageAgenda && agenda.isSuccess && people.isSuccess ? <SpontaneousModal key={date} date={date} groups={agenda.data} people={people.data} initialSlotId="" csrfToken={csrfToken} canManageParticipation={canManageParticipation} canCreatePerson={canCreatePerson} onSaved={() => { void refresh(); }} onClose={() => setSpontaneousOpen(false)} /> : null}
+    {spontaneousOpen && agenda.isPending ? <p role="status">Cargando incorporación espontánea…</p> : null}
+    {spontaneousOpen && agenda.isError ? <p role="alert">No se pudo preparar la incorporación espontánea. <Button variant="secondary" onClick={() => { void agenda.refetch(); }}>Reintentar</Button><Button variant="ghost" onClick={() => setSpontaneousOpen(false)}>Cerrar</Button></p> : null}
+    {spontaneousOpen && canManageAgenda && agenda.isSuccess ? <SpontaneousModal key={date} date={date} groups={agenda.data} initialSlotId="" csrfToken={csrfToken} canManageParticipation={canManageParticipation} canCreatePerson={canCreatePerson} onSaved={() => { void refresh(); }} onClose={() => setSpontaneousOpen(false)} /> : null}
   </>;
 }

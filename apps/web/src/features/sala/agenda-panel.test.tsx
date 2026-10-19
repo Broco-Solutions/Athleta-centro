@@ -14,7 +14,7 @@ const slotId = '20000000-0000-4000-8000-000000000001';
 const operationalToday = '2026-10-16';
 const entry = (name: string, startTime = '09:00', durationMinutes = 60, status: 'RESERVED' | 'ATTENDED' | 'ABSENT' | 'CANCELLED' = 'RESERVED') => ({ personId: `${person.id}-${name}`, person: { ...person, id: `${person.id}-${name}`, firstName: name }, origin: 'ONE_OFF' as const, status, startTime, durationMinutes, professional, service: { name: 'Kinesio' } });
 const group = (people: AgendaEntry[] = [entry('Homer')]) => ({ slot: { id: slotId, scheduleSlotId: slotId, startTime: '09:00', durationMinutes: 15 }, capacity: 3, reserved: people.length, available: 3 - people.length, isOverbooked: false, isClosed: false, people });
-function renderAgenda(date = '2026-09-02', people = [person], canManageAgenda = true) { return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><AgendaPanel canManageAgenda={canManageAgenda} canManageParticipation canCreatePerson date={date} onDateChange={() => undefined} csrfToken="csrf" people={people} /></QueryClientProvider>); }
+function renderAgenda(date = '2026-09-02', canManageAgenda = true) { return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><AgendaPanel canManageAgenda={canManageAgenda} canManageParticipation canCreatePerson date={date} onDateChange={() => undefined} csrfToken="csrf" /></QueryClientProvider>); }
 beforeAll(() => { globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch; server.listen({ onUnhandledRequest: 'error' }); });
 beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-16T11:00:00Z')); });
 afterEach(() => { server.resetHandlers(); vi.useRealTimers(); }); afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
@@ -100,7 +100,7 @@ it('cancels correction mode without closing the detail and reports correction fa
 
 it.each(['RESERVED', 'ATTENDED', 'ABSENT', 'CANCELLED'] as const)('shows %s details without modifying actions for a reader', async (status) => {
   server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [group([entry('Homer', '09:00', 60, status)])] })));
-  renderAgenda('2026-09-02', [person], false);
+  renderAgenda('2026-09-02', false);
   fireEvent.click(await screen.findByRole('button', { name: /Homer Sintética 09:00/ }));
   const modal = within(screen.getByRole('dialog'));
   expect(modal.getByText('Homer Sintética')).toBeVisible();
@@ -126,12 +126,17 @@ function mockFlow(full = false, eligible = true): void {
   );
 }
 async function openFlow(date = todayOperational(), people = [person]): Promise<void> {
-  renderAgenda(date, people);
+  server.use(http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: people })));
+  renderAgenda(date);
   await screen.findByTestId('agenda-timeline-scroll');
   fireEvent.click(screen.getByRole('button', { name: 'Incorporación espontánea' }));
 }
+async function selectPerson(): Promise<void> {
+  fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: 'Sintética' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Ada Sintética · DNI 20123456' }));
+}
 async function choosePerson(): Promise<void> {
-  fireEvent.change(screen.getByLabelText('Persona espontánea'), { target: { value: person.id } });
+  await selectPerson();
   await screen.findByRole('option', { name: 'Funcional · 45 min' });
   fireEvent.change(screen.getByLabelText('Servicio'), { target: { value: serviceId } });
 }
@@ -158,15 +163,50 @@ it('lists operational slots, services from spontaneous options and sends the sel
   await waitFor(() => expect(submitted).toEqual({ personId: person.id, scheduleSlotId: slotId, startTime: '10:15', date: operationalToday, serviceTypeId: serviceId }));
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument()); expect(reads).toBeGreaterThan(1);
 });
-it('searches all Persons by name, surname or DNI, including Persons without Sala', async () => {
+it.each(['Chris', 'Otra', '30123457', '30.123.457'])('searches Persons remotely by name, surname or DNI: %s', async (query) => {
   mockFlow(); const other = { ...person, id: 'other', firstName: 'Chris', lastName: 'Otra', dni: '30123457', hasSalaParticipation: false };
-  await openFlow(todayOperational(), [person, other]);
-  expect(screen.getByRole('option', { name: 'Otra, Chris · 30123457' })).toBeVisible();
-  for (const query of ['Chris', 'Otra', '30123457']) {
-    fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: query } });
-    expect(screen.getByRole('option', { name: 'Otra, Chris · 30123457' })).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: 'Sintética, Ada · 20123456' })).not.toBeInTheDocument();
-  }
+  await openFlow(); const requests: URL[] = [];
+  server.use(http.get('http://localhost:3000/api/people', ({ request }) => { requests.push(new URL(request.url)); return HttpResponse.json({ data: [other] }); }));
+  expect(screen.queryByRole('group', { name: 'Resultados' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Seleccionar Persona')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: query } });
+  expect(await screen.findByRole('button', { name: 'Chris Otra · DNI 30123457' })).toBeVisible();
+  expect(requests).toHaveLength(1);
+  expect(Object.fromEntries(requests[0]!.searchParams)).toEqual({ search: query, page: '1', pageSize: '10' });
+  expect(screen.queryByRole('button', { name: 'Ada Sintética · DNI 20123456' })).not.toBeInTheDocument();
+});
+it('shows search loading, empty and error states without preloading Persons', async () => {
+  mockFlow(); await openFlow(); let respond!: () => void; const requests: URL[] = [];
+  server.use(http.get('http://localhost:3000/api/people', async ({ request }) => { requests.push(new URL(request.url)); await new Promise<void>(resolve => { respond = resolve; }); return HttpResponse.json({ data: [] }); }));
+  expect(screen.queryByText('Buscando Personas…')).not.toBeInTheDocument();
+  expect(screen.queryByText('No encontramos una Persona con esa búsqueda.')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: '   ' } });
+  expect(requests).toHaveLength(0);
+  fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: 'Nadie' } });
+  expect(await screen.findByText('Buscando Personas…')).toBeVisible();
+  await waitFor(() => expect(respond).toBeDefined()); respond();
+  expect(await screen.findByText('No encontramos una Persona con esa búsqueda.')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Nueva Persona' })).toBeVisible();
+  server.use(http.get('http://localhost:3000/api/people', () => HttpResponse.json({}, { status: 500 })));
+  fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: 'Otra' } });
+  expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos buscar Personas. Intentá nuevamente.');
+  expect(screen.getByRole('button', { name: 'Nueva Persona' })).toBeVisible();
+});
+it('clears the selected Person, Service and mutation error when searching again', async () => {
+  mockFlow();
+  server.use(http.post('http://localhost:3000/api/sala/occurrences/spontaneous', () => HttpResponse.json({ code: 'SALA_OCCURRENCE_DUPLICATE' }, { status: 409 })));
+  await openFlow(); await choosePerson();
+  fireEvent.change(screen.getByLabelText('Horario espontáneo'), { target: { value: `${slotId}-0` } });
+  fireEvent.click(screen.getByRole('button', { name: 'Incorporar' }));
+  await screen.findByRole('alert');
+  fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: '20123456' } });
+  expect(screen.queryByLabelText('Servicio')).not.toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Incorporar' })).toBeDisabled();
+  const result = await screen.findByRole('button', { name: 'Ada Sintética · DNI 20123456' });
+  expect(result).toHaveAttribute('aria-pressed', 'false');
+  fireEvent.click(result);
+  expect(await screen.findByLabelText('Servicio')).toHaveValue('');
 });
 it('allows retrospective attendance for an eligible Person without offering new Person onboarding', async () => {
   mockFlow(); let submitted: unknown;
@@ -182,7 +222,7 @@ it('blocks future attendance and explains Reservation or Fixed booking', async (
 });
 it('does not offer retrospective onboarding without a valid historical participation', async () => {
   mockFlow(false, false); await openFlow('2026-09-02');
-  fireEvent.change(screen.getByLabelText('Persona espontánea'), { target: { value: person.id } });
+  await selectPerson();
   expect(await screen.findByText('La Persona no tenía una participación de Sala vigente en esa fecha.')).toBeVisible();
   expect(screen.queryByLabelText('Plan')).not.toBeInTheDocument(); expect(screen.queryByLabelText('Profesor principal')).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Incorporar' })).toBeDisabled();
 });
@@ -205,7 +245,7 @@ it('also confirms when the backend reports capacity changed after loading', asyn
 it('onboards an existing Person without Sala today in one request and offers only selectable Plan services', async () => {
   mockFlow(false, false); let submitted: unknown;
   server.use(http.post('http://localhost:3000/api/sala/occurrences/spontaneous/join', async ({ request }) => { submitted = await request.json(); return HttpResponse.json({ data: {} }, { status: 201 }); }));
-  await openFlow(todayOperational(), [{ ...person, hasSalaParticipation: false }]); fireEvent.change(screen.getByLabelText('Persona espontánea'), { target: { value: person.id } });
+  await openFlow(todayOperational(), [{ ...person, hasSalaParticipation: false }]); await selectPerson();
   await chooseAssignment(); expect(screen.queryByRole('option', { name: /Retirado/ })).not.toBeInTheDocument(); expect(screen.queryByRole('option', { name: /Calistenia/ })).not.toBeInTheDocument();
   expect(screen.queryByText(/Pago/)).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Incorporar' }));
   await waitFor(() => expect(submitted).toEqual({ personId: person.id, planId, mainProfessorId: professional.id, date: todayOperational(), scheduleSlotId: slotId, startTime: '08:00', serviceTypeId: serviceId }));
@@ -229,7 +269,7 @@ it('keeps duplicate DNI data visible and directs the user to existing Persons', 
 });
 it('disables incorporation for a Plan without selectable services', async () => {
   mockFlow(false, false); server.use(http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: planId, name: 'Plan Base', services: [] }] })));
-  await openFlow(); fireEvent.change(screen.getByLabelText('Persona espontánea'), { target: { value: person.id } });
+  await openFlow(); await selectPerson();
   await screen.findByRole('option', { name: 'Plan Base' }); fireEvent.change(screen.getByLabelText('Plan'), { target: { value: planId } });
   expect(await screen.findByText('El Plan seleccionado no tiene servicios disponibles.')).toBeVisible(); expect(screen.getByRole('button', { name: 'Incorporar' })).toBeDisabled();
 });

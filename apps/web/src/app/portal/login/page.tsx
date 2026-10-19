@@ -16,9 +16,8 @@ export default function PortalLogin(): React.JSX.Element {
   return (
     <main className="flex min-h-screen flex-col bg-background">
       <section className="relative flex min-h-[16rem] flex-[0.42] flex-col overflow-hidden bg-sidebar px-5 pb-7 pt-6 text-sidebar-foreground sm:px-8 md:min-h-[19rem]">
-        <header className="flex items-start justify-between gap-4">
+        <header>
           <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-32 sm:w-36" />
-          <p className="pt-1 text-right text-[0.65rem] font-medium leading-tight tracking-[0.16em] text-zinc-400">PORTAL DE<br />CLIENTES</p>
         </header>
 
         <div className="relative mt-10 flex items-end justify-between gap-3">

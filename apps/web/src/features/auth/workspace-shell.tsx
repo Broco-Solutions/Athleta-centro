@@ -49,7 +49,6 @@ function groupedNavigation(permissions: string[]): NavigationGroup[] {
   const groups: NavigationGroup[] = [
     { key: 'home', label: 'Inicio', items: [
       { key: 'home', href: '/', label: 'Resumen', icon: Activity, canAccess: () => true },
-      { key: 'people', href: '/people', label: 'Personas', icon: Users, canAccess: (values) => hasAny(values, ['PEOPLE_READ', 'PEOPLE_CREATE', 'PEOPLE_UPDATE_GENERAL']) },
     ] },
     { key: 'sala', label: 'Sala', items: [
       { key: 'sala-agenda', href: '/sala', label: 'Agenda', icon: CalendarDays, canAccess: (values) => values.includes('SALA_AGENDA_MANAGE') },

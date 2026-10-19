@@ -299,16 +299,16 @@ async function startAdministrativeEnrollment(client?: QueryClient) {
   fireEvent.click(await screen.findByRole('button', { name: 'Nuevo alumno' }));
 }
 async function selectExistingPerson() {
-  await screen.findByRole('option', { name: 'Sintética, Persona · 88123456' });
-  fireEvent.change(screen.getByLabelText('Persona', { exact: true }), { target: { value: 'person-existing' } });
+  fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: 'Sintética' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Persona Sintética · DNI 88123456' }));
 }
 it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('opens %s enrollment in existing-person mode without a DNI step', async role => {
   administrativeSession(role); enrollmentHandlers(); await startAdministrativeEnrollment();
   expect(screen.getByRole('dialog', { name: 'Nuevo alumno' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Nueva Persona' })).toBeInTheDocument();
   expect(screen.getByLabelText('Buscar Persona')).toHaveAttribute('placeholder', 'Nombre, apellido o DNI');
-  expect(screen.getByLabelText('Persona', { exact: true })).toBeInTheDocument();
-  expect(screen.getByRole('option', { name: 'Seleccionar Persona' })).toBeInTheDocument();
+  expect(screen.queryByRole('combobox', { name: 'Persona' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Seleccionar Persona')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('DNI')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Continuar' })).not.toBeInTheDocument();
 });
@@ -320,28 +320,34 @@ it('keeps Professor enrollment DNI-first', async () => {
   expect(screen.queryByLabelText('Buscar Persona')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Nueva Persona' })).not.toBeInTheDocument();
 });
-it.each(['Sintética', '88123456'])('searches existing people remotely by name/surname or DNI: %s', async search => {
+it.each(['Persona', 'Sintética', '88123456', '88.123.456'])('searches existing people remotely by name/surname or DNI: %s', async search => {
   administrativeSession(); enrollmentHandlers(); const searches: URL[] = [];
   server.use(http.get('http://localhost:3000/api/people', ({ request }) => { const url = new URL(request.url); searches.push(url); return HttpResponse.json({ data: url.searchParams.get('search') === search ? [existingPerson] : [] }); }));
   await startAdministrativeEnrollment();
+  expect(searches).toHaveLength(0);
+  expect(screen.queryByText('Resultados')).not.toBeInTheDocument();
+  expect(screen.queryByText('No encontramos una Persona con esa búsqueda.')).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: ` ${search} ` } });
-  expect(await screen.findByRole('option', { name: 'Sintética, Persona · 88123456' })).toBeInTheDocument();
-  expect(searches.some(url => url.searchParams.get('search') === search && url.searchParams.get('page') === '1' && url.searchParams.get('pageSize') === '25')).toBe(true);
+  expect(await screen.findByRole('button', { name: 'Persona Sintética · DNI 88123456' })).toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: /Sintética/ })).not.toBeInTheDocument();
+  expect(searches.some(url => url.searchParams.get('search') === search && url.searchParams.get('page') === '1' && url.searchParams.get('pageSize') === '10')).toBe(true);
 });
 it('explains loading, empty results and search failure', async () => {
   administrativeSession(); enrollmentHandlers(); let respond!: () => void;
   server.use(http.get('http://localhost:3000/api/people', async () => { await new Promise<void>(resolve => { respond = resolve; }); return HttpResponse.json({ data: [] }); }));
   await startAdministrativeEnrollment();
-  expect(screen.getByText('Buscando Personas…')).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: 'Sin coincidencias' } });
+  expect(await screen.findByText('Buscando Personas…')).toBeInTheDocument();
   await waitFor(() => expect(respond).toBeDefined()); respond();
-  expect(await screen.findByText('No encontramos Personas.')).toBeInTheDocument();
-  expect(screen.getByLabelText('Persona', { exact: true })).toBeDisabled();
+  expect(await screen.findByText('No encontramos una Persona con esa búsqueda.')).toBeInTheDocument();
+  expect(screen.queryByRole('group', { name: 'Resultados' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Nueva Persona' })).toBeVisible();
   server.use(http.get('http://localhost:3000/api/people', () => HttpResponse.json({}, { status: 500 })));
   fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: 'Sintética' } });
   expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos buscar Personas. Intentá nuevamente.');
   enrollmentHandlers([existingPerson]);
   fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: '88123456' } });
-  await screen.findByRole('option', { name: 'Sintética, Persona · 88123456' });
+  await screen.findByRole('button', { name: 'Persona Sintética · DNI 88123456' });
 });
 it('informs about active students without offering enrollment or writing', async () => {
   administrativeSession(); enrollmentHandlers([{ ...existingPerson, hasSalaParticipation: true }]); const writes = vi.fn();
@@ -351,9 +357,26 @@ it('informs about active students without offering enrollment or writing', async
   expect(screen.queryByLabelText('Plan')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Profesor principal')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Incorporar a Sala' })).not.toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText('Persona', { exact: true }), { target: { value: '' } });
+  fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: '' } });
   expect(screen.queryByText('Esta Persona ya es alumno activo de Sala.')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Cancelar' })); expect(writes).not.toHaveBeenCalled();
+});
+it('clears the selected Person, Plan, Professor and join error when the search changes', async () => {
+  administrativeSession(); enrollmentHandlers([existingPerson]);
+  server.use(http.post('http://localhost:3000/api/sala/participations', () => HttpResponse.json({}, { status: 500 })));
+  await startAdministrativeEnrollment(); await selectExistingPerson(); await selectEnrollmentOptions();
+  expect(screen.getByRole('button', { name: 'Persona Sintética · DNI 88123456' })).toHaveAttribute('aria-pressed', 'true');
+  fireEvent.click(screen.getByRole('button', { name: 'Incorporar a Sala' }));
+  await screen.findByRole('alert');
+  fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: '88123456' } });
+  expect(screen.queryByLabelText('Plan')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Profesor principal')).not.toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  const result = await screen.findByRole('button', { name: 'Persona Sintética · DNI 88123456' });
+  expect(result).toHaveAttribute('aria-pressed', 'false');
+  fireEvent.click(result);
+  expect(screen.getByLabelText('Plan')).toHaveValue('');
+  expect(screen.getByLabelText('Profesor principal')).toHaveValue('');
 });
 it('resets existing selections and errors when switching modes and discards the new-person draft', async () => {
   administrativeSession(); enrollmentHandlers([existingPerson]);
@@ -367,7 +390,8 @@ it('resets existing selections and errors when switching modes and discards the 
   fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Draft' } });
   fireEvent.click(screen.getByRole('button', { name: 'Persona existente' }));
   expect(screen.getByLabelText('Buscar Persona')).toBeInTheDocument();
-  expect(screen.getByLabelText('Persona', { exact: true })).toHaveValue('');
+  expect(within(screen.getByRole('dialog', { name: 'Nuevo alumno' })).queryByRole('button', { pressed: true })).not.toBeInTheDocument();
+  expect(screen.queryByText('Seleccionar Persona')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Nombre')).not.toBeInTheDocument(); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   await selectExistingPerson(); expect(screen.getByLabelText('Plan')).toHaveValue(''); expect(screen.getByLabelText('Profesor principal')).toHaveValue('');
   fireEvent.click(screen.getByRole('button', { name: 'Nueva Persona' })); expect(screen.getByLabelText('Nombre')).toHaveValue('');

@@ -120,7 +120,8 @@ function AdministrativeNewStudentDialog({ csrf, onClose, onSaved }: EnrollmentPr
   const [personId, setPersonId] = useState('');
   const [planId, setPlanId] = useState('');
   const [mainProfessorId, setMainProfessorId] = useState('');
-  const people = useQuery({ queryKey: ['people', 'student-enrollment', search], enabled: mode === 'existing', queryFn: () => fetchPeople({ ...(search.trim() ? { search: search.trim() } : {}), page: 1, pageSize: 25 }) });
+  const term = search.trim();
+  const people = useQuery({ queryKey: ['people', 'student-enrollment', term], enabled: mode === 'existing' && term.length > 0, queryFn: () => fetchPeople({ search: term, page: 1, pageSize: 10 }) });
   const selectedPerson = people.isSuccess ? people.data.data.find(person => person.id === personId) : undefined;
   const needsJoin = selectedPerson?.hasSalaParticipation === false;
   const catalogsEnabled = mode === 'new' || needsJoin;
@@ -147,8 +148,13 @@ function AdministrativeNewStudentDialog({ csrf, onClose, onSaved }: EnrollmentPr
     <Button variant="secondary" disabled={mutation.isPending} onClick={() => { resetSelection(); setMode('new'); }}>Nueva Persona</Button>
     <form className="space-y-4" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}>
       <label className="grid gap-1 text-sm">Buscar Persona<input aria-label="Buscar Persona" placeholder="Nombre, apellido o DNI" className={inputClass} value={search} disabled={mutation.isPending} onChange={event => { setSearch(event.target.value); resetSelection(); }} /></label>
-      <label className="grid gap-1 text-sm">Persona<select aria-label="Persona" className={inputClass} value={personId} disabled={mutation.isPending || !people.isSuccess || !people.data.data.length} onChange={event => { resetSelection(); setPersonId(event.target.value); }}><option value="">Seleccionar Persona</option>{people.data?.data.map(person => <option key={person.id} value={person.id}>{person.lastName}, {person.firstName} · {person.dni}</option>)}</select></label>
-      {people.isFetching ? <p role="status">Buscando Personas…</p> : people.isError ? <p role="alert">No pudimos buscar Personas. Intentá nuevamente.</p> : people.isSuccess && !people.data.data.length ? <p role="status">No encontramos Personas.</p> : null}
+      {term ? people.isFetching ? <p role="status">Buscando Personas…</p> : people.isError ? <p role="alert">No pudimos buscar Personas. Intentá nuevamente.</p> : people.isSuccess && !people.data.data.length ? <p role="status">No encontramos una Persona con esa búsqueda.</p> : people.isSuccess ? <div className="grid gap-2" role="group" aria-label="Resultados">
+        <p className="text-sm font-medium">Resultados</p>
+        {people.data.data.map(person => <button key={person.id} type="button" aria-label={`${person.firstName} ${person.lastName} · DNI ${person.dni}`} aria-pressed={personId === person.id} disabled={mutation.isPending} className={`w-full rounded-md border p-3 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${personId === person.id ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-muted'}`} onClick={() => { resetSelection(); setPersonId(person.id); }}>
+          <span className="block font-medium">{person.firstName} {person.lastName}</span>
+          <span className="block text-muted-foreground">DNI {person.dni}</span>
+        </button>)}
+      </div> : null : null}
       {selectedPerson?.hasSalaParticipation === true ? <p role="status">Esta Persona ya es alumno activo de Sala.</p> : null}
       {needsJoin ? <>
         <label className="grid gap-1 text-sm">Plan *<select aria-label="Plan" required className={inputClass} value={planId} disabled={mutation.isPending} onChange={event => setPlanId(event.target.value)}><option value="">Seleccionar Plan</option>{selectablePlans.map(plan => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></label>

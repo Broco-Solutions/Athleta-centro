@@ -16,6 +16,7 @@ const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argent
 const session = { user: { id: 'professor', firstName: 'Profesor', lastName: 'Sintético' }, roles: ['PROFESSOR'], permissions: ['PEOPLE_READ', 'PEOPLE_CREATE', 'SALA_RELATION_READ', 'SALA_AGENDA_MANAGE', 'SALA_PARTICIPATION_MANAGE'], csrfToken: 'csrf', mustChangePassword: false };
 let agendaReads = 0;
 let peopleReads = 0;
+let peopleSearches: URL[] = [];
 let timelineReads = 0;
 beforeAll(() => {
   globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch;
@@ -26,11 +27,12 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-10-16T11:00:00Z'));
   navigation.search = '';
   agendaReads = peopleReads = timelineReads = 0;
+  peopleSearches = [];
   server.use(
     http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: session })),
     http.get('http://localhost:3000/api/reservations', () => { timelineReads++; return HttpResponse.json({ data: { date: today(), startTime: '09:00', endTime: '10:00', rows: [] } }); }),
     http.get('http://localhost:3000/api/sala/agenda', () => { agendaReads++; return HttpResponse.json({ data: [{ slot: { id: 'window:09:00', scheduleSlotId: 'window', startTime: '09:00', durationMinutes: 15 }, capacity: 10, reserved: 0, available: 10, isOverbooked: false, isClosed: false, people: [] }] }); }),
-    http.get('http://localhost:3000/api/people', () => { peopleReads++; return HttpResponse.json({ data: [person], meta: { totalPages: 1 } }); }),
+    http.get('http://localhost:3000/api/people', ({ request }) => { peopleReads++; peopleSearches.push(new URL(request.url)); return HttpResponse.json({ data: [person], meta: { totalPages: 1 } }); }),
     http.get('http://localhost:3000/api/sala/people/student-1/spontaneous-options', () => HttpResponse.json({ data: { eligible: true, participationId: 'participation', plan: { id: 'plan', name: 'Base' }, services: [{ id: 'service', name: 'Musculación', durationMinutes: 15 }] } })),
   );
 });
@@ -45,6 +47,7 @@ function renderPage() {
 it('reuses spontaneous incorporation for an existing person and refreshes operational queries after saving', async () => {
   let submitted: unknown;
   server.use(http.post('http://localhost:3000/api/sala/occurrences/spontaneous', async ({ request }) => { submitted = await request.json(); return HttpResponse.json({ data: {} }, { status: 201 }); }));
+  server.use(http.get('http://localhost:3000/api/people', ({ request }) => { peopleReads++; peopleSearches.push(new URL(request.url)); return HttpResponse.json({ data: [{ ...person, firstName: 'Homer', lastName: 'Simpson' }] }); }));
   const { invalidate } = renderPage();
   expect(await screen.findByRole('link', { name: 'Reservas' })).toHaveAttribute('aria-current', 'page');
   expect(await screen.findByRole('heading', { name: 'Reservas' })).toBeVisible();
@@ -53,7 +56,12 @@ it('reuses spontaneous incorporation for an existing person and refreshes operat
   fireEvent.click(screen.getByRole('button', { name: 'Incorporación espontánea' }));
   await screen.findByRole('dialog', { name: 'Incorporación espontánea' });
   expect(screen.getByRole('button', { name: 'Nueva Persona' })).toBeVisible();
-  fireEvent.change(screen.getByLabelText('Persona espontánea'), { target: { value: person.id } });
+  expect(peopleReads).toBe(0);
+  expect(screen.queryByText('Seleccionar Persona')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: 'Simpson' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Homer Simpson · DNI 88000001' }));
+  expect(peopleReads).toBe(1);
+  expect(Object.fromEntries(peopleSearches[0]!.searchParams)).toEqual({ search: 'Simpson', page: '1', pageSize: '10' });
   await screen.findByRole('option', { name: 'Musculación · 15 min' });
   fireEvent.change(screen.getByLabelText('Servicio'), { target: { value: 'service' } });
   fireEvent.change(screen.getByLabelText('Horario espontáneo'), { target: { value: 'window:09:00' } });
@@ -262,7 +270,8 @@ it.each([
   server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: ['12:15', '12:30', '12:45', '13:00'].map(time => ({ slot: { id: `window:${time}`, scheduleSlotId: 'window', startTime: time, durationMinutes: 15 }, capacity: 1, reserved: time === '12:45' ? 1 : 0, available: time === '12:45' ? 0 : 1, isClosed: time === '13:00', people: [] })) })));
   renderPage(); fireEvent.click(await screen.findByRole('button', { name: 'Incorporación espontánea' }));
   await screen.findByRole('dialog', { name: 'Incorporación espontánea' });
-  fireEvent.change(screen.getByLabelText('Persona espontánea'), { target: { value: person.id } });
+  fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: 'Sintética' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Ana Sintética · DNI 88000001' }));
   const select = await screen.findByLabelText('Horario espontáneo');
   const options = within(select).getAllByRole('option').slice(1).map(item => item.textContent?.slice(0, 5));
   expect(options).toEqual(expected);
@@ -276,7 +285,8 @@ it('shows a backend time-passed error when the minute changes before confirmatio
   server.use(http.post('http://localhost:3000/api/sala/occurrences/spontaneous', () => HttpResponse.json({ code: 'SALA_SPONTANEOUS_TIME_PASSED' }, { status: 400 })));
   renderPage(); fireEvent.click(await screen.findByRole('button', { name: 'Incorporación espontánea' }));
   await screen.findByRole('dialog');
-  fireEvent.change(screen.getByLabelText('Persona espontánea'), { target: { value: person.id } });
+  fireEvent.change(screen.getByLabelText('Buscar Persona'), { target: { value: 'Sintética' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Ana Sintética · DNI 88000001' }));
   await screen.findByRole('option', { name: 'Musculación · 15 min' });
   fireEvent.change(screen.getByLabelText('Servicio'), { target: { value: 'service' } });
   fireEvent.change(screen.getByLabelText('Horario espontáneo'), { target: { value: 'window:09:00' } });

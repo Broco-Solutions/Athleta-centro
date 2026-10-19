@@ -31,7 +31,8 @@ it('renders the mobile login composition and official Athleta logo', () => {
   ]) {
     expect(screen.getByText(text)).toBeInTheDocument();
   }
-  expect(screen.getByText(/PORTAL DE/)).toHaveTextContent('PORTAL DECLIENTES');
+  expect(screen.queryByText(/PORTAL DE/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/CLIENTES/i)).not.toBeInTheDocument();
 });
 
 it('shows the PIN as a password by default and toggles visibility', () => {

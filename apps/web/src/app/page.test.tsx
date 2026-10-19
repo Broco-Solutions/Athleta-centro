@@ -108,7 +108,8 @@ it.each<SafeSession['roles']>([['ADMINISTRATIVE'], ['ADMINISTRATIVE', 'PROFESSOR
   expect(within(followUp).getByRole('link', { name: /Sin vigencia/ })).toHaveAttribute('href', '/students?filter=without-validity');
   expect(within(followUp).getByRole('link', { name: /Sin vigencia/ })).toHaveTextContent(String(summary.withoutValidity.count));
   const shortcuts = screen.getByRole('region', { name: 'Accesos operativos' });
-  for (const [name, href] of [['Alumnos', '/students'], ['Personas', '/people'], ['Ingresos / Pagos', '/finance?view=income'], ['Gastos', '/finance?view=expenses']]) {
+  expect(within(shortcuts).queryByRole('link', { name: /Personas/ })).not.toBeInTheDocument();
+  for (const [name, href] of [['Alumnos', '/students'], ['Ingresos / Pagos', '/finance?view=income'], ['Gastos', '/finance?view=expenses']]) {
     expect(within(shortcuts).getByRole('link', { name: new RegExp(name!) })).toHaveAttribute('href', href);
   }
   expect(getSalaDashboard).toHaveBeenCalledWith({ date: '2026-10-31' }, { credentials: 'include' });
