@@ -48,6 +48,8 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
   const canCreate = canManage && (session.data?.permissions.includes('PEOPLE_CREATE') ?? false);
   const isAdministrative = session.data?.roles.some(role => role === 'ADMINISTRATIVE' || role === 'GENERAL_ADMIN') ?? false;
   const isProfessor = session.data?.roles.includes('PROFESSOR') ?? false;
+  const canUseFinance = Boolean(session.data?.permissions.includes('SALA_PAYMENT_MANAGE') && session.data?.permissions.includes('FINANCE_OPERATIONAL_READ'));
+  const canRegister = session.data?.permissions.includes('SALA_PAYMENT_REGISTER') ?? false;
   const canRead = ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ'].every((permission) => session.data?.permissions.includes(permission));
   const query = useQuery({ queryKey: ['sala', 'students'], enabled: canRead, queryFn: async () => {
     const response = await listSalaStudents({ credentials: 'include' });
@@ -78,7 +80,7 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
         <td className={`${cell} break-words`}><span className={label}>Profesor:</span>{student.professor.firstName} {student.professor.lastName}</td>
         <td className={cell}><span className={label}>Rutina:</span><span className={badge(student.routineStatus === 'ACTIVE')}>{student.routineStatus === 'ACTIVE' ? 'Activa' : 'Sin rutina'}</span></td>
         <td className={cell}><span className={label}>Vigencia:</span><span className={badge(student.hasValidAccess)}>{student.hasValidAccess ? `Vigente hasta ${student.validUntil?.split('-').reverse().join('/')}` : 'Sin vigencia'}</span></td>
-        <td className={cell}><div className="flex flex-wrap justify-end gap-2 xl:justify-start"><Link href={`/sala/people/${student.id}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:min-h-9">Ver ficha</Link>{session.data?.permissions.includes('SALA_PAYMENT_MANAGE') ? <Link href={`/finance?view=income&personId=${student.id}${!student.hasValidAccess ? '&action=renew' : ''}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted xl:min-h-9">{!student.hasValidAccess ? 'Renovar' : 'Ver pagos'}</Link> : null}</div></td>
+        <td className={cell}><div className="flex flex-wrap justify-end gap-2 xl:justify-start"><Link href={`/sala/people/${student.id}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:min-h-9">Ver ficha</Link>{canUseFinance || canRegister ? <Link href={canUseFinance ? `/finance?view=income&personId=${student.id}${!student.hasValidAccess ? '&action=renew' : ''}` : `/sala/people/${student.id}?tab=payments${!student.hasValidAccess ? '&action=renew' : ''}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted xl:min-h-9">{!student.hasValidAccess ? (canUseFinance ? 'Renovar' : 'Registrar renovación') : 'Ver pagos'}</Link> : null}</div></td>
       </tr>)}</tbody>
     </table>}
     {creating && canCreate ? <NewStudentDialog isAdministrative={isAdministrative} csrf={session.data?.csrfToken ?? ''} onClose={() => setCreating(false)} onSaved={async (pin) => {

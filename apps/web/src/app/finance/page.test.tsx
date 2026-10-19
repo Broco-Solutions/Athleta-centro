@@ -12,7 +12,7 @@ vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(n
 
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
-const session = { user: { id: 'admin', firstName: 'Admin', lastName: 'Test' }, roles: ['GENERAL_ADMIN'], permissions: ['FINANCE_OPERATIONAL_READ', 'FINANCE_EXECUTIVE_READ', 'PAYMENT_METHOD_CATALOG_MANAGE', 'SALA_PAYMENT_MANAGE', 'EXPENSE_CREATE', 'EXPENSE_HISTORY_READ', 'EXPENSE_CATEGORY_CATALOG_MANAGE'], csrfToken: 'csrf', mustChangePassword: false };
+const session = { user: { id: 'admin', firstName: 'Admin', lastName: 'Test' }, roles: ['GENERAL_ADMIN'], permissions: ['FINANCE_OPERATIONAL_READ', 'FINANCE_EXECUTIVE_READ', 'PAYMENT_METHOD_CATALOG_MANAGE', 'SALA_PAYMENT_MANAGE', 'SALA_PAYMENT_REGISTER', 'EXPENSE_CREATE', 'EXPENSE_HISTORY_READ', 'EXPENSE_CATEGORY_CATALOG_MANAGE'], csrfToken: 'csrf', mustChangePassword: false };
 
 beforeAll(() => {
   globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch;
@@ -384,4 +384,16 @@ it.each([true, false])('consults selected month, aggregates methods and gates ex
   expect(screen.getByLabelText('Mes')).toHaveValue('2026-10');
   fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }));
   expect(await screen.findByText('Septiembre Pendiente')).toBeVisible();
+});
+
+it.each(['', 'view=income', 'view=expenses', 'view=income&personId=student&action=renew'])('denies Professor direct Finance access without financial requests (%s)', async search => {
+  navigation.search = search; const requests = vi.fn();
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_REGISTER'] } })),
+    http.get('http://localhost:3000/api/finance/:resource', () => { requests(); return HttpResponse.json({ data: [] }); }),
+  );
+  renderPage();
+  expect(await screen.findByText('No tenés permisos para acceder a Finanzas.')).toBeVisible();
+  for (const name of ['Indicadores financieros', 'Historial de ingresos', 'Registrar gasto', 'Estado actual de Sala', 'Medios de pago']) expect(screen.queryByText(name)).not.toBeInTheDocument();
+  expect(requests).not.toHaveBeenCalled();
 });

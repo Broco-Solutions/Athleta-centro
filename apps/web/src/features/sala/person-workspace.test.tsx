@@ -281,7 +281,7 @@ it('preserves Sala and the Person link for other roles', async () => {
   expect(screen.getByRole('link', { name: 'Ver ficha de Persona' })).toHaveAttribute('href', `/people/${personId}`);
 });
 
-const professorPermissions = ['SALA_RELATION_READ', 'SALA_AGENDA_MANAGE', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE', 'SALA_PHYSICAL_EVALUATION_READ', 'SALA_PHYSICAL_EVALUATION_MANAGE', 'SALA_PAYMENT_READ', 'SALA_CLINICAL_INDICATION_READ'];
+const professorPermissions = ['SALA_RELATION_READ', 'SALA_AGENDA_MANAGE', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE', 'SALA_PHYSICAL_EVALUATION_READ', 'SALA_PHYSICAL_EVALUATION_MANAGE', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_REGISTER', 'SALA_CLINICAL_INDICATION_READ'];
 const dashboardDate = new Date('2026-10-14T01:30:00Z'); // Still October 13 in Argentina.
 function dashboardHandlers() {
   navigation.tab = 'summary';
@@ -305,7 +305,7 @@ it('shows the Professor header, exact tabs and four explicit dashboard actions',
   expect(screen.getByText('Participación activa')).toBeInTheDocument();
   expect(within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByRole('link', { name: 'Alumnos' })).toHaveAttribute('href', '/students');
   const tabs = within(screen.getByRole('navigation', { name: 'Secciones del alumno en Sala' }));
-  expect(tabs.getAllByRole('link').map(link => link.textContent)).toEqual(['Resumen', 'Rutina', 'Evaluaciones', 'Turnos']);
+  expect(tabs.getAllByRole('link').map(link => link.textContent)).toEqual(['Resumen', 'Rutina', 'Evaluaciones', 'Turnos', 'Pagos']);
   expect(await screen.findByText('Activa')).toBeInTheDocument();
   expect(screen.getByText('1 día')).toBeInTheDocument();
   expect(await screen.findByText('Última: 02/10/2026')).toBeInTheDocument();
@@ -406,13 +406,25 @@ it.each(['turns', 'reservations', 'fixed'])('combines both existing booking sect
   expect(screen.getAllByRole('button', { name: 'Crear turno fijo' })).toHaveLength(1);
   expect(screen.getByRole('link', { name: 'Turnos' })).toHaveAttribute('aria-current', 'page');
 });
-it('keeps the Professor payment card informational even for the old payments URL', async () => {
-  dashboardHandlers(); navigation.tab = 'payments'; renderWorkspace();
-  expect(await screen.findByText('Sin vigencia')).toBeVisible();
-  expect(screen.getByRole('heading', { name: 'Pago' })).toBeVisible();
-  for (const name of ['Pagos', 'Gestionar pagos', 'Registrar pago', 'Ver pago']) expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
-  expect(screen.queryByLabelText('Mes/Año')).not.toBeInTheDocument();
+it('opens contextual Professor payments with registration and without reversal', async () => {
+  dashboardHandlers(); navigation.tab = 'payments';
+  server.use(
+    http.get(`http://localhost:3000/api/sala/people/${personId}/payments`, () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/finance/payment-methods', () => HttpResponse.json({ data: [] })),
+  );
+  renderWorkspace();
+  expect(await screen.findByRole('heading', { name: 'Historial de pagos' })).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Pagos' })).toHaveAttribute('aria-current', 'page');
+  expect(await screen.findByRole('button', { name: '+ Registrar renovación' })).toBeVisible();
   expect(screen.queryByRole('button', { name: 'Revertir' })).not.toBeInTheDocument();
+});
+it('links the Professor payment card to the student payments and early renewal', async () => {
+  dashboardHandlers(); const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><SalaPersonWorkspace personId={personId}/></QueryClientProvider>);
+  expect(await screen.findByRole('link', { name: 'Registrar renovación' })).toHaveAttribute('href', `/sala/people/${personId}?tab=payments&action=renew`);
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: [{ id: personId, hasValidAccess: true, validUntil: '2026-11-20' }] })));
+  await client.invalidateQueries({ queryKey: ['sala', 'students'] });
+  expect(await screen.findByRole('link', { name: 'Ver pagos' })).toHaveAttribute('href', `/sala/people/${personId}?tab=payments`);
 });
 
 it('shows the header and other cards while a dashboard query is still loading', async () => {
@@ -576,7 +588,7 @@ it('hides evaluations without physical read permission even on a direct tab URL'
 
 it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('shows contextual Finance actions in the %s workspace', async role => {
   dashboardHandlers();
-  routineSession([...professorPermissions, 'SALA_PAYMENT_MANAGE'], [role]);
+  routineSession([...professorPermissions, 'SALA_PAYMENT_MANAGE', 'FINANCE_OPERATIONAL_READ'], [role]);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><SalaPersonWorkspace personId={personId}/></QueryClientProvider>);
   expect(await screen.findByRole('link', { name: 'Renovar' })).toHaveAttribute('href', `/finance?view=income&personId=${personId}&action=renew`);

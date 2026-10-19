@@ -789,8 +789,55 @@ describe('Sala configuration API', () => {
     });
     it.each([Role.PROFESSOR, Role.ADMINISTRATIVE, Role.GENERAL_ADMIN])('preserves payment permissions for %s', async role => {
       const f = await paymentFixture(); const authn = role === Role.ADMINISTRATIVE ? f.authn : await session(role);
-      await request(app.getHttpServer()).post('/api/sala/payments').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(f.input).expect(role === Role.PROFESSOR ? 403 : 201);
-      expect(await prisma.salaPayment.count()).toBe(role === Role.PROFESSOR ? 0 : 1);
+      await request(app.getHttpServer()).post('/api/sala/payments').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(f.input).expect(201);
+      expect(await prisma.salaPayment.count()).toBe(1);
+    });
+    it('preserves Administrative price adjustments with a reason', async () => {
+      const f = await paymentFixture();
+      const saved = await f.post({ ...f.input, amount: '15000', adjustmentReason: 'Descuento administrativo' }).expect(201);
+      expect(saved.body.data).toMatchObject({ amount: '15000', adjustmentReason: 'Descuento administrativo', planId: f.plan.id });
+      expect((await prisma.salaPayment.findUniqueOrThrow({ where: { id: saved.body.data.id } })).amount.toString()).toBe('15000');
+    });
+    it('registers Professor renewals with the same coverage and persists its actor and Plan snapshot', async () => {
+      const f = await paymentFixture(); const authn = await session(Role.PROFESSOR);
+      const professor = await prisma.internalUser.findUniqueOrThrow({ where: { normalizedEmail: 'professor@sala.test' } });
+      const post = (body: unknown) => request(app.getHttpServer()).post('/api/sala/payments').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(body);
+      const first = await post(f.input).expect(201);
+      expect(first.body.data).toMatchObject({ planId: f.plan.id, planName: f.plan.name, amount: '20000', coverageStartDate: '2026-10-20', coverageEndDate: '2026-11-20' });
+      expect(await prisma.salaPayment.findUnique({ where: { id: first.body.data.id } })).toMatchObject({ registeredById: professor.id, planNameSnapshot: f.plan.name, adjustmentReason: null });
+      await post(f.input).expect(201);
+      const second = await post({ ...f.input, paidAt: '2026-11-10', operationId: randomUUID() }).expect(201);
+      expect(second.body.data).toMatchObject({ coverageStartDate: '2026-11-21', coverageEndDate: '2026-12-20' });
+      expect(await prisma.salaPayment.count()).toBe(2);
+    });
+    it('rejects Professor Plan changes and adjustments without persisting financial rows or Plan changes', async () => {
+      const f = await paymentFixture(); const authn = await session(Role.PROFESSOR);
+      const other = await prisma.salaPlan.create({ data: { name: 'Otro Plan', monthlyAmount: 30000 } });
+      const assignments = await prisma.salaPlanAssignment.findMany({ where: { salaParticipationId: f.participation.id } });
+      for (const [changes, code] of [
+        [{ amount: '15000', adjustmentReason: 'Descuento' }, 'SALA_PAYMENT_AMOUNT_ADJUSTMENT_FORBIDDEN'],
+        [{ amount: '15000' }, 'SALA_PAYMENT_AMOUNT_ADJUSTMENT_FORBIDDEN'],
+        [{ adjustmentReason: 'Motivo sin ajuste' }, 'SALA_PAYMENT_AMOUNT_ADJUSTMENT_FORBIDDEN'],
+        [{ planId: other.id, amount: '30000' }, 'SALA_PAYMENT_PLAN_CHANGE_FORBIDDEN'],
+      ] as const) {
+        const result = await request(app.getHttpServer()).post('/api/sala/payments').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ ...f.input, ...changes }).expect(403);
+        expect(result.body.code).toBe(code);
+        expect(await prisma.salaPayment.count()).toBe(0);
+        expect(await prisma.salaPaymentAllocation.count()).toBe(0);
+        expect(await prisma.salaParticipation.findUnique({ where: { id: f.participation.id } })).toMatchObject({ planId: f.plan.id });
+        expect(await prisma.salaPlanAssignment.findMany({ where: { salaParticipationId: f.participation.id } })).toEqual(assignments);
+      }
+    });
+    it('denies Professor reversals, advanced Sala finance operations, expenses and general financial reads', async () => {
+      const f = await paymentFixture(); const authn = await session(Role.PROFESSOR);
+      const payment = await f.post(f.input).expect(201);
+      for (const path of [`/api/sala/payments/${payment.body.data.id}/reverse`, '/api/sala/opening-balances', `/api/sala/charges/${randomUUID()}/adjust`, `/api/sala/charges/${randomUUID()}/reverse`, '/api/finance/expenses']) {
+        await request(app.getHttpServer()).post(path).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ reason: 'Intento', operationId: randomUUID() }).expect(403);
+      }
+      for (const resource of ['income', 'expenses', 'totals', 'executive-totals']) await request(app.getHttpServer()).get(`/api/finance/${resource}`).set('Cookie', authn.cookie).expect(403);
+      await request(app.getHttpServer()).get('/api/finance/payment-methods').set('Cookie', authn.cookie).expect(200);
+      expect(await prisma.salaPaymentReversal.count()).toBe(0);
+      expect(await prisma.salaPayment.count()).toBe(1);
     });
     it('rejects legacy access fields and invalid payment DTOs', async () => {
       const f = await paymentFixture();
@@ -1109,7 +1156,7 @@ describe('Sala configuration API', () => {
     afterEach(() => jest.useRealTimers());
     async function dashboardFixture() {
       const authn = await session(Role.PROFESSOR);
-      const professor = await prisma.internalUser.findFirstOrThrow({ where: { email: 'professor@sala.test' } });
+      const professor = await prisma.internalUser.findFirstOrThrow({ where: { normalizedEmail: 'professor@sala.test' } });
       const service = await sala.createServiceType({ name: 'Dashboard funcional', durationMinutes: 30 });
       const plan = await sala.createPlan({ name: 'Dashboard plan', monthlyAmount: 1000, serviceTypeIds: [service.id] });
       const slot = await sala.createSlot({ weekday: 'TUESDAY', startTime: '09:00', durationMinutes: 240, specificCapacity: 20 });
@@ -1220,7 +1267,7 @@ describe('Sala configuration API', () => {
     afterEach(() => jest.useRealTimers());
     async function studentsFixture() {
       const authn = await session(Role.PROFESSOR);
-      const professor = await prisma.internalUser.findFirstOrThrow({ where: { email: 'professor@sala.test' } });
+      const professor = await prisma.internalUser.findFirstOrThrow({ where: { normalizedEmail: 'professor@sala.test' } });
       const other = await users.create({ firstName: 'Otro', lastName: 'Profesor sintético', email: 'other@students.test', roles: [Role.PROFESSOR] });
       const plan = await prisma.salaPlan.create({ data: { name: '3 veces', monthlyAmount: 1000 } });
       const names = [['Zoe', 'Zulu'], ['Bruno', 'Alfa'], ['Ana', 'Alfa'], ['Lucía', 'Beta'], ['Finalizado', 'Aardvark']];

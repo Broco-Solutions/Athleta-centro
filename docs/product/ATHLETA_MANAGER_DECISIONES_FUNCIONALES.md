@@ -781,3 +781,26 @@ Estado: **CONFIRMADO / RESUELTO**.
 - Profesor mantiene su flujo de Nuevo alumno DNI-first.
 - Esta decisión simplifica la experiencia visual y operativa; no elimina People
   del modelo de dominio ni cambia las reglas de alta, incorporación o vigencia.
+
+
+## Profesor — Cobro contextual de renovaciones de Sala — 2026-10-19
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+- Profesor puede cobrar renovaciones desde Alumnos → Alumno → Pagos, consultar
+  vigencia e historial de ese Alumno, incluidos estados y motivos históricos.
+- Utiliza exclusivamente el Plan activo y su precio actual configurado.
+- Puede elegir un Medio de pago seleccionable y Fecha de cobro según las reglas
+  generales vigentes: hoy operativo o anterior, nunca futura.
+- No puede modificar importe, seleccionar otro Plan para el Pago, ingresar ajustes
+  ni revertir Pagos.
+- No posee acceso a Finanzas generales: ingresos generales, gastos, resultados,
+  Neto, totales ni administración del catálogo de Medios de pago.
+- Profesor recibe `SALA_PAYMENT_REGISTER` y pierde `EXPENSE_CREATE`; conserva
+  `SALA_PAYMENT_READ`, sin `SALA_PAYMENT_MANAGE` ni permisos financieros generales.
+- Administrativo y General Admin conservan la gestión completa desde Finanzas.
+- Roles combinados acumulan capacidades normalmente mediante unión de permisos.
+- Esta decisión sustituye la parte de **Pagos de Sala centralizados en Finanzas —
+  2026-10-14** que impedía al Profesor registrar Pagos. El historial anterior se conserva.
+- La regla **Sala — Vigencia móvil por Pago — 2026-10-19** permanece sin cambios:
+  misma operación, idempotencia y cálculo de renovación anticipada.

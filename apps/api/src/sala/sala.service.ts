@@ -64,7 +64,7 @@ export class SalaService {
   private paymentResponse<T extends { paidAt: Date; coverageStartDate: Date; coverageEndDate: Date; amount: Prisma.Decimal; planNameSnapshot: string | null }>(payment: T) {
     return { ...payment, paidAt: payment.paidAt.toISOString().slice(0, 10), coverageStartDate: payment.coverageStartDate.toISOString().slice(0, 10), coverageEndDate: payment.coverageEndDate.toISOString().slice(0, 10), amount: payment.amount.toString(), planName: payment.planNameSnapshot };
   }
-  async createPayment(input: SalaPaymentDto, actorId: string) {
+  async createPayment(input: SalaPaymentDto, actorId: string, { canManagePayment } = { canManagePayment: true }) {
     input = { ...input, personId: input.personId.toLowerCase(), planId: input.planId.toLowerCase(), paymentMethodId: input.paymentMethodId.toLowerCase(), operationId: input.operationId.toLowerCase() };
     this.validatePaidAt(input.paidAt);
     const amount = this.positiveMoney(input.amount, 'SALA_PAYMENT_AMOUNT_INVALID');
@@ -80,10 +80,12 @@ export class SalaService {
       }
       const participation = await tx.salaParticipation.findFirst({ where: { personId: input.personId, endDate: null } });
       if (!participation) throw new BadRequestException({ code: 'SALA_PARTICIPATION_REQUIRED', message: 'Se necesita una participación activa de Sala para registrar pagos.' });
+      if (!canManagePayment && input.planId !== participation.planId) throw new ForbiddenException({ code: 'SALA_PAYMENT_PLAN_CHANGE_FORBIDDEN', message: 'La renovación debe utilizar el Plan activo del Alumno.' });
       await this.assertPaymentMethodSelectable(tx, input.paymentMethodId);
-      const plan = await tx.salaPlan.findUnique({ where: { id: input.planId } });
+      const plan = await tx.salaPlan.findUnique({ where: { id: canManagePayment ? input.planId : participation.planId } });
       if (!plan?.isSelectable) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'El Plan ya no está disponible.' });
-      this.validatePaymentAdjustment(amount, plan.monthlyAmount, input.adjustmentReason);
+      if (!canManagePayment && (!amount.equals(plan.monthlyAmount) || input.adjustmentReason?.trim())) throw new ForbiddenException({ code: 'SALA_PAYMENT_AMOUNT_ADJUSTMENT_FORBIDDEN', message: 'La renovación debe utilizar el precio actual del Plan, sin ajustes.' });
+      if (canManagePayment) this.validatePaymentAdjustment(amount, plan.monthlyAmount, input.adjustmentReason);
       const paidAt = this.date(input.paidAt);
       const payments = await tx.salaPayment.findMany({ where: { personId: input.personId, reversal: null, coverageEndDate: { gte: paidAt } } });
       const currentEnd = this.continuousValidityEnd(payments, paidAt);

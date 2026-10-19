@@ -21,7 +21,7 @@ beforeAll(() => {
 beforeEach(() => {
   navigation.filter = '';
   server.use(
-    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'prof-1', firstName: 'Federico', lastName: 'Sintético' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'PEOPLE_READ', 'PEOPLE_CREATE', 'SALA_PARTICIPATION_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })),
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'prof-1', firstName: 'Federico', lastName: 'Sintético' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_REGISTER', 'PEOPLE_READ', 'PEOPLE_CREATE', 'SALA_PARTICIPATION_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })),
     http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: students })),
   );
 });
@@ -88,7 +88,7 @@ it('reports HTTP failures instead of showing an empty list', async () => {
 });
 
 function managerSession(roles = ['PROFESSOR'], manage = true) {
-  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'prof-1', firstName: 'Federico', lastName: 'Sintético' }, roles, permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', ...(manage ? ['SALA_PARTICIPATION_MANAGE'] : [])], csrfToken: 'csrf', mustChangePassword: false } })));
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'prof-1', firstName: 'Federico', lastName: 'Sintético' }, roles, permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_REGISTER', ...(manage ? ['SALA_PARTICIPATION_MANAGE'] : [])], csrfToken: 'csrf', mustChangePassword: false } })));
 }
 it('uses Mis alumnos only as a reversible local filter', async () => {
   renderPage(); await screen.findByText('Ana Alumna');
@@ -121,15 +121,16 @@ it('combines search, Mis alumnos and Sin rutina', async () => {
   expect(list().getAllByRole('link', { name: 'Ver ficha' })).toHaveLength(1);
   expect(list().getByText('Pedro Prueba')).toBeInTheDocument();
 });
-it('shows only payment states to Professor', async () => {
+it('links Professor payment states to contextual student payments', async () => {
   renderPage(); await screen.findByText('Ana Alumna');
   expect(list().getByText('Vigente hasta 20/11/2026')).toBeVisible();
   expect(list().getAllByText('Sin vigencia')).toHaveLength(2);
   expect(screen.queryByRole('link', { name: 'Renovar' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('link', { name: 'Ver pagos' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Ver pagos' })).toHaveAttribute('href', '/sala/people/student-1?tab=payments');
+  expect(within(list().getByText('Lucía Ejemplo').closest('tr')!).getByRole('link', { name: 'Registrar renovación' })).toHaveAttribute('href', '/sala/people/student-2?tab=payments&action=renew');
 });
-it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('links %s to contextual Finance and preserves Ver ficha', async role => {
-  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'admin' }, roles: [role], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })));
+it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN', 'PROFESSOR+ADMINISTRATIVE'])('links %s to contextual Finance and preserves Ver ficha', async role => {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'admin' }, roles: role.split('+'), permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_REGISTER', 'SALA_PAYMENT_MANAGE', 'FINANCE_OPERATIONAL_READ'], csrfToken: 'csrf', mustChangePassword: false } })));
   renderPage(); await screen.findByText('Ana Alumna');
   const pending = within(list().getByText('Lucía Ejemplo').closest('tr')!);
   expect(pending.getByRole('link', { name: 'Renovar' })).toHaveAttribute('href', '/finance?view=income&personId=student-2&action=renew');
@@ -164,7 +165,7 @@ function fillNewPerson() {
   }
 }
 it.each([[[]], [['PEOPLE_CREATE']], [['SALA_PARTICIPATION_MANAGE']]])('hides creation unless both permissions are present: %j', async (permissions) => {
-  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'prof-1' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', ...permissions], csrfToken: 'csrf', mustChangePassword: false } })));
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'prof-1' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_REGISTER', ...permissions], csrfToken: 'csrf', mustChangePassword: false } })));
   renderPage(); await screen.findByText('Ana Alumna');
   expect(screen.queryByRole('button', { name: 'Nuevo alumno' })).not.toBeInTheDocument();
 });
@@ -195,7 +196,7 @@ it('creates a new student atomically with normalized data, CSRF, refetch and one
   expect(screen.queryByLabelText('PIN temporal')).not.toBeInTheDocument();
 });
 it.each(['PROFESSOR', 'ADMINISTRATIVE', 'GENERAL_ADMIN'])('reuses existing identity and joins without new credentials for %s', async role => {
-  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'actor' }, roles: [role], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'PEOPLE_CREATE', 'SALA_PARTICIPATION_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })));
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'actor' }, roles: [role], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_REGISTER', 'PEOPLE_CREATE', 'SALA_PARTICIPATION_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })));
   // At this UTC instant Argentina is still on the previous day.
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-10-15T01:30:00Z'));
@@ -264,7 +265,7 @@ it('validates DNI before searching and requires personal data and both selection
 it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('uses the full Person form atomically for %s with a new DNI', async role => {
   enrollmentHandlers(); let submitted: unknown; let peoplePosts = 0;
   server.use(
-    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'admin' }, roles: [role, 'PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'PEOPLE_CREATE', 'SALA_PARTICIPATION_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })),
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'admin' }, roles: [role, 'PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_REGISTER', 'PEOPLE_CREATE', 'SALA_PARTICIPATION_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })),
     http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: [{ id: 'work', name: 'Obra sintética', isSelectable: true }] })),
     http.post('http://localhost:3000/api/people', () => { peoplePosts++; return HttpResponse.json({}); }),
     http.post('http://localhost:3000/api/sala/students', async ({ request }) => { submitted = await request.json(); expect(request.credentials).toBe('include'); expect(request.headers.get('x-csrf-token')).toBe('csrf'); return HttpResponse.json({ data: { initialPin: '4812' } }, { status: 201 }); }),
@@ -292,7 +293,7 @@ it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('uses the full Person form atomical
 });
 
 function administrativeSession(role = 'ADMINISTRATIVE') {
-  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'admin' }, roles: [role], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'PEOPLE_READ', 'PEOPLE_CREATE', 'SALA_PARTICIPATION_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })));
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'admin' }, roles: [role], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_REGISTER', 'PEOPLE_READ', 'PEOPLE_CREATE', 'SALA_PARTICIPATION_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })));
 }
 async function startAdministrativeEnrollment(client?: QueryClient) {
   renderPage(client);

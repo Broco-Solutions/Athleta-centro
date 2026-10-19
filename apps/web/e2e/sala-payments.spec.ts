@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 
-test('centralizes Sala payment registration and reversal in Finance while Professor only sees state', async ({ page }) => {
+test('preserves administrative Finance and lets Professor renew from student payments', async ({ page }) => {
   test.setTimeout(60000);
   execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', '-e', `
     import { PrismaClient } from '@prisma/client';
@@ -68,13 +68,25 @@ test('centralizes Sala payment registration and reversal in Finance while Profes
   expect((await loginResponse).status()).toBe(200);
   await expect(page).toHaveURL('/');
   await page.getByRole('link', { name: 'Alumnos', exact: true }).click();
-  await expect(page.getByRole('link', { name: 'Renovar' })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Ver pagos', exact: true })).toHaveCount(0);
-  await page.getByRole('row').filter({ hasText: 'Alumno0 FollowUpE2E' }).getByRole('link', { name: 'Ver ficha' }).click();
-  await expect(page).toHaveURL(/\/sala\/people\/[0-9a-f-]+$/);
-  await expect(page.getByRole('heading', { name: 'Alumno0 FollowUpE2E', exact: true })).toBeVisible();
-  await expect(page.getByText('Sin vigencia', { exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Pagos', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Gestionar pagos' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Finanzas', exact: true })).toHaveCount(0);
+  const professorStudent = page.getByRole('row').filter({ hasText: 'Alumno0 FollowUpE2E' });
+  const renewalHref = await professorStudent.getByRole('link', { name: 'Registrar renovación' }).getAttribute('href');
+  await professorStudent.getByRole('link', { name: 'Registrar renovación' }).click();
+  await expect(page).toHaveURL(renewalHref!);
+  await expect(page.getByRole('link', { name: 'Pagos', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('heading', { name: 'Registrar renovación', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Historial de pagos' })).toBeVisible();
+  await expect(page.getByLabel('Plan', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Precio', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel(/^Motivo de ajuste/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Revertir', exact: true })).toHaveCount(0);
+  await expect(page.getByText('Base FollowUpE2E', { exact: true }).first()).toBeVisible();
+  await page.getByRole('button', { name: method.name, exact: true }).click();
+  await page.getByRole('button', { name: 'Registrar pago', exact: true }).click();
+  await expect(page.getByText('Pago registrado correctamente.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Revertir', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '+ Registrar renovación' }).click();
+  await expect(page.getByText(/Con este pago:/)).toBeVisible();
+  await page.goto('/finance');
+  await expect(page.getByText('No tenés permisos para acceder a Finanzas.')).toBeVisible();
 });

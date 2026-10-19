@@ -105,6 +105,8 @@ function FinancePageContent(): React.JSX.Element {
     group[kind] += BigInt(row.amount);
     byMethod.set(method.id, group);
   }
+  const canUseFinance = permissions.some(permission => ['FINANCE_OPERATIONAL_READ', 'FINANCE_EXECUTIVE_READ', 'FINANCE_EXPORT', 'PAYMENT_METHOD_CATALOG_MANAGE', 'EXPENSE_CREATE', 'EXPENSE_HISTORY_READ', 'EXPENSE_MANAGE', 'EXPENSE_CATEGORY_CATALOG_MANAGE', 'EXCHANGE_RATE_MANAGE', 'CLINIC_INCOME_MANAGE'].includes(permission));
+  if (session.isSuccess && !canUseFinance) return <WorkspaceShell active={active}><p>No tenés permisos para acceder a Finanzas.</p></WorkspaceShell>;
   const summaryReady = summaryIncome.isSuccess && summaryExpenses.isSuccess;
   return <WorkspaceShell active={active}><main className="mx-auto max-w-6xl space-y-6">
     <header><h1 className="text-3xl font-semibold">Finanzas</h1><p className="text-sm text-muted-foreground">{selectedPaymentContext ? "La vigencia y cada pago del alumno en un solo lugar." : "Operación económica · ARS"}</p>{selectedPaymentContext ? <Link className="mt-3 inline-block rounded border px-3 py-2 text-sm" href="/finance?view=income">Cambiar alumno</Link> : null}</header>
@@ -161,7 +163,7 @@ function FinancePageContent(): React.JSX.Element {
           </div>
           {activePlan ? <div className="border-border sm:border-l sm:pl-6"><p className="font-semibold">{activePlan.name}</p><p className="text-sm text-muted-foreground">Precio actual: {formatMoney(activePlan.monthlyAmount).replace('$ ', '$')} / mes</p></div> : null}
         </div>
-        {participations.isSuccess ? <SalaPaymentPanel key={`${personId}-${paymentAction}`} defaultOpen={paymentAction === 'renew'} personId={personId!} csrfToken={session.data?.csrfToken ?? ''} canManage activePlan={activePlan}/> : null}
+        {participations.isSuccess ? <SalaPaymentPanel key={`${personId}-${paymentAction}`} defaultOpen={paymentAction === 'renew'} personId={personId!} csrfToken={session.data?.csrfToken ?? ''} canRegister={permissions.includes('SALA_PAYMENT_REGISTER')} canAdjust={permissions.includes('SALA_PAYMENT_MANAGE')} canReverse={permissions.includes('SALA_PAYMENT_MANAGE')} activePlan={activePlan}/> : null}
       </> : null}
     </section> : null}
     {view === 'income' && !personId && income.isError ? <p role="alert">No se pudieron cargar los ingresos para este contexto.</p> : null}

@@ -526,7 +526,24 @@ GENERAL_ADMIN
 
 # 24. SALA_PAYMENT_READ
 
-Permite consultar Pagos y vigencia actual de Sala dentro del contexto operativo. El Profesor ve Vigente hasta / Sin vigencia y no registra ni revierte. Los roles autorizados no cambian.
+Permite consultar Pagos y vigencia actual de Sala dentro del contexto operativo. El Profesor puede consultar vigencia e historial del Alumno. La capacidad de registrar depende de `SALA_PAYMENT_REGISTER`; la reversión y los ajustes dependen de `SALA_PAYMENT_MANAGE`.
+
+Roles:
+
+```text
+PROFESSOR
+ADMINISTRATIVE
+GENERAL_ADMIN
+```
+
+---
+
+# 24 bis. SALA_PAYMENT_REGISTER
+
+Permite registrar una renovación normal de Sala usando exclusivamente el Plan activo
+del Alumno y su precio actual configurado. Profesor opera desde Alumno → Pagos,
+puede elegir Medio de pago seleccionable y Fecha de cobro hoy operativo o anterior.
+No habilita ajustes, reversión, administración de cargos ni acceso a Finanzas generales.
 
 Roles:
 
@@ -540,12 +557,13 @@ GENERAL_ADMIN
 
 # 25. SALA_PAYMENT_MANAGE
 
-Permite:
+Capacidad ampliada de gestión de Pagos de Sala desde Finanzas:
 
-- registrar;
-- revertir;
-
-Pagos de Sala desde Finanzas. Sala muestra el estado mensual y acceso contextual.
+- ajustar importes con motivo según las reglas vigentes;
+- usar otro Plan de referencia seleccionable cuando la operación lo permita;
+- revertir Pagos;
+- realizar operaciones financieras históricas de Sala protegidas por este permiso
+  (saldos iniciales, ajustes y reversiones de cargos).
 
 Roles:
 
@@ -554,7 +572,8 @@ ADMINISTRATIVE
 GENERAL_ADMIN
 ```
 
-Las reglas de importe, Mes/Año y ajuste continúan siendo reglas de dominio.
+El registro requiere `SALA_PAYMENT_REGISTER`, también otorgado a estos roles.
+La vigencia móvil y las reglas de importe y ajuste permanecen sin cambios.
 
 ---
 
@@ -1089,7 +1108,8 @@ EXCHANGE_RATE_MANAGE
 
 Permite registrar un Gasto.
 
-Se otorga a todos los usuarios internos.
+Se otorga a Kinesiólogo, Osteópata, Administrativo y Administrador general.
+Profesor puro no posee este permiso desde la decisión del 2026-10-19.
 
 No otorga acceso al historial general de Gastos.
 
@@ -1985,7 +2005,8 @@ No requiere un Role Permission interno.
 
 # 101. Expense Create — excepción deliberada
 
-Todos los usuarios internos pueden registrar Gastos.
+Kinesiólogo, Osteópata, Administrativo y Administrador general pueden registrar Gastos.
+Profesor puro queda excluido por la decisión del 2026-10-19.
 
 Esto no implica:
 
@@ -1996,7 +2017,7 @@ EXPENSE_HISTORY_READ
 Ejemplo:
 
 ```text
-PROFESSOR
+KINESIOLOGIST / OSTEOPATH
 → EXPENSE_CREATE
 → no EXPENSE_HISTORY_READ
 ```
@@ -2159,11 +2180,11 @@ PROFESSOR
 ├── SALA_PHYSICAL_EVALUATION_READ
 ├── SALA_PHYSICAL_EVALUATION_MANAGE
 ├── SALA_PAYMENT_READ
+├── SALA_PAYMENT_REGISTER
 ├── SALA_CLINICAL_INDICATION_READ
 ├── SALA_CLINICAL_INDICATION_CLOSE
 ├── SALA_EXERCISE_CATALOG_MANAGE
-├── SALA_PHYSICAL_TEST_CATALOG_MANAGE
-└── EXPENSE_CREATE
+└── SALA_PHYSICAL_TEST_CATALOG_MANAGE
 ```
 
 ---
@@ -2220,6 +2241,7 @@ ADMINISTRATIVE
 ├── SALA_ROUTINE_READ
 ├── SALA_PHYSICAL_EVALUATION_READ
 ├── SALA_PAYMENT_READ
+├── SALA_PAYMENT_REGISTER
 ├── SALA_PAYMENT_MANAGE
 ├── SALA_CLINICAL_INDICATION_CLOSE
 ├── SALA_PLAN_CATALOG_MANAGE
