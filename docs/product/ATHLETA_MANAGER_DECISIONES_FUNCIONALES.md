@@ -684,3 +684,15 @@ asignación, duplicación ni gestión del catálogo.
 Los campos opcionales de un Ejercicio se muestran únicamente cuando tienen
 valor. Descripción y Observación permanecen visibles como información
 secundaria cuando existen.
+
+## Ajuste final — Alta administrativa de Alumno — 2026-10-16
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+- En `/students`, Administrativo y Administrador general ya no comienzan obligatoriamente el alta por DNI. `Nuevo alumno` presenta inicialmente Persona existente y una acción `Nueva Persona`, dentro del mismo modal.
+- La Persona existente se busca por Nombre, Apellido o DNI y se incorpora con Plan y Profesor principal mediante `joinSala`, conservando su identidad y credencial, sin generar otro PIN.
+- Si la Persona ya es alumno activo de Sala, se informa sin duplicar participación; se puede seleccionar otra Persona o cancelar.
+- Nueva Persona utiliza la ficha general completa, con Plan y Profesor principal obligatorios en el mismo modal, sin incorporación opcional.
+- Nueva Persona + Sala continúa siendo atómico mediante `createSalaStudent`. El PIN inicial se muestra una sola vez solamente para Persona nueva.
+- Profesor conserva el flujo simplificado DNI-first definido en PROF-01.
+- Esta decisión sustituye, para Administrativo y Administrador general, la definición anterior que conservaba la búsqueda inicial obligatoria por DNI.

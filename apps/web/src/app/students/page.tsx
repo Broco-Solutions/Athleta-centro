@@ -82,7 +82,11 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
       </tr>)}</tbody>
     </table>}
     {creating && canCreate ? <NewStudentDialog isAdministrative={isAdministrative} csrf={session.data?.csrfToken ?? ''} onClose={() => setCreating(false)} onSaved={async (pin) => {
-      await client.invalidateQueries({ queryKey: ['sala', 'students'] });
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['sala', 'students'] }),
+        client.invalidateQueries({ queryKey: ['people'] }),
+        client.invalidateQueries({ queryKey: ['sala-participations'] }),
+      ]);
       setCreating(false);
       if (pin) setInitialPin(pin);
       else setNotice('El Alumno fue incorporado a Sala.');
@@ -104,7 +108,60 @@ const dniSchema = z.string().refine((value) => !/[^0-9 .-]/.test(value) && /^\d{
 const inputClass = 'h-11 w-full rounded-md border border-border bg-surface px-3 text-sm';
 type EnrollmentProps = { isAdministrative: boolean; csrf: string; onClose: () => void; onSaved: (pin?: string) => Promise<void> };
 
+type StudentCreationMode = 'existing' | 'new';
+
 function NewStudentDialog(props: EnrollmentProps): React.JSX.Element {
+  return props.isAdministrative ? <AdministrativeNewStudentDialog {...props} /> : <ProfessorNewStudentDialog {...props} />;
+}
+
+function AdministrativeNewStudentDialog({ csrf, onClose, onSaved }: EnrollmentProps): React.JSX.Element {
+  const [mode, setMode] = useState<StudentCreationMode>('existing');
+  const [search, setSearch] = useState('');
+  const [personId, setPersonId] = useState('');
+  const [planId, setPlanId] = useState('');
+  const [mainProfessorId, setMainProfessorId] = useState('');
+  const people = useQuery({ queryKey: ['people', 'student-enrollment', search], enabled: mode === 'existing', queryFn: () => fetchPeople({ ...(search.trim() ? { search: search.trim() } : {}), page: 1, pageSize: 25 }) });
+  const selectedPerson = people.isSuccess ? people.data.data.find(person => person.id === personId) : undefined;
+  const needsJoin = selectedPerson?.hasSalaParticipation === false;
+  const catalogsEnabled = mode === 'new' || needsJoin;
+  const plans = useQuery({ queryKey: ['sala-plans'], enabled: catalogsEnabled, queryFn: async () => {
+    const response = await listSalaPlans({ credentials: 'include' });
+    if (response.status !== 200) throw new Error('No se pudieron cargar los Planes.');
+    return z.array(z.object({ id: z.string(), name: z.string(), isSelectable: z.boolean().optional() }).passthrough()).parse(response.data.data);
+  } });
+  const professors = useQuery({ queryKey: ['sala-professors'], enabled: catalogsEnabled, queryFn: async () => {
+    const response = await listSalaProfessors({ credentials: 'include' });
+    if (response.status !== 200) throw new Error('No se pudieron cargar los profesores.');
+    return response.data.data;
+  } });
+  const mutation = useMutation({ mutationFn: async () => {
+    if (!selectedPerson || !needsJoin || !planId || !mainProfessorId) throw new Error('Seleccioná Persona, Plan y Profesor principal.');
+    if (!csrf) throw new Error('Sesión inválida. Volvé a iniciar sesión.');
+    const response = await joinSala({ personId: selectedPerson.id, planId, mainProfessorId, startDate: todayOperational() }, { credentials: 'include', headers: { 'x-csrf-token': csrf } });
+    if (response.status < 200 || response.status >= 300) throw new Error('No se pudo incorporar la Persona a Sala. Revisá si ya es alumno activo e intentá nuevamente.');
+  }, onSuccess: () => onSaved() });
+  const resetSelection = () => { setPersonId(''); setPlanId(''); setMainProfessorId(''); mutation.reset(); };
+  const selectablePlans = plans.data?.filter(plan => plan.isSelectable !== false) ?? [];
+  if (mode === 'new') return <AdministrativeEnrollmentForm csrf={csrf} onClose={onClose} onSaved={onSaved} onExisting={() => setMode('existing')} plans={selectablePlans} professors={professors.data ?? []} catalogsReady={plans.isSuccess && professors.isSuccess} catalogsError={plans.isError || professors.isError} />;
+  return <ParticipationDialog title="Nuevo alumno" onClose={onClose} busy={mutation.isPending}>
+    <Button variant="secondary" disabled={mutation.isPending} onClick={() => { resetSelection(); setMode('new'); }}>Nueva Persona</Button>
+    <form className="space-y-4" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}>
+      <label className="grid gap-1 text-sm">Buscar Persona<input aria-label="Buscar Persona" placeholder="Nombre, apellido o DNI" className={inputClass} value={search} disabled={mutation.isPending} onChange={event => { setSearch(event.target.value); resetSelection(); }} /></label>
+      <label className="grid gap-1 text-sm">Persona<select aria-label="Persona" className={inputClass} value={personId} disabled={mutation.isPending || !people.isSuccess || !people.data.data.length} onChange={event => { resetSelection(); setPersonId(event.target.value); }}><option value="">Seleccionar Persona</option>{people.data?.data.map(person => <option key={person.id} value={person.id}>{person.lastName}, {person.firstName} · {person.dni}</option>)}</select></label>
+      {people.isFetching ? <p role="status">Buscando Personas…</p> : people.isError ? <p role="alert">No pudimos buscar Personas. Intentá nuevamente.</p> : people.isSuccess && !people.data.data.length ? <p role="status">No encontramos Personas.</p> : null}
+      {selectedPerson?.hasSalaParticipation === true ? <p role="status">Esta Persona ya es alumno activo de Sala.</p> : null}
+      {needsJoin ? <>
+        <label className="grid gap-1 text-sm">Plan *<select aria-label="Plan" required className={inputClass} value={planId} disabled={mutation.isPending} onChange={event => setPlanId(event.target.value)}><option value="">Seleccionar Plan</option>{selectablePlans.map(plan => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></label>
+        <label className="grid gap-1 text-sm">Profesor principal *<select aria-label="Profesor principal" required className={inputClass} value={mainProfessorId} disabled={mutation.isPending} onChange={event => setMainProfessorId(event.target.value)}><option value="">Seleccionar Profesor</option>{professors.data?.map(professor => <option key={professor.id} value={professor.id}>{professor.firstName} {professor.lastName}</option>)}</select></label>
+        {plans.isError || professors.isError ? <p role="alert">No se pudieron cargar los Planes o Profesores. Cerrá el alta e intentá nuevamente.</p> : !plans.isSuccess || !professors.isSuccess ? <p role="status">Cargando Planes y Profesores…</p> : null}
+      </> : null}
+      {mutation.isError ? <p role="alert">{mutation.error.message}</p> : null}
+      <div className="flex justify-end gap-2"><Button type="button" variant="secondary" disabled={mutation.isPending} onClick={onClose}>Cancelar</Button>{needsJoin ? <Button type="submit" disabled={mutation.isPending || !plans.isSuccess || !professors.isSuccess || !planId || !mainProfessorId}>{mutation.isPending ? 'Incorporando…' : 'Incorporar a Sala'}</Button> : null}</div>
+    </form>
+  </ParticipationDialog>;
+}
+
+function ProfessorNewStudentDialog(props: EnrollmentProps): React.JSX.Element {
   const [match, setMatch] = useState<{ dni: string; person?: PersonResponseDto | undefined } | null>(null);
   const form = useForm({ resolver: zodResolver(z.object({ dni: dniSchema })), defaultValues: { dni: '' } });
   const lookup = useMutation({ mutationFn: async ({ dni }: { dni: string }) => {
@@ -122,7 +179,7 @@ function NewStudentDialog(props: EnrollmentProps): React.JSX.Element {
   </ParticipationDialog>;
 }
 
-function StudentEnrollmentForm({ dni, person, csrf, onClose, onSaved, isAdministrative }: EnrollmentProps & { dni: string; person?: PersonResponseDto | undefined }): React.JSX.Element {
+function StudentEnrollmentForm({ dni, person, csrf, onClose, onSaved }: EnrollmentProps & { dni: string; person?: PersonResponseDto | undefined }): React.JSX.Element {
   const alreadyActive = person?.hasSalaParticipation === true;
   const schema = z.object({
     firstName: z.string().trim().refine((value) => !!person || !!value, 'Ingresá el nombre'),
@@ -159,7 +216,6 @@ function StudentEnrollmentForm({ dni, person, csrf, onClose, onSaved, isAdminist
     // Pass the credential directly to the one-time notice, without retaining it in the mutation cache.
     await onSaved(response.data.data.initialPin);
   }, onSuccess: async () => { if (person) await onSaved(); } });
-  if (isAdministrative && !person) return <AdministrativeEnrollmentForm dni={dni} csrf={csrf} onClose={onClose} onSaved={onSaved} plans={plans.data ?? []} professors={professors.data ?? []} catalogsReady={plans.isSuccess && professors.isSuccess} catalogsError={plans.isError || professors.isError} />;
   return <ParticipationDialog title="Nuevo alumno" onClose={onClose} busy={mutation.isPending}>
     {person ? <p>{person.firstName} {person.lastName} · DNI {dni}</p> : <p>DNI {dni}</p>}
     {alreadyActive ? <><p role="status">Esta Persona ya es alumno activo de Sala.</p><Button onClick={onClose}>Entendido</Button></> : <form className="space-y-4" onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
@@ -174,19 +230,20 @@ function StudentEnrollmentForm({ dni, person, csrf, onClose, onSaved, isAdminist
   </ParticipationDialog>;
 }
 
-function AdministrativeEnrollmentForm({ dni, csrf, onClose, onSaved, plans, professors, catalogsReady, catalogsError }: Omit<EnrollmentProps, 'isAdministrative'> & { dni: string; plans: Array<{ id: string; name: string }>; professors: Array<{ id: string; firstName: string; lastName: string }>; catalogsReady: boolean; catalogsError: boolean }): React.JSX.Element {
+function AdministrativeEnrollmentForm({ csrf, onClose, onSaved, onExisting, plans, professors, catalogsReady, catalogsError }: Omit<EnrollmentProps, 'isAdministrative'> & { onExisting: () => void; plans: Array<{ id: string; name: string }>; professors: Array<{ id: string; firstName: string; lastName: string }>; catalogsReady: boolean; catalogsError: boolean }): React.JSX.Element {
   const schema = personSchema.extend({ planId: z.string().min(1, 'Seleccioná un Plan.'), mainProfessorId: z.string().min(1, 'Seleccioná un profesor.') });
-  const form = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema), defaultValues: { ...personDefaults(), dni, planId: '', mainProfessorId: '' } });
+  const form = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema), defaultValues: { ...personDefaults(), planId: '', mainProfessorId: '' } });
   const generalForm: import('react-hook-form').UseFormReturn<PersonValues> = form as unknown as import('react-hook-form').UseFormReturn<PersonValues>;
   const mutation = useMutation({ gcTime: 0, mutationFn: async (values: z.infer<typeof schema>) => {
     if (!csrf) throw new Error('Sesión inválida. Volvé a iniciar sesión.');
     const { planId, mainProfessorId, ...general } = values;
     const response = await createSalaStudent({ ...personInput(general), planId, mainProfessorId }, { credentials: 'include', headers: { 'x-csrf-token': csrf } });
-    if (Number(response.status) === 409) throw new Error('Ya existe una Persona con ese DNI. Cerrá el alta y volvé a buscar el DNI.');
+    if (Number(response.status) === 409) throw new Error('Ya existe una Persona con ese DNI. Volvé a Persona existente y buscala.');
     if (response.status < 200 || response.status >= 300) throw new Error('No se pudo crear el Alumno. Intentá nuevamente.');
     await onSaved(response.data.data.initialPin);
   } });
   return <ParticipationDialog title="Nuevo alumno" onClose={onClose} busy={mutation.isPending}>
+    <Button variant="secondary" disabled={mutation.isPending} onClick={onExisting}>Persona existente</Button>
     <form className="grid gap-4 sm:grid-cols-2" onSubmit={form.handleSubmit(values => mutation.mutate(values))}>
       <GeneralPersonFields form={generalForm} />
       <label className="grid gap-1 text-sm">Plan *<select aria-label="Plan" className={inputClass} {...form.register('planId')}><option value="">Seleccionar Plan</option>{plans.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
@@ -194,7 +251,7 @@ function AdministrativeEnrollmentForm({ dni, csrf, onClose, onSaved, plans, prof
       {Object.entries(form.formState.errors).filter(([name]) => name === 'planId' || name === 'mainProfessorId').map(([name, error]) => <p role="alert" key={name}>{error.message}</p>)}
       {catalogsError ? <p role="alert">No se pudieron cargar los Planes o Profesores. Cerrá el alta e intentá nuevamente.</p> : !catalogsReady ? <p role="status">Cargando Planes y Profesores…</p> : null}
       {mutation.isError ? <p role="alert">{mutation.error.message}</p> : null}
-      <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="secondary" disabled={mutation.isPending} onClick={onClose}>Cancelar</Button><Button type="submit" disabled={mutation.isPending || !catalogsReady}>Guardar alumno</Button></div>
+      <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="secondary" disabled={mutation.isPending} onClick={onClose}>Cancelar</Button><Button type="submit" disabled={mutation.isPending || !catalogsReady}>{mutation.isPending ? 'Guardando…' : 'Crear alumno'}</Button></div>
     </form>
   </ParticipationDialog>;
 }
