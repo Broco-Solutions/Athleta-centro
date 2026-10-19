@@ -271,6 +271,10 @@ it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('uses the full Person form atomical
     http.post('http://localhost:3000/api/sala/students', async ({ request }) => { submitted = await request.json(); expect(request.credentials).toBe('include'); expect(request.headers.get('x-csrf-token')).toBe('csrf'); return HttpResponse.json({ data: { initialPin: '4812' } }, { status: 201 }); }),
   );
   await startAdministrativeEnrollment(); fireEvent.click(screen.getByRole('button', { name: 'Nueva Persona' }));
+  const dialog = screen.getByRole('dialog', { name: 'Nuevo alumno' });
+  expect(dialog).toHaveClass('max-w-4xl');
+  for (const heading of ['Datos personales', 'Contacto de emergencia', 'Cobertura médica', 'Entrenamiento']) expect(within(dialog).getByRole('heading', { name: heading })).toBeInTheDocument();
+  for (const label of ['Nombre', 'Apellido', 'DNI', 'Teléfono', 'Fecha de nacimiento', 'Email (opcional)', 'Deporte (opcional)', 'Club (opcional)', 'Contacto de emergencia (opcional)', 'Teléfono de emergencia (opcional)', 'Obra social (opcional)', 'Número de afiliado (opcional)', 'Plan', 'Profesor principal']) expect(within(dialog).getByLabelText(label)).toBeInTheDocument();
   expect(screen.getByLabelText('DNI')).toHaveValue('');
   fireEvent.change(screen.getByLabelText('DNI'), { target: { value: '88.123-456' } });
   expect(screen.queryByLabelText('Incorporar también a Sala')).not.toBeInTheDocument();

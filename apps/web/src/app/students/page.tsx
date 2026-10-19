@@ -250,16 +250,21 @@ function AdministrativeEnrollmentForm({ csrf, onClose, onSaved, onExisting, plan
     if (response.status < 200 || response.status >= 300) throw new Error('No se pudo crear el Alumno. Intentá nuevamente.');
     await onSaved(response.data.data.initialPin);
   } });
-  return <ParticipationDialog title="Nuevo alumno" onClose={onClose} busy={mutation.isPending}>
-    <Button variant="secondary" disabled={mutation.isPending} onClick={onExisting}>Persona existente</Button>
+  return <ParticipationDialog title="Nuevo alumno" onClose={onClose} busy={mutation.isPending} size="wide">
+    <div className="mb-2"><Button variant="secondary" disabled={mutation.isPending} onClick={onExisting}>Persona existente</Button></div>
     <form className="grid gap-4 sm:grid-cols-2" onSubmit={form.handleSubmit(values => mutation.mutate(values))}>
       <GeneralPersonFields form={generalForm} />
-      <label className="grid gap-1 text-sm">Plan *<select aria-label="Plan" className={inputClass} {...form.register('planId')}><option value="">Seleccionar Plan</option>{plans.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      <label className="grid gap-1 text-sm">Profesor principal *<select aria-label="Profesor principal" className={inputClass} {...form.register('mainProfessorId')}><option value="">Seleccionar profesor</option>{professors.map(item => <option key={item.id} value={item.id}>{item.firstName} {item.lastName}</option>)}</select></label>
+      <section className="border-t border-border pt-4 sm:col-span-2">
+        <h3 className="mb-3 text-sm font-semibold">Entrenamiento</h3>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="grid gap-1 text-sm">Plan *<select aria-label="Plan" className={inputClass} {...form.register('planId')}><option value="">Seleccionar Plan</option>{plans.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <label className="grid gap-1 text-sm">Profesor principal *<select aria-label="Profesor principal" className={inputClass} {...form.register('mainProfessorId')}><option value="">Seleccionar profesor</option>{professors.map(item => <option key={item.id} value={item.id}>{item.firstName} {item.lastName}</option>)}</select></label>
+        </div>
+      </section>
       {Object.entries(form.formState.errors).filter(([name]) => name === 'planId' || name === 'mainProfessorId').map(([name, error]) => <p role="alert" key={name}>{error.message}</p>)}
       {catalogsError ? <p role="alert">No se pudieron cargar los Planes o Profesores. Cerrá el alta e intentá nuevamente.</p> : !catalogsReady ? <p role="status">Cargando Planes y Profesores…</p> : null}
       {mutation.isError ? <p role="alert">{mutation.error.message}</p> : null}
-      <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="secondary" disabled={mutation.isPending} onClick={onClose}>Cancelar</Button><Button type="submit" disabled={mutation.isPending || !catalogsReady}>{mutation.isPending ? 'Guardando…' : 'Crear alumno'}</Button></div>
+      <div className="flex justify-end gap-2 border-t border-border pt-4 sm:col-span-2"><Button type="button" variant="secondary" disabled={mutation.isPending} onClick={onClose}>Cancelar</Button><Button type="submit" disabled={mutation.isPending || !catalogsReady}>{mutation.isPending ? 'Guardando…' : 'Crear alumno'}</Button></div>
     </form>
   </ParticipationDialog>;
 }

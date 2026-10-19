@@ -16,6 +16,13 @@ afterEach(() => server.resetHandlers()); afterAll(() => { server.close(); global
 
 it('renders and searches the People list through HTTP', async () => { let search = ''; server.use(http.get('http://localhost:3000/api/people', ({ request }) => { search = new URL(request.url).searchParams.get('search') ?? ''; return HttpResponse.json({ data: [person], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } }); })); renderPage(); expect(await screen.findByText('Sintética, Ana')).toBeInTheDocument(); fireEvent.change(screen.getByLabelText('Buscar Personas'), { target: { value: '20.123' } }); await waitFor(() => expect(search).toBe('20.123')); });
 it('validates required creation fields locally', async () => { renderPage(); await screen.findByText('Sintética, Ana'); fireEvent.click(screen.getByRole('button', { name: /Nueva Persona/ })); fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); expect(await screen.findByText('Ingresá el nombre')).toBeInTheDocument(); });
+it('shows the shared general-person sections in a wide dialog without Sala fields by default', async () => {
+  renderPage(); await screen.findByText('Sintética, Ana'); fireEvent.click(screen.getByRole('button', { name: /Nueva Persona/ }));
+  const dialog = screen.getByRole('heading', { name: 'Nueva Persona' }).parentElement?.parentElement;
+  expect(dialog).toHaveClass('max-w-4xl');
+  for (const heading of ['Datos personales', 'Contacto de emergencia', 'Cobertura médica']) expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Entrenamiento' })).not.toBeInTheDocument();
+});
 it('presents duplicate DNI safely', async () => { server.use(http.post('http://localhost:3000/api/people', () => HttpResponse.json({ statusCode: 409, code: 'PERSON_DNI_ALREADY_EXISTS', message: 'Conflict' }, { status: 409 }))); renderPage(); await screen.findByText('Sintética, Ana'); fireEvent.click(screen.getByRole('button', { name: /Nueva Persona/ })); fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Otra' } }); fireEvent.change(screen.getByLabelText('Apellido'), { target: { value: 'Persona' } }); fireEvent.change(screen.getByLabelText('DNI'), { target: { value: '20.123.456' } }); fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '3515550100' } }); fireEvent.change(screen.getByLabelText('Fecha de nacimiento'), { target: { value: '1990-01-01' } }); fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); expect(await screen.findByRole('alert')).toHaveTextContent('Ya existe una Persona con ese DNI.'); });
 it('edits general data and invalidates the People query', async () => { let updatedPhone = ''; server.use(http.patch(`http://localhost:3000/api/people/${person.id}`, async ({ request }) => { updatedPhone = String((await request.json() as { phone: string }).phone); return HttpResponse.json({ data: { ...person, phone: updatedPhone } }); })); renderPage(); fireEvent.click(await screen.findByText('Sintética, Ana')); fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '3515559999' } }); fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); await waitFor(() => expect(updatedPhone).toBe('3515559999')); });
 
@@ -482,6 +489,7 @@ it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('creates Person and Sala atomically
   const state = salaCreationHandlers(role);
   await openCreation('20.123.457', '(341) 555-1234');
   await enableSalaCreation();
+  expect(screen.getByRole('heading', { name: 'Entrenamiento' })).toBeInTheDocument();
   expect(state().catalogReads).toBe(2);
   expect(screen.queryByRole('option', { name: 'Plan retirado' })).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Plan'), { target: { value: 'plan' } });
