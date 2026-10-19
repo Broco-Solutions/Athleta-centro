@@ -15,13 +15,13 @@ export default function PortalLogin(): React.JSX.Element {
 
   return (
     <main className="flex min-h-screen flex-col bg-background">
-      <section className="relative flex min-h-[16rem] flex-[0.42] flex-col overflow-hidden bg-sidebar px-5 pb-7 pt-6 text-sidebar-foreground sm:px-8 md:min-h-[19rem]">
+      <section className="relative flex min-h-[12rem] flex-col overflow-hidden bg-sidebar px-5 pb-5 pt-5 text-sidebar-foreground sm:px-8 md:min-h-[19rem]">
         <header>
           <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-32 sm:w-36" />
         </header>
 
-        <div className="relative mt-10 flex items-end justify-between gap-3">
-          <h2 className="relative z-10 text-[2rem] font-extrabold uppercase leading-[0.98] tracking-tight sm:text-4xl">
+        <div className="relative mt-6 flex items-end justify-between gap-3">
+          <h2 className="relative z-10 text-[1.75rem] font-extrabold uppercase leading-[0.98] tracking-tight sm:text-4xl">
             <span className="block">DESBLOQUEÁ TU</span>
             <span className="mt-1 block -skew-x-6 text-primary">POTENCIAL.</span>
           </h2>
@@ -30,7 +30,7 @@ export default function PortalLogin(): React.JSX.Element {
         <span aria-hidden="true" className="absolute bottom-0 left-5 h-1 w-14 bg-primary sm:left-8" />
       </section>
 
-      <section className="flex flex-1 flex-col px-5 pb-5 pt-7 sm:px-8 sm:pt-9">
+      <section className="flex flex-1 flex-col px-5 pb-5 pt-5 sm:px-8 sm:pt-9">
         <form
           className="mx-auto flex w-full max-w-md flex-1 flex-col"
           onSubmit={async (event) => {
@@ -55,12 +55,12 @@ export default function PortalLogin(): React.JSX.Element {
             <p className="mt-1 text-sm text-muted-foreground">Ingresá con tu DNI y PIN para continuar.</p>
           </div>
 
-          <div className="mt-6 space-y-4">
+          <div className="mt-4 space-y-3">
             <label className="block text-sm font-medium" htmlFor="portal-dni">
               DNI
               <span className="relative mt-1.5 block">
                 <Contact aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-                <input id="portal-dni" required autoComplete="username" value={dni} onChange={(event) => setDni(event.target.value)} placeholder="Ingresá tu DNI" className="h-14 w-full rounded-md border border-border bg-white pl-11 pr-3 text-base font-normal outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-ring" />
+                <input id="portal-dni" required autoComplete="username" value={dni} onChange={(event) => setDni(event.target.value)} placeholder="Ingresá tu DNI" className="h-12 w-full rounded-md border border-border bg-white pl-11 pr-3 text-base font-normal outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-ring" />
               </span>
               <span className="mt-1.5 block text-xs font-normal text-muted-foreground">Sin puntos ni espacios.</span>
             </label>
@@ -69,7 +69,7 @@ export default function PortalLogin(): React.JSX.Element {
               PIN de 4 dígitos
               <span className="relative mt-1.5 block">
                 <Lock aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-                <input id="portal-pin" required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="current-password" type={showPin ? 'text' : 'password'} value={pin} onChange={(event) => setPin(event.target.value)} placeholder="Ingresá tu PIN" className="h-14 w-full rounded-md border border-border bg-white pl-11 pr-12 text-base font-normal outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-ring" />
+                <input id="portal-pin" required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="current-password" type={showPin ? 'text' : 'password'} value={pin} onChange={(event) => setPin(event.target.value)} placeholder="Ingresá tu PIN" className="h-12 w-full rounded-md border border-border bg-white pl-11 pr-12 text-base font-normal outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-ring" />
                 <button type="button" aria-label={showPin ? 'Ocultar PIN' : 'Mostrar PIN'} onClick={() => setShowPin((visible) => !visible)} className="absolute right-1 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   {showPin ? <EyeOff aria-hidden="true" className="h-5 w-5" /> : <Eye aria-hidden="true" className="h-5 w-5" />}
                 </button>
@@ -79,7 +79,7 @@ export default function PortalLogin(): React.JSX.Element {
 
           {error ? <p role="alert" className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</p> : null}
 
-          <button type="submit" className="mt-6 inline-flex h-14 w-full items-center justify-between rounded-md bg-primary px-4 font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+          <button type="submit" className="mt-4 inline-flex h-12 w-full items-center justify-between rounded-md bg-primary px-4 font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
             Ingresar
             <ArrowRight aria-hidden="true" className="h-5 w-5" />
           </button>
