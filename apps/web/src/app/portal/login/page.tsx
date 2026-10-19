@@ -21,7 +21,7 @@ export default function PortalLogin(): React.JSX.Element {
           <p className="pt-1 text-right text-[0.65rem] font-medium leading-tight tracking-[0.16em] text-zinc-400">PORTAL DE<br />CLIENTES</p>
         </header>
 
-        <div className="relative mt-auto flex items-end justify-between gap-3 pt-8">
+        <div className="relative mt-10 flex items-end justify-between gap-3">
           <h2 className="relative z-10 text-[2rem] font-extrabold uppercase leading-[0.98] tracking-tight sm:text-4xl">
             <span className="block">DESBLOQUEÁ TU</span>
             <span className="mt-1 block -skew-x-6 text-primary">POTENCIAL.</span>
