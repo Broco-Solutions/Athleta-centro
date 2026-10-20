@@ -909,3 +909,16 @@ Estado: **CONFIRMADO / RESUELTO**.
 - Después de una cancelación confirmada por backend, la Reserva desaparece de `Mis reservas` al actualizarse la consulta.
 - La capacidad se libera mediante la lógica existente de Sala.
 - Este flujo no cancela ni modifica Turnos fijos. Las ocurrencias de Turnos fijos conservan su operación independiente.
+
+## Finanzas — Acceso directo Registrar pago — 2026-10-20
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+- `Finanzas → Ingresos` ofrece una acción principal `+ Registrar pago`, disponible con `SALA_PAYMENT_MANAGE`.
+- La acción permite buscar un Alumno activo de Sala por Nombre, Apellido o DNI, reutilizando la lista existente. No se muestra una lista completa mientras la búsqueda está vacía; se presentan hasta 10 coincidencias.
+- Puede seleccionarse tanto un Alumno sin vigencia como uno vigente, permitiendo renovación anticipada.
+- La acción `Registrar pago` de cada resultado abre el mismo contexto individual existente mediante `personId` + `action=renew`.
+- No se crea un segundo formulario ni una segunda operación de Pago: se reutiliza `SalaPaymentPanel` y su formulario Registrar renovación.
+- `Vigencia de Sala` continúa visible como herramienta de seguimiento, con su buscador independiente. `Historial de ingresos` continúa visible al abrir el selector.
+- Profesor conserva el cobro contextual desde Alumno y continúa sin acceso a Finanzas.
+- No cambian permisos, backend, modelo de datos ni vigencia.

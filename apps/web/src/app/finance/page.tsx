@@ -45,6 +45,8 @@ function FinancePageContent(): React.JSX.Element {
   const read = permissions.includes('FINANCE_OPERATIONAL_READ');
   const canCatalog = permissions.includes('PAYMENT_METHOD_CATALOG_MANAGE');
   const [search, setSearch] = useState('');
+  const [paymentRegistrationOpen, setPaymentRegistrationOpen] = useState(false);
+  const [paymentSearch, setPaymentSearch] = useState('');
   const [incomeTab, setIncomeTab] = useState<IncomeStatusTab>('pending');
   const [expenseFormOpen, setExpenseFormOpen] = useState(false);
   const [expenseConfirmation, setExpenseConfirmation] = useState('');
@@ -62,12 +64,11 @@ function FinancePageContent(): React.JSX.Element {
     return response.data.data;
   } });
   const withoutValidity = (summaryStudents.data ?? []).filter(student => !student.hasValidAccess);
-  const term = search.trim().toLocaleLowerCase('es');
-  const dniDigits = term.replace(/\D/g, '');
   const pendingStudents = (students.data ?? []).filter(student => !student.hasValidAccess);
   const paidStudents = (students.data ?? []).filter(student => student.hasValidAccess);
   const tabStudents = incomeTab === 'pending' ? pendingStudents : paidStudents;
-  const results = term ? tabStudents.filter(student => `${student.firstName} ${student.lastName}`.toLocaleLowerCase('es').includes(term) || (dniDigits && /^[\d\s.-]+$/.test(term) && student.dni.replace(/\D/g, '').includes(dniDigits))) : tabStudents;
+  const results = tabStudents.filter(student => matchesStudentSearch(student, search));
+  const paymentResults = paymentSearch.trim() ? (students.data ?? []).filter(student => matchesStudentSearch(student, paymentSearch)).slice(0, 10) : [];
   const [name, setName] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
   const [message, setMessage] = useState('');
@@ -169,6 +170,22 @@ function FinancePageContent(): React.JSX.Element {
     {view === 'summary' && (read || canCatalog) ? <>
       <details className="rounded border bg-white p-4"><summary className="cursor-pointer font-semibold">Configuración · Administrar medios de pago</summary><PaymentMethods methods={methods.data ?? []} canCatalog={canCatalog} name={name} editing={editing} message={message} onName={setName} onSave={save} onEdit={(method) => { setEditing(method.id); setName(method.name); }} onRetire={(method) => { void retire(method); }} onCancelEdit={() => { setEditing(null); setName(''); }} /></details>
     </> : null}
+    {view === 'income' && !personId ? <div className="flex flex-wrap items-center justify-between gap-3">
+      <h2 className="text-xl font-semibold">Ingresos</h2>
+      {canPay ? <Button type="button" variant={paymentRegistrationOpen ? 'secondary' : 'primary'} aria-expanded={paymentRegistrationOpen} aria-controls="payment-registration-picker" onClick={() => { setPaymentRegistrationOpen(!paymentRegistrationOpen); setPaymentSearch(''); }}>{paymentRegistrationOpen ? 'Cerrar' : '+ Registrar pago'}</Button> : null}
+    </div> : null}
+    {view === 'income' && !personId && canPay && paymentRegistrationOpen ? <section id="payment-registration-picker" aria-labelledby="payment-registration-title" className="space-y-3 rounded border bg-white p-5">
+      <h2 id="payment-registration-title" className="text-xl font-semibold">Registrar pago</h2>
+      <label className="block text-sm">Buscar alumno<input type="search" aria-label="Buscar alumno" placeholder="Nombre, apellido o DNI" value={paymentSearch} onChange={event => setPaymentSearch(event.target.value)} className="mt-1 h-10 w-full rounded border px-3" /></label>
+      {students.isPending ? <p role="status">Cargando alumnos…</p> : null}
+      {students.isError ? <p role="alert">No pudimos cargar los alumnos de Sala.</p> : null}
+      {!paymentSearch.trim() ? <p className="text-sm text-muted-foreground">Buscá un alumno por nombre, apellido o DNI.</p> : null}
+      {students.isSuccess && paymentSearch.trim() && !paymentResults.length ? <p>No se encontraron alumnos.</p> : null}
+      {students.isSuccess && paymentResults.length ? <ul>{paymentResults.map(student => <li key={student.id} className="flex flex-wrap items-center justify-between gap-3 border-b py-3 text-sm">
+        <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>DNI {student.dni} · {student.plan.name}</p><p>{student.hasValidAccess ? `Vigente hasta ${student.validUntil ? formatDate(student.validUntil) : '—'}` : 'Sin vigencia'}</p></div>
+        <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}&action=renew`}>Registrar pago</Link>
+      </li>)}</ul> : null}
+    </section> : null}
     {view === 'income' && canPay && !personId ? <section className="space-y-3 rounded border bg-white p-5">
       <h2 className="text-xl font-semibold">Vigencia de Sala</h2>
       <div className="flex gap-4" aria-label="Estado de cuotas">
@@ -271,4 +288,11 @@ function Data({ title, value, showRegisteredBy = false }: { title: string; value
     <span>{areaLabel(row.source ?? row.area)}</span><span>{row.paymentMethod?.name}</span>{showRegisteredBy ? <span className="min-w-0 break-words">Registrado por: {row.registeredBy ? `${row.registeredBy.firstName} ${row.registeredBy.lastName}` : '—'}</span> : null}<strong className="sm:text-right">{formatMoney(row.amount)}</strong>
     {row.description ? <p className={`text-muted-foreground ${showRegisteredBy ? 'sm:col-span-2 lg:col-span-6' : 'sm:col-span-5'}`}>{row.description}</p> : null}
   </div>) : <p className="mt-3 text-sm text-muted-foreground">No hay registros.</p>}</section>;
+}
+
+function matchesStudentSearch(student: { firstName: string; lastName: string; dni: string }, search: string): boolean {
+  const term = search.trim().toLocaleLowerCase('es');
+  const dniDigits = term.replace(/\D/g, '');
+  return !term || `${student.firstName} ${student.lastName}`.toLocaleLowerCase('es').includes(term)
+    || Boolean(dniDigits && /^[\d\s.-]+$/.test(term) && student.dni.replace(/\D/g, '').includes(dniDigits));
 }

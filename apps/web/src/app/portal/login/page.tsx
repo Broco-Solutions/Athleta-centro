@@ -66,14 +66,15 @@ export default function PortalLogin(): React.JSX.Element {
             </div>
 
             <div className="space-y-1">
-              <label className="block text-sm font-medium" htmlFor="portal-pin">PIN de 4 dígitos</label>
+              <label className="block text-sm font-medium" htmlFor="portal-pin">PIN</label>
               <span className="relative block">
                 <Lock aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-                <input id="portal-pin" required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="current-password" type={showPin ? 'text' : 'password'} value={pin} onChange={(event) => setPin(event.target.value)} placeholder="Ingresá tu PIN" className="h-12 w-full rounded-md border border-border bg-white pl-11 pr-12 text-base font-normal outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-ring" />
+                <input id="portal-pin" aria-describedby="portal-pin-help" required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="current-password" type={showPin ? 'text' : 'password'} value={pin} onChange={(event) => setPin(event.target.value)} placeholder="Ingresá tu PIN" className="h-12 w-full rounded-md border border-border bg-white pl-11 pr-12 text-base font-normal outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-ring" />
                 <button type="button" aria-label={showPin ? 'Ocultar PIN' : 'Mostrar PIN'} onClick={() => setShowPin((visible) => !visible)} className="absolute right-1 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   {showPin ? <EyeOff aria-hidden="true" className="h-5 w-5" /> : <Eye aria-hidden="true" className="h-5 w-5" />}
                 </button>
               </span>
+              <p id="portal-pin-help" className="text-xs font-normal text-muted-foreground">Ingresá 4 dígitos.</p>
             </div>
           </div>
 

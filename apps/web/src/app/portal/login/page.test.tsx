@@ -26,7 +26,7 @@ it('renders the mobile login composition and official Athleta logo', () => {
   expect(new URL(logo.getAttribute('src')!, 'http://localhost').searchParams.get('url')).toBe('/logo-athleta.png');
   for (const text of [
     'DESBLOQUEÁ TU', 'POTENCIAL.', 'Portal Athleta',
-    'Ingresá con tu DNI y PIN para continuar.', 'DNI', 'PIN de 4 dígitos', 'Ingresar',
+    'Ingresá con tu DNI y PIN para continuar.', 'DNI', 'PIN', 'Ingresá 4 dígitos.', 'Ingresar',
     '¿Necesitás ayuda para ingresar?', 'Consultá en recepción.', 'Desarrollado por', 'Broco Solutions',
   ]) {
     expect(screen.getByText(text)).toBeInTheDocument();
@@ -38,7 +38,11 @@ it('renders the mobile login composition and official Athleta logo', () => {
   const dniHelp = screen.getByText('Sin puntos ni espacios.');
   expect(dniHelp.previousElementSibling).toContainElement(dni);
   expect(dniHelp).toHaveClass('text-xs', 'text-muted-foreground');
-  expect(screen.getByLabelText('PIN de 4 dígitos')).toBeInTheDocument();
+  const pin = screen.getByLabelText('PIN');
+  const pinHelp = screen.getByText('Ingresá 4 dígitos.');
+  expect(pinHelp.previousElementSibling).toContainElement(pin);
+  expect(pinHelp).toHaveClass('text-xs', 'text-muted-foreground');
+  expect(pin).toHaveAttribute('aria-describedby', 'portal-pin-help');
 });
 
 it('uses a dynamic viewport height and switches to a two-column desktop composition', () => {

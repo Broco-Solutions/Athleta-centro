@@ -121,6 +121,7 @@ it.each(['renew', null])('concentrates payment context with action=%s and keeps 
   expect(screen.getByText('Precio actual: $10.000 / mes')).toBeVisible();
   expect(screen.getByRole('heading', { name: 'Historial de pagos' })).toBeVisible();
   expect(screen.queryByRole('heading', { name: 'Historial de ingresos' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '+ Registrar pago' })).not.toBeInTheDocument();
   expect(incomeReads).toBe(0);
 });
 it.each([['invalid', 400], ['missing', 404]])('keeps Finance usable when Persona is %s', async (personId, status) => {
@@ -342,6 +343,7 @@ it('does not fetch students or expose registration without SALA_PAYMENT_MANAGE',
   );
   renderPage(); await screen.findByRole('heading', { name: 'Historial de ingresos' });
   expect(screen.queryByRole('heading', { name: 'Vigencia de Sala' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '+ Registrar pago' })).not.toBeInTheDocument();
   expect(reads).toBe(0);
 });
 
@@ -499,4 +501,84 @@ it('allows expense creation without requesting or showing the expense history', 
   expect(screen.getByRole('heading', { name: 'Registrar gasto' })).toBeVisible();
   expect(screen.queryByRole('heading', { name: 'Registros de gastos' })).not.toBeInTheDocument();
   expect(historyRead).not.toHaveBeenCalled();
+});
+
+it('opens the payment picker, searches independently and links both expired and valid students to renewal', async () => {
+  navigation.search = 'view=income';
+  let reads = 0;
+  server.use(http.get('http://localhost:3000/api/sala/students', () => {
+    reads++;
+    return HttpResponse.json({ data: [
+      { id: 'student-1', firstName: 'Lucía', lastName: 'Ejemplo', dni: '88000002', plan: { name: 'Plan Base' }, hasValidAccess: false, validUntil: null },
+      { id: 'student-2', firstName: 'Pedro', lastName: 'Prueba', dni: '88000003', plan: { name: 'Plan Completo' }, hasValidAccess: true, validUntil: '2026-11-20' },
+    ] });
+  }));
+  renderPage();
+  const toggle = await screen.findByRole('button', { name: '+ Registrar pago' });
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  expect(toggle).toHaveAttribute('aria-controls', 'payment-registration-picker');
+  expect(screen.queryByRole('searchbox', { name: 'Buscar alumno' })).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Vigencia de Sala' })).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Historial de ingresos' })).toBeVisible();
+  await screen.findByText('Lucía Ejemplo');
+  const trackingSearch = screen.getByRole('searchbox', { name: 'Nombre, apellido o DNI' });
+  fireEvent.change(trackingSearch, { target: { value: 'Sin coincidencias' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Vigentes 1' }));
+  const primaryClasses = toggle.className;
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  expect(toggle.className).not.toBe(primaryClasses);
+  const picker = within(screen.getByRole('region', { name: 'Registrar pago' }));
+  expect(picker.getByText('Buscá un alumno por nombre, apellido o DNI.')).toBeVisible();
+  expect(picker.queryByRole('list')).not.toBeInTheDocument();
+  expect(picker.queryByLabelText('Fecha de cobro')).not.toBeInTheDocument();
+  const search = picker.getByRole('searchbox', { name: 'Buscar alumno' });
+  for (const value of ['lucía', 'Ejemplo', 'LUCÍA EJEMPLO', '88.000.002', '88 000 002', '88-000-002']) {
+    fireEvent.change(search, { target: { value } });
+    const row = within(picker.getByRole('listitem'));
+    expect(row.getByText('Lucía Ejemplo')).toBeVisible();
+    expect(row.getByText('DNI 88000002 · Plan Base')).toBeVisible();
+    expect(row.getByText('Sin vigencia')).toBeVisible();
+    expect(row.getByRole('link', { name: 'Registrar pago' })).toHaveAttribute('href', '/finance?view=income&personId=student-1&action=renew');
+  }
+  fireEvent.change(search, { target: { value: 'Pedro' } });
+  expect(picker.getByText('Vigente hasta 20/11/2026')).toBeVisible();
+  expect(picker.getByRole('link', { name: 'Registrar pago' })).toHaveAttribute('href', '/finance?view=income&personId=student-2&action=renew');
+  fireEvent.change(search, { target: { value: 'Alumno inexistente' } });
+  expect(picker.getByText('No se encontraron alumnos.')).toBeVisible();
+  expect(picker.queryByRole('list')).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Historial de ingresos' })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('region', { name: 'Registrar pago' })).not.toBeInTheDocument();
+  fireEvent.click(toggle);
+  expect(screen.getByRole('searchbox', { name: 'Buscar alumno' })).toHaveValue('');
+  expect(trackingSearch).toHaveValue('Sin coincidencias');
+  expect(screen.getByRole('button', { name: 'Vigentes 1' })).toHaveAttribute('aria-pressed', 'true');
+  expect(reads).toBe(1);
+});
+
+it('limits the payment picker to ten matching students', async () => {
+  navigation.search = 'view=income';
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: Array.from({ length: 12 }, (_, index) => ({ id: `student-${index}`, firstName: 'Alumno', lastName: `Sintético ${index}`, dni: `880000${index.toString().padStart(2, '0')}`, plan: { name: 'Base' }, hasValidAccess: false, validUntil: null })) })));
+  renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: '+ Registrar pago' }));
+  const picker = within(screen.getByRole('region', { name: 'Registrar pago' }));
+  fireEvent.change(picker.getByRole('searchbox'), { target: { value: 'Alumno' } });
+  await waitFor(() => expect(picker.getAllByRole('listitem')).toHaveLength(10));
+  expect(picker.queryByText('Alumno Sintético 10')).not.toBeInTheDocument();
+});
+
+it('shows safe loading and error states in the payment picker', async () => {
+  navigation.search = 'view=income';
+  let finishRequest!: () => void;
+  const pending = new Promise<void>(resolve => { finishRequest = resolve; });
+  server.use(http.get('http://localhost:3000/api/sala/students', async () => { await pending; return HttpResponse.json({ message: 'Technical detail' }, { status: 500 }); }));
+  renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: '+ Registrar pago' }));
+  const picker = within(screen.getByRole('region', { name: 'Registrar pago' }));
+  expect(picker.getByRole('status')).toHaveTextContent('Cargando alumnos…');
+  finishRequest();
+  expect(await picker.findByRole('alert')).toHaveTextContent('No pudimos cargar los alumnos de Sala.');
+  expect(picker.queryByText('Technical detail')).not.toBeInTheDocument();
 });
