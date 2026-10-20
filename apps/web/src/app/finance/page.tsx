@@ -46,14 +46,13 @@ function FinancePageContent(): React.JSX.Element {
   const canCatalog = permissions.includes('PAYMENT_METHOD_CATALOG_MANAGE');
   const [search, setSearch] = useState('');
   const [paymentRegistrationOpen, setPaymentRegistrationOpen] = useState(false);
-  const [paymentSearch, setPaymentSearch] = useState('');
   const [incomeTab, setIncomeTab] = useState<IncomeStatusTab>('pending');
   const [expenseFormOpen, setExpenseFormOpen] = useState(false);
   const [expenseConfirmation, setExpenseConfirmation] = useState('');
   const canCreateExpense = permissions.includes('EXPENSE_CREATE');
   const canReadExpenses = read || permissions.includes('EXPENSE_HISTORY_READ');
   const canPay = permissions.includes('SALA_PAYMENT_MANAGE');
-  const students = useQuery({ queryKey: ['sala', 'students'], enabled: canPay && view === 'income' && !personId, queryFn: async () => {
+  const students = useQuery({ queryKey: ['sala', 'students'], enabled: canPay && view === 'income' && !personId && paymentRegistrationOpen, queryFn: async () => {
     const response = await listSalaStudents({ credentials: 'include' });
     if (response.status >= 400) throw new Error('No pudimos cargar los alumnos de Sala.');
     return response.data.data;
@@ -68,7 +67,6 @@ function FinancePageContent(): React.JSX.Element {
   const paidStudents = (students.data ?? []).filter(student => student.hasValidAccess);
   const tabStudents = incomeTab === 'pending' ? pendingStudents : paidStudents;
   const results = tabStudents.filter(student => matchesStudentSearch(student, search));
-  const paymentResults = paymentSearch.trim() ? (students.data ?? []).filter(student => matchesStudentSearch(student, paymentSearch)).slice(0, 10) : [];
   const [name, setName] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
   const [message, setMessage] = useState('');
@@ -172,21 +170,15 @@ function FinancePageContent(): React.JSX.Element {
     </> : null}
     {view === 'income' && !personId ? <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-xl font-semibold">Ingresos</h2>
-      {canPay ? <Button type="button" variant={paymentRegistrationOpen ? 'secondary' : 'primary'} aria-expanded={paymentRegistrationOpen} aria-controls="payment-registration-picker" onClick={() => { setPaymentRegistrationOpen(!paymentRegistrationOpen); setPaymentSearch(''); }}>{paymentRegistrationOpen ? 'Cerrar' : '+ Registrar pago'}</Button> : null}
+      {canPay ? <Button type="button" variant={paymentRegistrationOpen ? 'secondary' : 'primary'} aria-expanded={paymentRegistrationOpen} aria-controls="sala-payment-registration" onClick={() => {
+        if (paymentRegistrationOpen) {
+          setPaymentRegistrationOpen(false); setSearch(''); setIncomeTab('pending');
+        } else {
+          setPaymentRegistrationOpen(true);
+        }
+      }}>{paymentRegistrationOpen ? 'Cerrar' : '+ Registrar pago'}</Button> : null}
     </div> : null}
-    {view === 'income' && !personId && canPay && paymentRegistrationOpen ? <section id="payment-registration-picker" aria-labelledby="payment-registration-title" className="space-y-3 rounded border bg-white p-5">
-      <h2 id="payment-registration-title" className="text-xl font-semibold">Registrar pago</h2>
-      <label className="block text-sm">Buscar alumno<input type="search" aria-label="Buscar alumno" placeholder="Nombre, apellido o DNI" value={paymentSearch} onChange={event => setPaymentSearch(event.target.value)} className="mt-1 h-10 w-full rounded border px-3" /></label>
-      {students.isPending ? <p role="status">Cargando alumnos…</p> : null}
-      {students.isError ? <p role="alert">No pudimos cargar los alumnos de Sala.</p> : null}
-      {!paymentSearch.trim() ? <p className="text-sm text-muted-foreground">Buscá un alumno por nombre, apellido o DNI.</p> : null}
-      {students.isSuccess && paymentSearch.trim() && !paymentResults.length ? <p>No se encontraron alumnos.</p> : null}
-      {students.isSuccess && paymentResults.length ? <ul>{paymentResults.map(student => <li key={student.id} className="flex flex-wrap items-center justify-between gap-3 border-b py-3 text-sm">
-        <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>DNI {student.dni} · {student.plan.name}</p><p>{student.hasValidAccess ? `Vigente hasta ${student.validUntil ? formatDate(student.validUntil) : '—'}` : 'Sin vigencia'}</p></div>
-        <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}&action=renew`}>Registrar pago</Link>
-      </li>)}</ul> : null}
-    </section> : null}
-    {view === 'income' && canPay && !personId ? <section className="space-y-3 rounded border bg-white p-5">
+    {view === 'income' && canPay && !personId && paymentRegistrationOpen ? <section id="sala-payment-registration" className="space-y-3 rounded border bg-white p-5">
       <h2 className="text-xl font-semibold">Vigencia de Sala</h2>
       <div className="flex gap-4" aria-label="Estado de cuotas">
         <button type="button" aria-pressed={incomeTab === 'pending'} className={tabClass(incomeTab === 'pending')} onClick={() => setIncomeTab('pending')}>Sin vigencia {pendingStudents.length}</button>
@@ -275,7 +267,7 @@ function PaymentMethods({ methods, canCatalog, name, editing, message, onName, o
   return <section className="rounded border bg-white p-5"><h2 className="font-semibold">Medios de pago</h2>{methods.map((method) => <div className="flex items-center justify-between border-b py-2 text-sm" key={method.id}><span>{method.name}</span><span className="flex items-center gap-3"><span>{method.isSelectable ? 'Disponible' : 'Retirado'}</span>{canCatalog && <>{method.isSelectable && <button className="underline" onClick={() => onEdit(method)}>Editar</button>}{method.isSelectable && <button className="underline" onClick={() => onRetire(method)}>Retirar</button>}</>}</span></div>)}{canCatalog && <form className="mt-4 flex gap-2" onSubmit={onSave}><input aria-label="Nombre del medio de pago" required value={name} onChange={(event) => onName(event.target.value)} className="h-10 flex-1 rounded border px-3" placeholder={editing ? 'Editar medio de pago' : 'Nuevo medio de pago'} /><button className="rounded bg-[#FCCC05] px-3 py-2 text-sm text-black">{editing ? 'Guardar' : 'Crear'}</button>{editing && <button type="button" className="rounded border px-3" onClick={onCancelEdit}>Cancelar</button>}</form>}{message && <p role="status" className="mt-2 text-sm">{message}</p>}</section>;
 }
 
-type Movement = { id: string; cashDate: string; source?: string; area?: string; amount: string; person?: { firstName: string; lastName: string }; category?: { name: string }; paymentMethod?: { id: string; name: string }; description?: string | null; registeredBy?: { id: string; firstName: string; lastName: string } };
+type Movement = { id: string; cashDate: string; source?: string; area?: string; amount: string; person?: { id: string; firstName: string; lastName: string }; category?: { name: string }; paymentMethod?: { id: string; name: string }; description?: string | null; registeredBy?: { id: string; firstName: string; lastName: string } };
 const areaLabel = (area?: string) => ({ SALA: 'Sala', GENERAL: 'General', CLINIC: 'Clínica' })[area ?? ''] ?? area;
 const formatDate = (value: string) => value.slice(0, 10).split('-').reverse().join('/');
 const formatMoney = (value: string) => `$ ${BigInt(value).toLocaleString('es-AR')}`;
@@ -284,7 +276,7 @@ function Data({ title, value, showRegisteredBy = false }: { title: string; value
   const rows = Array.isArray(value) ? value as Movement[] : [];
   return <section className="rounded border bg-white p-5"><div className="flex items-center justify-between gap-3"><h2 className="font-semibold">{title}</h2></div>{rows.length ? rows.map(row => <div className={`grid gap-2 border-b py-3 text-sm ${showRegisteredBy ? 'sm:grid-cols-2 lg:grid-cols-[1fr_2fr_1fr_1fr_2fr_auto]' : 'sm:grid-cols-[1fr_2fr_1fr_1fr_auto]'}`} key={`${row.source ?? row.area}-${row.id}`}>
     <time dateTime={row.cashDate.slice(0, 10)}>{formatDate(row.cashDate)}</time>
-    <span className="font-medium">{row.person ? `${row.person.firstName} ${row.person.lastName}` : row.category?.name}</span>
+    {showRegisteredBy && row.source === 'SALA' && row.person?.id ? <Link href={`/finance?view=income&personId=${row.person.id}`} className="font-medium underline">{row.person.firstName} {row.person.lastName}</Link> : <span className="font-medium">{row.person ? `${row.person.firstName} ${row.person.lastName}` : row.category?.name}</span>}
     <span>{areaLabel(row.source ?? row.area)}</span><span>{row.paymentMethod?.name}</span>{showRegisteredBy ? <span className="min-w-0 break-words">Registrado por: {row.registeredBy ? `${row.registeredBy.firstName} ${row.registeredBy.lastName}` : '—'}</span> : null}<strong className="sm:text-right">{formatMoney(row.amount)}</strong>
     {row.description ? <p className={`text-muted-foreground ${showRegisteredBy ? 'sm:col-span-2 lg:col-span-6' : 'sm:col-span-5'}`}>{row.description}</p> : null}
   </div>) : <p className="mt-3 text-sm text-muted-foreground">No hay registros.</p>}</section>;

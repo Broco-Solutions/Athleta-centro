@@ -27,7 +27,7 @@ beforeEach(() => {
     http.get('http://localhost:3000/api/finance/expense-categories', () => HttpResponse.json({ data: [{ id: 'rent', name: 'Alquiler', isSelectable: true }, { id: 'retired', name: 'Retirada', isSelectable: false }] })),
     http.get('http://localhost:3000/api/finance/executive-totals', () => HttpResponse.json({ data: { totalIncome: '100', salaIncome: '60', clinicalIncome: '40', expenses: '20', net: '80' } })),
     http.get('http://localhost:3000/api/finance/payment-methods', () => HttpResponse.json({ data: [{ id: 'cash', name: 'Efectivo', isSelectable: true }] })),
-    http.get('http://localhost:3000/api/finance/income', () => HttpResponse.json({ data: [{ id: 'income', cashDate: '2026-10-14', source: 'SALA', amount: '60', registeredBy: { id: 'collector', firstName: 'Admin', lastName: 'Test' }, person: { firstName: 'Juan', lastName: 'Pérez' }, paymentMethod: { id: 'transfer', name: 'Transferencia' } }] })),
+    http.get('http://localhost:3000/api/finance/income', () => HttpResponse.json({ data: [{ id: 'income', cashDate: '2026-10-14', source: 'SALA', amount: '60', registeredBy: { id: 'collector', firstName: 'Admin', lastName: 'Test' }, person: { id: 'person-1', firstName: 'Juan', lastName: 'Pérez' }, paymentMethod: { id: 'transfer', name: 'Transferencia' } }] })),
     http.get('http://localhost:3000/api/finance/expenses', () => HttpResponse.json({ data: [{ id: 'expense', cashDate: '2026-10-14', area: 'GENERAL', amount: '250000', category: { name: 'Alquiler' }, paymentMethod: { id: 'transfer', name: 'Transferencia' }, description: 'Local de Sala' }] })),
   );
 });
@@ -62,7 +62,13 @@ describe('Finance views', () => {
     renderPage();
     expect(await screen.findByRole('heading', { name: 'Historial de ingresos' })).toBeVisible();
     expect(await screen.findByText('14/10/2026')).toBeVisible();
-    expect(screen.getByText('Juan Pérez')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Ingresos' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '+ Registrar pago' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('heading', { name: 'Vigencia de Sala' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Sin vigencia|Vigentes/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Juan Pérez' })).toHaveAttribute('href', '/finance?view=income&personId=person-1');
+    expect(screen.queryByRole('link', { name: /Admin Test/ })).not.toBeInTheDocument();
     expect(screen.getByText('Registrado por: Admin Test')).toBeVisible();
     expect(screen.getByText('$ 60')).toBeVisible();
     expect(screen.getByText('Transferencia')).toBeVisible();
@@ -151,6 +157,7 @@ it('searches active Sala students by name, surname and formatted DNI using the e
     ] });
   }));
   renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: '+ Registrar pago' }));
   expect(await screen.findByRole('heading', { name: 'Vigencia de Sala' })).toBeVisible();
   await waitFor(() => expect(reads).toBe(1));
   expect(await screen.findByText('Lucía Ejemplo')).toBeVisible();
@@ -503,80 +510,90 @@ it('allows expense creation without requesting or showing the expense history', 
   expect(historyRead).not.toHaveBeenCalled();
 });
 
-it('opens the payment picker, searches independently and links both expired and valid students to renewal', async () => {
+it('opens and closes Sala validity while keeping history visible and defers student loading', async () => {
   navigation.search = 'view=income';
-  let reads = 0;
-  server.use(http.get('http://localhost:3000/api/sala/students', () => {
-    reads++;
-    return HttpResponse.json({ data: [
-      { id: 'student-1', firstName: 'Lucía', lastName: 'Ejemplo', dni: '88000002', plan: { name: 'Plan Base' }, hasValidAccess: false, validUntil: null },
-      { id: 'student-2', firstName: 'Pedro', lastName: 'Prueba', dni: '88000003', plan: { name: 'Plan Completo' }, hasValidAccess: true, validUntil: '2026-11-20' },
-    ] });
-  }));
+  const studentReads = vi.fn();
+  const incomeReads = vi.fn();
+  server.use(
+    http.get('http://localhost:3000/api/finance/income', () => { incomeReads(); return HttpResponse.json({ data: [] }); }),
+    http.get('http://localhost:3000/api/sala/students', () => {
+      studentReads();
+      return HttpResponse.json({ data: Array.from({ length: 6 }, (_, index) => ({
+        id: `student-${index}`, firstName: 'Alumno', lastName: `Sintético ${index}`, dni: `8800000${index}`,
+        plan: { name: 'Base' }, hasValidAccess: index >= 2, validUntil: index >= 2 ? '2026-11-20' : null,
+      })) });
+    }),
+  );
   renderPage();
   const toggle = await screen.findByRole('button', { name: '+ Registrar pago' });
+  await waitFor(() => expect(incomeReads).toHaveBeenCalled());
+  expect(studentReads).not.toHaveBeenCalled();
   expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  expect(toggle).toHaveAttribute('aria-controls', 'payment-registration-picker');
-  expect(screen.queryByRole('searchbox', { name: 'Buscar alumno' })).not.toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Vigencia de Sala' })).toBeVisible();
+  expect(toggle).toHaveAttribute('aria-controls', 'sala-payment-registration');
+  expect(toggle).toHaveClass('bg-primary');
+  expect(screen.queryByRole('heading', { name: 'Vigencia de Sala' })).not.toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Historial de ingresos' })).toBeVisible();
-  await screen.findByText('Lucía Ejemplo');
-  const trackingSearch = screen.getByRole('searchbox', { name: 'Nombre, apellido o DNI' });
-  fireEvent.change(trackingSearch, { target: { value: 'Sin coincidencias' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Vigentes 1' }));
-  const primaryClasses = toggle.className;
+
   fireEvent.click(toggle);
-  expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  expect(toggle.className).not.toBe(primaryClasses);
-  const picker = within(screen.getByRole('region', { name: 'Registrar pago' }));
-  expect(picker.getByText('Buscá un alumno por nombre, apellido o DNI.')).toBeVisible();
-  expect(picker.queryByRole('list')).not.toBeInTheDocument();
-  expect(picker.queryByLabelText('Fecha de cobro')).not.toBeInTheDocument();
-  const search = picker.getByRole('searchbox', { name: 'Buscar alumno' });
-  for (const value of ['lucía', 'Ejemplo', 'LUCÍA EJEMPLO', '88.000.002', '88 000 002', '88-000-002']) {
-    fireEvent.change(search, { target: { value } });
-    const row = within(picker.getByRole('listitem'));
-    expect(row.getByText('Lucía Ejemplo')).toBeVisible();
-    expect(row.getByText('DNI 88000002 · Plan Base')).toBeVisible();
-    expect(row.getByText('Sin vigencia')).toBeVisible();
-    expect(row.getByRole('link', { name: 'Registrar pago' })).toHaveAttribute('href', '/finance?view=income&personId=student-1&action=renew');
-  }
-  fireEvent.change(search, { target: { value: 'Pedro' } });
-  expect(picker.getByText('Vigente hasta 20/11/2026')).toBeVisible();
-  expect(picker.getByRole('link', { name: 'Registrar pago' })).toHaveAttribute('href', '/finance?view=income&personId=student-2&action=renew');
-  fireEvent.change(search, { target: { value: 'Alumno inexistente' } });
-  expect(picker.getByText('No se encontraron alumnos.')).toBeVisible();
-  expect(picker.queryByRole('list')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Cerrar' })).toHaveAttribute('aria-expanded', 'true');
+  expect(toggle).not.toHaveClass('bg-primary');
+  expect(toggle).toHaveClass('bg-white');
+  expect(screen.getByRole('heading', { name: 'Vigencia de Sala' }).closest('section')).toHaveAttribute('id', 'sala-payment-registration');
+  expect(await screen.findByRole('button', { name: 'Sin vigencia 2', pressed: true })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Vigentes 4' })).toBeVisible();
+  expect(screen.getByRole('searchbox', { name: 'Nombre, apellido o DNI' })).toBeVisible();
+  expect(screen.getAllByRole('searchbox')).toHaveLength(1);
   expect(screen.getByRole('heading', { name: 'Historial de ingresos' })).toBeVisible();
+  expect(studentReads).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Vigentes 4' }));
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Sintético 3' } });
+
   fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
-  expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  expect(screen.queryByRole('region', { name: 'Registrar pago' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Vigencia de Sala' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Historial de ingresos' })).toBeVisible();
+  expect(screen.getByRole('button', { name: '+ Registrar pago' })).toHaveAttribute('aria-expanded', 'false');
   fireEvent.click(toggle);
-  expect(screen.getByRole('searchbox', { name: 'Buscar alumno' })).toHaveValue('');
-  expect(trackingSearch).toHaveValue('Sin coincidencias');
-  expect(screen.getByRole('button', { name: 'Vigentes 1' })).toHaveAttribute('aria-pressed', 'true');
-  expect(reads).toBe(1);
+  expect(screen.getByRole('searchbox', { name: 'Nombre, apellido o DNI' })).toHaveValue('');
+  expect(screen.getByRole('button', { name: 'Sin vigencia 2', pressed: true })).toBeVisible();
 });
 
-it('limits the payment picker to ten matching students', async () => {
+it('keeps clinical income names as plain text', async () => {
   navigation.search = 'view=income';
-  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: Array.from({ length: 12 }, (_, index) => ({ id: `student-${index}`, firstName: 'Alumno', lastName: `Sintético ${index}`, dni: `880000${index.toString().padStart(2, '0')}`, plan: { name: 'Base' }, hasValidAccess: false, validUntil: null })) })));
+  server.use(http.get('http://localhost:3000/api/finance/income', () => HttpResponse.json({ data: [{
+    id: 'clinical-income', cashDate: '2026-10-14', source: 'CLINIC', amount: '100',
+    person: { id: 'patient-1', firstName: 'Nombre', lastName: 'Paciente' },
+    registeredBy: { id: 'collector', firstName: 'Admin', lastName: 'Test' },
+  }] })));
   renderPage();
-  fireEvent.click(await screen.findByRole('button', { name: '+ Registrar pago' }));
-  const picker = within(screen.getByRole('region', { name: 'Registrar pago' }));
-  fireEvent.change(picker.getByRole('searchbox'), { target: { value: 'Alumno' } });
-  await waitFor(() => expect(picker.getAllByRole('listitem')).toHaveLength(10));
-  expect(picker.queryByText('Alumno Sintético 10')).not.toBeInTheDocument();
+  expect(await screen.findByText('Nombre Paciente')).toBeVisible();
+  expect(screen.queryByRole('link', { name: 'Nombre Paciente' })).not.toBeInTheDocument();
+  expect(screen.getByText('Registrado por: Admin Test')).toBeVisible();
 });
 
-it('shows safe loading and error states in the payment picker', async () => {
+it('shows income history without payment management controls for operational readers', async () => {
+  navigation.search = 'view=income';
+  const studentReads = vi.fn();
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: ['FINANCE_OPERATIONAL_READ'] } })),
+    http.get('http://localhost:3000/api/sala/students', () => { studentReads(); return HttpResponse.json({ data: [] }); }),
+  );
+  renderPage();
+  expect(await screen.findByText('Juan Pérez')).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Historial de ingresos' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: '+ Registrar pago' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Vigencia de Sala' })).not.toBeInTheDocument();
+  expect(studentReads).not.toHaveBeenCalled();
+});
+
+it('shows safe loading and error states in Sala validity', async () => {
   navigation.search = 'view=income';
   let finishRequest!: () => void;
   const pending = new Promise<void>(resolve => { finishRequest = resolve; });
   server.use(http.get('http://localhost:3000/api/sala/students', async () => { await pending; return HttpResponse.json({ message: 'Technical detail' }, { status: 500 }); }));
   renderPage();
   fireEvent.click(await screen.findByRole('button', { name: '+ Registrar pago' }));
-  const picker = within(screen.getByRole('region', { name: 'Registrar pago' }));
+  const picker = within(screen.getByRole('heading', { name: 'Vigencia de Sala' }).closest('section')!);
   expect(picker.getByRole('status')).toHaveTextContent('Cargando alumnos…');
   finishRequest();
   expect(await picker.findByRole('alert')).toHaveTextContent('No pudimos cargar los alumnos de Sala.');

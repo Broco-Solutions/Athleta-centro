@@ -922,3 +922,24 @@ Estado: **CONFIRMADO / RESUELTO**.
 - `Vigencia de Sala` continúa visible como herramienta de seguimiento, con su buscador independiente. `Historial de ingresos` continúa visible al abrir el selector.
 - Profesor conserva el cobro contextual desde Alumno y continúa sin acceso a Finanzas.
 - No cambian permisos, backend, modelo de datos ni vigencia.
+
+
+## Finanzas — Ingresos centrado en Historial y Registro desplegable — 2026-10-20
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+Esta decisión sustituye el comportamiento visual y la selección de Alumno de
+`Finanzas — Acceso directo Registrar pago — 2026-10-20`; la decisión anterior
+se conserva como antecedente.
+
+- La vista principal `Finanzas → Ingresos` muestra el Historial de ingresos como contenido principal.
+- `Vigencia de Sala` no se muestra permanentemente: `+ Registrar pago` despliega ese mismo bloque.
+- El bloque conserva `Sin vigencia`, `Vigentes`, la búsqueda por Nombre/Apellido/DNI y las acciones actuales `Renovar` / `Ver pagos`.
+- No existe un segundo buscador independiente para `Registrar pago` ni un límite adicional de 10 coincidencias.
+- Los Alumnos se consultan al abrir el flujo, evitando esa carga mientras permanece cerrado. La consulta del Resumen no cambia.
+- El Historial permanece visible aunque el flujo de registro esté abierto. Al cerrar, se limpia la búsqueda, se vuelve a `Sin vigencia` y queda únicamente el Historial.
+- En Ingresos de Sala, el nombre del Alumno es un link a `/finance?view=income&personId=<id>`.
+- Ese link abre el contexto y el Historial de pagos del Alumno sin abrir automáticamente una renovación; no agrega `action=renew`.
+- `Registrado por` continúa mostrando al usuario que cargó el movimiento y no representa al Alumno ni enlaza a su contexto.
+- Los Ingresos clínicos mantienen el nombre de la Persona como texto plano y no reciben un link de Sala.
+- No cambian backend, permisos, vigencia ni operación de Pago. Se reutiliza el contexto individual y `SalaPaymentPanel` existentes.
