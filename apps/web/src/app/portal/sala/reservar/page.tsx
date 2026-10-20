@@ -2,12 +2,13 @@
 import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { AlertTriangle, ArrowLeft, CalendarDays, Check, Circle, Minus } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, Circle, Minus } from 'lucide-react';
 import { PortalFrame, portalFetch, formatTime, today, bookingError } from '../../portal-ui';
 
 type Service = { id: string; name: string; durationMinutes: number };
 type Slot = { scheduleSlotId: string; startTime: string; endTime: string; available: boolean; date: string };
 type StartOption = Slot & { key: string };
+type ReservationConfirmation = { serviceName: string; date: string; startTime: string; endTime: string };
 const addDays = (date: string, days: number): string => {
   const value = new Date(date + 'T12:00:00Z');
   value.setUTCDate(value.getUTCDate() + days);
@@ -50,7 +51,8 @@ export default function PortalReserve(): React.JSX.Element {
     return () => clearInterval(timer);
   }, []);
   const [calendar, setCalendar] = useState(false);
-  const [message, setMessage] = useState('');
+  const [reservationConfirmation, setReservationConfirmation] = useState<ReservationConfirmation | null>(null);
+  const [reservationError, setReservationError] = useState('');
   const services = useQuery({ queryKey: ['portal', 'sala', 'services'], queryFn: () => portalFetch<Service[]>('sala/services') });
   const sala = useQuery({ queryKey: ['portal', 'sala'], queryFn: () => portalFetch<{ validity: { hasValidAccess: boolean; validUntil: string | null } }>('sala') });
   const validUntil = sala.data?.validity.validUntil;
@@ -73,25 +75,28 @@ export default function PortalReserve(): React.JSX.Element {
   const reserve = useMutation({
     mutationFn: async () => {
       if (!selectedSlot || !selectedService || !hasValidity || date > maxDate) throw new Error('SLOT_REQUIRED');
+      const confirmation = { serviceName: selectedService.name, date, startTime: selectedSlot.startTime, endTime: selectedSlot.endTime };
       const token = (await portalFetch<{ csrfToken: string }>('auth/session')).csrfToken;
-      return portalFetch('sala/reservations', {
+      await portalFetch('sala/reservations', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-csrf-token': token },
         body: JSON.stringify({ date, scheduleSlotId: selectedSlot.scheduleSlotId, serviceTypeId: service, startTime: selectedSlot.startTime }),
       });
+      return confirmation;
     },
-    onSuccess: async () => {
-      setMessage('Horario reservado.'); setSelection('');
+    onSuccess: async confirmation => {
+      setReservationConfirmation(confirmation);
+      setSelection('');
       await Promise.all([client.invalidateQueries({ queryKey: ['portal', 'sala'] }), client.invalidateQueries({ queryKey: ['portal', 'sala', 'availability'] })]);
     },
     onError: async error => {
-      setMessage(bookingError(error));
+      setReservationError(bookingError(error));
       await client.invalidateQueries({ queryKey: ['portal', 'sala', 'availability'] });
     },
   });
   const chooseDate = (value: string): void => {
     if (!value || value < currentDate || value > maxDate) return;
-    setDate(value); setSelection(''); setMessage('');
+    setDate(value); setSelection(''); setReservationError('');
   };
   const quickDates = [0, 1, 2].map(offset => addDays(currentDate, offset));
   const hasServices = Boolean(services.data?.length);
@@ -117,9 +122,9 @@ export default function PortalReserve(): React.JSX.Element {
     </section>
   </PortalFrame>;
   return <PortalFrame title="Reservar en Sala" subtitle="Elegí cuándo querés venir a entrenar." backToHome>
-    <div className="max-w-4xl space-y-8 rounded-xl border bg-surface p-5 sm:p-8">
+    {reservationConfirmation ? <section className="w-full max-w-2xl rounded-lg border bg-white p-5 sm:p-6" aria-labelledby="reservation-confirmation-title"><div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 shrink-0 text-green-700" size={22} aria-hidden="true"/><div><h2 id="reservation-confirmation-title" className="text-xl font-semibold">Reserva confirmada</h2><p className="mt-1 text-sm text-muted-foreground">Tu lugar quedó reservado.</p></div></div><dl className="mt-5 grid gap-3 border-t pt-4 text-sm sm:grid-cols-3"><div><dt className="text-muted-foreground">Servicio</dt><dd className="mt-1 font-medium">{reservationConfirmation.serviceName}</dd></div><div><dt className="text-muted-foreground">Fecha</dt><dd className="mt-1 font-medium capitalize">{dateLabel(reservationConfirmation.date, { weekday: 'long' })} {shortDate(reservationConfirmation.date)}</dd></div><div><dt className="text-muted-foreground">Hora</dt><dd className="mt-1 font-medium">{reservationConfirmation.startTime} – {reservationConfirmation.endTime}</dd></div></dl><Link href="/portal/sala" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ArrowLeft aria-hidden="true" size={16}/>Volver a Sala</Link></section> : <div className="max-w-4xl space-y-8 rounded-xl border bg-surface p-5 sm:p-8">
       <Step number={1} title="Elegí el servicio">
-        {services.isLoading ? <p role="status" className="text-sm text-muted-foreground">Cargando servicios…</p> : services.isError ? <p role="alert">No pudimos cargar los servicios. Intentá nuevamente.</p> : !hasServices ? <p className="text-sm text-muted-foreground">Tu Plan actual no tiene servicios disponibles. Consultá con Athleta.</p> : <div className="grid gap-3 sm:grid-cols-2">{services.data?.map(item => <button type="button" key={item.id} aria-label={item.name + ' ' + item.durationMinutes + ' min'} aria-pressed={service === item.id} disabled={reserve.isPending} className={choiceClass(service === item.id)} onClick={() => { setServiceId(item.id); setSelection(''); setMessage(''); }}><span><span className="block font-medium">{item.name}</span><span className="text-sm text-muted-foreground">{item.durationMinutes} min</span></span>{service === item.id ? <Check size={20} className="text-primary-hover" aria-hidden="true" /> : null}</button>)}</div>}
+        {services.isLoading ? <p role="status" className="text-sm text-muted-foreground">Cargando servicios…</p> : services.isError ? <p role="alert">No pudimos cargar los servicios. Intentá nuevamente.</p> : !hasServices ? <p className="text-sm text-muted-foreground">Tu Plan actual no tiene servicios disponibles. Consultá con Athleta.</p> : <div className="grid gap-3 sm:grid-cols-2">{services.data?.map(item => <button type="button" key={item.id} aria-label={item.name + ' ' + item.durationMinutes + ' min'} aria-pressed={service === item.id} disabled={reserve.isPending} className={choiceClass(service === item.id)} onClick={() => { setServiceId(item.id); setSelection(''); setReservationError(''); }}><span><span className="block font-medium">{item.name}</span><span className="text-sm text-muted-foreground">{item.durationMinutes} min</span></span>{service === item.id ? <Check size={20} className="text-primary-hover" aria-hidden="true" /> : null}</button>)}</div>}
       </Step>
       <Step number={2} title="Elegí la fecha">
         <div className="grid grid-cols-3 gap-2 sm:gap-3">{quickDates.map((value, index) => <button type="button" key={value} aria-label={(index === 0 ? 'Hoy' : index === 1 ? 'Mañana' : dateLabel(value, { weekday: 'long' })) + ' ' + shortDate(value) + ' ' + dateLabel(value, { weekday: 'long' })} disabled={!hasServices || reserve.isPending || value > maxDate} aria-pressed={date === value} className={choiceClass(date === value) + ' relative justify-center px-2'} onClick={() => chooseDate(value)}><span className="text-center"><span className="block text-sm font-medium">{index === 0 ? 'Hoy' : index === 1 ? 'Mañana' : dateLabel(value, { weekday: 'long' })}</span><strong className="my-1 block">{shortDate(value)}</strong><span className="block text-xs capitalize text-muted-foreground">{dateLabel(value, { weekday: 'long' })}</span></span>{date === value ? <Check size={12} aria-hidden="true" className="absolute right-2 top-2 text-primary-hover" /> : null}</button>)}</div>
@@ -128,13 +133,13 @@ export default function PortalReserve(): React.JSX.Element {
       </Step>
       <Step number={3} title="Elegí el horario">
         <div><p className="text-sm capitalize">{date === currentDate ? 'Hoy, ' : ''}{dateLabel(date, { weekday: 'long' }) + ' ' + shortDate(date)}</p>{selectedService ? <p className="mt-1 text-sm text-muted-foreground">{selectedService.name} · {selectedService.durationMinutes} min</p> : null}</div>
-        {!selectedService ? <p className="text-sm text-muted-foreground">Elegí un servicio para consultar los horarios.</p> : availability.isLoading ? <p role="status" className="text-sm text-muted-foreground">Cargando horarios…</p> : availability.isError ? <p role="alert">No pudimos cargar los horarios. Intentá nuevamente.</p> : options.length ? <div className="grid gap-3 md:grid-cols-3">{options.map(item => <button type="button" key={item.key} aria-label={item.startTime + '–' + item.endTime + ' ' + (item.available ? 'Hay lugar' : 'Sin lugar')} disabled={!item.available || reserve.isPending} aria-pressed={selectedSlot?.key === item.key} className={choiceClass(selectedSlot?.key === item.key)} onClick={() => { setSelection(item.key); setMessage(''); }}><span><strong className="block text-sm">{item.startTime}–{item.endTime}</strong><span className="text-xs text-muted-foreground">{item.available ? 'Hay lugar' : 'Sin lugar'}</span></span>{!item.available ? <Minus size={18} aria-hidden="true" /> : selectedSlot?.key === item.key ? <Check size={18} aria-hidden="true" className="text-primary-hover" /> : <Circle size={16} aria-hidden="true" className="text-muted-foreground" />}</button>)}</div> : <p className="text-sm text-muted-foreground">No hay horarios disponibles para esta fecha.</p>}
+        {!selectedService ? <p className="text-sm text-muted-foreground">Elegí un servicio para consultar los horarios.</p> : availability.isLoading ? <p role="status" className="text-sm text-muted-foreground">Cargando horarios…</p> : availability.isError ? <p role="alert">No pudimos cargar los horarios. Intentá nuevamente.</p> : options.length ? <div className="grid gap-3 md:grid-cols-3">{options.map(item => <button type="button" key={item.key} aria-label={item.startTime + '–' + item.endTime + ' ' + (item.available ? 'Hay lugar' : 'Sin lugar')} disabled={!item.available || reserve.isPending} aria-pressed={selectedSlot?.key === item.key} className={choiceClass(selectedSlot?.key === item.key)} onClick={() => { setSelection(item.key); setReservationError(''); }}><span><strong className="block text-sm">{item.startTime}–{item.endTime}</strong><span className="text-xs text-muted-foreground">{item.available ? 'Hay lugar' : 'Sin lugar'}</span></span>{!item.available ? <Minus size={18} aria-hidden="true" /> : selectedSlot?.key === item.key ? <Check size={18} aria-hidden="true" className="text-primary-hover" /> : <Circle size={16} aria-hidden="true" className="text-muted-foreground" />}</button>)}</div> : <p className="text-sm text-muted-foreground">No hay horarios disponibles para esta fecha.</p>}
       </Step>
       <Step number={4} title="Revisá y reservá">
         <div className="rounded-lg border bg-surface-muted p-4"><h3 className="text-sm font-semibold">Tu selección</h3>{selectedService ? <p className="mt-2 text-sm">{selectedService.name} · {selectedService.durationMinutes} min</p> : null}<p className="mt-1 text-sm capitalize text-muted-foreground">{dateLabel(date, { weekday: 'long' }) + ' ' + shortDate(date)}{selectedSlot ? ' · ' + selectedSlot.startTime + '–' + selectedSlot.endTime : ' · Elegí un horario'}</p></div>
         <button type="button" className="min-h-12 w-full rounded-lg bg-primary px-5 font-semibold hover:bg-primary-hover disabled:opacity-50 sm:w-auto" disabled={!selectedService || !selectedSlot || reserve.isPending} onClick={() => reserve.mutate()}>{reserve.isPending ? 'Reservando…' : 'Reservar en Sala'}</button>
-        {message ? <p role={reserve.isError ? 'alert' : 'status'} className="text-sm">{message}</p> : null}
+        {reservationError ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{reservationError}</p> : null}
       </Step>
-    </div>
+    </div>}
   </PortalFrame>;
 }

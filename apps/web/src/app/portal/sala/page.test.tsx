@@ -26,40 +26,24 @@ afterEach(() => { server.resetHandlers(); vi.restoreAllMocks(); });
 afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 function renderPortalSala(): void { render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><PortalSala /></QueryClientProvider>); }
 
-it('shows exercise names, descriptions and only populated routine details', async () => {
+it('shows a routine summary and links to its read-only detail page', async () => {
   server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: {
     reservations: [], fixed: [], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' },
     routine: { days: [{ id: 'day-1', position: 1, name: null, exercises: [
       { exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla', description: 'Descenso controlado' }, series: '3', repetitions: '10', duration: null, load: '40 kg', rest: '60 s', notes: 'Controlar técnica' },
       { exerciseDefinitionId: 'plank', exerciseDefinition: { name: 'Plancha', description: null }, series: '3', repetitions: null, duration: '45 s', load: null, rest: '30 s', notes: null },
       { exerciseDefinitionId: 'mobility', exerciseDefinition: { name: 'Movilidad', description: '' }, series: '', repetitions: '', duration: '', load: '', rest: '', notes: '' },
-    ] }] },
+    ] }, { id: 'day-2', position: 2, name: 'Día 2', exercises: [{ exerciseDefinitionId: 'row', exerciseDefinition: { name: 'Remo', description: null }, series: '4', repetitions: '8' }] }] },
   } })));
   renderPortalSala();
-  await screen.findByRole('heading', { name: 'Día 1' });
+  await screen.findByRole('link', { name: 'Ver rutina' });
   const routine = within(document.getElementById('rutina')!);
   expect(routine.getByRole('heading', { name: 'Mi rutina' })).toBeInTheDocument();
-  expect(routine.getByText('1 día · 3 ejercicios')).toBeInTheDocument();
-  expect(routine.getByRole('heading', { name: 'Día 1' })).toBeInTheDocument();
-  expect(routine.getByText('3 ejercicios')).toBeInTheDocument();
-  const exercises = routine.getAllByRole('listitem');
-  expect(exercises).toHaveLength(3);
-  const squat = within(exercises[0]!);
-  expect(squat.getByText('Sentadilla')).toBeInTheDocument();
-  for (const detail of ['3 series', '10 rep.', 'Carga 40 kg', 'Descanso 60 s']) {
-    expect(squat.getByText((content) => content.split(' · ').includes(detail))).toBeInTheDocument();
-  }
-  expect(squat.getByText('Descenso controlado')).toBeInTheDocument();
-  expect(squat.getByText('Observación: Controlar técnica')).toBeInTheDocument();
-  const plank = within(exercises[1]!);
-  expect(plank.getByText('Plancha')).toBeInTheDocument();
-  for (const detail of ['Tiempo 45 s', 'Descanso 30 s']) {
-    expect(plank.getByText((content) => content.split(' · ').includes(detail))).toBeInTheDocument();
-  }
-  expect(exercises[2]).toHaveTextContent(/^Movilidad$/);
-  expect(document.getElementById('rutina')!.textContent).not.toMatch(/undefined|null|—|Sin informar|Sin parámetros adicionales/);
-  expect(routine.queryByRole('button')).not.toBeInTheDocument();
-  expect(routine.queryByRole('textbox')).not.toBeInTheDocument();
+  expect(routine.getByText('2 días · 4 ejercicios')).toBeInTheDocument();
+  expect(routine.getByRole('link', { name: 'Ver rutina' })).toHaveAttribute('href', '/portal/sala/rutina');
+  expect(routine.queryByText('Sentadilla')).not.toBeInTheDocument();
+  expect(routine.queryByText('Controlar técnica')).not.toBeInTheDocument();
+  expect(routine.queryByRole('list')).not.toBeInTheDocument();
 });
 
 it('shows the empty state when there is no active routine', async () => {
@@ -73,6 +57,7 @@ it('shows the empty state when there is no active routine', async () => {
   expect(routine.getByText('No hay una rutina activa.')).toBeInTheDocument();
   expect(routine.queryByRole('list')).not.toBeInTheDocument();
   expect(routine.queryByRole('button')).not.toBeInTheDocument();
+  expect(routine.queryByRole('link', { name: 'Ver rutina' })).not.toBeInTheDocument();
 });
 
 function fixedHandlers(state: { weekday: string; startTime: string; active: boolean }, onChange?: (body: Record<string, string>) => void, onAvailability?: (url: string) => void): void {
@@ -279,14 +264,25 @@ it('restores reservation steps, date bounds and ongoing/future starts using the 
   fireEvent.change(within(dialog).getByLabelText('Fecha de la reserva'), { target: { value: '2026-10-17' } });
   expect(await within(dialog).findByRole('button', { name: '09:00–09:45 Hay lugar' })).toBeInTheDocument();
 });
-it('creates an ongoing reservation through the existing endpoint with only the selected fields', async () => {
+it('confirms an ongoing reservation with its selected details and returns to the refreshed Sala page', async () => {
   let submitted: Record<string, string> | undefined;
-  server.use(http.post('http://localhost:3000/api/portal/sala/reservations', async ({ request }) => { submitted = await request.json() as Record<string, string>; return HttpResponse.json({ data: {} }); }));
+  let reservationCreated = false;
+  server.use(
+    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: reservationCreated ? [{ id: 'created', date: '2026-10-16', startTime: '09:30', serviceType: { name: 'Rehabilitación' } }] : [], fixed: [], routine: null, evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
+    http.post('http://localhost:3000/api/portal/sala/reservations', async ({ request }) => { submitted = await request.json() as Record<string, string>; reservationCreated = true; return HttpResponse.json({ data: {} }); }),
+  );
   const dialog = await openReservation();
   fireEvent.click(await within(dialog).findByRole('button', { name: '09:30–10:15 Hay lugar' }));
   fireEvent.click(within(dialog).getByRole('button', { name: 'Confirmar reserva' }));
-  expect(await screen.findByText('Reserva creada.')).toBeInTheDocument();
+  expect(await within(dialog).findByRole('heading', { name: 'Reserva confirmada' })).toBeInTheDocument();
+  expect(within(dialog).getByText('Tu lugar quedó reservado.')).toBeInTheDocument();
+  expect(within(dialog).getByText('Rehabilitación')).toBeInTheDocument();
+  expect(within(dialog).getByText(/viernes 16\/10/i)).toBeInTheDocument();
+  expect(within(dialog).getByText('09:30 – 10:15')).toBeInTheDocument();
   expect(submitted).toEqual({ date: '2026-10-16', scheduleSlotId: 'window', serviceTypeId: 'service', startTime: '09:30' });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Volver a Sala' }));
+  expect(screen.queryByRole('dialog', { name: 'Reserva puntual' })).not.toBeInTheDocument();
+  expect(await screen.findByText('Rehabilitación · Reservado')).toBeInTheDocument();
 });
 it('expires a selected start automatically below 20 minutes and refreshes the clock when reopening', async () => {
   let availabilityRequests = 0;
@@ -328,8 +324,8 @@ it('expires a selected start automatically below 20 minutes and refreshes the cl
   }
 });
 it.each([
-  ['PORTAL_SALA_TIME_PASSED', 'Ese horario ya no admite reservas porque quedan menos de 20 minutos de actividad. Elegí otro horario.'],
-  ['PORTAL_SALA_VALIDITY_REQUIRED', 'Necesitás tener vigencia de Sala para reservar esa fecha.'],
+  ['PORTAL_SALA_TIME_PASSED', 'Ese horario ya no admite nuevas reservas. Elegí otro horario.'],
+  ['PORTAL_SALA_VALIDITY_REQUIRED', 'Tu cuota no está vigente para esta fecha. Consultá en recepción para renovarla.'],
 ])('shows the reservation rejection %s', async (code, message) => {
   server.use(http.post('http://localhost:3000/api/portal/sala/reservations', () => HttpResponse.json({ code, message: 'Rechazado' }, { status: 400 })));
   const dialog = await openReservation();

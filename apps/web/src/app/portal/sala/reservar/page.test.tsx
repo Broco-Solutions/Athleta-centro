@@ -177,27 +177,34 @@ it('preserves the exact payload and CSRF token, refreshes queries and retains th
   const invalidate = vi.spyOn(client, 'invalidateQueries');
   fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
   fireEvent.click(screen.getByRole('button', { name: 'Reservar en Sala' }));
-  expect(await screen.findByText('Horario reservado.')).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Reserva confirmada' })).toBeInTheDocument();
+  expect(screen.getByText('Tu lugar quedó reservado.')).toBeInTheDocument();
+  expect(screen.getByText('Musculación')).toBeInTheDocument();
+  expect(screen.getByText(/jueves 08\/10/i)).toBeInTheDocument();
+  expect(screen.getByText('17:00 – 18:00')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Volver a Sala' })).toHaveAttribute('href', '/portal/sala');
+  expect(screen.queryByRole('button', { name: 'Reservar en Sala' })).not.toBeInTheDocument();
   expect(submitted).toEqual({ date: '2026-10-08', scheduleSlotId: 'window', serviceTypeId: 'muscle', startTime: '17:00' });
   expect(csrfHeader).toBe('csrf');
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ['portal', 'sala'] });
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ['portal', 'sala', 'availability'] });
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeDisabled());
-  expect(screen.getByRole('button', { name: 'Musculación 60 min' })).toHaveAttribute('aria-pressed', 'true');
-  expect(screen.getByRole('button', { name: /Hoy 08\/10/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.queryByRole('button', { name: 'Musculación 60 min' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Hoy 08\/10/ })).not.toBeInTheDocument();
 });
 
 it.each([
-  ['PORTAL_SALA_VALIDITY_REQUIRED', 'Necesitás tener vigencia de Sala para reservar esa fecha.'],
-  ['SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED', 'No hay lugar disponible para ese horario.'],
-  ['SALA_CAPACITY_FULL', 'No hay lugar disponible para ese horario.'],
-  ['SALA_RESERVATION_DUPLICATE', 'Ya tenés una actividad reservada en ese horario. Elegí otro horario.'],
-  ['SALA_BOOKING_OVERLAP', 'Ya tenés una actividad reservada en ese horario. Elegí otro horario.'],
-  ['SALA_OCCURRENCE_DUPLICATE', 'Ya tenés una actividad reservada en ese horario. Elegí otro horario.'],
-  ['SALA_SCHEDULE_CLOSED', 'El horario está cerrado para esa fecha.'],
-  ['SALA_SERVICE_TYPE_INVALID', 'El servicio no está disponible para tu Plan.'],
-  ['SALA_SERVICE_NOT_INCLUDED_IN_PLAN', 'El servicio no está disponible para tu Plan.'],
-  ['SALA_REQUIRED_SLOTS_UNAVAILABLE', 'El servicio no entra completo en ese horario.'],
+  ['PORTAL_SALA_TIME_PASSED', 'Ese horario ya no admite nuevas reservas. Elegí otro horario.'],
+  ['PORTAL_SALA_VALIDITY_REQUIRED', 'Tu cuota no está vigente para esta fecha. Consultá en recepción para renovarla.'],
+  ['PORTAL_SALA_PAYMENT_REQUIRED', 'Tu cuota no está vigente para esta fecha. Consultá en recepción para renovarla.'],
+  ['SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED', 'Ese horario acaba de quedarse sin lugar. Elegí otro horario disponible.'],
+  ['SALA_CAPACITY_FULL', 'Ese horario acaba de quedarse sin lugar. Elegí otro horario disponible.'],
+  ['SALA_RESERVATION_DUPLICATE', 'Ya tenés una actividad reservada en ese horario. Elegí otro.'],
+  ['SALA_BOOKING_OVERLAP', 'Ya tenés una actividad reservada en ese horario. Elegí otro.'],
+  ['SALA_OCCURRENCE_DUPLICATE', 'Ya tenés una actividad reservada en ese horario. Elegí otro.'],
+  ['SALA_SCHEDULE_CLOSED', 'Athleta cerró ese horario para esta fecha. Elegí otro horario.'],
+  ['SALA_SERVICE_TYPE_INVALID', 'Ese servicio no está disponible con tu Plan actual. Elegí otro servicio o consultá en recepción.'],
+  ['SALA_SERVICE_NOT_INCLUDED_IN_PLAN', 'Ese servicio no está disponible con tu Plan actual. Elegí otro servicio o consultá en recepción.'],
+  ['SALA_REQUIRED_SLOTS_UNAVAILABLE', 'Ese horario ya no permite completar la duración del servicio. Elegí otro horario.'],
 ])('preserves the functional message for %s and refreshes availability after rejection', async (code, expected) => {
   server.use(http.post(base + 'sala/reservations', () => HttpResponse.json({ code, message: 'Conflict' }, { status: 409 })));
   renderReserve();
@@ -205,6 +212,15 @@ it.each([
   fireEvent.click(screen.getByRole('button', { name: 'Reservar en Sala' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(expected);
   await waitFor(() => expect(availabilityCalls).toBeGreaterThan(1));
+});
+
+it('uses a safe fallback for an unknown reservation error', async () => {
+  server.use(http.post(base + 'sala/reservations', () => HttpResponse.json({ code: 'UNEXPECTED', message: 'Internal database detail' }, { status: 500 })));
+  renderReserve();
+  fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Reservar en Sala' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos completar la operación. Tus datos no fueron modificados. Intentá nuevamente.');
+  expect(screen.queryByText('Internal database detail')).not.toBeInTheDocument();
 });
 
 it('keeps the selected date when changing service and clears the previous time', async () => {
@@ -230,7 +246,7 @@ it('shows Reservando and prevents another submit while the mutation is pending',
   fireEvent.click(screen.getByRole('button', { name: 'Reservar en Sala' }));
   expect(await screen.findByRole('button', { name: 'Reservando…' })).toBeDisabled();
   finish();
-  expect(await screen.findByText('Horario reservado.')).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Reserva confirmada' })).toBeInTheDocument();
 });
 
 it('turns a stale selected time into a disabled full time after a capacity rejection', async () => {
@@ -245,7 +261,7 @@ it('turns a stale selected time into a disabled full time after a capacity rejec
   renderReserve();
   fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
   fireEvent.click(screen.getByRole('button', { name: 'Reservar en Sala' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('No hay lugar disponible para ese horario.');
+  expect(await screen.findByRole('alert')).toHaveTextContent('Ese horario acaba de quedarse sin lugar. Elegí otro horario disponible.');
   expect(await screen.findByRole('button', { name: '17:00–18:00 Sin lugar' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeDisabled();
 });

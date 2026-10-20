@@ -86,13 +86,13 @@ export function PortalFrame({ title, subtitle, action, backToHome = false, child
 }
 
 export function bookingError(error: unknown): string {
-  if (!(error instanceof PortalApiError)) return 'No pudimos reservar ese horario. Intentá nuevamente.';
-  if (error.code === 'PORTAL_SALA_TIME_PASSED') return 'Ese horario ya no admite reservas porque quedan menos de 20 minutos de actividad. Elegí otro horario.';
-  if (error.code === 'PORTAL_SALA_VALIDITY_REQUIRED' || error.code === 'PORTAL_SALA_PAYMENT_REQUIRED') return 'Necesitás tener vigencia de Sala para reservar esa fecha.';
-  if (error.code === 'SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED' || error.code === 'SALA_CAPACITY_FULL') return 'No hay lugar disponible para ese horario.';
-  if (error.code === 'SALA_RESERVATION_DUPLICATE' || error.code === 'SALA_BOOKING_OVERLAP' || error.code === 'SALA_OCCURRENCE_DUPLICATE') return 'Ya tenés una actividad reservada en ese horario. Elegí otro horario.';
-  if (error.code === 'SALA_SCHEDULE_CLOSED') return 'El horario está cerrado para esa fecha.';
-  if (error.code === 'SALA_SERVICE_TYPE_INVALID' || error.code === 'SALA_SERVICE_NOT_INCLUDED_IN_PLAN') return 'El servicio no está disponible para tu Plan.';
-  if (error.code === 'SALA_REQUIRED_SLOTS_UNAVAILABLE') return 'El servicio no entra completo en ese horario.';
-  return error.message || 'No pudimos reservar ese horario. Intentá nuevamente.';
+  if (!(error instanceof PortalApiError)) return 'No pudimos completar la operación. Tus datos no fueron modificados. Intentá nuevamente.';
+  if (error.code === 'PORTAL_SALA_TIME_PASSED') return 'Ese horario ya no admite nuevas reservas. Elegí otro horario.';
+  if (error.code === 'PORTAL_SALA_VALIDITY_REQUIRED' || error.code === 'PORTAL_SALA_PAYMENT_REQUIRED') return 'Tu cuota no está vigente para esta fecha. Consultá en recepción para renovarla.';
+  if (error.code === 'SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED' || error.code === 'SALA_CAPACITY_FULL') return 'Ese horario acaba de quedarse sin lugar. Elegí otro horario disponible.';
+  if (error.code === 'SALA_RESERVATION_DUPLICATE' || error.code === 'SALA_BOOKING_OVERLAP' || error.code === 'SALA_OCCURRENCE_DUPLICATE') return 'Ya tenés una actividad reservada en ese horario. Elegí otro.';
+  if (error.code === 'SALA_SCHEDULE_CLOSED') return 'Athleta cerró ese horario para esta fecha. Elegí otro horario.';
+  if (error.code === 'SALA_SERVICE_TYPE_INVALID' || error.code === 'SALA_SERVICE_NOT_INCLUDED_IN_PLAN') return 'Ese servicio no está disponible con tu Plan actual. Elegí otro servicio o consultá en recepción.';
+  if (error.code === 'SALA_REQUIRED_SLOTS_UNAVAILABLE') return 'Ese horario ya no permite completar la duración del servicio. Elegí otro horario.';
+  return 'No pudimos completar la operación. Tus datos no fueron modificados. Intentá nuevamente.';
 }
