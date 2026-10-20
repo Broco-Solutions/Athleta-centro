@@ -199,6 +199,19 @@ async function fillExpense(description = '') {
   await waitFor(() => expect(expenseSubmit()).toBeEnabled());
 }
 
+it('uses the primary style for registering an expense and secondary when closing the form', async () => {
+  navigation.search = 'view=expenses'; renderPage();
+  const register = await screen.findByRole('button', { name: '+ Registrar gasto' });
+  expect(register).toHaveClass('bg-primary');
+  expect(register).toHaveAttribute('aria-expanded', 'false');
+  expect(register).toHaveAttribute('aria-controls', 'expense-registration-form');
+  fireEvent.click(register);
+  const close = screen.getByRole('button', { name: 'Cerrar formulario' });
+  expect(close).not.toHaveClass('bg-primary');
+  expect(close).toHaveClass('bg-white');
+  expect(close).toHaveAttribute('aria-expanded', 'true');
+});
+
 it('defaults expenses to the operational day and Sala, limits areas and validates required fields', async () => {
   navigation.search = 'view=expenses'; renderPage();
   await openExpenseForm();

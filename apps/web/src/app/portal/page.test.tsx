@@ -339,11 +339,60 @@ it.each([
   fireEvent.click(within(dialog).getByRole('button', { name: 'Confirmar reserva' }));
   expect(await within(dialog).findByRole('alert')).toHaveTextContent(message);
 });
-it('shows a cancelled future reservation without a cancel action', async () => {
-  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [{ id: 'cancelled', date: '2026-10-20', startTime: '09:30', cancelledAt: '2026-10-16T12:00:00Z', serviceType: { name: 'Rehabilitación' } }], fixed: [], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })));
+it('shows only the earliest active reservation even when future reservations arrive unordered', async () => {
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: {
+    reservations: [
+      { id: 'cancelled', date: '2026-10-21', startTime: '09:00', cancelledAt: '2026-10-16T12:00:00Z' },
+      { id: 'later', date: '2026-10-22', startTime: '18:00' },
+      { id: 'same-day-later', date: '2026-10-20', startTime: '18:00' },
+      { id: 'next', date: '2026-10-20', startTime: '17:00', serviceType: { name: 'Calistenia' } },
+    ], fixed: [], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' },
+  } })));
   renderPortalHome();
-  expect(await screen.findByText('Rehabilitación · Cancelado')).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Cancelar' })).not.toBeInTheDocument();
+  const section = within((await screen.findByRole('heading', { name: 'Próxima reserva' })).closest('section')!);
+  expect(section.getByText('20/10/2026 · 17:00')).toBeVisible();
+  expect(section.getByText('Calistenia · Reservado')).toBeVisible();
+  expect(section.queryByText(/21\/10\/2026|22\/10\/2026|18:00|Cancelado/)).not.toBeInTheDocument();
+  expect(section.getAllByRole('button', { name: 'Cancelar' })).toHaveLength(1);
+  expect(section.getByRole('link', { name: 'Ver mis reservas' })).toHaveAttribute('href', '/portal/sala/reservas');
+});
+
+it.each([false, true])('shows no upcoming reservations when only cancelled records remain (cancelled=%s)', async cancelled => {
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: {
+    reservations: cancelled ? [{ id: 'cancelled', date: '2026-10-20', startTime: '09:30', cancelledAt: '2026-10-16T12:00:00Z' }] : [],
+    fixed: [], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' },
+  } })));
+  renderPortalHome();
+  const section = within((await screen.findByRole('heading', { name: 'Próxima reserva' })).closest('section')!);
+  expect(section.getByText('No tenés próximas reservas.')).toBeVisible();
+  expect(section.queryByText(/20\/10\/2026|Cancelado/)).not.toBeInTheDocument();
+  expect(section.queryByRole('button', { name: 'Cancelar' })).not.toBeInTheDocument();
+  expect(section.getByRole('link', { name: 'Ver mis reservas' })).toHaveAttribute('href', '/portal/sala/reservas');
+});
+
+it.each([false, true])('refreshes the next reservation after cancellation with CSRF (has next=%s)', async hasNext => {
+  let cancelled = false;
+  let submitted: { method: string; csrf: string | null; body: string } | undefined;
+  server.use(
+    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: {
+      reservations: [
+        { id: 'first', date: '2026-10-20', startTime: '17:00', cancelledAt: cancelled ? '2026-10-19T12:00:00Z' : null },
+        ...(hasNext ? [{ id: 'second', date: '2026-10-21', startTime: '09:00' }] : []),
+      ], fixed: [], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' },
+    } })),
+    http.post('http://localhost:3000/api/portal/sala/reservations/first/cancel', async ({ request }) => {
+      submitted = { method: request.method, csrf: request.headers.get('x-csrf-token'), body: await request.text() };
+      cancelled = true;
+      return HttpResponse.json({ data: {} });
+    }),
+  );
+  renderPortalHome();
+  const section = within((await screen.findByRole('heading', { name: 'Próxima reserva' })).closest('section')!);
+  expect(section.getByText('20/10/2026 · 17:00')).toBeVisible();
+  fireEvent.click(section.getByRole('button', { name: 'Cancelar' }));
+  expect(await section.findByText(hasNext ? '21/10/2026 · 09:00' : 'No tenés próximas reservas.')).toBeVisible();
+  expect(submitted).toEqual({ method: 'POST', csrf: 'csrf', body: '' });
+  expect(section.queryByText(/20\/10\/2026|Cancelado/)).not.toBeInTheDocument();
 });
 
 it('groups physical results by test chronologically, preserving repeated results and hiding internal observation', async () => {
@@ -422,7 +471,7 @@ it('shows the only Home while loading Sala without a link back to itself', async
   expect(screen.getByRole('heading', { name: 'Inicio', level: 1 })).toBeVisible();
   expect(screen.getByText('Cargando Sala…')).toBeVisible();
   expect(screen.queryByRole('link', { name: 'Volver a Inicio' })).not.toBeInTheDocument();
-  await screen.findByRole('heading', { name: 'Próximos compromisos' });
+  await screen.findByRole('heading', { name: 'Próxima reserva' });
   expect(screen.queryByRole('heading', { name: 'Tu Sala' })).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Athleta · Inicio' })).toHaveAttribute('href', '/portal');
   expect(screen.queryAllByRole('link').some(link => link.getAttribute('href')?.startsWith('/portal/sala#'))).toBe(false);
@@ -470,12 +519,12 @@ it('keeps the Home and profile navigation available on a Sala fetch error', asyn
 it('keeps Sala available when the clinical query fails', async () => {
   server.use(http.get('http://localhost:3000/api/portal/clinic/appointments', () => HttpResponse.json({ code: 'FAIL', message: 'Internal detail' }, { status: 500 })));
   renderPortalHome();
-  expect(await screen.findByRole('heading', { name: 'Próximos compromisos' })).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Próxima reserva' })).toBeVisible();
   expect(screen.queryByRole('heading', { name: 'Clínica' })).not.toBeInTheDocument();
   expect(screen.queryByText('Internal detail')).not.toBeInTheDocument();
 });
 
-it.each(['/portal', '/portal/sala/rutina', '/portal/sala/reservar', '/portal/clinic', '/portal/clinic/turnos', '/portal/change-pin', '/portal/profile'])('keeps only Inicio and Mis datos with one active link on %s', pathname => {
+it.each(['/portal', '/portal/sala/rutina', '/portal/sala/reservas', '/portal/sala/reservar', '/portal/clinic', '/portal/clinic/turnos', '/portal/change-pin', '/portal/profile'])('keeps only Inicio and Mis datos with one active link on %s', pathname => {
   navigation.pathname = pathname;
   render(<portalUi.PortalNav />);
   const nav = within(screen.getByRole('navigation', { name: 'Navegación del Portal' }));

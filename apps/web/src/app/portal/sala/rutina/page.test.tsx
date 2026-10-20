@@ -32,8 +32,12 @@ it('renders the active routine read-only with its details and correct counts', a
   expect(screen.getByRole('heading', { name: 'Mi rutina' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Volver a Inicio' })).toHaveAttribute('href', '/portal');
   expect(screen.getByText('2 días · 3 ejercicios')).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Día 1' })).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Día 2' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Día 1' })).toHaveClass('bg-primary');
+  expect(screen.getByRole('heading', { name: 'Día 2' })).toHaveClass('bg-primary');
+  for (const row of screen.getAllByRole('listitem')) expect(row.querySelector('.bg-primary')).toBeNull();
+  for (const row of screen.getAllByRole('listitem')) expect(row).not.toHaveClass('bg-primary');
+  expect(screen.getByText('Descenso controlado')).toBeInTheDocument();
+  expect(screen.getByText('Tiempo 45 s')).toBeInTheDocument();
   expect(screen.getByText('Sentadilla')).toBeInTheDocument();
   expect(screen.getByText('Plancha')).toBeInTheDocument();
   expect(screen.getByText('Remo')).toBeInTheDocument();

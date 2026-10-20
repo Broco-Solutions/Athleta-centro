@@ -203,7 +203,7 @@ function FinancePageContent(): React.JSX.Element {
     {view === 'expenses' ? <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-semibold">Gastos</h2>
-        {canCreateExpense ? <Button type="button" variant="secondary" aria-expanded={expenseFormOpen} aria-controls="expense-registration-form" onClick={() => { setExpenseFormOpen(!expenseFormOpen); setExpenseConfirmation(''); }}>{expenseFormOpen ? 'Cerrar formulario' : '+ Registrar gasto'}</Button> : null}
+        {canCreateExpense ? <Button type="button" variant={expenseFormOpen ? 'secondary' : 'primary'} aria-expanded={expenseFormOpen} aria-controls="expense-registration-form" onClick={() => { setExpenseFormOpen(!expenseFormOpen); setExpenseConfirmation(''); }}>{expenseFormOpen ? 'Cerrar formulario' : '+ Registrar gasto'}</Button> : null}
       </div>
       {expenseFormOpen && canCreateExpense ? <div id="expense-registration-form"><ExpenseRegistration csrfToken={session.data?.csrfToken ?? ''} canManageCategories={permissions.includes('EXPENSE_CATEGORY_CATALOG_MANAGE')} onRegistered={() => { setExpenseFormOpen(false); setExpenseConfirmation('Gasto registrado correctamente.'); }} /></div> : null}
       {expenseConfirmation ? <p role="status" className="text-sm text-emerald-700">{expenseConfirmation}</p> : null}
