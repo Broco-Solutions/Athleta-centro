@@ -27,7 +27,7 @@ beforeEach(() => {
     http.get('http://localhost:3000/api/finance/expense-categories', () => HttpResponse.json({ data: [{ id: 'rent', name: 'Alquiler', isSelectable: true }, { id: 'retired', name: 'Retirada', isSelectable: false }] })),
     http.get('http://localhost:3000/api/finance/executive-totals', () => HttpResponse.json({ data: { totalIncome: '100', salaIncome: '60', clinicalIncome: '40', expenses: '20', net: '80' } })),
     http.get('http://localhost:3000/api/finance/payment-methods', () => HttpResponse.json({ data: [{ id: 'cash', name: 'Efectivo', isSelectable: true }] })),
-    http.get('http://localhost:3000/api/finance/income', () => HttpResponse.json({ data: [{ id: 'income', cashDate: '2026-10-14', source: 'SALA', amount: '60', person: { firstName: 'Juan', lastName: 'Pérez' }, paymentMethod: { id: 'transfer', name: 'Transferencia' } }] })),
+    http.get('http://localhost:3000/api/finance/income', () => HttpResponse.json({ data: [{ id: 'income', cashDate: '2026-10-14', source: 'SALA', amount: '60', registeredBy: { id: 'collector', firstName: 'Admin', lastName: 'Test' }, person: { firstName: 'Juan', lastName: 'Pérez' }, paymentMethod: { id: 'transfer', name: 'Transferencia' } }] })),
     http.get('http://localhost:3000/api/finance/expenses', () => HttpResponse.json({ data: [{ id: 'expense', cashDate: '2026-10-14', area: 'GENERAL', amount: '250000', category: { name: 'Alquiler' }, paymentMethod: { id: 'transfer', name: 'Transferencia' }, description: 'Local de Sala' }] })),
   );
 });
@@ -47,6 +47,10 @@ describe('Finance views', () => {
     const indicators = within(screen.getByRole('region', { name: 'Indicadores financieros' }));
     expect(indicators.queryByText('Clínica')).not.toBeInTheDocument();
     for (const label of ['Ingresos', 'Gastos', 'Resultado']) expect(indicators.getByText(label)).toBeVisible();
+    expect(indicators.getByRole('link', { name: 'Ver ingresos' })).toHaveAttribute('href', '/finance?view=income');
+    expect(indicators.getByRole('link', { name: 'Ver gastos' })).toHaveAttribute('href', '/finance?view=expenses');
+    expect(indicators.queryByRole('link', { name: /resultado/i })).not.toBeInTheDocument();
+    expect(indicators.getAllByRole('link')).toHaveLength(2);
     fireEvent.click(screen.getByText('Configuración · Administrar medios de pago'));
     expect(await screen.findByRole('heading', { name: 'Medios de pago' })).toBeVisible();
     expect(screen.getAllByText('Efectivo').length).toBeGreaterThan(0);
@@ -59,6 +63,8 @@ describe('Finance views', () => {
     expect(await screen.findByRole('heading', { name: 'Historial de ingresos' })).toBeVisible();
     expect(await screen.findByText('14/10/2026')).toBeVisible();
     expect(screen.getByText('Juan Pérez')).toBeVisible();
+    expect(screen.getByText('Registrado por: Admin Test')).toBeVisible();
+    expect(screen.getByText('$ 60')).toBeVisible();
     expect(screen.getByText('Transferencia')).toBeVisible();
     expect(screen.getByText('Sala', { exact: true })).toBeVisible();
     expect(screen.queryByText('SALA', { exact: true })).not.toBeInTheDocument();
@@ -70,10 +76,10 @@ describe('Finance views', () => {
   it('shows the expense list for view=expenses', async () => {
     navigation.search = 'view=expenses';
     renderPage();
-    expect(await screen.findByRole('heading', { name: 'Registrar gasto' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Registrar gasto', pressed: true })).toBeVisible();
-    expect(screen.queryByText('Local de Sala')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Registros' }));
+    expect(await screen.findByRole('button', { name: '+ Registrar gasto' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('heading', { name: 'Registrar gasto' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Registros' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Registros' })).not.toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Registros de gastos' })).toBeVisible();
     expect(await screen.findByText('14/10/2026')).toBeVisible();
     expect(screen.getByText('Transferencia')).toBeVisible();
@@ -82,6 +88,12 @@ describe('Finance views', () => {
     expect(screen.getByText('Local de Sala')).toBeVisible();
     expect(screen.queryByRole('link', { name: 'Nuevo ingreso clínico' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Gastos' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByText(/Registrado por:/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '+ Registrar gasto' }));
+    expect(screen.getByRole('button', { name: 'Cerrar formulario' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('heading', { name: 'Registrar gasto' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Registros de gastos' })).toBeVisible();
+    expect(screen.getByText('Local de Sala')).toBeVisible();
   });
 });
 
@@ -172,7 +184,12 @@ function expenseSubmit() {
   return within(screen.getByRole('heading', { name: 'Registrar gasto' }).closest('section')!).getByRole('button', { name: 'Registrar gasto' });
 }
 
+async function openExpenseForm() {
+  fireEvent.click(await screen.findByRole('button', { name: '+ Registrar gasto' }));
+}
+
 async function fillExpense(description = '') {
+  if (!screen.queryByRole('heading', { name: 'Registrar gasto' })) await openExpenseForm();
   await screen.findByRole('option', { name: 'Alquiler' });
   await screen.findByRole('option', { name: 'Efectivo' });
   fireEvent.change(screen.getByLabelText('Importe ($ ARS)'), { target: { value: '35000' } });
@@ -184,6 +201,7 @@ async function fillExpense(description = '') {
 
 it('defaults expenses to the operational day and Sala, limits areas and validates required fields', async () => {
   navigation.search = 'view=expenses'; renderPage();
+  await openExpenseForm();
   expect(await screen.findByRole('heading', { name: 'Registrar gasto' })).toBeVisible();
   expect(screen.getByLabelText('Fecha')).toHaveValue('2026-10-14');
   expect(screen.getByLabelText('Fecha')).toHaveAttribute('max', todayOperational());
@@ -223,17 +241,19 @@ it.each(['', 'Compra de materiales'])('registers an expense with optional descri
   expect(await screen.findByText('Gasto registrado correctamente.')).toBeVisible();
   expect(submitted).toEqual({ cashDate: '2026-10-14', amount: '35000', categoryId: 'rent', paymentMethodId: 'cash', area: 'SALA', ...(description ? { description } : {}), operationId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i) });
   expect(csrf).toBe('csrf'); expect(contentType).toBe('application/json');
-  expect(reads).toBe(0);
+  expect(screen.getByRole('button', { name: '+ Registrar gasto' })).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('heading', { name: 'Registrar gasto' })).not.toBeInTheDocument();
+  for (const key of ['expenses', 'totals', 'executive-totals']) expect(invalidate).toHaveBeenCalledWith({ queryKey: ['finance', key] });
+  expect(await screen.findByText('$ 35.000')).toBeVisible();
+  expect(screen.getByText('Alquiler', { selector: 'span' })).toBeVisible();
+  expect(screen.getByText('Efectivo', { selector: 'span' })).toBeVisible();
+  expect(reads).toBe(2);
+  await openExpenseForm();
+  expect(screen.queryByText('Gasto registrado correctamente.')).not.toBeInTheDocument();
   expect(screen.getByLabelText('Importe ($ ARS)')).toHaveValue('');
   expect(screen.getByLabelText('Descripción (opcional)')).toHaveValue('');
   expect(screen.getByLabelText('Fecha')).toHaveValue('2026-10-14');
   expect(screen.getByLabelText('Área')).toHaveValue('SALA');
-  for (const key of ['expenses', 'totals', 'executive-totals']) expect(invalidate).toHaveBeenCalledWith({ queryKey: ['finance', key] });
-  fireEvent.click(screen.getByRole('button', { name: 'Registros' }));
-  expect(await screen.findByText('$ 35.000')).toBeVisible();
-  expect(screen.getByText('Alquiler', { selector: 'span' })).toBeVisible();
-  expect(screen.getByText('Efectivo', { selector: 'span' })).toBeVisible();
-  expect(reads).toBe(1);
 });
 
 it('retains the expense operationId on retry, changes it after edits and after success', async () => {
@@ -265,6 +285,7 @@ it('creates the first selectable category in context and allows expense entry to
     http.post('http://localhost:3000/api/finance/expense-categories', async ({ request }) => { expect(await request.json()).toEqual({ name: 'Alquiler' }); categoryCsrf = request.headers.get('x-csrf-token'); created = true; return HttpResponse.json({ data: { id: 'rent', name: 'Alquiler', isSelectable: true } }, { status: 201 }); }),
   );
   renderPage();
+  await openExpenseForm();
   expect(await screen.findByText('No hay categorías de gastos configuradas.')).toBeVisible();
   fireEvent.change(screen.getByLabelText('Nombre de la categoría'), { target: { value: 'Alquiler' } });
   fireEvent.click(screen.getByRole('button', { name: 'Crear' }));
@@ -279,6 +300,7 @@ it('guides users to payment method configuration and excludes retired methods', 
   navigation.search = 'view=expenses';
   server.use(http.get('http://localhost:3000/api/finance/payment-methods', () => HttpResponse.json({ data: [{ id: 'retired', name: 'Retirado', isSelectable: false }] })));
   renderPage();
+  await openExpenseForm();
   expect(await screen.findByText(/No hay medios de pago configurados/)).toBeVisible();
   expect(screen.getByRole('link', { name: /Ir a Resumen/ })).toHaveAttribute('href', '/finance');
   expect(screen.queryByRole('option', { name: 'Retirado' })).not.toBeInTheDocument();
@@ -296,6 +318,7 @@ it('preserves expense history without creation permissions and translates clinic
   expect(screen.getByText('Clínica')).toBeVisible();
   expect(screen.getByText('01/10/2026')).toBeVisible();
   expect(screen.queryByRole('heading', { name: 'Registrar gasto' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '+ Registrar gasto' })).not.toBeInTheDocument();
 });
 
 it('does not fetch students or expose registration without SALA_PAYMENT_MANAGE', async () => {
@@ -316,6 +339,7 @@ it('does not offer category creation without catalog permission', async () => {
     http.get('http://localhost:3000/api/finance/expense-categories', () => HttpResponse.json({ data: [{ id: 'old', name: 'Retirada', isSelectable: false }] })),
   );
   renderPage();
+  await openExpenseForm();
   expect(await screen.findByText('No hay categorías de gastos configuradas.')).toBeVisible();
   expect(screen.queryByRole('button', { name: 'Crear' })).not.toBeInTheDocument();
   expect(expenseSubmit()).toBeDisabled();
@@ -448,4 +472,18 @@ it.each(['', 'view=income', 'view=expenses', 'view=income&personId=student&actio
   expect(await screen.findByText('No tenés permisos para acceder a Finanzas.')).toBeVisible();
   for (const name of ['Indicadores financieros', 'Historial de ingresos', 'Registrar gasto', 'Estado actual de Sala', 'Medios de pago']) expect(screen.queryByText(name)).not.toBeInTheDocument();
   expect(requests).not.toHaveBeenCalled();
+});
+
+it('allows expense creation without requesting or showing the expense history', async () => {
+  navigation.search = 'view=expenses';
+  const historyRead = vi.fn();
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: ['EXPENSE_CREATE'] } })),
+    http.get('http://localhost:3000/api/finance/expenses', () => { historyRead(); return HttpResponse.json({ data: [] }); }),
+  );
+  renderPage();
+  await fillExpense();
+  expect(screen.getByRole('heading', { name: 'Registrar gasto' })).toBeVisible();
+  expect(screen.queryByRole('heading', { name: 'Registros de gastos' })).not.toBeInTheDocument();
+  expect(historyRead).not.toHaveBeenCalled();
 });

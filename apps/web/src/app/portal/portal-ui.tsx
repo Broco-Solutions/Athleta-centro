@@ -54,8 +54,12 @@ export function PortalLogoutButton({ compactOnMobile = false }: { compactOnMobil
 
 export function PortalNav(): React.JSX.Element {
   const pathname = usePathname();
+  const profileActive = pathname === '/portal/profile';
   return <nav aria-label="Navegación del Portal" className="flex gap-6">
-    {[['/portal', 'Inicio'], ['/portal/profile', 'Mis datos']].map(([href, label]) => <Link key={href} href={href!} aria-current={pathname === href ? 'page' : undefined} className={'inline-flex min-h-12 items-center border-b-2 px-1 text-sm font-medium ' + (pathname === href ? 'border-primary' : 'border-transparent')}>{label}</Link>)}
+    {[['/portal', 'Inicio'], ['/portal/profile', 'Mis datos']].map(([href, label]) => {
+      const active = href === '/portal/profile' ? profileActive : !profileActive;
+      return <Link key={href} href={href!} aria-current={active ? 'page' : undefined} className={'inline-flex min-h-12 items-center border-b-2 px-1 text-sm font-medium ' + (active ? 'border-primary!' : 'border-transparent!')}>{label}</Link>;
+    })}
   </nav>;
 }
 

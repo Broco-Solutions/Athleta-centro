@@ -884,3 +884,16 @@ Estado: **CONFIRMADO / RESUELTO**.
 - Los Pagos nuevos conservan el Plan seleccionado y su nombre snapshot.
 - Los Pagos históricos sin referencia confiable de Plan no se reconstruyen ni se vinculan artificialmente al Plan actual. La interfaz muestra `Sin referencia de Plan`.
 - Esta mejora no modifica información económica, vigencia ni permisos. No requiere cambios de Prisma, migraciones ni backfill de Planes.
+
+
+## Finanzas — Accesos directos, trazabilidad de Ingresos y Gastos visibles — 2026-10-20
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+- El Historial general de Ingresos muestra quién registró cada movimiento de Sala o Clínica, con Nombre y Apellido del usuario interno responsable.
+- La API expone únicamente `id`, `firstName` y `lastName` del responsable. Persona del ingreso y responsable del registro son conceptos distintos.
+- El Resumen ofrece `Ver ingresos` y `Ver gastos`. Resultado continúa siendo informativo y sujeto a `FINANCE_EXECUTIVE_READ`.
+- `Finanzas → Gastos` abre mostrando primero el historial a quienes poseen permiso para consultarlo.
+- `Registrar gasto` es una acción desplegable, no una pestaña. Abrir el formulario no oculta el historial. Esta decisión sustituye la separación visual anterior en pestañas Registrar gasto / Registros.
+- Después de un registro exitoso el formulario se cierra, el historial se actualiza mediante invalidación de TanStack Query y se muestra confirmación.
+- No cambian permisos ni reglas económicas. Registrar un Gasto no concede acceso al historial general.

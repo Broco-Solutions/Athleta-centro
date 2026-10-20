@@ -28,7 +28,7 @@ async function request(path: string, options?: RequestInit) {
   return body.data;
 }
 
-export function ExpenseRegistration({ csrfToken, canManageCategories }: { csrfToken: string; canManageCategories: boolean }): React.JSX.Element {
+export function ExpenseRegistration({ csrfToken, canManageCategories, onRegistered }: { csrfToken: string; canManageCategories: boolean; onRegistered?: () => void }): React.JSX.Element {
   const client = useQueryClient();
   const [categoryName, setCategoryName] = useState('');
   const [showCategoryCreator, setShowCategoryCreator] = useState<boolean | null>(null);
@@ -66,6 +66,7 @@ export function ExpenseRegistration({ csrfToken, canManageCategories }: { csrfTo
         client.invalidateQueries({ queryKey: ['finance', 'totals'] }),
         client.invalidateQueries({ queryKey: ['finance', 'executive-totals'] }),
       ]);
+      onRegistered?.();
     },
   });
   const catalogsValid = categories.isSuccess && methods.isSuccess && selectableCategories.some(item => item.id === categoryId) && selectableMethods.some(item => item.id === methodId);

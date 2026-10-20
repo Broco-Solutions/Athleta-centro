@@ -182,7 +182,8 @@ it('preserves the exact payload and CSRF token, refreshes queries and retains th
   expect(screen.getByText('Musculación')).toBeInTheDocument();
   expect(screen.getByText(/jueves 08\/10/i)).toBeInTheDocument();
   expect(screen.getByText('17:00 – 18:00')).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Volver a Sala' })).toHaveAttribute('href', '/portal/sala');
+  for (const link of screen.getAllByRole('link', { name: 'Volver a Inicio' })) expect(link).toHaveAttribute('href', '/portal');
+  expect(screen.queryByRole('link', { name: 'Volver a Sala' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Reservar en Sala' })).not.toBeInTheDocument();
   expect(submitted).toEqual({ date: '2026-10-08', scheduleSlotId: 'window', serviceTypeId: 'muscle', startTime: '17:00' });
   expect(csrfHeader).toBe('csrf');
@@ -272,7 +273,8 @@ it('blocks the dedicated reservation route when current validity is missing', as
   expect(await screen.findByRole('heading', { name: 'Cuota sin vigencia' })).toBeVisible();
   expect(screen.getByText('No podés realizar nuevas reservas por el momento.')).toBeVisible();
   expect(screen.getByText('Consultá en recepción para renovar tu cuota y volver a reservar.')).toBeVisible();
-  expect(screen.getByRole('link', { name: 'Volver a Sala' })).toHaveAttribute('href', '/portal/sala');
+  for (const link of screen.getAllByRole('link', { name: 'Volver a Inicio' })) expect(link).toHaveAttribute('href', '/portal');
+  expect(screen.queryByRole('link', { name: 'Volver a Sala' })).not.toBeInTheDocument();
   expect(screen.queryByText('Vigencia de Sala')).not.toBeInTheDocument();
   expect(screen.queryByText('Sin vigencia')).not.toBeInTheDocument();
   expect(screen.queryByText('Necesitás renovar tu vigencia para realizar nuevas reservas.')).not.toBeInTheDocument();

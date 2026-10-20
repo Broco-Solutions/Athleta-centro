@@ -14,7 +14,6 @@ import { currentSession } from '../../features/auth/auth';
 
 type Method = { id: string; name: string; isSelectable: boolean };
 type IncomeStatusTab = 'pending' | 'paid';
-type ExpenseTab = 'register' | 'records';
 type FinanceView = 'summary' | 'income' | 'expenses';
 type SummaryPeriod = 'current-month' | 'previous-month' | 'current-year' | 'all' | 'custom';
 type DateRange = { from?: string; to?: string };
@@ -47,10 +46,10 @@ function FinancePageContent(): React.JSX.Element {
   const canCatalog = permissions.includes('PAYMENT_METHOD_CATALOG_MANAGE');
   const [search, setSearch] = useState('');
   const [incomeTab, setIncomeTab] = useState<IncomeStatusTab>('pending');
-  const [expenseTab, setExpenseTab] = useState<ExpenseTab>('register');
+  const [expenseFormOpen, setExpenseFormOpen] = useState(false);
+  const [expenseConfirmation, setExpenseConfirmation] = useState('');
   const canCreateExpense = permissions.includes('EXPENSE_CREATE');
   const canReadExpenses = read || permissions.includes('EXPENSE_HISTORY_READ');
-  const activeExpenseTab = canCreateExpense ? expenseTab : 'records';
   const canPay = permissions.includes('SALA_PAYMENT_MANAGE');
   const students = useQuery({ queryKey: ['sala', 'students'], enabled: canPay && view === 'income' && !personId, queryFn: async () => {
     const response = await listSalaStudents({ credentials: 'include' });
@@ -76,7 +75,7 @@ function FinancePageContent(): React.JSX.Element {
   const summaryIncome = useQuery<Movement[]>({ queryKey: ['finance', 'income', 'summary', summaryPeriod, summaryRange.from ?? null, summaryRange.to ?? null], queryFn: () => get(financialQuery('income', summaryRange, { area: 'SALA' })), enabled: view === 'summary' && read });
   const summaryExpenses = useQuery<Movement[]>({ queryKey: ['finance', 'expenses', 'summary', summaryPeriod, summaryRange.from ?? null, summaryRange.to ?? null], queryFn: () => get(financialQuery('expenses', summaryRange)), enabled: view === 'summary' && read });
   const income = useQuery({ queryKey: ['finance', 'income', personId], queryFn: () => get(personId ? `income?personId=${encodeURIComponent(personId)}` : 'income'), enabled: view === 'income' && !personId && read });
-  const expenses = useQuery({ queryKey: ['finance', 'expenses'], queryFn: () => get('expenses'), enabled: view === 'expenses' && activeExpenseTab === 'records' && canReadExpenses });
+  const expenses = useQuery({ queryKey: ['finance', 'expenses'], queryFn: () => get('expenses'), enabled: view === 'expenses' && canReadExpenses });
 
   const selectedPaymentContext = view === 'income' && Boolean(personId) && permissions.includes('SALA_PAYMENT_MANAGE');
   const person = useQuery({ queryKey: ['person', personId], enabled: selectedPaymentContext, retry: false, queryFn: async () => {
@@ -152,7 +151,7 @@ function FinancePageContent(): React.JSX.Element {
       {summaryIncome.isPending || summaryExpenses.isPending ? <p role="status">Cargando movimientos del período…</p> : null}
       {summaryIncome.isError || summaryExpenses.isError ? <p role="alert">No pudimos cargar los movimientos del período.</p> : null}
       {summaryReady ? <>
-        <section aria-label="Indicadores financieros" className="grid gap-4 md:grid-cols-3">{([['Ingresos', incomeTotal], ['Gastos', expenseTotal], ...(executive ? [['Resultado', incomeTotal - expenseTotal] as const] : [])] as const).map(([label, amount]) => <article className="rounded border bg-surface p-4" key={label}><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold">{formatMoney(amount.toString())}</p></article>)}</section>
+        <section aria-label="Indicadores financieros" className="grid gap-4 md:grid-cols-3">{([['Ingresos', incomeTotal], ['Gastos', expenseTotal], ...(executive ? [['Resultado', incomeTotal - expenseTotal] as const] : [])] as const).map(([label, amount]) => <article className="rounded border bg-surface p-4" key={label}><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold">{formatMoney(amount.toString())}</p>{label !== 'Resultado' ? <Link className="mt-3 inline-block rounded border px-3 py-2 text-sm font-medium" href={label === 'Ingresos' ? '/finance?view=income' : '/finance?view=expenses'}>{label === 'Ingresos' ? 'Ver ingresos' : 'Ver gastos'}<span aria-hidden="true"> →</span></Link> : null}</article>)}</section>
         <section className="space-y-3 rounded border border-border bg-surface p-5"><h2 className="text-lg font-semibold">Movimientos por medio de pago</h2><div className="overflow-x-auto"><table aria-label="Movimientos por medio de pago" className="w-full text-sm"><thead><tr><th className="p-2 text-left">Medio de pago</th><th className="p-2 text-right">Ingresos</th><th className="p-2 text-right">Gastos</th>{executive ? <th className="p-2 text-right">Neto</th> : null}</tr></thead><tbody>{[...byMethod.values()].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(row => <tr key={row.id} className="border-t border-border"><th scope="row" className="p-2 text-left font-medium">{row.name}</th><td className="p-2 text-right">{formatMoney(row.income.toString())}</td><td className="p-2 text-right">{formatMoney(row.expenses.toString())}</td>{executive ? <td className="p-2 text-right">{formatMoney((row.income - row.expenses).toString())}</td> : null}</tr>)}</tbody></table></div></section>
       </> : null}
     </> : null}
@@ -200,15 +199,16 @@ function FinancePageContent(): React.JSX.Element {
       </> : null}
     </section> : null}
     {view === 'income' && !personId && income.isError ? <p role="alert">No se pudieron cargar los ingresos para este contexto.</p> : null}
-    {view === 'income' && !personId && read ? <Data title="Historial de ingresos" value={income.data} /> : null}
+    {view === 'income' && !personId && read ? <Data title="Historial de ingresos" value={income.data} showRegisteredBy /> : null}
     {view === 'expenses' ? <>
-      <div className="flex gap-4" aria-label="Gastos">
-        {canCreateExpense ? <button type="button" aria-pressed={activeExpenseTab === 'register'} className={tabClass(activeExpenseTab === 'register')} onClick={() => setExpenseTab('register')}>Registrar gasto</button> : null}
-        {canReadExpenses ? <button type="button" aria-pressed={activeExpenseTab === 'records'} className={tabClass(activeExpenseTab === 'records')} onClick={() => setExpenseTab('records')}>Registros</button> : null}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xl font-semibold">Gastos</h2>
+        {canCreateExpense ? <Button type="button" variant="secondary" aria-expanded={expenseFormOpen} aria-controls="expense-registration-form" onClick={() => { setExpenseFormOpen(!expenseFormOpen); setExpenseConfirmation(''); }}>{expenseFormOpen ? 'Cerrar formulario' : '+ Registrar gasto'}</Button> : null}
       </div>
-      {activeExpenseTab === 'register' && canCreateExpense ? <ExpenseRegistration csrfToken={session.data?.csrfToken ?? ''} canManageCategories={permissions.includes('EXPENSE_CATEGORY_CATALOG_MANAGE')} /> : null}
-      {activeExpenseTab === 'records' && expenses.isError ? <p role="alert">No se pudieron cargar los gastos.</p> : null}
-      {activeExpenseTab === 'records' && canReadExpenses ? <Data title="Registros de gastos" value={expenses.data} /> : null}
+      {expenseFormOpen && canCreateExpense ? <div id="expense-registration-form"><ExpenseRegistration csrfToken={session.data?.csrfToken ?? ''} canManageCategories={permissions.includes('EXPENSE_CATEGORY_CATALOG_MANAGE')} onRegistered={() => { setExpenseFormOpen(false); setExpenseConfirmation('Gasto registrado correctamente.'); }} /></div> : null}
+      {expenseConfirmation ? <p role="status" className="text-sm text-emerald-700">{expenseConfirmation}</p> : null}
+      {canReadExpenses && expenses.isError ? <p role="alert">No se pudieron cargar los gastos.</p> : null}
+      {canReadExpenses ? <Data title="Registros de gastos" value={expenses.data} /> : null}
     </> : null}
   </main></WorkspaceShell>;
 }
@@ -258,17 +258,17 @@ function PaymentMethods({ methods, canCatalog, name, editing, message, onName, o
   return <section className="rounded border bg-white p-5"><h2 className="font-semibold">Medios de pago</h2>{methods.map((method) => <div className="flex items-center justify-between border-b py-2 text-sm" key={method.id}><span>{method.name}</span><span className="flex items-center gap-3"><span>{method.isSelectable ? 'Disponible' : 'Retirado'}</span>{canCatalog && <>{method.isSelectable && <button className="underline" onClick={() => onEdit(method)}>Editar</button>}{method.isSelectable && <button className="underline" onClick={() => onRetire(method)}>Retirar</button>}</>}</span></div>)}{canCatalog && <form className="mt-4 flex gap-2" onSubmit={onSave}><input aria-label="Nombre del medio de pago" required value={name} onChange={(event) => onName(event.target.value)} className="h-10 flex-1 rounded border px-3" placeholder={editing ? 'Editar medio de pago' : 'Nuevo medio de pago'} /><button className="rounded bg-[#FCCC05] px-3 py-2 text-sm text-black">{editing ? 'Guardar' : 'Crear'}</button>{editing && <button type="button" className="rounded border px-3" onClick={onCancelEdit}>Cancelar</button>}</form>}{message && <p role="status" className="mt-2 text-sm">{message}</p>}</section>;
 }
 
-type Movement = { id: string; cashDate: string; source?: string; area?: string; amount: string; person?: { firstName: string; lastName: string }; category?: { name: string }; paymentMethod?: { id: string; name: string }; description?: string | null };
+type Movement = { id: string; cashDate: string; source?: string; area?: string; amount: string; person?: { firstName: string; lastName: string }; category?: { name: string }; paymentMethod?: { id: string; name: string }; description?: string | null; registeredBy?: { id: string; firstName: string; lastName: string } };
 const areaLabel = (area?: string) => ({ SALA: 'Sala', GENERAL: 'General', CLINIC: 'Clínica' })[area ?? ''] ?? area;
 const formatDate = (value: string) => value.slice(0, 10).split('-').reverse().join('/');
 const formatMoney = (value: string) => `$ ${BigInt(value).toLocaleString('es-AR')}`;
 
-function Data({ title, value }: { title: string; value: unknown }): React.JSX.Element {
+function Data({ title, value, showRegisteredBy = false }: { title: string; value: unknown; showRegisteredBy?: boolean }): React.JSX.Element {
   const rows = Array.isArray(value) ? value as Movement[] : [];
-  return <section className="rounded border bg-white p-5"><div className="flex items-center justify-between gap-3"><h2 className="font-semibold">{title}</h2></div>{rows.length ? rows.map(row => <div className="grid gap-2 border-b py-3 text-sm sm:grid-cols-[1fr_2fr_1fr_1fr_auto]" key={`${row.source ?? row.area}-${row.id}`}>
+  return <section className="rounded border bg-white p-5"><div className="flex items-center justify-between gap-3"><h2 className="font-semibold">{title}</h2></div>{rows.length ? rows.map(row => <div className={`grid gap-2 border-b py-3 text-sm ${showRegisteredBy ? 'sm:grid-cols-2 lg:grid-cols-[1fr_2fr_1fr_1fr_2fr_auto]' : 'sm:grid-cols-[1fr_2fr_1fr_1fr_auto]'}`} key={`${row.source ?? row.area}-${row.id}`}>
     <time dateTime={row.cashDate.slice(0, 10)}>{formatDate(row.cashDate)}</time>
     <span className="font-medium">{row.person ? `${row.person.firstName} ${row.person.lastName}` : row.category?.name}</span>
-    <span>{areaLabel(row.source ?? row.area)}</span><span>{row.paymentMethod?.name}</span><strong className="sm:text-right">{formatMoney(row.amount)}</strong>
-    {row.description ? <p className="text-muted-foreground sm:col-span-5">{row.description}</p> : null}
+    <span>{areaLabel(row.source ?? row.area)}</span><span>{row.paymentMethod?.name}</span>{showRegisteredBy ? <span className="min-w-0 break-words">Registrado por: {row.registeredBy ? `${row.registeredBy.firstName} ${row.registeredBy.lastName}` : '—'}</span> : null}<strong className="sm:text-right">{formatMoney(row.amount)}</strong>
+    {row.description ? <p className={`text-muted-foreground ${showRegisteredBy ? 'sm:col-span-2 lg:col-span-6' : 'sm:col-span-5'}`}>{row.description}</p> : null}
   </div>) : <p className="mt-3 text-sm text-muted-foreground">No hay registros.</p>}</section>;
 }

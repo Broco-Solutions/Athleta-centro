@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ExpenseRegistration } from './expense-registration';
+import { todayOperational } from '../sala/student-onboarding';
 
 const rent = { id: 'rent', name: 'Alquiler', isSelectable: true };
 const supplies = { id: 'supplies', name: 'Materiales', isSelectable: true };
@@ -27,9 +28,9 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
-function renderForm(canManageCategories = true) {
+function renderForm(canManageCategories = true, onRegistered?: () => void) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(<QueryClientProvider client={client}><ExpenseRegistration csrfToken="synthetic-csrf" canManageCategories={canManageCategories}/></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><ExpenseRegistration csrfToken="synthetic-csrf" canManageCategories={canManageCategories} {...(onRegistered ? { onRegistered } : {})}/></QueryClientProvider>);
   return vi.spyOn(client, 'invalidateQueries');
 }
 async function fillExpense() {
@@ -115,4 +116,46 @@ it('allows existing category selection without catalog management permission', a
   expect(screen.getByLabelText('Categoría')).toHaveValue('rent');
   expect(screen.queryByRole('button', { name: '+ Agregar categoría' })).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Nombre de la categoría')).not.toBeInTheDocument();
+});
+
+it.each([true, false])('resets successful expenses and calls the optional callback after invalidations (callback=%s)', async withCallback => {
+  const onRegistered = vi.fn();
+  const originalFetch = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url: string, options?: RequestInit) => url.endsWith('/expenses')
+    ? { ok: true, json: async () => ({ data: { id: 'expense' } }) }
+    : originalFetch(url, options));
+  const invalidate = renderForm(true, withCallback ? onRegistered : undefined);
+  let finishInvalidations!: () => void;
+  const invalidations = new Promise<void>(resolve => { finishInvalidations = resolve; });
+  invalidate.mockReturnValue(invalidations);
+  await fillExpense();
+  fireEvent.click(screen.getByRole('button', { name: 'Registrar gasto' }));
+  await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(3));
+  expect(onRegistered).not.toHaveBeenCalled();
+  finishInvalidations();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Registrar gasto' })).toBeDisabled());
+  if (withCallback) await waitFor(() => expect(onRegistered).toHaveBeenCalledTimes(1));
+  else expect(onRegistered).not.toHaveBeenCalled();
+  for (const key of ['expenses', 'totals', 'executive-totals']) expect(invalidate).toHaveBeenCalledWith({ queryKey: ['finance', key] });
+  expect(screen.getByLabelText('Importe ($ ARS)')).toHaveValue('');
+  expect(screen.getByLabelText('Descripción (opcional)')).toHaveValue('');
+  expect(screen.getByLabelText('Fecha')).toHaveValue(todayOperational());
+  expect(screen.getByLabelText('Área')).toHaveValue('SALA');
+  expect(screen.getByLabelText('Categoría')).toHaveValue('rent');
+  expect(screen.getByLabelText('Medio de pago')).toHaveValue('cash');
+});
+
+it('does not call onRegistered or invalidate expenses after a backend error', async () => {
+  const onRegistered = vi.fn();
+  const originalFetch = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url: string, options?: RequestInit) => url.endsWith('/expenses')
+    ? { ok: false, json: async () => ({ message: 'No se pudo registrar el gasto.' }) }
+    : originalFetch(url, options));
+  const invalidate = renderForm(true, onRegistered);
+  await fillExpense();
+  fireEvent.click(screen.getByRole('button', { name: 'Registrar gasto' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo registrar el gasto.');
+  expect(onRegistered).not.toHaveBeenCalled();
+  expect(invalidate).not.toHaveBeenCalled();
+  expectExpensePreserved();
 });

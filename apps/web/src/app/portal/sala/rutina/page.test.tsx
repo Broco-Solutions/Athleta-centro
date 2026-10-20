@@ -30,7 +30,7 @@ it('renders the active routine read-only with its details and correct counts', a
   renderRoutine();
   expect(await screen.findByText('2 días · 3 ejercicios')).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Mi rutina' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Volver a Sala' })).toHaveAttribute('href', '/portal/sala');
+  expect(screen.getByRole('link', { name: 'Volver a Inicio' })).toHaveAttribute('href', '/portal');
   expect(screen.getByText('2 días · 3 ejercicios')).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Día 1' })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Día 2' })).toBeInTheDocument();
@@ -45,18 +45,18 @@ it('renders the active routine read-only with its details and correct counts', a
   expect(main.queryByText(/Editar|Duplicar|Crear ejercicio|Asignar rutina/i)).not.toBeInTheDocument();
 });
 
-it('shows an empty state when there is no active routine and keeps the Sala link', async () => {
+it('shows an empty state when there is no active routine and keeps the Home link', async () => {
   server.use(http.get(endpoint, () => HttpResponse.json({ data: { routine: null } })));
   renderRoutine();
   expect(await screen.findByText('No hay una rutina activa.')).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Volver a Sala' })).toHaveAttribute('href', '/portal/sala');
+  expect(screen.getByRole('link', { name: 'Volver a Inicio' })).toHaveAttribute('href', '/portal');
 });
 
 it('shows a safe error when the routine read model fails', async () => {
   server.use(http.get(endpoint, () => HttpResponse.json({ code: 'FAIL', message: 'Internal detail' }, { status: 500 })));
   renderRoutine();
   expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos cargar tu rutina. Intentá nuevamente.');
-  expect(screen.getByRole('link', { name: 'Volver a Sala' })).toHaveAttribute('href', '/portal/sala');
+  expect(screen.getByRole('link', { name: 'Volver a Inicio' })).toHaveAttribute('href', '/portal');
   expect(screen.queryByText('Internal detail')).not.toBeInTheDocument();
 });
 
