@@ -25,24 +25,35 @@ it('renders the mobile login composition and official Athleta logo', () => {
   const logo = screen.getByRole('img', { name: 'Athleta' });
   expect(new URL(logo.getAttribute('src')!, 'http://localhost').searchParams.get('url')).toBe('/logo-athleta.png');
   for (const text of [
-    'DESBLOQUEÁ TU', 'POTENCIAL.', 'Portal Athleta',
-    'Ingresá con tu DNI y PIN para continuar.', 'DNI', 'PIN', 'Ingresá 4 dígitos.', 'Ingresar',
-    '¿Necesitás ayuda para ingresar?', 'Consultá en recepción.', 'Desarrollado por', 'Broco Solutions',
+    'PORTAL', 'DESBLOQUEÁ TU', 'POTENCIAL.',
+    'DNI', 'Sin puntos ni espacios.', 'PIN', 'Ingresar',
+    '¿Necesitás ayuda?', 'Consultá en recepción.', 'Desarrollado por', 'Broco Solutions',
   ]) {
     expect(screen.getByText(text)).toBeInTheDocument();
   }
   expect(screen.queryByText(/PORTAL DE/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/CLIENTES/i)).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Portal Athleta', level: 1 })).toHaveClass('sr-only');
+  expect(screen.queryByText('Ingresá con tu DNI y PIN para continuar.')).not.toBeInTheDocument();
+  expect(screen.queryByText('Ingresá 4 dígitos.')).not.toBeInTheDocument();
+  expect(screen.queryByText('¿Necesitás ayuda para ingresar?')).not.toBeInTheDocument();
+  const help = screen.getByText('¿Necesitás ayuda?').closest('p');
+  expect(help).toHaveTextContent('¿Necesitás ayuda? Consultá en recepción.');
+  expect(help).toContainElement(screen.getByText('Consultá en recepción.'));
 
   const dni = screen.getByLabelText('DNI');
   const dniHelp = screen.getByText('Sin puntos ni espacios.');
   expect(dniHelp.previousElementSibling).toContainElement(dni);
   expect(dniHelp).toHaveClass('text-xs', 'text-muted-foreground');
+  expect(dni).toHaveAttribute('aria-describedby', 'portal-dni-help');
+  expect(dniHelp).toHaveAttribute('id', 'portal-dni-help');
   const pin = screen.getByLabelText('PIN');
-  const pinHelp = screen.getByText('Ingresá 4 dígitos.');
-  expect(pinHelp.previousElementSibling).toContainElement(pin);
-  expect(pinHelp).toHaveClass('text-xs', 'text-muted-foreground');
-  expect(pin).toHaveAttribute('aria-describedby', 'portal-pin-help');
+  expect(pin).not.toHaveAttribute('aria-describedby');
+  expect(pin).toBeRequired();
+  expect(pin).toHaveAttribute('inputMode', 'numeric');
+  expect(pin).toHaveAttribute('pattern', '[0-9]{4}');
+  expect(pin).toHaveAttribute('maxLength', '4');
+  expect(pin).toHaveAttribute('autoComplete', 'current-password');
 });
 
 it('uses a dynamic viewport height and switches to a two-column desktop composition', () => {

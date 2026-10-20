@@ -16,8 +16,9 @@ export default function PortalLogin(): React.JSX.Element {
   return (
     <main className="flex min-h-dvh flex-col bg-background lg:grid lg:grid-cols-2">
       <section className="relative flex min-h-[10.5rem] flex-col overflow-hidden bg-sidebar px-5 pb-4 pt-4 text-sidebar-foreground sm:px-8 lg:min-h-dvh lg:justify-between lg:px-12 lg:py-12">
-        <header>
+        <header className="flex items-center gap-3">
           <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-32 sm:w-36 lg:w-40" />
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/70">PORTAL</span>
         </header>
 
         <div className="relative mt-3 flex items-end justify-between gap-3 lg:my-auto lg:pt-20">
@@ -50,12 +51,9 @@ export default function PortalLogin(): React.JSX.Element {
             router.push(body.data.mustChangePin ? '/portal/change-pin' : '/portal');
           }}
         >
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Portal Athleta</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Ingresá con tu DNI y PIN para continuar.</p>
-          </div>
+          <h1 className="sr-only">Portal Athleta</h1>
 
-          <div className="mt-3 space-y-2.5">
+          <div className="space-y-2.5">
             <div className="space-y-1">
               <label className="block text-sm font-medium" htmlFor="portal-dni">DNI</label>
               <span className="relative block">
@@ -69,12 +67,11 @@ export default function PortalLogin(): React.JSX.Element {
               <label className="block text-sm font-medium" htmlFor="portal-pin">PIN</label>
               <span className="relative block">
                 <Lock aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-                <input id="portal-pin" aria-describedby="portal-pin-help" required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="current-password" type={showPin ? 'text' : 'password'} value={pin} onChange={(event) => setPin(event.target.value)} placeholder="Ingresá tu PIN" className="h-12 w-full rounded-md border border-border bg-white pl-11 pr-12 text-base font-normal outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-ring" />
+                <input id="portal-pin" required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="current-password" type={showPin ? 'text' : 'password'} value={pin} onChange={(event) => setPin(event.target.value)} placeholder="Ingresá tu PIN" className="h-12 w-full rounded-md border border-border bg-white pl-11 pr-12 text-base font-normal outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-ring" />
                 <button type="button" aria-label={showPin ? 'Ocultar PIN' : 'Mostrar PIN'} onClick={() => setShowPin((visible) => !visible)} className="absolute right-1 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   {showPin ? <EyeOff aria-hidden="true" className="h-5 w-5" /> : <Eye aria-hidden="true" className="h-5 w-5" />}
                 </button>
               </span>
-              <p id="portal-pin-help" className="text-xs font-normal text-muted-foreground">Ingresá 4 dígitos.</p>
             </div>
           </div>
 
@@ -85,10 +82,10 @@ export default function PortalLogin(): React.JSX.Element {
             <ArrowRight aria-hidden="true" className="h-5 w-5" />
           </button>
 
-          <div className="mt-3 text-center text-sm lg:mt-5">
-            <p className="text-muted-foreground">¿Necesitás ayuda para ingresar?</p>
-            <p className="mt-1 font-medium">Consultá en recepción.</p>
-          </div>
+          <p className="mt-3 text-center text-sm lg:mt-5">
+            <span className="text-muted-foreground">¿Necesitás ayuda? </span>
+            <span className="font-medium">Consultá en recepción.</span>
+          </p>
 
           <footer className="mt-auto border-t border-border pt-3 text-center text-xs text-muted-foreground sm:mt-6 lg:mt-10">
             Desarrollado por <span className="font-semibold text-foreground">Broco Solutions</span>
