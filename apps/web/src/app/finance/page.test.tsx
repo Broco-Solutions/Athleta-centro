@@ -128,6 +128,8 @@ it.each(['renew', null])('concentrates payment context with action=%s and keeps 
   expect(screen.getByRole('heading', { name: 'Historial de pagos' })).toBeVisible();
   expect(screen.queryByRole('heading', { name: 'Historial de ingresos' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: '+ Registrar pago' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Filtros' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Este mes' })).not.toBeInTheDocument();
   expect(incomeReads).toBe(0);
 });
 it.each([['invalid', 400], ['missing', 404]])('keeps Finance usable when Persona is %s', async (personId, status) => {
@@ -598,4 +600,226 @@ it('shows safe loading and error states in Sala validity', async () => {
   finishRequest();
   expect(await picker.findByRole('alert')).toHaveTextContent('No pudimos cargar los alumnos de Sala.');
   expect(picker.queryByText('Technical detail')).not.toBeInTheDocument();
+});
+
+const historyIncome = [
+  { id: 'sala-equi', cashDate: '2026-10-14', source: 'SALA', amount: '100', person: { id: 'person-1', firstName: 'Equi', lastName: 'Fernandez', dni: '30123456' }, paymentMethod: { id: 'cash', name: 'Efectivo' } },
+  { id: 'clinic-equi', cashDate: '2026-10-13', source: 'CLINIC', amount: '200', person: { id: 'person-1', firstName: 'Equi', lastName: 'Fernandez', dni: '30123456' }, paymentMethod: { id: 'transfer', name: 'Transferencia' } },
+  { id: 'sala-ana', cashDate: '2026-10-12', source: 'SALA', amount: '300', person: { id: 'person-2', firstName: 'Ana', lastName: 'Prueba', dni: '88000002' }, paymentMethod: { id: 'transfer', name: 'Transferencia' } },
+];
+const historyExpenses = [
+  { id: 'rent', cashDate: '2026-10-14', area: 'SALA', amount: '400', category: { id: 'rent', name: 'Alquiler' }, paymentMethod: { id: 'transfer', name: 'Transferencia' } },
+  { id: 'supplies', cashDate: '2026-10-13', area: 'GENERAL', amount: '500', category: { id: 'supplies', name: 'Insumos' }, paymentMethod: { id: 'cash', name: 'Efectivo' } },
+];
+
+// Each history uses the backend for its period, without additional catalog reads.
+it.each(['income', 'expenses'])('queries independent %s periods and applies custom dates only on confirmation', async view => {
+  navigation.search = `view=${view}`;
+  const urls: URL[] = [];
+  server.use(http.get(`http://localhost:3000/api/finance/${view}`, ({ request }) => { urls.push(new URL(request.url)); return HttpResponse.json({ data: [] }); }));
+  renderPage();
+  await waitFor(() => expect(urls).toHaveLength(1));
+  expect(screen.getByRole('button', { name: 'Este mes', pressed: true })).toBeVisible();
+  expect(Object.fromEntries(urls.at(-1)!.searchParams)).toEqual({ from: '2026-10-01', to: '2026-10-31' });
+  expect(screen.getByRole('button', { name: 'Filtros', expanded: false })).toBeVisible();
+  for (const label of ['Persona', 'Origen', 'Área', 'Categoría', 'Medio de pago', 'Desde', 'Hasta']) expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Limpiar filtros' })).not.toBeInTheDocument();
+  for (const [name, range] of [
+    ['Mes anterior', { from: '2026-09-01', to: '2026-09-30' }],
+    ['Este año', { from: '2026-01-01', to: '2026-10-14' }],
+    ['Total', {}],
+  ] as const) {
+    const count = urls.length;
+    fireEvent.click(screen.getByRole('button', { name }));
+    await waitFor(() => expect(urls).toHaveLength(count + 1));
+    expect(Object.fromEntries(urls.at(-1)!.searchParams)).toEqual(range);
+  }
+  fireEvent.click(screen.getByRole('button', { name: 'Personalizado' }));
+  await waitFor(() => expect(urls).toHaveLength(5));
+  expect(screen.getByLabelText('Desde')).toHaveValue('2026-10-01');
+  expect(screen.getByLabelText('Hasta')).toHaveValue('2026-10-14');
+  fireEvent.change(screen.getByLabelText('Desde'), { target: { value: '2026-08-01' } });
+  fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: '2026-08-25' } });
+  expect(urls).toHaveLength(5);
+  fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
+  await waitFor(() => expect(urls).toHaveLength(6));
+  expect(Object.fromEntries(urls.at(-1)!.searchParams)).toEqual({ from: '2026-08-01', to: '2026-08-25' });
+  fireEvent.click(screen.getByRole('button', { name: 'Este mes' }));
+  expect(screen.queryByLabelText('Desde')).not.toBeInTheDocument();
+});
+
+it.each(['income', 'expenses'])('validates and resets the custom range for %s', async view => {
+  navigation.search = `view=${view}`;
+  const reads = vi.fn();
+  server.use(http.get(`http://localhost:3000/api/finance/${view}`, () => { reads(); return HttpResponse.json({ data: [] }); }));
+  renderPage(); await waitFor(() => expect(reads).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole('button', { name: 'Personalizado' }));
+  await waitFor(() => expect(reads).toHaveBeenCalledTimes(2));
+  for (const [from, to, error] of [
+    ['', '2026-10-14', 'Completá las fechas Desde y Hasta.'],
+    ['2026-10-01', '', 'Completá las fechas Desde y Hasta.'],
+    ['2026-10-14', '2026-10-01', 'La fecha Desde no puede ser posterior a Hasta.'],
+    ['2026-10-01', '2026-10-15', 'La fecha Hasta no puede ser futura.'],
+  ]) {
+    fireEvent.change(screen.getByLabelText('Desde'), { target: { value: from } });
+    fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: to } });
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(error!);
+    expect(reads).toHaveBeenCalledTimes(2);
+  }
+  fireEvent.click(screen.getByRole('button', { name: 'Filtros' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Limpiar filtros' }));
+  expect(screen.getByRole('button', { name: 'Este mes', pressed: true })).toBeVisible();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Limpiar filtros' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Personalizado' }));
+  expect(screen.getByLabelText('Desde')).toHaveValue('2026-10-01');
+  expect(screen.getByLabelText('Hasta')).toHaveValue('2026-10-14');
+});
+
+it('searches unique income people by name, surname and formatted DNI and filters without a request', async () => {
+  navigation.search = 'view=income';
+  const reads = vi.fn();
+  server.use(http.get('http://localhost:3000/api/finance/income', () => { reads(); return HttpResponse.json({ data: historyIncome }); }));
+  renderPage(); await screen.findByText('$ 300');
+  fireEvent.click(screen.getByRole('button', { name: 'Filtros' }));
+  const filters = within(screen.getByRole('region', { name: 'Filtros de ingresos' }));
+  expect(filters.queryByText('Equi Fernandez')).not.toBeInTheDocument();
+  expect(filters.queryByRole('button', { name: 'Limpiar filtros' })).not.toBeInTheDocument();
+  for (const term of ['Equi', 'FERNANDEZ', 'equi fernandez', '30.123.456', '30-123-456', '30 123 456']) {
+    fireEvent.change(filters.getByRole('searchbox', { name: 'Persona' }), { target: { value: term } });
+    expect(filters.getAllByRole('button', { name: 'Equi Fernandez DNI 30123456' })).toHaveLength(1);
+  }
+  fireEvent.click(filters.getByRole('button', { name: 'Equi Fernandez DNI 30123456' }));
+  expect(filters.getByText('Equi Fernandez')).toBeVisible();
+  expect(filters.queryByRole('searchbox')).not.toBeInTheDocument();
+  expect(screen.queryByText('$ 300')).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Equi Fernandez' })).toHaveAttribute('href', '/finance?view=income&personId=person-1');
+  expect(screen.getByText('$ 200')).toBeVisible();
+  expect(screen.getAllByRole('link', { name: 'Equi Fernandez' })).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Filtros (1)' })).toBeVisible();
+  fireEvent.change(filters.getByLabelText('Origen'), { target: { value: 'SALA' } });
+  expect(screen.queryByText('$ 200')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Filtros (2)' })).toBeVisible();
+  fireEvent.change(filters.getByLabelText('Origen'), { target: { value: '' } });
+  expect(screen.getByText('$ 200')).toBeVisible();
+  fireEvent.change(filters.getByLabelText('Medio de pago'), { target: { value: 'cash' } });
+  expect(screen.queryByText('$ 200')).not.toBeInTheDocument();
+  expect(screen.getByText('$ 100')).toBeVisible();
+  fireEvent.click(filters.getByRole('button', { name: 'Quitar filtro de Persona' }));
+  expect(filters.getByRole('searchbox')).toHaveValue('');
+  expect(filters.getByLabelText('Medio de pago')).toHaveValue('cash');
+  expect(reads).toHaveBeenCalledTimes(1);
+});
+
+it('preserves selected income filters across periods even when the person is absent, and clears them', async () => {
+  navigation.search = 'view=income';
+  const urls: URL[] = [];
+  server.use(http.get('http://localhost:3000/api/finance/income', ({ request }) => { const url = new URL(request.url); urls.push(url); return HttpResponse.json({ data: url.searchParams.get('from') === '2026-01-01' ? [] : historyIncome }); }));
+  renderPage(); await screen.findByText('$ 300');
+  fireEvent.click(screen.getByRole('button', { name: 'Filtros' }));
+  fireEvent.change(screen.getByLabelText('Persona'), { target: { value: 'Equi' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Equi Fernandez DNI 30123456' }));
+  fireEvent.change(screen.getByLabelText('Origen'), { target: { value: 'SALA' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Este año' }));
+  await screen.findByText('No hay registros.');
+  expect(screen.getByRole('button', { name: 'Filtros (2)' })).toBeVisible();
+  expect(screen.getByText('Equi Fernandez')).toBeVisible();
+  expect(screen.getByLabelText('Origen')).toHaveValue('SALA');
+  fireEvent.change(screen.getByLabelText('Medio de pago'), { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Limpiar filtros' }));
+  expect(screen.getByRole('button', { name: 'Este mes', pressed: true })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Filtros' })).toBeVisible();
+  expect(screen.getByLabelText('Persona')).toHaveValue('');
+  expect(screen.getByLabelText('Origen')).toHaveValue('');
+  expect(screen.getByLabelText('Medio de pago')).toHaveValue('');
+  await screen.findByText('$ 300');
+  expect(urls.every(url => !url.searchParams.has('personId'))).toBe(true);
+});
+
+it('caps the income person search at ten unique results', async () => {
+  navigation.search = 'view=income';
+  server.use(http.get('http://localhost:3000/api/finance/income', () => HttpResponse.json({ data: Array.from({ length: 12 }, (_, i) => ({ ...historyIncome[0], id: `income-${i}`, person: { id: `person-${i}`, firstName: 'Persona', lastName: `Prueba ${i}` } })) })));
+  renderPage(); await screen.findAllByText('$ 100');
+  fireEvent.click(screen.getByRole('button', { name: 'Filtros' }));
+  fireEvent.change(screen.getByLabelText('Persona'), { target: { value: 'Persona' } });
+  expect(within(screen.getByRole('region', { name: 'Filtros de ingresos' })).getAllByRole('button', { name: /Persona Prueba/ })).toHaveLength(10);
+});
+
+it('filters expenses locally using only history-derived categories and methods with read-only permissions', async () => {
+  navigation.search = 'view=expenses';
+  const reads = vi.fn(); const catalogReads = vi.fn();
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: ['EXPENSE_HISTORY_READ'] } })),
+    http.get('http://localhost:3000/api/finance/expenses', () => { reads(); return HttpResponse.json({ data: historyExpenses }); }),
+    http.get('http://localhost:3000/api/finance/:catalog', () => { catalogReads(); return HttpResponse.json({ data: [] }); }),
+  );
+  renderPage(); await screen.findByText('$ 500');
+  fireEvent.click(screen.getByRole('button', { name: 'Filtros' }));
+  expect(screen.queryByLabelText('Persona')).not.toBeInTheDocument();
+  expect(within(screen.getByLabelText('Área')).getAllByRole('option').map(option => option.textContent)).toEqual(['Todas', 'Sala', 'General']);
+  expect(within(screen.getByLabelText('Categoría')).getAllByRole('option').map(option => option.textContent)).toEqual(['Todas', 'Alquiler', 'Insumos']);
+  expect(within(screen.getByLabelText('Medio de pago')).getAllByRole('option').map(option => option.textContent)).toEqual(['Todos', 'Efectivo', 'Transferencia']);
+  for (const [label, value] of [['Área', 'SALA'], ['Categoría', 'rent'], ['Medio de pago', 'transfer']]) {
+    fireEvent.change(screen.getByLabelText(label!), { target: { value } });
+    expect(screen.getByText('$ 400')).toBeVisible();
+    expect(screen.queryByText('$ 500')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(label!), { target: { value: '' } });
+    expect(screen.getByText('$ 500')).toBeVisible();
+  }
+  fireEvent.change(screen.getByLabelText('Área'), { target: { value: 'SALA' } });
+  fireEvent.change(screen.getByLabelText('Categoría'), { target: { value: 'rent' } });
+  fireEvent.change(screen.getByLabelText('Medio de pago'), { target: { value: 'transfer' } });
+  expect(screen.getByRole('button', { name: 'Filtros (3)' })).toBeVisible();
+  expect(reads).toHaveBeenCalledTimes(1);
+  expect(catalogReads).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Total' }));
+  await waitFor(() => expect(reads).toHaveBeenCalledTimes(2));
+  expect(screen.getByRole('button', { name: 'Filtros (3)' })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Limpiar filtros' }));
+  expect(screen.getByRole('button', { name: 'Este mes', pressed: true })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Filtros' })).toBeVisible();
+  for (const label of ['Área', 'Categoría', 'Medio de pago']) expect(screen.getByLabelText(label)).toHaveValue('');
+  await screen.findByText('$ 500');
+});
+
+it('keeps summary, income and expense period selections independent on navigation', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const page = <QueryClientProvider client={client}><FinancePage /></QueryClientProvider>;
+  const { rerender } = render(page);
+  await screen.findByRole('region', { name: 'Indicadores financieros' });
+  fireEvent.click(screen.getByRole('button', { name: 'Este año' }));
+  navigation.search = 'view=expenses'; rerender(<QueryClientProvider client={client}><FinancePage /></QueryClientProvider>);
+  expect(screen.getByRole('button', { name: 'Este mes', pressed: true })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Total' }));
+  navigation.search = 'view=income'; rerender(<QueryClientProvider client={client}><FinancePage /></QueryClientProvider>);
+  expect(screen.getByRole('button', { name: 'Este mes', pressed: true })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Personalizado' }));
+  fireEvent.change(screen.getByLabelText('Desde'), { target: { value: '2026-08-01' } });
+  fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: '2026-08-31' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
+  navigation.search = 'view=expenses'; rerender(<QueryClientProvider client={client}><FinancePage /></QueryClientProvider>);
+  expect(screen.getByRole('button', { name: 'Total', pressed: true })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Personalizado' }));
+  expect(screen.getByLabelText('Desde')).toHaveValue('2026-10-01');
+  expect(screen.getByLabelText('Hasta')).toHaveValue('2026-10-14');
+  navigation.search = ''; rerender(<QueryClientProvider client={client}><FinancePage /></QueryClientProvider>);
+  expect(screen.getByRole('button', { name: 'Este año', pressed: true })).toBeVisible();
+  navigation.search = 'view=income'; rerender(<QueryClientProvider client={client}><FinancePage /></QueryClientProvider>);
+  expect(screen.getByRole('button', { name: 'Personalizado', pressed: true })).toBeVisible();
+  expect(screen.getByLabelText('Desde')).toHaveValue('2026-08-01');
+  expect(screen.getByLabelText('Hasta')).toHaveValue('2026-08-31');
+});
+
+it.each(['income', 'expenses'])('handles the previous-year boundary for %s using the operational date', async view => {
+  vi.setSystemTime(new Date('2027-01-01T01:00:00Z')); // Still December 31 in Buenos Aires.
+  navigation.search = `view=${view}`;
+  const urls: URL[] = [];
+  server.use(http.get(`http://localhost:3000/api/finance/${view}`, ({ request }) => { urls.push(new URL(request.url)); return HttpResponse.json({ data: [] }); }));
+  renderPage(); await waitFor(() => expect(urls).toHaveLength(1));
+  expect(Object.fromEntries(urls.at(-1)!.searchParams)).toEqual({ from: '2026-12-01', to: '2026-12-31' });
+  vi.setSystemTime(new Date('2027-01-15T12:00:00Z'));
+  fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }));
+  await waitFor(() => expect(urls).toHaveLength(2));
+  expect(Object.fromEntries(urls.at(-1)!.searchParams)).toEqual({ from: '2026-12-01', to: '2026-12-31' });
 });

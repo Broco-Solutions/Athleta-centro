@@ -943,3 +943,24 @@ se conserva como antecedente.
 - `Registrado por` continúa mostrando al usuario que cargó el movimiento y no representa al Alumno ni enlaza a su contexto.
 - Los Ingresos clínicos mantienen el nombre de la Persona como texto plano y no reciben un link de Sala.
 - No cambian backend, permisos, vigencia ni operación de Pago. Se reutiliza el contexto individual y `SalaPaymentPanel` existentes.
+
+
+## Finanzas — Filtros compactos de Ingresos y Gastos — 2026-10-20
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+- Ingresos y Gastos disponen de filtros independientes entre sí y respecto del Resumen.
+- Ambos ofrecen `Este mes`, `Mes anterior`, `Este año`, `Total` y `Personalizado`; `Este mes` es el estado inicial.
+- Los meses son calendario completos en `America/Argentina/Buenos_Aires`; `Este año` termina hoy operativo y `Total` consulta sin fechas.
+- `Personalizado` muestra Desde, Hasta y Aplicar. Ambas fechas son obligatorias, Desde debe ser menor o igual a Hasta y Hasta no puede superar hoy operativo. Editar fechas no consulta: solo Aplicar actualiza el rango, con el mismo criterio del Resumen.
+- El selector de período permanece visible. Los filtros específicos comienzan colapsados detrás de `Filtros`.
+- `Filtros (N)` indica cuántos filtros específicos están activos y no cuenta el período.
+- Ingresos permite filtrar por Persona, Origen (Sala o Clínica) y Medio de pago.
+- Persona se busca por Nombre, Apellido, Nombre + Apellido o DNI entre las Personas del Historial cargado del período, sin otra consulta. La búsqueda ignora mayúsculas y separadores del DNI; muestra hasta 10 Personas únicas únicamente al escribir.
+- Cambiar el período conserva los filtros específicos, incluso una Persona ausente del nuevo período; en ese caso puede no haber registros.
+- Gastos permite filtrar por Área (Sala o General), Categoría y Medio de pago; no utiliza Persona.
+- Categorías y Medios de pago se derivan de los registros cargados, evitando consultas adicionales a catálogos.
+- El período se consulta al backend; los filtros específicos se aplican localmente al historial cargado de ese período.
+- `Limpiar filtros` se ofrece cuando hay cambios respecto del estado inicial; devuelve la vista a `Este mes`, elimina los filtros específicos y limpia las fechas personalizadas y sus errores.
+- Los filtros no afectan los formularios `Registrar pago` ni `Registrar gasto`, ni Vigencia de Sala. El contexto individual del Alumno conserva su Historial de pagos sin estos filtros generales.
+- No cambian permisos, backend ni reglas económicas; no se agregan migraciones.

@@ -15,7 +15,7 @@ import { currentSession } from '../../features/auth/auth';
 type Method = { id: string; name: string; isSelectable: boolean };
 type IncomeStatusTab = 'pending' | 'paid';
 type FinanceView = 'summary' | 'income' | 'expenses';
-type SummaryPeriod = 'current-month' | 'previous-month' | 'current-year' | 'all' | 'custom';
+type Period = 'current-month' | 'previous-month' | 'current-year' | 'all' | 'custom';
 type DateRange = { from?: string; to?: string };
 const get = async (path: string) => { const response = await fetch(`/api/finance/${path}`, { credentials: 'include' }); const body = await response.json(); if (!response.ok) throw new Error(body.message ?? 'No pudimos cargar Finanzas'); return body.data?.data ?? body.data; };
 
@@ -28,14 +28,25 @@ function FinancePageContent(): React.JSX.Element {
   const personId = params.get('personId');
   const paymentAction = params.get('action');
   const today = todayOperational();
-  const [summaryPeriod, setSummaryPeriod] = useState<SummaryPeriod>('current-month');
+  const [summaryPeriod, setSummaryPeriod] = useState<Period>('current-month');
   const [draftFrom, setDraftFrom] = useState('');
   const [draftTo, setDraftTo] = useState('');
   const [appliedCustomRange, setAppliedCustomRange] = useState<DateRange | null>(null);
   const [customInitialized, setCustomInitialized] = useState(false);
   const [customError, setCustomError] = useState('');
-  const summaryRange = resolveSummaryRange(summaryPeriod, today, appliedCustomRange);
+  const summaryRange = resolvePeriodRange(summaryPeriod, today, appliedCustomRange);
   const summaryPeriodLabel = summaryLabel(summaryPeriod, today, summaryRange);
+  const incomePeriod = useHistoryPeriod(today);
+  const expensePeriod = useHistoryPeriod(today);
+  const [incomeFiltersOpen, setIncomeFiltersOpen] = useState(false);
+  const [expenseFiltersOpen, setExpenseFiltersOpen] = useState(false);
+  const [incomePersonSearch, setIncomePersonSearch] = useState('');
+  const [selectedIncomePerson, setSelectedIncomePerson] = useState<Movement['person']>(undefined);
+  const [incomeSource, setIncomeSource] = useState('');
+  const [incomeMethod, setIncomeMethod] = useState('');
+  const [expenseArea, setExpenseArea] = useState('');
+  const [expenseCategory, setExpenseCategory] = useState('');
+  const [expenseMethod, setExpenseMethod] = useState('');
   const requestedView = params.get('view');
   const view: FinanceView = requestedView === 'income' || requestedView === 'expenses' ? requestedView : 'summary';
   const active = view === 'income' ? 'finance-income' : view === 'expenses' ? 'finance-expenses' : 'finance-summary';
@@ -73,8 +84,17 @@ function FinancePageContent(): React.JSX.Element {
   const methods = useQuery<Method[]>({ queryKey: ['finance', 'payment-methods'], queryFn: () => get('payment-methods'), enabled: view === 'summary' && (read || canCatalog) });
   const summaryIncome = useQuery<Movement[]>({ queryKey: ['finance', 'income', 'summary', summaryPeriod, summaryRange.from ?? null, summaryRange.to ?? null], queryFn: () => get(financialQuery('income', summaryRange, { area: 'SALA' })), enabled: view === 'summary' && read });
   const summaryExpenses = useQuery<Movement[]>({ queryKey: ['finance', 'expenses', 'summary', summaryPeriod, summaryRange.from ?? null, summaryRange.to ?? null], queryFn: () => get(financialQuery('expenses', summaryRange)), enabled: view === 'summary' && read });
-  const income = useQuery({ queryKey: ['finance', 'income', personId], queryFn: () => get(personId ? `income?personId=${encodeURIComponent(personId)}` : 'income'), enabled: view === 'income' && !personId && read });
-  const expenses = useQuery({ queryKey: ['finance', 'expenses'], queryFn: () => get('expenses'), enabled: view === 'expenses' && canReadExpenses });
+  const income = useQuery<Movement[]>({ queryKey: ['finance', 'income', 'history', incomePeriod.period, incomePeriod.range.from ?? null, incomePeriod.range.to ?? null], queryFn: () => get(financialQuery('income', incomePeriod.range)), enabled: view === 'income' && !personId && read });
+  const expenses = useQuery<Movement[]>({ queryKey: ['finance', 'expenses', 'history', expensePeriod.period, expensePeriod.range.from ?? null, expensePeriod.range.to ?? null], queryFn: () => get(financialQuery('expenses', expensePeriod.range)), enabled: view === 'expenses' && canReadExpenses });
+  const incomePeople = uniqueOptions((income.data ?? []).flatMap(row => row.person ? [row.person] : []));
+  const personResults = incomePersonSearch.trim() ? incomePeople.filter(person => matchesStudentSearch(person, incomePersonSearch)).slice(0, 10) : [];
+  const incomeMethods = uniqueOptions((income.data ?? []).flatMap(row => row.paymentMethod ? [row.paymentMethod] : [])).sort(byName);
+  const expenseCategories = uniqueOptions((expenses.data ?? []).flatMap(row => row.category ? [row.category] : [])).sort(byName);
+  const expenseMethods = uniqueOptions((expenses.data ?? []).flatMap(row => row.paymentMethod ? [row.paymentMethod] : [])).sort(byName);
+  const filteredIncome = (income.data ?? []).filter(row => (!selectedIncomePerson || row.person?.id === selectedIncomePerson.id) && (!incomeSource || row.source === incomeSource) && (!incomeMethod || row.paymentMethod?.id === incomeMethod));
+  const filteredExpenses = (expenses.data ?? []).filter(row => (!expenseArea || row.area === expenseArea) && (!expenseCategory || row.category?.id === expenseCategory) && (!expenseMethod || row.paymentMethod?.id === expenseMethod));
+  const incomeFilterCount = [selectedIncomePerson, incomeSource, incomeMethod].filter(Boolean).length;
+  const expenseFilterCount = [expenseArea, expenseCategory, expenseMethod].filter(Boolean).length;
 
   const selectedPaymentContext = view === 'income' && Boolean(personId) && permissions.includes('SALA_PAYMENT_MANAGE');
   const person = useQuery({ queryKey: ['person', personId], enabled: selectedPaymentContext, retry: false, queryFn: async () => {
@@ -207,8 +227,22 @@ function FinancePageContent(): React.JSX.Element {
         {participations.isSuccess ? <SalaPaymentPanel key={`${personId}-${paymentAction}`} defaultOpen={paymentAction === 'renew'} personId={personId!} csrfToken={session.data?.csrfToken ?? ''} canRegister={permissions.includes('SALA_PAYMENT_REGISTER')} canSelectPlan={permissions.includes('SALA_PAYMENT_REGISTER')} canAdjust={permissions.includes('SALA_PAYMENT_MANAGE')} canReverse={permissions.includes('SALA_PAYMENT_MANAGE')} activePlan={activePlan}/> : null}
       </> : null}
     </section> : null}
+    {view === 'income' && !personId && read ? <section aria-label="Filtros de ingresos" className="space-y-3">
+      <HistoryPeriodControls state={incomePeriod} filtersOpen={incomeFiltersOpen} onToggleFilters={() => setIncomeFiltersOpen(!incomeFiltersOpen)} filterCount={incomeFilterCount} panelId="income-history-filters" />
+      {incomeFiltersOpen ? <div id="income-history-filters" className="grid gap-3 rounded border bg-white p-3 md:grid-cols-3">
+        <div className="text-sm">
+          {selectedIncomePerson ? <><p>Persona</p><div className="mt-1 flex h-10 items-center justify-between gap-2 rounded border px-3"><span>{selectedIncomePerson.firstName} {selectedIncomePerson.lastName}</span><button type="button" aria-label="Quitar filtro de Persona" onClick={() => setSelectedIncomePerson(undefined)} className="rounded px-2 py-1 focus-visible:outline focus-visible:outline-2">×</button></div></> : <>
+            <label className="block">Persona<input type="search" placeholder="Buscar por nombre, apellido o DNI..." value={incomePersonSearch} onChange={event => setIncomePersonSearch(event.target.value)} className="mt-1 block h-10 w-full rounded border px-3" /></label>
+            {personResults.length ? <ul className="mt-1 rounded border">{personResults.map(person => <li key={person.id}><button type="button" aria-label={`${person.firstName} ${person.lastName}${person.dni ? ` DNI ${person.dni}` : ''}`} className="w-full px-3 py-2 text-left hover:bg-surface-muted focus-visible:outline focus-visible:outline-2" onClick={() => { setSelectedIncomePerson(person); setIncomePersonSearch(''); }}><span className="block font-medium">{person.firstName} {person.lastName}</span>{person.dni ? <span className="block text-muted-foreground">DNI {person.dni}</span> : null}</button></li>)}</ul> : null}
+          </>}
+        </div>
+        <HistorySelect label="Origen" value={incomeSource} onChange={setIncomeSource} options={[{ id: 'SALA', name: 'Sala' }, { id: 'CLINIC', name: 'Clínica' }]} />
+        <HistorySelect label="Medio de pago" value={incomeMethod} onChange={setIncomeMethod} options={incomeMethods} />
+        {incomePeriod.changed || incomeFilterCount || incomePersonSearch ? <div className="md:col-span-3 md:text-right"><Button type="button" variant="secondary" onClick={() => { incomePeriod.reset(); setSelectedIncomePerson(undefined); setIncomePersonSearch(''); setIncomeSource(''); setIncomeMethod(''); }}>Limpiar filtros</Button></div> : null}
+      </div> : null}
+    </section> : null}
     {view === 'income' && !personId && income.isError ? <p role="alert">No se pudieron cargar los ingresos para este contexto.</p> : null}
-    {view === 'income' && !personId && read ? <Data title="Historial de ingresos" value={income.data} showRegisteredBy /> : null}
+    {view === 'income' && !personId && read ? <Data title="Historial de ingresos" value={filteredIncome} showRegisteredBy /> : null}
     {view === 'expenses' ? <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-semibold">Gastos</h2>
@@ -216,10 +250,82 @@ function FinancePageContent(): React.JSX.Element {
       </div>
       {expenseFormOpen && canCreateExpense ? <div id="expense-registration-form"><ExpenseRegistration csrfToken={session.data?.csrfToken ?? ''} canManageCategories={permissions.includes('EXPENSE_CATEGORY_CATALOG_MANAGE')} onRegistered={() => { setExpenseFormOpen(false); setExpenseConfirmation('Gasto registrado correctamente.'); }} /></div> : null}
       {expenseConfirmation ? <p role="status" className="text-sm text-emerald-700">{expenseConfirmation}</p> : null}
+      {canReadExpenses ? <section aria-label="Filtros de gastos" className="space-y-3">
+        <HistoryPeriodControls state={expensePeriod} filtersOpen={expenseFiltersOpen} onToggleFilters={() => setExpenseFiltersOpen(!expenseFiltersOpen)} filterCount={expenseFilterCount} panelId="expense-history-filters" />
+        {expenseFiltersOpen ? <div id="expense-history-filters" className="grid gap-3 rounded border bg-white p-3 md:grid-cols-3">
+          <HistorySelect label="Área" allLabel="Todas" value={expenseArea} onChange={setExpenseArea} options={[{ id: 'SALA', name: 'Sala' }, { id: 'GENERAL', name: 'General' }]} />
+          <HistorySelect label="Categoría" allLabel="Todas" value={expenseCategory} onChange={setExpenseCategory} options={expenseCategories} />
+          <HistorySelect label="Medio de pago" value={expenseMethod} onChange={setExpenseMethod} options={expenseMethods} />
+          {expensePeriod.changed || expenseFilterCount ? <div className="md:col-span-3 md:text-right"><Button type="button" variant="secondary" onClick={() => { expensePeriod.reset(); setExpenseArea(''); setExpenseCategory(''); setExpenseMethod(''); }}>Limpiar filtros</Button></div> : null}
+        </div> : null}
+      </section> : null}
       {canReadExpenses && expenses.isError ? <p role="alert">No se pudieron cargar los gastos.</p> : null}
-      {canReadExpenses ? <Data title="Registros de gastos" value={expenses.data} /> : null}
+      {canReadExpenses ? <Data title="Registros de gastos" value={filteredExpenses} /> : null}
     </> : null}
   </main></WorkspaceShell>;
+}
+
+const periods = [['current-month', 'Este mes'], ['previous-month', 'Mes anterior'], ['current-year', 'Este año'], ['all', 'Total'], ['custom', 'Personalizado']] as const;
+
+function useHistoryPeriod(today: string) {
+  const [period, setPeriod] = useState<Period>('current-month');
+  const [draftFrom, setDraftFrom] = useState('');
+  const [draftTo, setDraftTo] = useState('');
+  const [appliedCustomRange, setAppliedCustomRange] = useState<DateRange | null>(null);
+  const [customError, setCustomError] = useState('');
+  return {
+    period, draftFrom, draftTo, customError, today, setDraftFrom, setDraftTo,
+    range: resolvePeriodRange(period, today, appliedCustomRange),
+    changed: period !== 'current-month' || Boolean(draftFrom || draftTo || appliedCustomRange || customError),
+    select(next: Period) {
+      setPeriod(next);
+      if (next === 'custom' && !appliedCustomRange) {
+        const initial = { from: monthBounds(today.slice(0, 7)).from, to: today };
+        setDraftFrom(initial.from); setDraftTo(initial.to); setAppliedCustomRange(initial); setCustomError('');
+      }
+    },
+    apply() {
+      if (!draftFrom || !draftTo) { setCustomError('Completá las fechas Desde y Hasta.'); return; }
+      if (draftFrom > draftTo) { setCustomError('La fecha Desde no puede ser posterior a Hasta.'); return; }
+      if (draftTo > today) { setCustomError('La fecha Hasta no puede ser futura.'); return; }
+      setAppliedCustomRange({ from: draftFrom, to: draftTo }); setCustomError('');
+    },
+    reset() {
+      setPeriod('current-month'); setDraftFrom(''); setDraftTo(''); setAppliedCustomRange(null); setCustomError('');
+    },
+  };
+}
+
+function HistoryPeriodControls({ state, filtersOpen, onToggleFilters, filterCount, panelId }: {
+  state: ReturnType<typeof useHistoryPeriod>; filtersOpen: boolean; onToggleFilters: () => void; filterCount: number; panelId: string;
+}): React.JSX.Element {
+  return <>
+    <div className="flex flex-wrap items-center gap-2">
+      {periods.map(([period, label]) => <Button key={period} type="button" variant={state.period === period ? 'primary' : 'secondary'} aria-pressed={state.period === period} onClick={() => state.select(period)}>{label}</Button>)}
+      <Button type="button" variant="secondary" aria-expanded={filtersOpen} aria-controls={panelId} onClick={onToggleFilters}>Filtros{filterCount ? ` (${filterCount})` : ''}<span aria-hidden="true" className="ml-2">{filtersOpen ? '▴' : '▾'}</span></Button>
+    </div>
+    {state.period === 'custom' ? <div className="flex flex-wrap items-end gap-2">
+      <label className="block text-sm">Desde<input type="date" value={state.draftFrom} max={state.draftTo || state.today} onChange={event => state.setDraftFrom(event.target.value)} className="mt-1 block h-10 rounded border px-3" /></label>
+      <label className="block text-sm">Hasta<input type="date" value={state.draftTo} min={state.draftFrom || undefined} max={state.today} onChange={event => state.setDraftTo(event.target.value)} className="mt-1 block h-10 rounded border px-3" /></label>
+      <Button type="button" onClick={state.apply}>Aplicar</Button>
+      {state.customError ? <p role="alert" className="text-sm text-destructive">{state.customError}</p> : null}
+    </div> : null}
+  </>;
+}
+
+function uniqueOptions<T extends { id: string }>(options: T[]): T[] {
+  return [...new Map(options.map(option => [option.id, option])).values()];
+}
+const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, 'es');
+
+function HistorySelect({ label, allLabel = 'Todos', value, onChange, options }: {
+  label: string; allLabel?: string; value: string; onChange: (value: string) => void; options: { id: string; name: string }[];
+}): React.JSX.Element {
+  return <label className="block text-sm">{label}<select value={value} onChange={event => onChange(event.target.value)} className="mt-1 block h-10 w-full rounded border bg-white px-3">
+    <option value="">{allLabel}</option>
+    {value && !options.some(option => option.id === value) ? <option value={value}>Selección fuera del período</option> : null}
+    {options.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+  </select></label>;
 }
 
 function shiftMonth(value: string, delta: number): string {
@@ -236,7 +342,7 @@ function monthTitle(value: string): string {
   const title = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${value}-01T00:00:00Z`));
   return title.charAt(0).toUpperCase() + title.slice(1);
 }
-function resolveSummaryRange(period: SummaryPeriod, today: string, appliedCustomRange: DateRange | null): DateRange {
+function resolvePeriodRange(period: Period, today: string, appliedCustomRange: DateRange | null): DateRange {
   if (period === 'all') return {};
   if (period === 'current-year') return { from: `${today.slice(0, 4)}-01-01`, to: today };
   if (period === 'custom') return appliedCustomRange ?? {};
@@ -251,7 +357,7 @@ function financialQuery(path: string, range: DateRange, extra?: Record<string, s
   const query = params.toString();
   return `${path}${query ? `?${query}` : ''}`;
 }
-function summaryLabel(period: SummaryPeriod, today: string, range: DateRange): string {
+function summaryLabel(period: Period, today: string, range: DateRange): string {
   if (period === 'all') return 'Todo el historial';
   if (period === 'current-year') return today.slice(0, 4);
   if (period === 'custom') return range.from && range.to ? `${formatDate(range.from)} — ${formatDate(range.to)}` : 'Rango personalizado';
@@ -267,7 +373,7 @@ function PaymentMethods({ methods, canCatalog, name, editing, message, onName, o
   return <section className="rounded border bg-white p-5"><h2 className="font-semibold">Medios de pago</h2>{methods.map((method) => <div className="flex items-center justify-between border-b py-2 text-sm" key={method.id}><span>{method.name}</span><span className="flex items-center gap-3"><span>{method.isSelectable ? 'Disponible' : 'Retirado'}</span>{canCatalog && <>{method.isSelectable && <button className="underline" onClick={() => onEdit(method)}>Editar</button>}{method.isSelectable && <button className="underline" onClick={() => onRetire(method)}>Retirar</button>}</>}</span></div>)}{canCatalog && <form className="mt-4 flex gap-2" onSubmit={onSave}><input aria-label="Nombre del medio de pago" required value={name} onChange={(event) => onName(event.target.value)} className="h-10 flex-1 rounded border px-3" placeholder={editing ? 'Editar medio de pago' : 'Nuevo medio de pago'} /><button className="rounded bg-[#FCCC05] px-3 py-2 text-sm text-black">{editing ? 'Guardar' : 'Crear'}</button>{editing && <button type="button" className="rounded border px-3" onClick={onCancelEdit}>Cancelar</button>}</form>}{message && <p role="status" className="mt-2 text-sm">{message}</p>}</section>;
 }
 
-type Movement = { id: string; cashDate: string; source?: string; area?: string; amount: string; person?: { id: string; firstName: string; lastName: string }; category?: { name: string }; paymentMethod?: { id: string; name: string }; description?: string | null; registeredBy?: { id: string; firstName: string; lastName: string } };
+type Movement = { id: string; cashDate: string; source?: string; area?: string; amount: string; person?: { id: string; firstName: string; lastName: string; dni?: string }; category?: { id: string; name: string }; paymentMethod?: { id: string; name: string }; description?: string | null; registeredBy?: { id: string; firstName: string; lastName: string } };
 const areaLabel = (area?: string) => ({ SALA: 'Sala', GENERAL: 'General', CLINIC: 'Clínica' })[area ?? ''] ?? area;
 const formatDate = (value: string) => value.slice(0, 10).split('-').reverse().join('/');
 const formatMoney = (value: string) => `$ ${BigInt(value).toLocaleString('es-AR')}`;
@@ -282,9 +388,9 @@ function Data({ title, value, showRegisteredBy = false }: { title: string; value
   </div>) : <p className="mt-3 text-sm text-muted-foreground">No hay registros.</p>}</section>;
 }
 
-function matchesStudentSearch(student: { firstName: string; lastName: string; dni: string }, search: string): boolean {
+function matchesStudentSearch(student: { firstName: string; lastName: string; dni?: string }, search: string): boolean {
   const term = search.trim().toLocaleLowerCase('es');
   const dniDigits = term.replace(/\D/g, '');
   return !term || `${student.firstName} ${student.lastName}`.toLocaleLowerCase('es').includes(term)
-    || Boolean(dniDigits && /^[\d\s.-]+$/.test(term) && student.dni.replace(/\D/g, '').includes(dniDigits));
+    || Boolean(dniDigits && /^[\d\s.-]+$/.test(term) && student.dni?.replace(/\D/g, '').includes(dniDigits));
 }
