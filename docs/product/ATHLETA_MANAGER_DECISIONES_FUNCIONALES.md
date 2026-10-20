@@ -897,3 +897,15 @@ Estado: **CONFIRMADO / RESUELTO**.
 - `Registrar gasto` es una acción desplegable, no una pestaña. Abrir el formulario no oculta el historial. Esta decisión sustituye la separación visual anterior en pestañas Registrar gasto / Registros.
 - Después de un registro exitoso el formulario se cierra, el historial se actualiza mediante invalidación de TanStack Query y se muestra confirmación.
 - No cambian permisos ni reglas económicas. Registrar un Gasto no concede acceso al historial general.
+
+
+## Portal Sala — Cancelación desde Mis reservas — 2026-10-20
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+- `Mis reservas` permite cancelar una Reserva puntual futura activa desde la acción de esa Reserva, previa confirmación.
+- Solo se puede cancelar antes del inicio real de la actividad. En el instante de inicio o después, el backend rechaza la operación.
+- La validación autoritativa ocurre en backend. No se requiere vigencia activa para cancelar una Reserva existente.
+- Después de una cancelación confirmada por backend, la Reserva desaparece de `Mis reservas` al actualizarse la consulta.
+- La capacidad se libera mediante la lógica existente de Sala.
+- Este flujo no cancela ni modifica Turnos fijos. Las ocurrencias de Turnos fijos conservan su operación independiente.

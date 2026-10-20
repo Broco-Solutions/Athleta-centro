@@ -33,6 +33,12 @@ it('renders the mobile login composition and official Athleta logo', () => {
   }
   expect(screen.queryByText(/PORTAL DE/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/CLIENTES/i)).not.toBeInTheDocument();
+
+  const dni = screen.getByLabelText('DNI');
+  const dniHelp = screen.getByText('Sin puntos ni espacios.');
+  expect(dniHelp.previousElementSibling).toContainElement(dni);
+  expect(dniHelp).toHaveClass('text-xs', 'text-muted-foreground');
+  expect(screen.getByLabelText('PIN de 4 dígitos')).toBeInTheDocument();
 });
 
 it('uses a dynamic viewport height and switches to a two-column desktop composition', () => {

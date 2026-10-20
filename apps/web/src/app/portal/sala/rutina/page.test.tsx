@@ -34,6 +34,7 @@ it('renders the active routine read-only with its details and correct counts', a
   expect(screen.getByText('2 días · 3 ejercicios')).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Día 1' })).toHaveClass('bg-primary');
   expect(screen.getByRole('heading', { name: 'Día 2' })).toHaveClass('bg-primary');
+  expect(screen.getByRole('heading', { name: 'Día 1' }).closest('header')).toHaveClass('bg-surface-muted');
   for (const row of screen.getAllByRole('listitem')) expect(row.querySelector('.bg-primary')).toBeNull();
   for (const row of screen.getAllByRole('listitem')) expect(row).not.toHaveClass('bg-primary');
   expect(screen.getByText('Descenso controlado')).toBeInTheDocument();

@@ -56,25 +56,25 @@ export default function PortalLogin(): React.JSX.Element {
           </div>
 
           <div className="mt-3 space-y-2.5">
-            <label className="block text-sm font-medium" htmlFor="portal-dni">
-              DNI
-              <span className="relative mt-1 block">
+            <div className="space-y-1">
+              <label className="block text-sm font-medium" htmlFor="portal-dni">DNI</label>
+              <span className="relative block">
                 <Contact aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-                <input id="portal-dni" required autoComplete="username" value={dni} onChange={(event) => setDni(event.target.value)} placeholder="Ingresá tu DNI" className="h-12 w-full rounded-md border border-border bg-white pl-11 pr-3 text-base font-normal outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-ring" />
+                <input id="portal-dni" required autoComplete="username" aria-describedby="portal-dni-help" value={dni} onChange={(event) => setDni(event.target.value)} placeholder="Ingresá tu DNI" className="h-12 w-full rounded-md border border-border bg-white pl-11 pr-3 text-base font-normal outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-ring" />
               </span>
-              <span className="mt-1 block text-xs font-normal text-muted-foreground">Sin puntos ni espacios.</span>
-            </label>
+              <p id="portal-dni-help" className="text-xs font-normal text-muted-foreground">Sin puntos ni espacios.</p>
+            </div>
 
-            <label className="block text-sm font-medium" htmlFor="portal-pin">
-              PIN de 4 dígitos
-              <span className="relative mt-1 block">
+            <div className="space-y-1">
+              <label className="block text-sm font-medium" htmlFor="portal-pin">PIN de 4 dígitos</label>
+              <span className="relative block">
                 <Lock aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
                 <input id="portal-pin" required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="current-password" type={showPin ? 'text' : 'password'} value={pin} onChange={(event) => setPin(event.target.value)} placeholder="Ingresá tu PIN" className="h-12 w-full rounded-md border border-border bg-white pl-11 pr-12 text-base font-normal outline-none placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-ring" />
                 <button type="button" aria-label={showPin ? 'Ocultar PIN' : 'Mostrar PIN'} onClick={() => setShowPin((visible) => !visible)} className="absolute right-1 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   {showPin ? <EyeOff aria-hidden="true" className="h-5 w-5" /> : <Eye aria-hidden="true" className="h-5 w-5" />}
                 </button>
               </span>
-            </label>
+            </div>
           </div>
 
           {error ? <p role="alert" className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</p> : null}
