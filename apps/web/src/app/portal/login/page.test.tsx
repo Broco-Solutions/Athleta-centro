@@ -36,7 +36,13 @@ it('renders the mobile login composition and official Athleta logo', () => {
   expect(screen.getByRole('heading', { name: 'Iniciar sesión', level: 1 })).toBeVisible();
   expect(screen.getByText('DESBLOQUEÁ TU')).toBeVisible();
   expect(screen.getByText('POTENCIAL.')).toHaveClass('text-primary');
-  expect(screen.getByText('DESBLOQUEÁ TU').closest('p')).toHaveClass('mt-5', 'text-xl', 'font-bold', 'sm:text-2xl');
+  expect(screen.getByText('DESBLOQUEÁ TU').closest('p')).toHaveClass('text-xl', 'font-bold', 'sm:text-2xl');
+  const heroArrow = screen.getByTestId('portal-hero-arrow');
+  expect(heroArrow).toBeVisible();
+  expect(heroArrow).toHaveClass('text-primary', 'shrink-0');
+  const heroAccent = screen.getByTestId('portal-hero-accent');
+  expect(heroAccent).toBeVisible();
+  expect(heroAccent).toHaveClass('absolute', 'bottom-0', 'left-5', 'h-1', 'w-12', 'bg-primary');
   expect(logo.closest('header')?.nextElementSibling).toContainElement(screen.getByText('POTENCIAL.'));
   expect(screen.getByRole('link', { name: 'Desarrollado por Broco Solutions' })).toHaveAttribute('href', 'https://www.brocosolutions.com');
   expect(screen.queryByText('Ingresá con tu DNI y PIN para continuar.')).not.toBeInTheDocument();

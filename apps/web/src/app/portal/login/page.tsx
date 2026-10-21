@@ -16,15 +16,19 @@ export default function PortalLogin(): React.JSX.Element {
 
   return (
     <main className="flex min-h-dvh flex-col bg-background">
-      <section className="bg-sidebar px-5 py-5 text-sidebar-foreground sm:px-8">
+      <section className="relative bg-sidebar px-5 py-5 pb-7 text-sidebar-foreground sm:px-8">
         <header className="flex items-center gap-3">
           <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-32 sm:w-36 lg:w-40" />
           <span className="text-xs font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/70">PORTAL</span>
         </header>
-        <p className="mt-5 text-xl font-bold uppercase text-white sm:text-2xl">
-          <span className="block">DESBLOQUEÁ TU</span>
-          <span className="block text-primary">POTENCIAL.</span>
-        </p>
+        <div className="mt-5 flex items-center justify-between gap-4">
+          <p className="text-xl font-bold uppercase text-white sm:text-2xl">
+            <span className="block">DESBLOQUEÁ TU</span>
+            <span className="block text-primary">POTENCIAL.</span>
+          </p>
+          <ArrowRight data-testid="portal-hero-arrow" aria-hidden="true" className="h-8 w-8 shrink-0 text-primary sm:h-10 sm:w-10" />
+        </div>
+        <span data-testid="portal-hero-accent" aria-hidden="true" className="absolute bottom-0 left-5 h-1 w-12 bg-primary sm:left-8" />
       </section>
 
       <section className="flex flex-1 flex-col items-center justify-center px-5 py-8 sm:px-8">
