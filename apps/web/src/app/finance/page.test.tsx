@@ -43,7 +43,7 @@ function renderPage() {
 describe('Finance views', () => {
   it('uses /finance for indicators and payment methods', async () => {
     renderPage();
-    expect(await within(await screen.findByRole('region', { name: 'Indicadores financieros' })).findByText('$ 60')).toBeVisible();
+    expect(await within(await screen.findByRole('region', { name: 'Indicadores financieros' })).findByText('$ 60,00')).toBeVisible();
     const indicators = within(screen.getByRole('region', { name: 'Indicadores financieros' }));
     expect(indicators.queryByText('Clínica')).not.toBeInTheDocument();
     for (const label of ['Ingresos', 'Gastos', 'Resultado']) expect(indicators.getByText(label)).toBeVisible();
@@ -69,8 +69,8 @@ describe('Finance views', () => {
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Juan Pérez' })).toHaveAttribute('href', '/finance?view=income&personId=person-1');
     expect(screen.queryByRole('link', { name: /Admin Test/ })).not.toBeInTheDocument();
-    expect(screen.getByText('Registrado por: Admin Test')).toBeVisible();
-    expect(screen.getByText('$ 60')).toBeVisible();
+    expect(screen.getByText('Admin Test', { selector: 'span[role=cell]' })).toBeVisible();
+    expect(screen.getAllByText('$ 60,00')[0]!).toBeVisible();
     expect(screen.getByText('Transferencia')).toBeVisible();
     expect(screen.getByText('Sala', { exact: true })).toBeVisible();
     expect(screen.queryByText('SALA', { exact: true })).not.toBeInTheDocument();
@@ -89,7 +89,7 @@ describe('Finance views', () => {
     expect(await screen.findByRole('heading', { name: 'Registros de gastos' })).toBeVisible();
     expect(await screen.findByText('14/10/2026')).toBeVisible();
     expect(screen.getByText('Transferencia')).toBeVisible();
-    expect(screen.getByText('$ 250.000')).toBeVisible();
+    expect(screen.getAllByText('$ 250.000,00')[0]!).toBeVisible();
     expect(screen.getByText('General', { selector: 'span' })).toBeVisible();
     expect(screen.getByText('Local de Sala')).toBeVisible();
     expect(screen.queryByRole('link', { name: 'Nuevo ingreso clínico' })).not.toBeInTheDocument();
@@ -124,7 +124,7 @@ it.each(['renew', null])('concentrates payment context with action=%s and keeps 
   expect(screen.getByRole('link', { name: 'Cambiar alumno' })).toHaveAttribute('href', '/finance?view=income');
   expect(screen.getByRole('heading', { name: 'Finanzas', level: 1 })).toBeVisible();
   expect(screen.getAllByText('2 veces').length).toBeGreaterThan(0);
-  expect(screen.getByText('Precio actual: $10.000 / mes')).toBeVisible();
+  expect(screen.getByText('Precio actual: $ 10.000,00 / mes')).toBeVisible();
   expect(screen.getByRole('heading', { name: 'Historial de pagos' })).toBeVisible();
   expect(screen.queryByRole('heading', { name: 'Historial de ingresos' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: '+ Registrar pago' })).not.toBeInTheDocument();
@@ -267,7 +267,7 @@ it.each(['', 'Compra de materiales'])('registers an expense with optional descri
   expect(screen.getByRole('button', { name: '+ Registrar gasto' })).toHaveAttribute('aria-expanded', 'false');
   expect(screen.queryByRole('heading', { name: 'Registrar gasto' })).not.toBeInTheDocument();
   for (const key of ['expenses', 'totals', 'executive-totals']) expect(invalidate).toHaveBeenCalledWith({ queryKey: ['finance', key] });
-  expect(await screen.findByText('$ 35.000')).toBeVisible();
+  expect(await screen.findAllByText('$ 35.000,00').then(items => items[0]!)).toBeVisible();
   expect(screen.getByText('Alquiler', { selector: 'span' })).toBeVisible();
   expect(screen.getByText('Efectivo', { selector: 'span' })).toBeVisible();
   expect(reads).toBe(2);
@@ -419,17 +419,17 @@ it.each([true, false])('filters summary periods, aggregates methods and gates ex
   expect(incomeUrls.at(-1)?.searchParams.get('area')).toBe('SALA');
   expect(expenseUrls.at(-1)?.searchParams.get('from')).toBe('2026-10-01');
   expect(expenseUrls.at(-1)?.searchParams.get('to')).toBe('2026-10-31');
-  await screen.findByText('$ 800.000');
+  await screen.findByText('$ 800.000,00');
   const indicators = within(screen.getByRole('region', { name: 'Indicadores financieros' }));
   expect(Boolean(indicators.queryByText('Resultado'))).toBe(executive);
   const table = within(screen.getByRole('table', { name: 'Movimientos por medio de pago' }));
   const cash = within(table.getByRole('rowheader', { name: 'Efectivo' }).closest('tr')!);
-  expect(cash.getByText('$ 320.000')).toBeVisible(); expect(cash.getByText('$ 80.000')).toBeVisible();
-  expect(Boolean(cash.queryByText('$ 240.000'))).toBe(executive);
+  expect(cash.getByText('$ 320.000,00')).toBeVisible(); expect(cash.getByText('$ 80.000,00')).toBeVisible();
+  expect(Boolean(cash.queryByText('$ 240.000,00'))).toBe(executive);
   const transfer = within(table.getByRole('rowheader', { name: 'Transferencia' }).closest('tr')!);
-  expect(transfer.getByText('$ 480.000')).toBeVisible(); expect(transfer.getByText('$ 140.000')).toBeVisible();
+  expect(transfer.getByText('$ 480.000,00')).toBeVisible(); expect(transfer.getByText('$ 140.000,00')).toBeVisible();
   expect(Boolean(table.queryByRole('columnheader', { name: 'Neto' }))).toBe(executive);
-  expect(within(table.getByRole('rowheader', { name: 'Tarjeta' }).closest('tr')!).getAllByText('$ 0')).toHaveLength(executive ? 3 : 2);
+  expect(within(table.getByRole('rowheader', { name: 'Tarjeta' }).closest('tr')!).getAllByText('$ 0,00')).toHaveLength(executive ? 3 : 2);
   const initialStudentReads = studentUrls.length;
   fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }));
   expect(await screen.findByText('Septiembre Pendiente')).toBeVisible();
@@ -570,7 +570,7 @@ it('keeps clinical income names as plain text', async () => {
   renderPage();
   expect(await screen.findByText('Nombre Paciente')).toBeVisible();
   expect(screen.queryByRole('link', { name: 'Nombre Paciente' })).not.toBeInTheDocument();
-  expect(screen.getByText('Registrado por: Admin Test')).toBeVisible();
+  expect(screen.getByText('Admin Test', { selector: 'span[role=cell]' })).toBeVisible();
 });
 
 it('shows income history without payment management controls for operational readers', async () => {
@@ -681,7 +681,7 @@ it('searches unique income people by name, surname and formatted DNI and filters
   navigation.search = 'view=income';
   const reads = vi.fn();
   server.use(http.get('http://localhost:3000/api/finance/income', () => { reads(); return HttpResponse.json({ data: historyIncome }); }));
-  renderPage(); await screen.findByText('$ 300');
+  renderPage(); await screen.findByText('$ 300,00', { selector: 'strong' });
   fireEvent.click(screen.getByRole('button', { name: 'Filtros' }));
   const filters = within(screen.getByRole('region', { name: 'Filtros de ingresos' }));
   expect(filters.queryByText('Equi Fernandez')).not.toBeInTheDocument();
@@ -693,19 +693,19 @@ it('searches unique income people by name, surname and formatted DNI and filters
   fireEvent.click(filters.getByRole('button', { name: 'Equi Fernandez DNI 30123456' }));
   expect(filters.getByText('Equi Fernandez')).toBeVisible();
   expect(filters.queryByRole('searchbox')).not.toBeInTheDocument();
-  expect(screen.queryByText('$ 300')).not.toBeInTheDocument();
+  expect(screen.queryByText('$ 300,00', { selector: 'strong' })).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Equi Fernandez' })).toHaveAttribute('href', '/finance?view=income&personId=person-1');
-  expect(screen.getByText('$ 200')).toBeVisible();
+  expect(screen.getByText('$ 200,00', { selector: 'strong' })).toBeVisible();
   expect(screen.getAllByRole('link', { name: 'Equi Fernandez' })).toHaveLength(1);
   expect(screen.getByRole('button', { name: 'Filtros (1)' })).toBeVisible();
   fireEvent.change(filters.getByLabelText('Origen'), { target: { value: 'SALA' } });
-  expect(screen.queryByText('$ 200')).not.toBeInTheDocument();
+  expect(screen.queryByText('$ 200,00', { selector: 'strong' })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Filtros (2)' })).toBeVisible();
   fireEvent.change(filters.getByLabelText('Origen'), { target: { value: '' } });
-  expect(screen.getByText('$ 200')).toBeVisible();
+  expect(screen.getByText('$ 200,00', { selector: 'strong' })).toBeVisible();
   fireEvent.change(filters.getByLabelText('Medio de pago'), { target: { value: 'cash' } });
-  expect(screen.queryByText('$ 200')).not.toBeInTheDocument();
-  expect(screen.getByText('$ 100')).toBeVisible();
+  expect(screen.queryByText('$ 200,00', { selector: 'strong' })).not.toBeInTheDocument();
+  expect(screen.getByText('$ 100,00', { selector: 'strong' })).toBeVisible();
   fireEvent.click(filters.getByRole('button', { name: 'Quitar filtro de Persona' }));
   expect(filters.getByRole('searchbox')).toHaveValue('');
   expect(filters.getByLabelText('Medio de pago')).toHaveValue('cash');
@@ -716,7 +716,7 @@ it('preserves selected income filters across periods even when the person is abs
   navigation.search = 'view=income';
   const urls: URL[] = [];
   server.use(http.get('http://localhost:3000/api/finance/income', ({ request }) => { const url = new URL(request.url); urls.push(url); return HttpResponse.json({ data: url.searchParams.get('from') === '2026-01-01' ? [] : historyIncome }); }));
-  renderPage(); await screen.findByText('$ 300');
+  renderPage(); await screen.findByText('$ 300,00', { selector: 'strong' });
   fireEvent.click(screen.getByRole('button', { name: 'Filtros' }));
   fireEvent.change(screen.getByLabelText('Persona'), { target: { value: 'Equi' } });
   fireEvent.click(screen.getByRole('button', { name: 'Equi Fernandez DNI 30123456' }));
@@ -733,14 +733,14 @@ it('preserves selected income filters across periods even when the person is abs
   expect(screen.getByLabelText('Persona')).toHaveValue('');
   expect(screen.getByLabelText('Origen')).toHaveValue('');
   expect(screen.getByLabelText('Medio de pago')).toHaveValue('');
-  await screen.findByText('$ 300');
+  await screen.findByText('$ 300,00', { selector: 'strong' });
   expect(urls.every(url => !url.searchParams.has('personId'))).toBe(true);
 });
 
 it('caps the income person search at ten unique results', async () => {
   navigation.search = 'view=income';
   server.use(http.get('http://localhost:3000/api/finance/income', () => HttpResponse.json({ data: Array.from({ length: 12 }, (_, i) => ({ ...historyIncome[0], id: `income-${i}`, person: { id: `person-${i}`, firstName: 'Persona', lastName: `Prueba ${i}` } })) })));
-  renderPage(); await screen.findAllByText('$ 100');
+  renderPage(); await screen.findAllByText('$ 100,00');
   fireEvent.click(screen.getByRole('button', { name: 'Filtros' }));
   fireEvent.change(screen.getByLabelText('Persona'), { target: { value: 'Persona' } });
   expect(within(screen.getByRole('region', { name: 'Filtros de ingresos' })).getAllByRole('button', { name: /Persona Prueba/ })).toHaveLength(10);
@@ -754,7 +754,7 @@ it('filters expenses locally using only history-derived categories and methods w
     http.get('http://localhost:3000/api/finance/expenses', () => { reads(); return HttpResponse.json({ data: historyExpenses }); }),
     http.get('http://localhost:3000/api/finance/:catalog', () => { catalogReads(); return HttpResponse.json({ data: [] }); }),
   );
-  renderPage(); await screen.findByText('$ 500');
+  renderPage(); await screen.findByText('$ 500,00', { selector: 'strong' });
   fireEvent.click(screen.getByRole('button', { name: 'Filtros' }));
   expect(screen.queryByLabelText('Persona')).not.toBeInTheDocument();
   expect(within(screen.getByLabelText('Área')).getAllByRole('option').map(option => option.textContent)).toEqual(['Todas', 'Sala', 'General']);
@@ -762,10 +762,10 @@ it('filters expenses locally using only history-derived categories and methods w
   expect(within(screen.getByLabelText('Medio de pago')).getAllByRole('option').map(option => option.textContent)).toEqual(['Todos', 'Efectivo', 'Transferencia']);
   for (const [label, value] of [['Área', 'SALA'], ['Categoría', 'rent'], ['Medio de pago', 'transfer']]) {
     fireEvent.change(screen.getByLabelText(label!), { target: { value } });
-    expect(screen.getByText('$ 400')).toBeVisible();
-    expect(screen.queryByText('$ 500')).not.toBeInTheDocument();
+    expect(screen.getByText('$ 400,00', { selector: 'strong' })).toBeVisible();
+    expect(screen.queryByText('$ 500,00', { selector: 'strong' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(label!), { target: { value: '' } });
-    expect(screen.getByText('$ 500')).toBeVisible();
+    expect(screen.getByText('$ 500,00', { selector: 'strong' })).toBeVisible();
   }
   fireEvent.change(screen.getByLabelText('Área'), { target: { value: 'SALA' } });
   fireEvent.change(screen.getByLabelText('Categoría'), { target: { value: 'rent' } });
@@ -780,7 +780,7 @@ it('filters expenses locally using only history-derived categories and methods w
   expect(screen.getByRole('button', { name: 'Este mes', pressed: true })).toBeVisible();
   expect(screen.getByRole('button', { name: 'Filtros' })).toBeVisible();
   for (const label of ['Área', 'Categoría', 'Medio de pago']) expect(screen.getByLabelText(label)).toHaveValue('');
-  await screen.findByText('$ 500');
+  await screen.findByText('$ 500,00', { selector: 'strong' });
 });
 
 it('keeps summary, income and expense period selections independent on navigation', async () => {
@@ -822,4 +822,48 @@ it.each(['income', 'expenses'])('handles the previous-year boundary for %s using
   fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }));
   await waitFor(() => expect(urls).toHaveLength(2));
   expect(Object.fromEntries(urls.at(-1)!.searchParams)).toEqual({ from: '2026-12-01', to: '2026-12-31' });
+});
+
+it.each(['income', 'expenses'])('paginates %s after filters and keeps the full filtered total', async view => {
+  navigation.search = `view=${view}`;
+  const rows = Array.from({ length: 26 }, (_, index) => ({
+    id: `movement-${index}`, cashDate: '2026-10-14', amount: '1000', source: 'SALA', area: 'SALA',
+    person: { id: index < 13 ? 'juan' : 'pedro', firstName: index < 13 ? 'Juan' : 'Pedro', lastName: 'Sintético' },
+    category: { id: index < 13 ? 'rent' : 'other', name: index < 13 ? 'Alquiler' : 'Materiales' },
+    paymentMethod: { id: index < 13 ? 'cash' : 'transfer', name: index < 13 ? 'Efectivo' : 'Transferencia' },
+    description: `Movimiento sintético ${index + 1}`,
+  }));
+  server.use(http.get(`http://localhost:3000/api/finance/${view}`, () => HttpResponse.json({ data: rows })));
+  const client = renderPage();
+  const history = within(await screen.findByRole('region', { name: view === 'income' ? 'Historial de ingresos' : 'Registros de gastos' }));
+  expect(await history.findByText('Mostrando 1–25 de 26')).toBeVisible();
+  expect(history.getByText('Página 1 de 2')).toBeVisible();
+  expect(history.getAllByText(/Movimiento sintético/)).toHaveLength(25);
+  expect(history.getByLabelText('Total filtrado')).toHaveTextContent('$ 26.000,00');
+  for (const header of view === 'income' ? ['Fecha', 'Persona', 'Origen', 'Medio de pago', 'Registrado por', 'Importe'] : ['Fecha', 'Categoría', 'Área', 'Medio de pago', 'Importe']) {
+    expect(history.getByRole('columnheader', { name: header, hidden: true })).toBeInTheDocument();
+  }
+  fireEvent.click(history.getByRole('button', { name: 'Siguiente' }));
+  expect(history.getByText('Mostrando 26–26 de 26')).toBeVisible();
+  expect(history.getByText('Página 2 de 2')).toBeVisible();
+  expect(history.getAllByText(/Movimiento sintético/)).toHaveLength(1);
+  expect(history.getByLabelText('Total filtrado')).toHaveTextContent('$ 26.000,00');
+  fireEvent.click(history.getByRole('button', { name: 'Anterior' }));
+  expect(history.getByText('Página 1 de 2')).toBeVisible();
+  fireEvent.click(history.getByRole('button', { name: 'Siguiente' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Filtros' }));
+  if (view === 'income') {
+    fireEvent.change(screen.getByLabelText('Persona'), { target: { value: 'Juan' } });
+    fireEvent.click(screen.getByRole('button', { name: /Juan Sintético/ }));
+  } else fireEvent.change(screen.getByLabelText('Categoría'), { target: { value: 'rent' } });
+  expect(history.getByText('Página 1 de 1')).toBeVisible();
+  expect(history.getByLabelText('Total filtrado')).toHaveTextContent('$ 13.000,00');
+  expect(history.getAllByText(/Movimiento sintético/)).toHaveLength(13);
+  fireEvent.click(screen.getByRole('button', { name: 'Limpiar filtros' }));
+  expect(history.getByText('Página 1 de 2')).toBeVisible();
+  fireEvent.click(history.getByRole('button', { name: 'Siguiente' }));
+  // A refetch with fewer records must not leave an empty or invalid page.
+  client.setQueriesData({ queryKey: ['finance', view, 'history'] }, rows.slice(0, 2));
+  await waitFor(() => expect(history.getByText('Página 1 de 1')).toBeVisible());
+  expect(history.getByLabelText('Total filtrado')).toHaveTextContent('$ 2.000,00');
 });

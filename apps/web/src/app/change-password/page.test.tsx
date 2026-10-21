@@ -37,3 +37,8 @@ it('sends the DNI as the current password and a strong personal password', async
   await waitFor(() => expect(changePassword).toHaveBeenCalledWith('27739784', 'Athleta123!', 'csrf'));
   expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo actualizar la contraseña.');
 });
+
+it('shows the shared developer footer', async () => {
+  renderPage();
+  expect(await screen.findByRole('link', { name: 'Desarrollado por Broco Solutions' })).toHaveAttribute('href', 'https://www.brocosolutions.com');
+});

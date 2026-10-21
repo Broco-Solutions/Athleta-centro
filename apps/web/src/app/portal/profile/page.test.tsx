@@ -5,7 +5,7 @@ import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import Profile from './page';
 
-const server = setupServer();
+const server = setupServer(http.get('http://localhost:3000/api/portal/auth/session', () => HttpResponse.json({ data: { csrfToken: 'csrf' } })));
 const nativeFetch = globalThis.fetch;
 const uuid = '550e8400-e29b-41d4-a716-446655440000';
 const profile = { firstName: 'Ana', lastName: 'Sintética', dni: '20123456', phone: '3415551234', birthDate: '1990-01-01' };

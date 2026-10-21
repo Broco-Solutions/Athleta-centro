@@ -1,4 +1,5 @@
 'use client';
+import { formatArs } from '../../lib/money';
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -20,7 +21,6 @@ const formSchema = z.object({
   paymentMethodId: z.string().min(1, 'Seleccioná un medio de pago.'),
   adjustmentReason: z.string().max(300),
 });
-const money = (value: string | number | bigint) => `$${BigInt(value || 0).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`;
 const formatDate = (value: string) => value.slice(0, 10).split('-').reverse().join('/');
 const dateOnly = (value: string) => new Date(`${value.slice(0, 10)}T00:00:00Z`);
 const addMonth = (value: Date) => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 1, Math.min(value.getUTCDate(), new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 2, 0)).getUTCDate())));
@@ -89,19 +89,19 @@ export function SalaPaymentPanel({ personId, csrfToken, canRegister, canSelectPl
       <h2 className="mb-5 text-xl font-semibold">Registrar renovación</h2>
       <fieldset disabled={create.isPending} className="grid gap-5 sm:grid-cols-2">
         {canSelectPlan ? <label className="text-sm">Plan<select className={inputClass} {...form.register('planId')} onChange={event => { const selected = plans.data?.find(item => item.id === event.target.value); form.setValue('planId', event.target.value); form.setValue('amount', selected?.monthlyAmount ?? ''); form.setValue('adjustmentReason', ''); }}><option value="" disabled>Seleccionar Plan</option>{plans.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : <div className="text-sm">Plan<p className="mt-1 font-medium">{activePlan?.name}</p></div>}
-        {canAdjust ? <label className="text-sm">Precio<input className={inputClass} inputMode="numeric" {...form.register('amount')} /></label> : <div className="text-sm">Precio<p className="mt-1 font-medium">{money(plan?.monthlyAmount ?? '0')}</p></div>}
+        {canAdjust ? <label className="text-sm">Precio ($ ARS)<input className={inputClass} inputMode="numeric" {...form.register('amount')} /></label> : <div className="text-sm">Precio<p className="mt-1 font-medium">{formatArs(plan?.monthlyAmount ?? '0')}</p></div>}
         <label className="text-sm sm:col-span-2">Fecha de cobro<input type="date" max={todayOperational()} className={inputClass} {...form.register('paidAt')} /></label>
         <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm">Medio de pago</legend><div className="flex flex-wrap gap-2">{selectableMethods.map(item => <Button key={item.id} type="button" variant={values.paymentMethodId === item.id ? 'primary' : 'secondary'} aria-pressed={values.paymentMethodId === item.id} onClick={() => form.setValue('paymentMethodId', item.id, { shouldValidate: true })}>{item.name}</Button>)}</div>{methods.isSuccess && !selectableMethods.length ? <p>No hay medios de pago configurados.</p> : null}</fieldset>
         {needsReason ? <label className="text-sm sm:col-span-2">Motivo de ajuste *<input className={inputClass} required {...form.register('adjustmentReason')} /></label> : null}
       </fieldset>
-      <div className="my-5 rounded bg-surface-muted p-4"><p>Vigencia actual: {currentEnd ? `Hasta ${formatDate(currentEnd)}` : 'Sin vigencia'}</p><p className="mt-2 font-medium">Con este pago: {preview}</p><p className="mt-2 text-sm">Total a cobrar: {/^\d+$/.test(values.amount) ? money(values.amount) : '—'}</p></div>
+      <div className="my-5 rounded bg-surface-muted p-4"><p>Vigencia actual: {currentEnd ? `Hasta ${formatDate(currentEnd)}` : 'Sin vigencia'}</p><p className="mt-2 font-medium">Con este pago: {preview}</p><p className="mt-2 text-sm">Total a cobrar: {/^\d+$/.test(values.amount) ? formatArs(values.amount) : '—'}</p></div>
       <Button type="submit" disabled={create.isPending || !payments.isSuccess || !plan || !selectableMethods.some(item => item.id === values.paymentMethodId) || (needsReason && !values.adjustmentReason.trim())}>{create.isPending ? 'Registrando…' : 'Registrar pago'}</Button>
       {Object.entries(form.formState.errors).map(([field, error]) => <p role="alert" key={field}>{error.message}</p>)}
     </form> : null}
     {!canRegister ? <p className="text-sm text-muted-foreground">Tu rol permite consultar los pagos, sin registrar ni revertir movimientos.</p> : null}
     {confirmation ? <p role="status">{confirmation}</p> : null}
     {error || payments.isError || methods.isError || plans.isError ? <p role="alert">{error?.message || 'No pudimos cargar los pagos o los medios de pago.'}</p> : null}
-    {canReverse && paymentToReverse ? <div role="alertdialog" aria-modal="true" aria-labelledby="reverse-payment-title" className="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm"><p id="reverse-payment-title">¿Revertir el pago de {formatDate(paymentToReverse.paidAt)} por {money(paymentToReverse.amount)}?</p><label className="mt-3 block">Motivo de reversión<input aria-label="Motivo de reversión" maxLength={500} value={reversalReason} onChange={event => setReversalReason(event.target.value)} className={inputClass} disabled={remove.isPending}/></label><div className="mt-3 flex gap-2"><Button type="button" variant="secondary" onClick={() => setPaymentToReverse(null)}>Cancelar</Button><Button type="button" disabled={remove.isPending || !reversalReason.trim()} onClick={() => remove.mutate(paymentToReverse.id)}>{remove.isPending ? 'Revirtiendo…' : 'Revertir pago'}</Button></div></div> : null}
+    {canReverse && paymentToReverse ? <div role="alertdialog" aria-modal="true" aria-labelledby="reverse-payment-title" className="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm"><p id="reverse-payment-title">¿Revertir el pago de {formatDate(paymentToReverse.paidAt)} por {formatArs(paymentToReverse.amount)}?</p><label className="mt-3 block">Motivo de reversión<input aria-label="Motivo de reversión" maxLength={500} value={reversalReason} onChange={event => setReversalReason(event.target.value)} className={inputClass} disabled={remove.isPending}/></label><div className="mt-3 flex gap-2"><Button type="button" variant="secondary" onClick={() => setPaymentToReverse(null)}>Cancelar</Button><Button type="button" disabled={remove.isPending || !reversalReason.trim()} onClick={() => remove.mutate(paymentToReverse.id)}>{remove.isPending ? 'Revirtiendo…' : 'Revertir pago'}</Button></div></div> : null}
     <section aria-labelledby="payment-history-title" className="rounded border border-border bg-surface p-5">
       <h2 id="payment-history-title" className="mb-4 text-xl font-semibold">Historial de pagos</h2>
       {payments.isPending ? <p role="status">Cargando pagos…</p> : null}
@@ -114,7 +114,7 @@ export function SalaPaymentPanel({ personId, csrfToken, canRegister, canSelectPl
           <td className="md:p-3">{formatDate(payment.coverageStartDate)} → {formatDate(payment.coverageEndDate)}</td>
           <td className="md:p-3">{payment.paymentMethod?.name ?? 'Medio retirado'}</td>
           <td className="md:p-3">{payment.registeredBy.firstName} {payment.registeredBy.lastName}</td>
-          <td className="font-semibold md:p-3">{money(payment.amount)}</td>
+          <td className="font-semibold md:p-3">{formatArs(payment.amount)}</td>
           <td className="md:p-3">{payment.reversal ? <>Revertido<p className="mt-2 text-muted-foreground">Revertido por: {payment.reversal.registeredBy.firstName} {payment.reversal.registeredBy.lastName}</p><p className="text-muted-foreground">Motivo: {payment.reversal.reason}</p></> : 'Pagado'}</td>
           {canReverse ? <td className="md:p-3">{!payment.reversal ? <Button type="button" variant="secondary" onClick={() => { setReversalReason(''); setPaymentToReverse(payment); }}>Revertir</Button> : null}</td> : null}
         </tr>)}</tbody>

@@ -379,3 +379,21 @@ it('validates the full Person and enrollment fields before writing', async () =>
   expect(screen.getByText('La fecha de nacimiento no puede ser futura')).toBeVisible();
   expect(writes).not.toHaveBeenCalled();
 });
+
+it.each(['search', 'filter', 'mine'])('paginates 25 students and resets page on %s', async change => {
+  const many = Array.from({ length: 26 }, (_, index) => ({ ...students[0], id: `synthetic-${index}`, firstName: `Alumno ${index + 1}`, lastName: 'Sintético' }));
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: many })));
+  renderPage();
+  await screen.findByText('Mostrando 1–25 de 26');
+  expect(list().getAllByRole('link', { name: 'Ver ficha' })).toHaveLength(25);
+  expect(screen.queryByText('Alumno 26 Sintético')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
+  expect(screen.getByText('Alumno 26 Sintético')).toBeVisible();
+  expect(screen.getByText('Página 2 de 2')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Anterior' }));
+  expect(screen.getByText('Página 1 de 2')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
+  if (change === 'search') fireEvent.change(screen.getByLabelText('Buscar por nombre o DNI'), { target: { value: 'Sintético' } });
+  else fireEvent.click(screen.getByRole('button', { name: change === 'mine' ? 'Mis alumnos' : 'Todos' }));
+  expect(screen.getByText('Página 1 de 2')).toBeVisible();
+});

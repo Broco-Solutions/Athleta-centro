@@ -420,7 +420,7 @@ it('opens contextual Professor payments with registration and without reversal',
   expect(await screen.findByRole('option', { name: 'Plan Completo' })).toBeVisible();
   expect(screen.getByLabelText('Plan')).toHaveValue('plan');
   fireEvent.change(screen.getByLabelText('Plan'), { target: { value: 'other' } });
-  expect(screen.getByText('$30.000')).toBeVisible();
+  expect(screen.getByText('$ 30.000,00')).toBeVisible();
   expect(screen.queryByLabelText('Precio')).not.toBeInTheDocument();
   expect(screen.queryByLabelText(/Motivo de ajuste/)).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Efectivo' })).toBeVisible();

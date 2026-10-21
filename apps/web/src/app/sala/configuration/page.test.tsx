@@ -99,7 +99,7 @@ it('creates a plan only after selecting services and sends the selected IDs', as
   const functional = within(form).getByRole('checkbox', { name: 'Funcional · 45 min' });
   expect(within(form).queryByRole('checkbox', { name: /Servicio retirado/ })).not.toBeInTheDocument();
   fireEvent.change(within(form).getByLabelText('Nombre'), { target: { value: 'Plan Base' } });
-  fireEvent.change(within(form).getByLabelText('Precio mensual'), { target: { value: '20000' } });
+  fireEvent.change(within(form).getByLabelText('Precio mensual ($ ARS)'), { target: { value: '20000' } });
   expect(within(form).getByRole('button', { name: 'Guardar' })).toBeDisabled();
   fireEvent.click(within(form).getByRole('button', { name: 'Guardar' }));
   expect(submitted).toBeUndefined();

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { DeveloperFooter } from '../branding/developer-footer';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
 import { Activity, CalendarDays, ChevronDown, ChevronRight, ClipboardList, Dumbbell, LogOut, Menu, PanelLeftClose, UserCog, UserRound, Users, Wallet, X } from 'lucide-react';
@@ -145,7 +146,7 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
     : visibleNavigation.map((item) => <React.Fragment key={item.key}>{item.key === 'clinic-patients' && <h2 className="px-3 pt-3 text-xs font-semibold uppercase tracking-wide text-zinc-300">Clínica</h2>}{itemLink(item, onNavigate)}</React.Fragment>);
 
   return <AuthShell desktopSidebarOpen={desktopSidebarOpen} onToggleDesktopSidebar={() => setDesktopSidebarOpen((open) => !open)} mobileNavigationTrigger={<Button variant="ghost" aria-label="Abrir menú" aria-expanded={mobileMenuOpen} aria-controls="internal-mobile-navigation" className="h-11 gap-2 px-3 md:hidden" onClick={() => setMobileMenuOpen(true)}><Menu aria-hidden="true" size={20} />Menú</Button>}>
-    <main className={`min-h-screen min-w-0 bg-background pt-14 transition-[margin] duration-200 ${desktopSidebarOpen ? 'md:ml-60 md:pt-0' : 'md:ml-0 md:pt-14'}`}>
+    <main className={`flex min-h-screen min-w-0 flex-col bg-background pt-14 transition-[margin] duration-200 ${desktopSidebarOpen ? 'md:ml-60 md:pt-0' : 'md:ml-0 md:pt-14'}`}>
       {desktopSidebarOpen ? <aside className="fixed inset-y-0 left-0 z-50 hidden w-60 min-w-0 flex-col overflow-y-auto bg-sidebar px-4 py-6 text-sidebar-foreground md:flex">
         <div className="mb-8 flex min-w-0 items-center gap-2">
           <Link href="/" aria-label="Athleta · Inicio" className="min-w-0 flex-1 text-center">
@@ -169,7 +170,8 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
           {accountContent(() => setMobileMenuOpen(false))}
         </div>
       </> : null}
-      <section className="min-w-0 p-4 sm:p-5 md:p-8">{children}</section>
+      <section className="min-w-0 flex-1 p-4 sm:p-5 md:p-8">{children}</section>
+      <footer className="border-t border-border px-4 py-5 text-center sm:px-5 md:px-8"><DeveloperFooter /></footer>
     </main>
   </AuthShell>;
 }

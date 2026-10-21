@@ -6,7 +6,7 @@ import { setupServer } from 'msw/node';
 import PortalReservations from './page';
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/portal/sala/reservas' }));
-const server = setupServer();
+const server = setupServer(http.get('http://localhost:3000/api/portal/auth/session', () => HttpResponse.json({ data: { csrfToken: 'csrf' } })));
 const nativeFetch = globalThis.fetch;
 const endpoint = 'http://localhost:3000/api/portal/sala';
 const sessionEndpoint = 'http://localhost:3000/api/portal/auth/session';

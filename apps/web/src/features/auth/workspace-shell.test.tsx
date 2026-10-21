@@ -350,3 +350,10 @@ it.each([
   expect(within(reopened.getByRole('heading', { name: label })).getByRole('link')).toHaveAttribute('aria-expanded', 'true');
   expect(reopened.getAllByRole('link', { name: child }).length).toBeGreaterThan(0);
 });
+
+it('shows a developer footer at the end of authenticated content', async () => {
+  renderShell();
+  const link = await screen.findByRole('link', { name: 'Desarrollado por Broco Solutions' });
+  expect(link).toHaveAttribute('href', 'https://www.brocosolutions.com');
+  expect(link.closest('main')).toContainElement(screen.getByRole('heading', { name: 'Contenido sintético' }));
+});

@@ -25,7 +25,7 @@ it('renders the mobile login composition and official Athleta logo', () => {
   const logo = screen.getByRole('img', { name: 'Athleta' });
   expect(new URL(logo.getAttribute('src')!, 'http://localhost').searchParams.get('url')).toBe('/logo-athleta.png');
   for (const text of [
-    'PORTAL', 'DESBLOQUEÁ TU', 'POTENCIAL.',
+    'PORTAL', 'Iniciar sesión',
     'DNI', 'Sin puntos ni espacios.', 'PIN', 'Ingresar',
     '¿Necesitás ayuda?', 'Consultá en recepción.', 'Desarrollado por', 'Broco Solutions',
   ]) {
@@ -33,7 +33,9 @@ it('renders the mobile login composition and official Athleta logo', () => {
   }
   expect(screen.queryByText(/PORTAL DE/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/CLIENTES/i)).not.toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Portal Athleta', level: 1 })).toHaveClass('sr-only');
+  expect(screen.getByRole('heading', { name: 'Iniciar sesión', level: 1 })).toBeVisible();
+  expect(screen.queryByText('DESBLOQUEÁ TU')).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Desarrollado por Broco Solutions' })).toHaveAttribute('href', 'https://www.brocosolutions.com');
   expect(screen.queryByText('Ingresá con tu DNI y PIN para continuar.')).not.toBeInTheDocument();
   expect(screen.queryByText('Ingresá 4 dígitos.')).not.toBeInTheDocument();
   expect(screen.queryByText('¿Necesitás ayuda para ingresar?')).not.toBeInTheDocument();
@@ -56,13 +58,13 @@ it('renders the mobile login composition and official Athleta logo', () => {
   expect(pin).toHaveAttribute('autoComplete', 'current-password');
 });
 
-it('uses a dynamic viewport height and switches to a two-column desktop composition', () => {
+it('uses a dynamic viewport height and a compact single-column composition', () => {
   renderPage();
   const main = screen.getByRole('main');
 
   expect(main).toHaveClass('min-h-dvh');
-  expect(main).toHaveClass('lg:grid');
-  expect(main).toHaveClass('lg:grid-cols-2');
+  expect(main).toHaveClass('flex-col');
+  expect(main).not.toHaveClass('lg:grid-cols-2');
 });
 
 it('shows the PIN as a password by default and toggles visibility', () => {

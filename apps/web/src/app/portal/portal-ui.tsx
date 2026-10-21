@@ -1,5 +1,7 @@
 'use client';
 import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { DeveloperFooter } from '../../features/branding/developer-footer';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -66,6 +68,10 @@ export function PortalNav(): React.JSX.Element {
 export function PortalFrame({ title, subtitle, action, backToHome = false, children }: {
   title: string; subtitle?: string; action?: React.ReactNode; backToHome?: boolean; children: React.ReactNode;
 }): React.JSX.Element {
+  const session = useQuery({ queryKey: ['portal', 'session'], queryFn: () => portalFetch('auth/session'), staleTime: Infinity, retry: false, refetchOnMount: 'always', refetchOnWindowFocus: false, refetchOnReconnect: false });
+  React.useEffect(() => {
+    if (session.error instanceof PortalApiError && session.error.code === 'UNAUTHENTICATED') window.location.assign('/portal/login');
+  }, [session.error]);
   return <div className="flex min-h-screen flex-col bg-background">
     <header className="bg-sidebar text-sidebar-foreground">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-4 sm:gap-6 sm:px-6 lg:px-8">
@@ -85,7 +91,7 @@ export function PortalFrame({ title, subtitle, action, backToHome = false, child
       </header>
       {children}
     </main>
-    <footer className="border-t"><div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-5 text-xs text-muted-foreground sm:flex-row sm:justify-between sm:px-6 lg:px-8"><span>Athleta · Portal personal</span><span>Desarrollado por Broco Solutions</span></div></footer>
+    <footer className="border-t"><div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-5 text-xs text-muted-foreground sm:flex-row sm:justify-between sm:px-6 lg:px-8"><span>Athleta · Portal personal</span><DeveloperFooter /></div></footer>
   </div>;
 }
 

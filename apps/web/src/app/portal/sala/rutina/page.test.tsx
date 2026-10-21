@@ -5,7 +5,7 @@ import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import PortalRoutine from './page';
 
-const server = setupServer();
+const server = setupServer(http.get('http://localhost:3000/api/portal/auth/session', () => HttpResponse.json({ data: { csrfToken: 'csrf' } })));
 const nativeFetch = globalThis.fetch;
 const endpoint = 'http://localhost:3000/api/portal/sala';
 function renderRoutine(): void {

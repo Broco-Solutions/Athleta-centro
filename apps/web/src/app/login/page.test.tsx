@@ -34,3 +34,8 @@ describe('LoginPage', () => {
     renderPage(); fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'unknown@athleta.test' } }); fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'WrongPass1!' } }); fireEvent.click(screen.getByRole('button', { name: /Ingresar/ })); expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos iniciar sesión con los datos ingresados.');
   });
 });
+
+it('shows the shared developer footer', async () => {
+  renderPage();
+  expect(await screen.findByRole('link', { name: 'Desarrollado por Broco Solutions' })).toHaveAttribute('href', 'https://www.brocosolutions.com');
+});

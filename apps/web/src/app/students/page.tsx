@@ -3,6 +3,7 @@
 import React, { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { ListPagination, LIST_PAGE_SIZE } from '../../lib/list-pagination';
 import { Search } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createSalaStudent, joinSala, listSalaPlans, listSalaProfessors, listSalaStudents } from '@athleta/api-client';
@@ -39,6 +40,7 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
   const [filter, setFilter] = useState<Filter>(initialFilter);
   const [search, setSearch] = useState('');
   const [mine, setMine] = useState(false);
+  const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
   const [initialPin, setInitialPin] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
@@ -62,17 +64,18 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
     (filter !== 'without-routine' || student.routineStatus === 'MISSING') &&
     (filter !== 'without-validity' || !student.hasValidAccess) &&
     (!mine || student.professor.id === session.data?.user.id));
+  const effectivePage = Math.min(page, Math.max(1, Math.ceil(filtered.length / LIST_PAGE_SIZE)));
   return <WorkspaceShell active="sala-students"><div className="mx-auto max-w-7xl space-y-5 text-foreground">
     <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-3xl font-semibold">Alumnos</h1><p className="mt-1 text-sm text-muted-foreground">{students.length} {students.length === 1 ? 'alumno' : 'alumnos'}</p></div>{canCreate ? <Button onClick={() => { setNotice(''); setCreating(true); }}>Nuevo alumno</Button> : null}</header>
     {notice ? <p role="status">{notice}</p> : null}
     <div className="space-y-3">
-      <div className="relative w-full max-w-sm"><Search aria-hidden="true" size={17} className="pointer-events-none absolute left-3 top-3 text-muted-foreground" /><input aria-label="Buscar por nombre o DNI" placeholder="Buscar por nombre o DNI" value={search} onChange={(event) => setSearch(event.target.value)} className="h-11 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" /></div>
-      <div role="group" aria-label="Filtrar alumnos" className="flex flex-wrap gap-2">{filters.map((item) => <Button key={item.value} variant={filter === item.value ? 'primary' : 'secondary'} aria-pressed={filter === item.value} onClick={() => setFilter(item.value)}>{item.label}</Button>)}{isProfessor ? <Button variant={mine ? 'primary' : 'secondary'} aria-pressed={mine} onClick={() => setMine(!mine)}>Mis alumnos</Button> : null}</div>
+      <div className="relative w-full max-w-sm"><Search aria-hidden="true" size={17} className="pointer-events-none absolute left-3 top-3 text-muted-foreground" /><input aria-label="Buscar por nombre o DNI" placeholder="Buscar por nombre o DNI" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className="h-11 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" /></div>
+      <div role="group" aria-label="Filtrar alumnos" className="flex flex-wrap gap-2">{filters.map((item) => <Button key={item.value} variant={filter === item.value ? 'primary' : 'secondary'} aria-pressed={filter === item.value} onClick={() => { setFilter(item.value); setPage(1); }}>{item.label}</Button>)}{isProfessor ? <Button variant={mine ? 'primary' : 'secondary'} aria-pressed={mine} onClick={() => { setMine(!mine); setPage(1); }}>Mis alumnos</Button> : null}</div>
     </div>
     {session.isPending || (canRead && query.isPending) ? <p role="status" className="text-sm text-muted-foreground">Cargando alumnos…</p> : session.isSuccess && !canRead ? <p role="alert">No tenés permisos para consultar Alumnos.</p> : query.isError || session.isError ? <p role="alert">No se pudieron cargar los alumnos.</p> : filtered.length === 0 ? <div className="rounded-md border border-dashed border-border bg-surface p-6 text-center"><p className="font-medium">{students.length ? 'Sin resultados' : 'No hay alumnos activos de Sala.'}</p>{students.length ? <p className="mt-1 text-sm text-muted-foreground">No hay alumnos que coincidan con la búsqueda y los filtros.</p> : null}</div> :
     <table aria-label="Alumnos activos de Sala" className="block w-full xl:table xl:table-fixed xl:overflow-hidden xl:rounded-md xl:border xl:border-border xl:bg-surface">
-      <thead className="hidden bg-surface-muted text-left text-xs font-semibold text-muted-foreground xl:table-header-group"><tr>{['Alumno', 'DNI', 'Plan', 'Profesor', 'Rutina', 'Vigencia', 'Acción'].map((title) => <th key={title} scope="col" className="px-4 py-3">{title}</th>)}</tr></thead>
-      <tbody className="grid gap-3 sm:grid-cols-2 xl:table-row-group">{filtered.map((student) => <tr key={student.id} className="grid min-w-0 rounded-md border border-border bg-surface py-3 xl:table-row xl:border-0 xl:border-t xl:py-0">
+      <thead className="hidden bg-surface-muted text-left text-xs font-semibold text-foreground xl:table-header-group"><tr>{['Alumno', 'DNI', 'Plan', 'Profesor', 'Rutina', 'Vigencia', 'Acción'].map((title) => <th key={title} scope="col" className="px-4 py-3">{title}</th>)}</tr></thead>
+      <tbody className="grid gap-3 sm:grid-cols-2 xl:table-row-group">{filtered.slice((effectivePage - 1) * LIST_PAGE_SIZE, effectivePage * LIST_PAGE_SIZE).map((student) => <tr key={student.id} className="grid min-w-0 rounded-md border border-border bg-surface py-3 xl:table-row xl:border-0 xl:border-t xl:py-0">
         <td className={`${cell} break-words font-medium`}>{student.firstName} {student.lastName}</td>
         <td className={cell}><span className={label}>DNI</span>{student.dni}</td>
         <td className={`${cell} break-words`}><span className={label}>Plan:</span>{student.plan.name}</td>
@@ -82,6 +85,7 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
         <td className={cell}><div className="flex flex-wrap justify-end gap-2 xl:justify-start"><Link href={`/sala/people/${student.id}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:min-h-9">Ver ficha</Link>{canUseFinance || canRegister ? <Link href={canUseFinance ? `/finance?view=income&personId=${student.id}${!student.hasValidAccess ? '&action=renew' : ''}` : `/sala/people/${student.id}?tab=payments${!student.hasValidAccess ? '&action=renew' : ''}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted xl:min-h-9">{!student.hasValidAccess ? (canUseFinance ? 'Renovar' : 'Registrar renovación') : 'Ver pagos'}</Link> : null}</div></td>
       </tr>)}</tbody>
     </table>}
+    {query.isSuccess && canRead && filtered.length ? <ListPagination total={filtered.length} page={effectivePage} onPage={setPage} /> : null}
     {creating && canCreate ? <NewStudentDialog csrf={session.data?.csrfToken ?? ''} onClose={() => setCreating(false)} onSaved={async (pin) => {
       await Promise.all([
         client.invalidateQueries({ queryKey: ['sala', 'students'] }),

@@ -1,4 +1,5 @@
 'use client';
+import { formatArs } from '../../../lib/money';
 import { physicalTestTypeLabel } from '../../../features/sala/physical-evaluation-panel';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -24,7 +25,7 @@ export default function SalaConfigurationPage():React.JSX.Element{
  <Accordion title="Planes" summary={`${plans.data?.length??0} planes configurados`} description="Planes disponibles para incorporar personas a Sala.">
   {canPlanManage&&<Button onClick={()=>editPlan()}>Nuevo plan</Button>}
   {plans.data?.map(p=><div key={p.id} className="mt-3 flex items-center justify-between border-t pt-3 text-sm">
-   <span>{p.name} · ${p.monthlyAmount==null?'—':Number(p.monthlyAmount).toLocaleString('es-AR')} {p.isSelectable===false?'· Retirado':''}<br/>
+   <span>{p.name} · {p.monthlyAmount==null?'—':formatArs(p.monthlyAmount)} {p.isSelectable===false?'· Retirado':''}<br/>
     <span className="text-muted-foreground">{p.services.length?p.services.map(s=>s.name).join(' · '):'Sin servicios configurados'}</span>
    </span>
    {canPlanManage&&<span className="flex gap-2">
@@ -44,7 +45,7 @@ export default function SalaConfigurationPage():React.JSX.Element{
     setEditingPlan(null);setNewPlan(false);
    }}>
    <Field label="Nombre"><input required value={name} onChange={e=>setName(e.target.value)}/></Field>
-   <Field label="Precio mensual"><input required type="number" min="0" value={amount} onChange={e=>setAmount(e.target.value)}/></Field>
+   <Field label="Precio mensual ($ ARS)"><input required type="number" min="0" value={amount} onChange={e=>setAmount(e.target.value)}/></Field>
    <fieldset className="space-y-2 text-sm">
     <legend className="font-medium">Servicios incluidos</legend>
     {services.data?.filter(s=>s.isSelectable===true).map(s=><label key={s.id} className="flex items-center gap-2">

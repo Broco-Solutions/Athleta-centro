@@ -72,7 +72,7 @@ it.each<SafeSession['roles']>([['GENERAL_ADMIN'], ['GENERAL_ADMIN', 'ADMINISTRAT
   expect(financeUrl.pathname).toBe('/api/finance/executive-totals');
   expect(financeUrl.searchParams.get('from')).toBe('2026-10-01');
   expect(financeUrl.searchParams.get('to')).toBe('2026-10-31');
-  expect(screen.getByText(/175\.000/)).toBeVisible();
+  for (const amount of ['$ 175.000,00', '$ 45.000,00', '$ 130.000,00']) expect(screen.getByText(amount)).toBeVisible();
 });
 it('keeps the upcoming empty state and zero counters visible', async () => {
   vi.mocked(getSalaDashboard).mockResolvedValue({ status: 200, headers: new Headers(), data: { data: { ...summary, upcoming: [], expected: 0, attended: 0, cancelledOrAbsent: 0, withoutValidity: { count: 0, personIds: [] } } } });

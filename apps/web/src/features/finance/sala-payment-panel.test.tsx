@@ -48,7 +48,7 @@ it('keeps the accordion closed by default and history visible', async () => {
 it('opens on defaultOpen, preselects the active Plan and replaces monthly selection with a coverage preview', async () => {
   renderPanel();
   await waitFor(() => expect(screen.getByLabelText('Plan')).toHaveValue(activePlan.id));
-  expect(screen.getByLabelText('Precio')).toHaveValue('20000');
+  expect(screen.getByLabelText('Precio ($ ARS)')).toHaveValue('20000');
   expect(screen.getByLabelText('Fecha de cobro')).toHaveValue('2026-10-20');
   expect(screen.getByText('Con este pago: 20/10/2026 → 20/11/2026')).toBeVisible();
   expect(screen.getAllByText('Vigencia actual: Sin vigencia').length).toBeGreaterThan(0);
@@ -58,12 +58,12 @@ it('opens on defaultOpen, preselects the active Plan and replaces monthly select
 it('updates price on Plan selection, clears adjustment reason and requires it for a different price', async () => {
   renderPanel(); await selectMethod();
   await waitFor(() => expect(screen.getByLabelText('Plan')).toHaveValue(activePlan.id));
-  fireEvent.change(screen.getByLabelText('Precio'), { target: { value: '19000' } });
+  fireEvent.change(screen.getByLabelText('Precio ($ ARS)'), { target: { value: '19000' } });
   expect(screen.getByRole('button', { name: 'Registrar pago' })).toBeDisabled();
   fireEvent.change(screen.getByLabelText(/Motivo de ajuste/), { target: { value: 'Descuento' } });
   expect(screen.getByRole('button', { name: 'Registrar pago' })).toBeEnabled();
   fireEvent.change(screen.getByLabelText('Plan'), { target: { value: otherPlan.id } });
-  expect(screen.getByLabelText('Precio')).toHaveValue('30000');
+  expect(screen.getByLabelText('Precio ($ ARS)')).toHaveValue('30000');
   expect(screen.queryByLabelText(/Motivo de ajuste/)).not.toBeInTheDocument();
 });
 it('previews the entire continuous chain and recalculates when the cash date changes', async () => {
@@ -142,10 +142,10 @@ it('registers a Professor renewal with a selectable Plan and automatic price', a
   expect(screen.getByLabelText('Plan')).toHaveValue(activePlan.id);
   await screen.findByRole('option', { name: otherPlan.name });
   fireEvent.change(screen.getByLabelText('Plan'), { target: { value: otherPlan.id } });
-  expect(screen.getByText('$30.000')).toBeVisible();
-  expect(screen.queryByLabelText('Precio')).not.toBeInTheDocument();
+  expect(screen.getByText('$ 30.000,00')).toBeVisible();
+  expect(screen.queryByLabelText('Precio ($ ARS)')).not.toBeInTheDocument();
   expect(screen.getAllByText('Plan Base').length).toBeGreaterThan(0);
-  expect(screen.getAllByText('$20.000').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('$ 20.000,00').length).toBeGreaterThan(0);
   expect(screen.queryByLabelText(/Motivo de ajuste/)).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Revertir' })).not.toBeInTheDocument();
   await screen.findByText('Con este pago: 21/11/2026 → 20/12/2026');

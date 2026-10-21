@@ -30,7 +30,7 @@ beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' });
 });
 beforeEach(() => {
-  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'u', firstName: 'Ana', lastName: 'Test' }, roles: ['ADMINISTRATIVE'], permissions: ['PEOPLE_READ', 'PEOPLE_CREATE', 'CLINIC_APPOINTMENT_MANAGE'], csrfToken: 'csrf' } })), http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: [] })), http.get('http://localhost:3000/api/clinic/patients/overview', () => HttpResponse.json({ data: [patient], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } })));
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'u', firstName: 'Ana', lastName: 'Test' }, roles: ['ADMINISTRATIVE'], permissions: ['PEOPLE_READ', 'PEOPLE_CREATE', 'CLINIC_APPOINTMENT_MANAGE'], csrfToken: 'csrf' } })), http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: [] })), http.get('http://localhost:3000/api/clinic/patients/overview', () => HttpResponse.json({ data: [patient], meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 } })));
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
@@ -56,7 +56,7 @@ it('sends En curso and recent-attention filters to the patient overview API', as
     search = params.get('search') ?? '';
     treatmentInProgress = params.get('treatmentInProgress') ?? '';
     withoutRecentAttentionDays = params.get('withoutRecentAttentionDays') ?? '';
-    return HttpResponse.json({ data: [patient], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } });
+    return HttpResponse.json({ data: [patient], meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 } });
   }));
   renderList();
   await screen.findByText('Sintética, Ana');
@@ -162,6 +162,8 @@ it('restores the list search, combined filters and page', async () => {
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><PatientList initialParams="search=Ana&page=2&treatmentInProgress=YES&withoutRecentAttentionDays=60"/></QueryClientProvider>);
   await screen.findByText('Sintética, Ana');
   expect(params.get('page')).toBe('2');
+  expect(params.get('pageSize')).toBe('25');
+  expect(screen.getByText('Página 2 de 2')).toBeVisible();
   expect(params.get('search')).toBe('Ana');
   expect(params.get('treatmentInProgress')).toBe('YES');
   expect(params.get('withoutRecentAttentionDays')).toBe('60');

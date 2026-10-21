@@ -1,3 +1,4 @@
+import { PORTAL_SESSION_TTL_MS } from './portal-session';
 import { Injectable, UnauthorizedException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { randomBytes, createHash } from 'node:crypto';
@@ -8,8 +9,39 @@ const digest = (value: string) => createHash('sha256').update(value).digest('hex
 @Injectable()
 export class PortalService {
   constructor(private readonly prisma: PrismaService, private readonly salaService: SalaService, private readonly activity: PersonActivityService) {}
-  async login(dni: string, pin: string) { const p = await this.prisma.person.findUnique({ where: { normalizedDni: dni.replace(/\D/g, '') }, include: { portalCredential: true, socialWork: { select: { name: true } } } }); const ok = Boolean(p?.portalCredential && await argon2.verify(p.portalCredential.pinHash, pin)); if (!p || !ok || !(await this.activity.isActive(p.id))) throw new UnauthorizedException({ code: 'PORTAL_INVALID_CREDENTIALS', message: 'No pudimos ingresar con esos datos. Revisalos o comunicate con Athleta.' }); const token = randomBytes(32).toString('base64url'); const csrfToken = randomBytes(32).toString('base64url'); await this.prisma.session.create({ data: { kind: 'PORTAL', personId: p.id, secretHash: digest(token), csrfToken, expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000) } }); return { token, csrfToken, mustChangePin: p.portalCredential?.mustChangePin ?? true, person: this.profile(p) }; }
-  async current(token?: string) { if (!token) throw new UnauthorizedException({ code: 'UNAUTHENTICATED', message: 'Authentication required' }); const s = await this.prisma.session.findUnique({ where: { secretHash: digest(token) }, include: { person: { include: { portalCredential: true, socialWork: { select: { name: true } } } } } }); if (!s || s.kind !== 'PORTAL' || s.revokedAt || s.expiresAt <= new Date() || !s.person) throw new UnauthorizedException({ code: 'UNAUTHENTICATED', message: 'Authentication required' }); return { session: s, person: s.person }; }
+  async login(dni: string, pin: string) { const p = await this.prisma.person.findUnique({ where: { normalizedDni: dni.replace(/\D/g, '') }, include: { portalCredential: true, socialWork: { select: { name: true } } } }); const ok = Boolean(p?.portalCredential && await argon2.verify(p.portalCredential.pinHash, pin)); if (!p || !ok || !(await this.activity.isActive(p.id))) throw new UnauthorizedException({ code: 'PORTAL_INVALID_CREDENTIALS', message: 'No pudimos ingresar con esos datos. Revisalos o comunicate con Athleta.' }); const token = randomBytes(32).toString('base64url'); const csrfToken = randomBytes(32).toString('base64url'); await this.prisma.session.create({ data: { kind: 'PORTAL', personId: p.id, secretHash: digest(token), csrfToken, expiresAt: new Date(Date.now() + PORTAL_SESSION_TTL_MS) } }); return { token, csrfToken, mustChangePin: p.portalCredential?.mustChangePin ?? true, person: this.profile(p) }; }
+  async current(token?: string) {
+    if (!token) throw new UnauthorizedException({ code: 'UNAUTHENTICATED', message: 'Authentication required' });
+    const s = await this.prisma.session.findUnique({
+      where: { secretHash: digest(token) },
+      include: { person: { include: { portalCredential: true, socialWork: { select: { name: true } } } } },
+    });
+    const now = new Date();
+    if (!s || s.kind !== 'PORTAL' || s.revokedAt || s.expiresAt <= now || !s.person) {
+      throw new UnauthorizedException({ code: 'UNAUTHENTICATED', message: 'Authentication required' });
+    }
+    const renewalThreshold = new Date(now.getTime() + PORTAL_SESSION_TTL_MS - 24 * 60 * 60 * 1000);
+    // Renew at most daily; the conditional update also protects against concurrent revocation.
+    if (s.expiresAt < renewalThreshold) {
+      const expiresAt = new Date(now.getTime() + PORTAL_SESSION_TTL_MS);
+      const renewed = await this.prisma.session.updateMany({
+        where: { id: s.id, kind: 'PORTAL', revokedAt: null, expiresAt: { gt: now, lt: renewalThreshold } },
+        data: { expiresAt, lastActivityAt: now },
+      });
+      if (renewed.count) {
+        s.expiresAt = expiresAt;
+        s.lastActivityAt = now;
+      } else {
+        const valid = await this.prisma.session.findUnique({ where: { id: s.id } });
+        if (!valid || valid.revokedAt || valid.expiresAt <= now) {
+          throw new UnauthorizedException({ code: 'UNAUTHENTICATED', message: 'Authentication required' });
+        }
+        s.expiresAt = valid.expiresAt;
+        s.lastActivityAt = valid.lastActivityAt;
+      }
+    }
+    return { session: s, person: s.person };
+  }
   private async ready(token?: string) { const current = await this.current(token); if (current.person.portalCredential?.mustChangePin) throw new ForbiddenException({ code: 'PORTAL_PIN_CHANGE_REQUIRED', message: 'Debés cambiar tu PIN antes de continuar.' }); return current; }
   async logout(token?: string) { if (token) await this.prisma.session.updateMany({ where: { secretHash: digest(token), kind: 'PORTAL', revokedAt: null }, data: { revokedAt: new Date() } }); }
   async assertCsrf(token: string | undefined, csrfToken: string | undefined) { const { session } = await this.current(token); if (!csrfToken || csrfToken !== session.csrfToken) throw new ForbiddenException({ code: 'CSRF_INVALID', message: 'Solicitud inválida.' }); }

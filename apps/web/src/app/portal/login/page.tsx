@@ -1,8 +1,9 @@
 'use client';
 
 import Image from 'next/image';
+import { DeveloperFooter } from '../../../features/branding/developer-footer';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, ArrowUpRight, Contact, Eye, EyeOff, Lock } from 'lucide-react';
+import { ArrowRight, Contact, Eye, EyeOff, Lock } from 'lucide-react';
 import React from 'react';
 import { useState } from 'react';
 
@@ -14,26 +15,18 @@ export default function PortalLogin(): React.JSX.Element {
   const [showPin, setShowPin] = useState(false);
 
   return (
-    <main className="flex min-h-dvh flex-col bg-background lg:grid lg:grid-cols-2">
-      <section className="relative flex min-h-[10.5rem] flex-col overflow-hidden bg-sidebar px-5 pb-4 pt-4 text-sidebar-foreground sm:px-8 lg:min-h-dvh lg:justify-between lg:px-12 lg:py-12">
+    <main className="flex min-h-dvh flex-col bg-background">
+      <section className="bg-sidebar px-5 py-5 text-sidebar-foreground sm:px-8">
         <header className="flex items-center gap-3">
           <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-32 sm:w-36 lg:w-40" />
           <span className="text-xs font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/70">PORTAL</span>
         </header>
 
-        <div className="relative mt-3 flex items-end justify-between gap-3 lg:my-auto lg:pt-20">
-          <h2 className="relative z-10 text-[1.625rem] font-extrabold uppercase leading-[0.98] tracking-tight sm:text-4xl lg:text-5xl">
-            <span className="block">DESBLOQUEÁ TU</span>
-            <span className="mt-1 block -skew-x-6 text-primary">POTENCIAL.</span>
-          </h2>
-          <ArrowUpRight aria-hidden="true" className="mb-1 mr-1 h-14 w-14 shrink-0 text-primary sm:h-16 sm:w-16 lg:h-20 lg:w-20" strokeWidth={1.7} />
-        </div>
-        <span aria-hidden="true" className="absolute bottom-0 left-5 h-1 w-14 bg-primary sm:left-8 lg:left-12" />
       </section>
 
-      <section className="flex flex-1 flex-col px-5 pb-3 pt-4 sm:px-8 lg:min-h-dvh lg:items-center lg:justify-center lg:px-12 lg:py-12">
+      <section className="flex flex-1 flex-col items-center justify-center px-5 py-8 sm:px-8">
         <form
-          className="mx-auto flex w-full max-w-md flex-1 flex-col lg:flex-none"
+          className="mx-auto flex w-full max-w-md flex-col"
           onSubmit={async (event) => {
             event.preventDefault();
             setError('');
@@ -51,7 +44,7 @@ export default function PortalLogin(): React.JSX.Element {
             router.push(body.data.mustChangePin ? '/portal/change-pin' : '/portal');
           }}
         >
-          <h1 className="sr-only">Portal Athleta</h1>
+          <h1 className="mb-6 text-2xl font-semibold">Iniciar sesión</h1>
 
           <div className="space-y-2.5">
             <div className="space-y-1">
@@ -87,11 +80,9 @@ export default function PortalLogin(): React.JSX.Element {
             <span className="font-medium">Consultá en recepción.</span>
           </p>
 
-          <footer className="mt-auto border-t border-border pt-3 text-center text-xs text-muted-foreground sm:mt-6 lg:mt-10">
-            Desarrollado por <span className="font-semibold text-foreground">Broco Solutions</span>
-          </footer>
         </form>
       </section>
+      <footer className="border-t border-border px-5 py-5 text-center"><DeveloperFooter /></footer>
     </main>
   );
 }

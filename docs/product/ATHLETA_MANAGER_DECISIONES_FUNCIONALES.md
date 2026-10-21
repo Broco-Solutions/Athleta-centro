@@ -964,3 +964,23 @@ Estado: **CONFIRMADO / RESUELTO**.
 - `Limpiar filtros` se ofrece cuando hay cambios respecto del estado inicial; devuelve la vista a `Este mes`, elimina los filtros específicos y limpia las fechas personalizadas y sus errores.
 - Los filtros no afectan los formularios `Registrar pago` ni `Registrar gasto`, ni Vigencia de Sala. El contexto individual del Alumno conserva su Historial de pagos sin estos filtros generales.
 - No cambian permisos, backend ni reglas económicas; no se agregan migraciones.
+
+
+## Pulido final de preproducción — Consistencia visual y operativa — 2026-10-21
+
+Estado: **CONFIRMADO / RESUELTO**.
+
+- Toda visualización monetaria utiliza formato ARS `$ xx.xxx,xx` con dos decimales.
+- El formato visual no modifica la semántica económica ni habilita centavos donde el dominio vigente exige importes enteros.
+- Historial de Ingresos y Registros de Gastos muestran Total según todos los registros que cumplen los filtros activos, no solo la página visible.
+- Los listados principales de alta cardinalidad utilizan 25 registros por página.
+- Ingresos, Gastos y Alumnos usan paginación local sobre datos ya disponibles.
+- Personas y Pacientes conservan paginación backend, con `pageSize = 25`.
+- Catálogos y listados pequeños no incorporan paginación. El Historial individual de pagos conserva su navegación actual.
+- Los historiales financieros muestran encabezados de columna en desktop con contraste suficiente y conservan presentación responsive en mobile.
+- Login Portal reduce contenido decorativo y concentra la interfaz en Athleta, Portal, DNI, PIN, Ingresar y ayuda mínima.
+- La sesión Portal persiste al cerrar el navegador y posee una vigencia de 30 días, conservando logout manual, CSRF y flags seguros de cookie. La actividad autenticada extiende `expiresAt` y actualiza `lastActivityAt` cuando restan menos de 29 días. `GET /api/portal/auth/session` renueva la cookie con el mismo token y PortalFrame valida una vez al montar, sin polling.
+- Toda la aplicación incorpora un footer discreto `Desarrollado por Broco Solutions` enlazado a `https://www.brocosolutions.com`, que abre en una nueva pestaña.
+- Texto y marca Broco forman una única acción de enlace.
+- Si el asset oficial del logo Broco todavía no está disponible en el repositorio, se utiliza temporalmente fallback textual y queda pendiente únicamente la incorporación del asset oficial.
+- No cambian permisos, reglas financieras, Planes, vigencia de Sala ni contratos funcionales existentes.

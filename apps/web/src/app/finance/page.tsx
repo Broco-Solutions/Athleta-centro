@@ -1,7 +1,9 @@
 'use client';
 
-import React, { Suspense, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { ListPagination, LIST_PAGE_SIZE } from '../../lib/list-pagination';
+import { formatArs } from '../../lib/money';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@athleta/ui';
@@ -47,6 +49,10 @@ function FinancePageContent(): React.JSX.Element {
   const [expenseArea, setExpenseArea] = useState('');
   const [expenseCategory, setExpenseCategory] = useState('');
   const [expenseMethod, setExpenseMethod] = useState('');
+  const [incomePage, setIncomePage] = useState(1);
+  const [expensePage, setExpensePage] = useState(1);
+  useEffect(() => { setIncomePage(1); }, [incomePeriod.period, incomePeriod.range.from, incomePeriod.range.to, selectedIncomePerson, incomeSource, incomeMethod]);
+  useEffect(() => { setExpensePage(1); }, [expensePeriod.period, expensePeriod.range.from, expensePeriod.range.to, expenseArea, expenseCategory, expenseMethod]);
   const requestedView = params.get('view');
   const view: FinanceView = requestedView === 'income' || requestedView === 'expenses' ? requestedView : 'summary';
   const active = view === 'income' ? 'finance-income' : view === 'expenses' ? 'finance-expenses' : 'finance-summary';
@@ -93,6 +99,12 @@ function FinancePageContent(): React.JSX.Element {
   const expenseMethods = uniqueOptions((expenses.data ?? []).flatMap(row => row.paymentMethod ? [row.paymentMethod] : [])).sort(byName);
   const filteredIncome = (income.data ?? []).filter(row => (!selectedIncomePerson || row.person?.id === selectedIncomePerson.id) && (!incomeSource || row.source === incomeSource) && (!incomeMethod || row.paymentMethod?.id === incomeMethod));
   const filteredExpenses = (expenses.data ?? []).filter(row => (!expenseArea || row.area === expenseArea) && (!expenseCategory || row.category?.id === expenseCategory) && (!expenseMethod || row.paymentMethod?.id === expenseMethod));
+  const incomeFilteredTotal = filteredIncome.reduce((total, row) => total + BigInt(row.amount), 0n);
+  const expenseFilteredTotal = filteredExpenses.reduce((total, row) => total + BigInt(row.amount), 0n);
+  const effectiveIncomePage = Math.min(incomePage, Math.max(1, Math.ceil(filteredIncome.length / LIST_PAGE_SIZE)));
+  const effectiveExpensePage = Math.min(expensePage, Math.max(1, Math.ceil(filteredExpenses.length / LIST_PAGE_SIZE)));
+  useEffect(() => { if (income.isSuccess) setIncomePage(effectiveIncomePage); }, [income.isSuccess, effectiveIncomePage]);
+  useEffect(() => { if (expenses.isSuccess) setExpensePage(effectiveExpensePage); }, [expenses.isSuccess, effectiveExpensePage]);
   const incomeFilterCount = [selectedIncomePerson, incomeSource, incomeMethod].filter(Boolean).length;
   const expenseFilterCount = [expenseArea, expenseCategory, expenseMethod].filter(Boolean).length;
 
@@ -170,8 +182,8 @@ function FinancePageContent(): React.JSX.Element {
       {summaryIncome.isPending || summaryExpenses.isPending ? <p role="status">Cargando movimientos del período…</p> : null}
       {summaryIncome.isError || summaryExpenses.isError ? <p role="alert">No pudimos cargar los movimientos del período.</p> : null}
       {summaryReady ? <>
-        <section aria-label="Indicadores financieros" className="grid gap-4 md:grid-cols-3">{([['Ingresos', incomeTotal], ['Gastos', expenseTotal], ...(executive ? [['Resultado', incomeTotal - expenseTotal] as const] : [])] as const).map(([label, amount]) => <article className="rounded border bg-surface p-4" key={label}><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold">{formatMoney(amount.toString())}</p>{label !== 'Resultado' ? <Link className="mt-3 inline-block rounded border px-3 py-2 text-sm font-medium" href={label === 'Ingresos' ? '/finance?view=income' : '/finance?view=expenses'}>{label === 'Ingresos' ? 'Ver ingresos' : 'Ver gastos'}<span aria-hidden="true"> →</span></Link> : null}</article>)}</section>
-        <section className="space-y-3 rounded border border-border bg-surface p-5"><h2 className="text-lg font-semibold">Movimientos por medio de pago</h2><div className="overflow-x-auto"><table aria-label="Movimientos por medio de pago" className="w-full text-sm"><thead><tr><th className="p-2 text-left">Medio de pago</th><th className="p-2 text-right">Ingresos</th><th className="p-2 text-right">Gastos</th>{executive ? <th className="p-2 text-right">Neto</th> : null}</tr></thead><tbody>{[...byMethod.values()].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(row => <tr key={row.id} className="border-t border-border"><th scope="row" className="p-2 text-left font-medium">{row.name}</th><td className="p-2 text-right">{formatMoney(row.income.toString())}</td><td className="p-2 text-right">{formatMoney(row.expenses.toString())}</td>{executive ? <td className="p-2 text-right">{formatMoney((row.income - row.expenses).toString())}</td> : null}</tr>)}</tbody></table></div></section>
+        <section aria-label="Indicadores financieros" className="grid gap-4 md:grid-cols-3">{([['Ingresos', incomeTotal], ['Gastos', expenseTotal], ...(executive ? [['Resultado', incomeTotal - expenseTotal] as const] : [])] as const).map(([label, amount]) => <article className="rounded border bg-surface p-4" key={label}><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold">{formatArs(amount.toString())}</p>{label !== 'Resultado' ? <Link className="mt-3 inline-block rounded border px-3 py-2 text-sm font-medium" href={label === 'Ingresos' ? '/finance?view=income' : '/finance?view=expenses'}>{label === 'Ingresos' ? 'Ver ingresos' : 'Ver gastos'}<span aria-hidden="true"> →</span></Link> : null}</article>)}</section>
+        <section className="space-y-3 rounded border border-border bg-surface p-5"><h2 className="text-lg font-semibold">Movimientos por medio de pago</h2><div className="overflow-x-auto"><table aria-label="Movimientos por medio de pago" className="w-full text-sm"><thead><tr><th className="p-2 text-left">Medio de pago</th><th className="p-2 text-right">Ingresos</th><th className="p-2 text-right">Gastos</th>{executive ? <th className="p-2 text-right">Neto</th> : null}</tr></thead><tbody>{[...byMethod.values()].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(row => <tr key={row.id} className="border-t border-border"><th scope="row" className="p-2 text-left font-medium">{row.name}</th><td className="p-2 text-right">{formatArs(row.income.toString())}</td><td className="p-2 text-right">{formatArs(row.expenses.toString())}</td>{executive ? <td className="p-2 text-right">{formatArs((row.income - row.expenses).toString())}</td> : null}</tr>)}</tbody></table></div></section>
       </> : null}
     </> : null}
     {view === 'summary' && canPay ? <section aria-labelledby="pending-fees-title" className="space-y-3 rounded border border-border bg-surface p-5">
@@ -222,7 +234,7 @@ function FinancePageContent(): React.JSX.Element {
           <div className="flex-1"><h2 className="text-xl font-semibold">{person.data.firstName} {person.data.lastName}</h2><p className="text-sm text-muted-foreground">DNI {person.data.dni}</p>
             <Link className="text-sm underline" href={`/sala/people/${personId}`}>Ver ficha<span aria-hidden="true"> ↗</span></Link>
           </div>
-          {activePlan ? <div className="border-border sm:border-l sm:pl-6"><p className="font-semibold">{activePlan.name}</p><p className="text-sm text-muted-foreground">Precio actual: {formatMoney(activePlan.monthlyAmount).replace('$ ', '$')} / mes</p></div> : null}
+          {activePlan ? <div className="border-border sm:border-l sm:pl-6"><p className="font-semibold">{activePlan.name}</p><p className="text-sm text-muted-foreground">Precio actual: {formatArs(activePlan.monthlyAmount)} / mes</p></div> : null}
         </div>
         {participations.isSuccess ? <SalaPaymentPanel key={`${personId}-${paymentAction}`} defaultOpen={paymentAction === 'renew'} personId={personId!} csrfToken={session.data?.csrfToken ?? ''} canRegister={permissions.includes('SALA_PAYMENT_REGISTER')} canSelectPlan={permissions.includes('SALA_PAYMENT_REGISTER')} canAdjust={permissions.includes('SALA_PAYMENT_MANAGE')} canReverse={permissions.includes('SALA_PAYMENT_MANAGE')} activePlan={activePlan}/> : null}
       </> : null}
@@ -242,7 +254,7 @@ function FinancePageContent(): React.JSX.Element {
       </div> : null}
     </section> : null}
     {view === 'income' && !personId && income.isError ? <p role="alert">No se pudieron cargar los ingresos para este contexto.</p> : null}
-    {view === 'income' && !personId && read ? <Data title="Historial de ingresos" value={filteredIncome} showRegisteredBy /> : null}
+    {view === 'income' && !personId && read ? <Data title="Historial de ingresos" value={filteredIncome} total={incomeFilteredTotal} page={effectiveIncomePage} onPage={setIncomePage} showRegisteredBy /> : null}
     {view === 'expenses' ? <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-semibold">Gastos</h2>
@@ -260,7 +272,7 @@ function FinancePageContent(): React.JSX.Element {
         </div> : null}
       </section> : null}
       {canReadExpenses && expenses.isError ? <p role="alert">No se pudieron cargar los gastos.</p> : null}
-      {canReadExpenses ? <Data title="Registros de gastos" value={filteredExpenses} /> : null}
+      {canReadExpenses ? <Data title="Registros de gastos" value={filteredExpenses} total={expenseFilteredTotal} page={effectiveExpensePage} onPage={setExpensePage} /> : null}
     </> : null}
   </main></WorkspaceShell>;
 }
@@ -376,16 +388,33 @@ function PaymentMethods({ methods, canCatalog, name, editing, message, onName, o
 type Movement = { id: string; cashDate: string; source?: string; area?: string; amount: string; person?: { id: string; firstName: string; lastName: string; dni?: string }; category?: { id: string; name: string }; paymentMethod?: { id: string; name: string }; description?: string | null; registeredBy?: { id: string; firstName: string; lastName: string } };
 const areaLabel = (area?: string) => ({ SALA: 'Sala', GENERAL: 'General', CLINIC: 'Clínica' })[area ?? ''] ?? area;
 const formatDate = (value: string) => value.slice(0, 10).split('-').reverse().join('/');
-const formatMoney = (value: string) => `$ ${BigInt(value).toLocaleString('es-AR')}`;
 
-function Data({ title, value, showRegisteredBy = false }: { title: string; value: unknown; showRegisteredBy?: boolean }): React.JSX.Element {
-  const rows = Array.isArray(value) ? value as Movement[] : [];
-  return <section className="rounded border bg-white p-5"><div className="flex items-center justify-between gap-3"><h2 className="font-semibold">{title}</h2></div>{rows.length ? rows.map(row => <div className={`grid gap-2 border-b py-3 text-sm ${showRegisteredBy ? 'sm:grid-cols-2 lg:grid-cols-[1fr_2fr_1fr_1fr_2fr_auto]' : 'sm:grid-cols-[1fr_2fr_1fr_1fr_auto]'}`} key={`${row.source ?? row.area}-${row.id}`}>
-    <time dateTime={row.cashDate.slice(0, 10)}>{formatDate(row.cashDate)}</time>
-    {showRegisteredBy && row.source === 'SALA' && row.person?.id ? <Link href={`/finance?view=income&personId=${row.person.id}`} className="font-medium underline">{row.person.firstName} {row.person.lastName}</Link> : <span className="font-medium">{row.person ? `${row.person.firstName} ${row.person.lastName}` : row.category?.name}</span>}
-    <span>{areaLabel(row.source ?? row.area)}</span><span>{row.paymentMethod?.name}</span>{showRegisteredBy ? <span className="min-w-0 break-words">Registrado por: {row.registeredBy ? `${row.registeredBy.firstName} ${row.registeredBy.lastName}` : '—'}</span> : null}<strong className="sm:text-right">{formatMoney(row.amount)}</strong>
-    {row.description ? <p className={`text-muted-foreground ${showRegisteredBy ? 'sm:col-span-2 lg:col-span-6' : 'sm:col-span-5'}`}>{row.description}</p> : null}
-  </div>) : <p className="mt-3 text-sm text-muted-foreground">No hay registros.</p>}</section>;
+function Data({ title, value, total, page, onPage, showRegisteredBy = false }: {
+  title: string; value: Movement[]; total: bigint; page: number; onPage: (page: number) => void; showRegisteredBy?: boolean;
+}): React.JSX.Element {
+  const rows = value.slice((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE);
+  const columns = showRegisteredBy ? 'lg:grid-cols-[1fr_2fr_1fr_1fr_2fr_1fr]' : 'lg:grid-cols-[1fr_2fr_1fr_1fr_1fr]';
+  const headers = showRegisteredBy ? ['Fecha', 'Persona', 'Origen', 'Medio de pago', 'Registrado por', 'Importe'] : ['Fecha', 'Categoría', 'Área', 'Medio de pago', 'Importe'];
+  return <section aria-label={title} className="rounded border bg-white p-5">
+    <h2 className="font-semibold">{title}</h2>
+    <div role="table" aria-label={title} className="mt-3">
+      <div role="row" className={`hidden gap-2 bg-surface-muted py-3 text-sm font-semibold text-foreground lg:grid ${columns}`}>
+        {headers.map((label, index) => <span role="columnheader" key={label} className={index === headers.length - 1 ? 'text-right' : ''}>{label}</span>)}
+      </div>
+      {rows.map(row => <div role="row" className={`grid gap-2 border-b py-3 text-sm sm:grid-cols-2 ${columns}`} key={`${row.source ?? row.area}-${row.id}`}>
+        <span role="cell"><time dateTime={row.cashDate.slice(0, 10)}>{formatDate(row.cashDate)}</time></span>
+        <span role="cell" className="min-w-0 break-words font-medium">{showRegisteredBy && row.source === 'SALA' && row.person?.id ? <Link href={`/finance?view=income&personId=${row.person.id}`} className="underline">{row.person.firstName} {row.person.lastName}</Link> : row.person ? `${row.person.firstName} ${row.person.lastName}` : row.category?.name}</span>
+        <span role="cell">{areaLabel(row.source ?? row.area)}</span><span role="cell">{row.paymentMethod?.name}</span>
+        {showRegisteredBy ? <span role="cell" className="min-w-0 break-words"><span className="lg:hidden">Registrado por: </span>{row.registeredBy ? `${row.registeredBy.firstName} ${row.registeredBy.lastName}` : '—'}</span> : null}
+        <strong role="cell" className="tabular-nums lg:text-right">{formatArs(row.amount)}</strong>
+        {row.description ? <p role="cell" className={`text-muted-foreground sm:col-span-2 ${showRegisteredBy ? 'lg:col-span-6' : 'lg:col-span-5'}`}>{row.description}</p> : null}
+      </div>)}
+    </div>
+    {!value.length ? <p className="mt-3 text-sm text-muted-foreground">No hay registros.</p> : <>
+      <p aria-label="Total filtrado" className="flex justify-end gap-6 border-b py-3 text-sm font-semibold tabular-nums"><span>Total</span><span>{formatArs(total)}</span></p>
+      <ListPagination total={value.length} page={page} onPage={onPage} />
+    </>}
+  </section>;
 }
 
 function matchesStudentSearch(student: { firstName: string; lastName: string; dni?: string }, search: string): boolean {

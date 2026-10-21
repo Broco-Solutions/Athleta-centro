@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { PORTAL_SESSION_TTL_MS } from '../src/portal/portal-session';
 import cookieParser from 'cookie-parser';
 import * as argon2 from 'argon2';
 import request from 'supertest';
@@ -42,6 +44,22 @@ describe('Portal auth and PIN reset', () => {
     const initial = await request(app.getHttpServer()).post('/api/portal/auth/login').send({ dni: person.dni, pin: '1111' }).expect(200);
     expect(initial.body.data.mustChangePin).toBe(false);
     const initialCookie = initial.headers['set-cookie'][0] as string;
+    expect(initialCookie).toContain('Max-Age=2592000');
+    expect(initialCookie).toContain('HttpOnly');
+    expect(initialCookie).toContain('SameSite=Lax');
+    expect(initialCookie).toContain('Path=/');
+    const token = decodeURIComponent(initialCookie.split(';')[0]!.split('=')[1]!);
+    const portalSession = await prisma.session.findUniqueOrThrow({ where: { secretHash: createHash('sha256').update(token).digest('hex') } });
+    expect(Math.abs(portalSession.expiresAt.getTime() - Date.now() - PORTAL_SESSION_TTL_MS)).toBeLessThan(10_000);
+    await prisma.session.update({ where: { id: portalSession.id }, data: { expiresAt: new Date(Date.now() + 60_000), lastActivityAt: new Date(Date.now() - 29 * 24 * 60 * 60 * 1000) } });
+    const renewed = await request(app.getHttpServer()).get('/api/portal/auth/session').set('Cookie', initialCookie).expect(200);
+    expect(renewed.headers['set-cookie'][0]).toContain('Max-Age=2592000');
+    expect(renewed.headers['set-cookie'][0].split(';')[0]).toBe(initialCookie.split(';')[0]);
+    const renewedSession = await prisma.session.findUniqueOrThrow({ where: { id: portalSession.id } });
+    expect(Math.abs(renewedSession.expiresAt.getTime() - Date.now() - PORTAL_SESSION_TTL_MS)).toBeLessThan(10_000);
+    expect(Date.now() - renewedSession.lastActivityAt.getTime()).toBeLessThan(10_000);
+    await request(app.getHttpServer()).get('/api/portal/auth/session').set('Cookie', initialCookie).expect(200);
+    expect((await prisma.session.findUniqueOrThrow({ where: { id: portalSession.id } })).expiresAt).toEqual(renewedSession.expiresAt);
     const uncovered = await request(app.getHttpServer()).get('/api/portal/me').set('Cookie', initialCookie).expect(200);
     expect(uncovered.body.data.socialWorkName).toBeUndefined();
     expect(uncovered.body.data.affiliateNumber).toBeUndefined();
@@ -74,6 +92,16 @@ describe('Portal auth and PIN reset', () => {
     await request(app.getHttpServer()).post('/api/portal/auth/change-pin').set('Cookie', bothCookies).set('x-csrf-token', portalCsrf).send({ currentPin: newPin, nextPin: '4321' }).expect(200);
     await request(app.getHttpServer()).post('/api/portal/auth/login').send({ dni: person.dni, pin: newPin }).expect(401);
     await request(app.getHttpServer()).post('/api/portal/auth/login').send({ dni: person.dni, pin: '4321' }).expect(200);
+
+    await prisma.session.update({ where: { id: portalSession.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    const expired = await request(app.getHttpServer()).get('/api/portal/auth/session').set('Cookie', initialCookie).expect(401);
+    expect(expired.headers['set-cookie']).toBeUndefined();
+    expect((await prisma.session.findUniqueOrThrow({ where: { id: portalSession.id } })).expiresAt.getTime()).toBeLessThan(Date.now());
+    await prisma.session.update({ where: { id: portalSession.id }, data: { expiresAt: new Date(Date.now() + PORTAL_SESSION_TTL_MS), revokedAt: new Date() } });
+    const revoked = await request(app.getHttpServer()).get('/api/portal/auth/session').set('Cookie', initialCookie).expect(401);
+    expect(revoked.headers['set-cookie']).toBeUndefined();
+    await request(app.getHttpServer()).post('/api/portal/auth/logout').set('Cookie', portalCookie).expect(200);
+    await request(app.getHttpServer()).get('/api/portal/auth/session').set('Cookie', portalCookie).expect(401);
 
     await prisma.session.deleteMany({ where: { personId: person.id } });
     await prisma.salaParticipation.deleteMany({ where: { personId: person.id } });
