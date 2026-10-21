@@ -40,6 +40,7 @@ it('renders the mobile login composition and official Athleta logo', () => {
   const heroArrow = screen.getByTestId('portal-hero-arrow');
   expect(heroArrow).toBeVisible();
   expect(heroArrow).toHaveClass('text-primary', 'shrink-0');
+  expect(heroArrow).toHaveClass('-rotate-45');
   const heroAccent = screen.getByTestId('portal-hero-accent');
   expect(heroAccent).toBeVisible();
   expect(heroAccent).toHaveClass('absolute', 'bottom-0', 'left-5', 'h-1', 'w-12', 'bg-primary');
@@ -57,6 +58,8 @@ it('renders the mobile login composition and official Athleta logo', () => {
   expect(dniHelp.previousElementSibling).toContainElement(dni);
   expect(dniHelp).toHaveClass('text-xs', 'text-muted-foreground');
   expect(dni).toHaveAttribute('aria-describedby', 'portal-dni-help');
+  expect(dni).toHaveAttribute('inputMode', 'numeric');
+  expect(dni).toHaveAttribute('pattern', '[0-9]*');
   expect(dniHelp).toHaveAttribute('id', 'portal-dni-help');
   const pin = screen.getByLabelText('PIN');
   expect(pin).not.toHaveAttribute('aria-describedby');
@@ -65,6 +68,18 @@ it('renders the mobile login composition and official Athleta logo', () => {
   expect(pin).toHaveAttribute('pattern', '[0-9]{4}');
   expect(pin).toHaveAttribute('maxLength', '4');
   expect(pin).toHaveAttribute('autoComplete', 'current-password');
+});
+
+it('keeps only numeric characters in the DNI and PIN fields', () => {
+  renderPage();
+  const dni = screen.getByLabelText('DNI');
+  const pin = screen.getByLabelText('PIN');
+
+  fireEvent.change(dni, { target: { value: '12.34 ABC 56' } });
+  expect(dni).toHaveValue('123456');
+
+  fireEvent.change(pin, { target: { value: '1a2-34x5' } });
+  expect(pin).toHaveValue('1234');
 });
 
 it('uses a dynamic viewport height and a compact single-column composition', () => {
