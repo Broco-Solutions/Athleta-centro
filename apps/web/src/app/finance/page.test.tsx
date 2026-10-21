@@ -542,13 +542,18 @@ it('opens and closes Sala validity while keeping history visible and defers stud
   expect(toggle).toHaveClass('bg-white');
   expect(screen.getByRole('heading', { name: 'Vigencia de Sala' }).closest('section')).toHaveAttribute('id', 'sala-payment-registration');
   expect(await screen.findByRole('button', { name: 'Sin vigencia 2', pressed: true })).toBeVisible();
+  expect(screen.getByText('2 alumnos')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Vigentes 4' })).toBeVisible();
   expect(screen.getByRole('searchbox', { name: 'Nombre, apellido o DNI' })).toBeVisible();
   expect(screen.getAllByRole('searchbox')).toHaveLength(1);
   expect(screen.getByRole('heading', { name: 'Historial de ingresos' })).toBeVisible();
   expect(studentReads).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole('button', { name: 'Vigentes 4' }));
+  expect(screen.getByText('4 alumnos')).toBeVisible();
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Sintético 3' } });
+  expect(screen.getByText('1 alumno')).toBeVisible();
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'No existe' } });
+  expect(screen.getByText('0 alumnos')).toBeVisible();
 
   fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
   expect(screen.queryByRole('heading', { name: 'Vigencia de Sala' })).not.toBeInTheDocument();
@@ -837,6 +842,7 @@ it.each(['income', 'expenses'])('paginates %s after filters and keeps the full f
   const client = renderPage();
   const history = within(await screen.findByRole('region', { name: view === 'income' ? 'Historial de ingresos' : 'Registros de gastos' }));
   expect(await history.findByText('Mostrando 1–25 de 26')).toBeVisible();
+  expect(screen.getByText(view === 'income' ? '26 ingresos' : '26 gastos')).toBeVisible();
   expect(history.getByText('Página 1 de 2')).toBeVisible();
   expect(history.getAllByText(/Movimiento sintético/)).toHaveLength(25);
   expect(history.getByLabelText('Total filtrado')).toHaveTextContent('$ 26.000,00');
@@ -866,4 +872,56 @@ it.each(['income', 'expenses'])('paginates %s after filters and keeps the full f
   client.setQueriesData({ queryKey: ['finance', view, 'history'] }, rows.slice(0, 2));
   await waitFor(() => expect(history.getByText('Página 1 de 1')).toBeVisible());
   expect(history.getByLabelText('Total filtrado')).toHaveTextContent('$ 2.000,00');
+});
+
+it.each(['income', 'expenses'])('keeps the %s count under collapsed filters and independent from money', async view => {
+  navigation.search = `view=${view}`;
+  server.use(http.get(`http://localhost:3000/api/finance/${view}`, () => HttpResponse.json({ data: view === 'income' ? historyIncome : historyExpenses })));
+  renderPage();
+  const filters = within(await screen.findByRole('region', { name: view === 'income' ? 'Filtros de ingresos' : 'Filtros de gastos' }));
+  const history = within(screen.getByRole('region', { name: view === 'income' ? 'Historial de ingresos' : 'Registros de gastos' }));
+  const plural = view === 'income' ? 'ingresos' : 'gastos';
+  const singular = view === 'income' ? 'ingreso' : 'gasto';
+  expect(await filters.findByText(`${view === 'income' ? 3 : 2} ${plural}`)).toBeVisible();
+  expect(history.getByLabelText('Total filtrado')).toHaveTextContent(view === 'income' ? '$ 600,00' : '$ 900,00');
+  fireEvent.click(filters.getByRole('button', { name: 'Filtros' }));
+  if (view === 'income') {
+    fireEvent.change(filters.getByLabelText('Persona'), { target: { value: 'Equi' } });
+    expect(filters.getByText('3 ingresos')).toBeVisible();
+    expect(history.getByLabelText('Total filtrado')).toHaveTextContent('$ 600,00');
+    fireEvent.click(filters.getByRole('button', { name: 'Equi Fernandez DNI 30123456' }));
+    expect(filters.getByText('2 ingresos')).toBeVisible();
+    fireEvent.change(filters.getByLabelText('Origen'), { target: { value: 'SALA' } });
+  } else {
+    fireEvent.change(filters.getByLabelText('Área'), { target: { value: 'SALA' } });
+    fireEvent.change(filters.getByLabelText('Categoría'), { target: { value: 'rent' } });
+  }
+  expect(filters.getByText(`1 ${singular}`)).toBeVisible();
+  expect(history.getByLabelText('Total filtrado')).toHaveTextContent(view === 'income' ? '$ 100,00' : '$ 400,00');
+  fireEvent.change(filters.getByLabelText('Medio de pago'), { target: { value: view === 'income' ? 'transfer' : 'cash' } });
+  expect(filters.getByText(`0 ${plural}`)).toBeVisible();
+  expect(history.queryByLabelText('Total filtrado')).not.toBeInTheDocument();
+  expect(history.getByText('No hay registros.')).toBeVisible();
+  fireEvent.click(filters.getByRole('button', { name: /Filtros \(3\)/ }));
+  expect(filters.getByText(`0 ${plural}`)).toBeVisible();
+  expect(filters.queryByLabelText('Medio de pago')).not.toBeInTheDocument();
+  fireEvent.click(filters.getByRole('button', { name: /Filtros/ }));
+  fireEvent.click(filters.getByRole('button', { name: 'Limpiar filtros' }));
+  expect(filters.getByText(`${view === 'income' ? 3 : 2} ${plural}`)).toBeVisible();
+});
+
+it.each(['income', 'expenses'])('does not report a false zero while %s loads or fails', async view => {
+  navigation.search = `view=${view}`;
+  let release!: () => void;
+  server.use(http.get(`http://localhost:3000/api/finance/${view}`, async () => {
+    await new Promise<void>(resolve => { release = resolve; });
+    return HttpResponse.json({}, { status: 500 });
+  }));
+  renderPage();
+  await waitFor(() => expect(release).toBeDefined());
+  const filters = within(screen.getByRole('region', { name: view === 'income' ? 'Filtros de ingresos' : 'Filtros de gastos' }));
+  expect(filters.queryByText(/^[0-9]+ (ingresos?|gastos?)$/)).not.toBeInTheDocument();
+  release();
+  await screen.findByRole('alert');
+  expect(filters.queryByText(/^[0-9]+ (ingresos?|gastos?)$/)).not.toBeInTheDocument();
 });

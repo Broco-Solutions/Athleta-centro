@@ -21,7 +21,10 @@ export default function PortalLogin(): React.JSX.Element {
           <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-32 sm:w-36 lg:w-40" />
           <span className="text-xs font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/70">PORTAL</span>
         </header>
-
+        <p className="mt-5 text-xl font-bold uppercase text-white sm:text-2xl">
+          <span className="block">DESBLOQUEÁ TU</span>
+          <span className="block text-primary">POTENCIAL.</span>
+        </p>
       </section>
 
       <section className="flex flex-1 flex-col items-center justify-center px-5 py-8 sm:px-8">

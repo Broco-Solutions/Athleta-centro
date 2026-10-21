@@ -217,6 +217,7 @@ function FinancePageContent(): React.JSX.Element {
         <button type="button" aria-pressed={incomeTab === 'paid'} className={tabClass(incomeTab === 'paid')} onClick={() => setIncomeTab('paid')}>Vigentes {paidStudents.length}</button>
       </div>
       <label className="block text-sm">Nombre, apellido o DNI<input type="search" value={search} onChange={event => setSearch(event.target.value)} className="mt-1 h-10 w-full rounded border px-3" /></label>
+      {students.isSuccess ? <p className="text-sm text-muted-foreground">{results.length} {results.length === 1 ? 'alumno' : 'alumnos'}</p> : null}
       {students.isPending ? <p role="status">Cargando alumnos…</p> : null}
       {students.isError ? <p role="alert">{students.error.message}</p> : null}
       {students.isSuccess && !results.length ? <p>No se encontraron alumnos.</p> : null}
@@ -252,6 +253,7 @@ function FinancePageContent(): React.JSX.Element {
         <HistorySelect label="Medio de pago" value={incomeMethod} onChange={setIncomeMethod} options={incomeMethods} />
         {incomePeriod.changed || incomeFilterCount || incomePersonSearch ? <div className="md:col-span-3 md:text-right"><Button type="button" variant="secondary" onClick={() => { incomePeriod.reset(); setSelectedIncomePerson(undefined); setIncomePersonSearch(''); setIncomeSource(''); setIncomeMethod(''); }}>Limpiar filtros</Button></div> : null}
       </div> : null}
+      {income.isSuccess ? <p className="text-sm text-muted-foreground">{filteredIncome.length} {filteredIncome.length === 1 ? 'ingreso' : 'ingresos'}</p> : null}
     </section> : null}
     {view === 'income' && !personId && income.isError ? <p role="alert">No se pudieron cargar los ingresos para este contexto.</p> : null}
     {view === 'income' && !personId && read ? <Data title="Historial de ingresos" value={filteredIncome} total={incomeFilteredTotal} page={effectiveIncomePage} onPage={setIncomePage} showRegisteredBy /> : null}
@@ -270,6 +272,7 @@ function FinancePageContent(): React.JSX.Element {
           <HistorySelect label="Medio de pago" value={expenseMethod} onChange={setExpenseMethod} options={expenseMethods} />
           {expensePeriod.changed || expenseFilterCount ? <div className="md:col-span-3 md:text-right"><Button type="button" variant="secondary" onClick={() => { expensePeriod.reset(); setExpenseArea(''); setExpenseCategory(''); setExpenseMethod(''); }}>Limpiar filtros</Button></div> : null}
         </div> : null}
+        {expenses.isSuccess ? <p className="text-sm text-muted-foreground">{filteredExpenses.length} {filteredExpenses.length === 1 ? 'gasto' : 'gastos'}</p> : null}
       </section> : null}
       {canReadExpenses && expenses.isError ? <p role="alert">No se pudieron cargar los gastos.</p> : null}
       {canReadExpenses ? <Data title="Registros de gastos" value={filteredExpenses} total={expenseFilteredTotal} page={effectiveExpensePage} onPage={setExpensePage} /> : null}

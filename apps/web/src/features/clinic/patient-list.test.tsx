@@ -169,3 +169,45 @@ it('restores the list search, combined filters and page', async () => {
   expect(params.get('withoutRecentAttentionDays')).toBe('60');
   expect(screen.getByLabelText('Buscar Pacientes')).toHaveValue('Ana');
 });
+
+it('counts backend totals across pages and hides previous totals while filters load', async () => {
+  let release!: () => void;
+  const requests: URL[] = [];
+  server.use(http.get('http://localhost:3000/api/clinic/patients/overview', async ({ request }) => {
+    const url = new URL(request.url); requests.push(url);
+    const search = url.searchParams.get('search');
+    if (search === 'espera') await new Promise<void>(resolve => { release = resolve; });
+    const total = search === 'espera' ? 0 : search ? 1 : 26;
+    return HttpResponse.json({ data: total ? [patient] : [], meta: { page: Number(url.searchParams.get('page')), pageSize: 25, total, totalPages: total === 26 ? 2 : 1 } });
+  }));
+  renderList();
+  expect(await screen.findByText('26 pacientes')).toBeVisible();
+  expect(screen.getAllByRole('row')).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
+  await waitFor(() => expect(requests.at(-1)?.searchParams.get('page')).toBe('2'));
+  expect(await screen.findByText('26 pacientes')).toBeVisible();
+  expect(requests.every(url => url.searchParams.get('pageSize') === '25')).toBe(true);
+  fireEvent.change(screen.getByLabelText('Buscar Pacientes'), { target: { value: 'Ana' } });
+  expect(await screen.findByText('1 paciente')).toBeVisible();
+  fireEvent.change(screen.getByLabelText('Buscar Pacientes'), { target: { value: 'espera' } });
+  expect(await screen.findByText('Cargando resultados…')).toBeVisible();
+  expect(screen.queryByText('1 paciente')).not.toBeInTheDocument();
+  expect(screen.queryByText('0 pacientes')).not.toBeInTheDocument();
+  await waitFor(() => expect(release).toBeDefined()); release();
+  expect(await screen.findByText('0 pacientes')).toBeVisible();
+});
+
+it('does not report zero records on loading or query failure', async () => {
+  let release!: () => void;
+  server.use(http.get('http://localhost:3000/api/clinic/patients/overview', async () => {
+    await new Promise<void>(resolve => { release = resolve; });
+    return HttpResponse.json({}, { status: 500 });
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><PatientList /></QueryClientProvider>);
+  await waitFor(() => expect(release).toBeDefined());
+  expect(screen.queryByText('0 pacientes')).not.toBeInTheDocument();
+  release();
+  await waitFor(() => expect(client.getQueryCache().getAll().some(query => query.state.status === 'error')).toBe(true));
+  expect(screen.queryByText('0 pacientes')).not.toBeInTheDocument();
+});

@@ -565,3 +565,45 @@ it('requests pages of 25 and keeps backend pagination', async () => {
   await waitFor(() => expect(requested.get('page')).toBe('2'));
   expect(screen.getByText('Página 2 de 2')).toBeVisible();
 });
+
+it('counts backend totals across pages and hides previous totals while filters load', async () => {
+  let release!: () => void;
+  const requests: URL[] = [];
+  server.use(http.get('http://localhost:3000/api/people', async ({ request }) => {
+    const url = new URL(request.url); requests.push(url);
+    const search = url.searchParams.get('search');
+    if (search === 'espera') await new Promise<void>(resolve => { release = resolve; });
+    const total = search === 'espera' ? 0 : search ? 1 : 26;
+    return HttpResponse.json({ data: total ? [person] : [], meta: { page: Number(url.searchParams.get('page')), pageSize: 25, total, totalPages: total === 26 ? 2 : 1 } });
+  }));
+  renderPage();
+  expect(await screen.findByText('26 personas')).toBeVisible();
+  expect(screen.getAllByRole('row')).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
+  await waitFor(() => expect(requests.at(-1)?.searchParams.get('page')).toBe('2'));
+  expect(await screen.findByText('26 personas')).toBeVisible();
+  expect(requests.every(url => url.searchParams.get('pageSize') === '25')).toBe(true);
+  fireEvent.change(screen.getByLabelText('Buscar Personas'), { target: { value: 'Ana' } });
+  expect(await screen.findByText('1 persona')).toBeVisible();
+  fireEvent.change(screen.getByLabelText('Buscar Personas'), { target: { value: 'espera' } });
+  expect(await screen.findByText('Cargando resultados…')).toBeVisible();
+  expect(screen.queryByText('1 persona')).not.toBeInTheDocument();
+  expect(screen.queryByText('0 personas')).not.toBeInTheDocument();
+  await waitFor(() => expect(release).toBeDefined()); release();
+  expect(await screen.findByText('0 personas')).toBeVisible();
+});
+
+it('does not report zero records on loading or query failure', async () => {
+  let release!: () => void;
+  server.use(http.get('http://localhost:3000/api/people', async () => {
+    await new Promise<void>(resolve => { release = resolve; });
+    return HttpResponse.json({}, { status: 500 });
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><PeoplePage /></QueryClientProvider>);
+  await waitFor(() => expect(release).toBeDefined());
+  expect(screen.queryByText('0 personas')).not.toBeInTheDocument();
+  release();
+  await waitFor(() => expect(client.getQueryCache().getAll().some(query => query.state.status === 'error')).toBe(true));
+  expect(screen.queryByText('0 personas')).not.toBeInTheDocument();
+});

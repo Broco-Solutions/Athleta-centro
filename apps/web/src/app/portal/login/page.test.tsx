@@ -34,7 +34,10 @@ it('renders the mobile login composition and official Athleta logo', () => {
   expect(screen.queryByText(/PORTAL DE/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/CLIENTES/i)).not.toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Iniciar sesión', level: 1 })).toBeVisible();
-  expect(screen.queryByText('DESBLOQUEÁ TU')).not.toBeInTheDocument();
+  expect(screen.getByText('DESBLOQUEÁ TU')).toBeVisible();
+  expect(screen.getByText('POTENCIAL.')).toHaveClass('text-primary');
+  expect(screen.getByText('DESBLOQUEÁ TU').closest('p')).toHaveClass('mt-5', 'text-xl', 'font-bold', 'sm:text-2xl');
+  expect(logo.closest('header')?.nextElementSibling).toContainElement(screen.getByText('POTENCIAL.'));
   expect(screen.getByRole('link', { name: 'Desarrollado por Broco Solutions' })).toHaveAttribute('href', 'https://www.brocosolutions.com');
   expect(screen.queryByText('Ingresá con tu DNI y PIN para continuar.')).not.toBeInTheDocument();
   expect(screen.queryByText('Ingresá 4 dígitos.')).not.toBeInTheDocument();

@@ -397,3 +397,36 @@ it.each(['search', 'filter', 'mine'])('paginates 25 students and resets page on 
   else fireEvent.click(screen.getByRole('button', { name: change === 'mine' ? 'Mis alumnos' : 'Todos' }));
   expect(screen.getByText('Página 1 de 2')).toBeVisible();
 });
+
+it('counts all combined student matches, including three without routine, singular and zero', async () => {
+  const many = Array.from({ length: 50 }, (_, index) => ({ ...students[0], id: `count-${index}`, firstName: `Alumno ${index}`, routineStatus: index < 3 ? 'MISSING' : 'ACTIVE', professor: index === 2 ? students[1]!.professor : students[0]!.professor }));
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: many })));
+  renderPage();
+  expect(await screen.findByText('50 alumnos')).toBeVisible();
+  expect(list().getAllByRole('link', { name: 'Ver ficha' })).toHaveLength(25);
+  fireEvent.click(screen.getByRole('button', { name: 'Sin rutina' }));
+  const count = screen.getByText('3 alumnos');
+  expect(count.previousElementSibling).toHaveAttribute('aria-label', 'Filtrar alumnos');
+  expect(list().getAllByRole('link', { name: 'Ver ficha' })).toHaveLength(3);
+  fireEvent.click(screen.getByRole('button', { name: 'Mis alumnos' }));
+  expect(screen.getByText('2 alumnos')).toBeVisible();
+  fireEvent.change(screen.getByLabelText('Buscar por nombre o DNI'), { target: { value: 'Alumno 1' } });
+  expect(screen.getByText('1 alumno')).toBeVisible();
+  fireEvent.change(screen.getByLabelText('Buscar por nombre o DNI'), { target: { value: 'Sin coincidencias' } });
+  expect(screen.getByText('0 alumnos')).toBeVisible();
+});
+
+it('does not report zero records on loading or query failure', async () => {
+  let release!: () => void;
+  server.use(http.get('http://localhost:3000/api/sala/students', async () => {
+    await new Promise<void>(resolve => { release = resolve; });
+    return HttpResponse.json({}, { status: 500 });
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><StudentsPage /></QueryClientProvider>);
+  await waitFor(() => expect(release).toBeDefined());
+  expect(screen.queryByText('0 alumnos')).not.toBeInTheDocument();
+  release();
+  await waitFor(() => expect(client.getQueryCache().getAll().some(query => query.state.status === 'error')).toBe(true));
+  expect(screen.queryByText('0 alumnos')).not.toBeInTheDocument();
+});

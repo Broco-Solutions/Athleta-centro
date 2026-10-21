@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { effectivePermissions } from '../team/permissions';
 import { AuthRateLimitService } from './auth-rate-limit.service';
 const tokenHash = (token: string) => createHash('sha256').update(token).digest('hex');
+export const INTERNAL_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const passwordIsValid = (password: string) => /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{10,}$/.test(password);
 @Injectable()
 export class AuthService {
@@ -14,9 +15,26 @@ export class AuthService {
   async hashPassword(password: string) { if (!passwordIsValid(password)) throw new UnauthorizedException({ code: 'PASSWORD_POLICY', message: 'Password does not meet policy' }); return this.hashCredential(password); }
   private hashCredential(value: string) { return argon2.hash(value, { type: argon2.argon2id }); }
   async hashInitialCredential(value: string) { return this.hashCredential(value); }
-  async login(email: string, password: string, ip: string) { const normalizedEmail = email.trim().toLowerCase(); await this.rateLimits.assertLoginAllowed(normalizedEmail, ip); const user = await this.prisma.internalUser.findUnique({ where: { normalizedEmail }, include: { credential: true, roles: true } }); const passwordMatches = user?.credential ? await argon2.verify(user.credential.passwordHash, password) : false; if (!user || user.status !== InternalUserStatus.ACTIVE || !user.credential || !passwordMatches) { await this.rateLimits.recordLoginFailure(normalizedEmail, ip); throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' }); } await this.rateLimits.clearLoginFailures(normalizedEmail, ip); const token = randomBytes(32).toString('base64url'); const csrfToken = randomBytes(32).toString('base64url'); await this.prisma.session.create({ data: { kind: SessionKind.INTERNAL, internalUserId: user.id, secretHash: tokenHash(token), csrfToken, expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 8) } }); return { token, csrfToken, session: this.safeSession(user) }; }
-  async current(token?: string) { if (!token) throw new UnauthorizedException({ code: 'UNAUTHENTICATED', message: 'Authentication required' }); const session = await this.prisma.session.findUnique({ where: { secretHash: tokenHash(token) }, include: { internalUser: { include: { roles: true, credential: true } } } }); if (!session || session.revokedAt || session.expiresAt <= new Date() || !session.internalUser || session.internalUser.status !== 'ACTIVE') throw new UnauthorizedException({ code: 'UNAUTHENTICATED', message: 'Authentication required' }); return { sessionId: session.id, csrfToken: session.csrfToken, session: this.safeSession(session.internalUser) }; }
-  async logout(token?: string) { if (token) await this.prisma.session.updateMany({ where: { secretHash: tokenHash(token), revokedAt: null }, data: { revokedAt: new Date() } }); }
+  async login(email: string, password: string, ip: string) { const normalizedEmail = email.trim().toLowerCase(); await this.rateLimits.assertLoginAllowed(normalizedEmail, ip); const user = await this.prisma.internalUser.findUnique({ where: { normalizedEmail }, include: { credential: true, roles: true } }); const passwordMatches = user?.credential ? await argon2.verify(user.credential.passwordHash, password) : false; if (!user || user.status !== InternalUserStatus.ACTIVE || !user.credential || !passwordMatches) { await this.rateLimits.recordLoginFailure(normalizedEmail, ip); throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' }); } await this.rateLimits.clearLoginFailures(normalizedEmail, ip); const token = randomBytes(32).toString('base64url'); const csrfToken = randomBytes(32).toString('base64url'); await this.prisma.session.create({ data: { kind: SessionKind.INTERNAL, internalUserId: user.id, secretHash: tokenHash(token), csrfToken, expiresAt: new Date(Date.now() + INTERNAL_SESSION_TTL_MS) } }); return { token, csrfToken, session: this.safeSession(user) }; }
+  async current(token?: string) {
+    if (!token) throw new UnauthorizedException({ code: 'UNAUTHENTICATED', message: 'Authentication required' });
+    const session = await this.prisma.session.findUnique({ where: { secretHash: tokenHash(token) }, include: { internalUser: { include: { roles: true, credential: true } } } });
+    const now = new Date();
+    if (!session || session.kind !== SessionKind.INTERNAL || session.revokedAt || session.expiresAt <= now || !session.internalUser || session.internalUser.status !== InternalUserStatus.ACTIVE) throw new UnauthorizedException({ code: 'UNAUTHENTICATED', message: 'Authentication required' });
+    const renewalThreshold = new Date(now.getTime() + INTERNAL_SESSION_TTL_MS - 24 * 60 * 60 * 1000);
+    if (session.expiresAt < renewalThreshold) {
+      const renewed = await this.prisma.session.updateMany({
+        where: { id: session.id, kind: SessionKind.INTERNAL, revokedAt: null, expiresAt: { gt: now, lt: renewalThreshold } },
+        data: { expiresAt: new Date(now.getTime() + INTERNAL_SESSION_TTL_MS), lastActivityAt: now },
+      });
+      if (!renewed.count) {
+        const valid = await this.prisma.session.findUnique({ where: { id: session.id } });
+        if (!valid || valid.kind !== SessionKind.INTERNAL || valid.revokedAt || valid.expiresAt <= new Date()) throw new UnauthorizedException({ code: 'UNAUTHENTICATED', message: 'Authentication required' });
+      }
+    }
+    return { sessionId: session.id, csrfToken: session.csrfToken, session: this.safeSession(session.internalUser) };
+  }
+  async logout(token?: string) { if (token) await this.prisma.session.updateMany({ where: { secretHash: tokenHash(token), kind: SessionKind.INTERNAL, revokedAt: null }, data: { revokedAt: new Date() } }); }
   async changePassword(token: string | undefined, currentPassword: string, nextPassword: string) { const current = await this.current(token); const credential = await this.prisma.internalCredential.findUniqueOrThrow({ where: { internalUserId: current.session.user.id } }); if (!(await argon2.verify(credential.passwordHash, currentPassword))) throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' }); const passwordHash = await this.hashPassword(nextPassword); await this.prisma.$transaction([this.prisma.internalCredential.update({ where: { internalUserId: current.session.user.id }, data: { passwordHash, mustChangePassword: false, credentialsUpdatedAt: new Date() } }), this.prisma.session.updateMany({ where: { internalUserId: current.session.user.id, id: { not: current.sessionId }, revokedAt: null }, data: { revokedAt: new Date() } })]); return { ...current.session, mustChangePassword: false }; }
   private safeSession(user: { id: string; firstName: string; lastName: string; email: string; roles: { role: import('@prisma/client').Role }[]; credential: { mustChangePassword: boolean } | null }) { const roles = user.roles.map((entry) => entry.role); return { user: { id: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email }, roles, permissions: [...effectivePermissions('ACTIVE', roles)], mustChangePassword: user.credential?.mustChangePassword ?? true }; }
 }
