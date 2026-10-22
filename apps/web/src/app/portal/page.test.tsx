@@ -472,15 +472,15 @@ it('keeps Sala available without requesting the clinical query', async () => {
   expect(reads).toBe(0);
 });
 
-it.each(['/portal', '/portal/sala/rutina', '/portal/sala/reservas', '/portal/sala/reservar', '/portal/clinic', '/portal/clinic/turnos', '/portal/change-pin', '/portal/profile'])('keeps only Inicio and Mis datos with one active link on %s', pathname => {
+it.each(['/portal', '/portal/sala/rutina', '/portal/sala/reservas', '/portal/sala/reservar', '/portal/clinic', '/portal/clinic/turnos', '/portal/change-pin', '/portal/profile', '/portal/declaracion-salud'])('keeps Portal navigation with one active link on %s', pathname => {
   navigation.pathname = pathname;
   render(<portalUi.PortalNav />);
   const nav = within(screen.getByRole('navigation', { name: 'Navegación del Portal' }));
-  expect(nav.getAllByRole('link').map(link => link.textContent)).toEqual(['Inicio', 'Mis datos']);
+  expect(nav.getAllByRole('link').map(link => link.textContent)).toEqual(['Inicio', 'Mis datos', 'Declaración de salud']);
   expect(nav.queryByRole('link', { name: 'Sala' })).not.toBeInTheDocument();
   expect(nav.getByRole('link', { name: 'Inicio' })).toHaveAttribute('href', '/portal');
-  const activeLabel = pathname === '/portal/profile' ? 'Mis datos' : 'Inicio';
-  const inactiveLabel = pathname === '/portal/profile' ? 'Inicio' : 'Mis datos';
+  const activeLabel = pathname === '/portal/profile' ? 'Mis datos' : pathname === '/portal/declaracion-salud' ? 'Declaración de salud' : 'Inicio';
   expect(nav.getByRole('link', { name: activeLabel })).toHaveAttribute('aria-current', 'page');
-  expect(nav.getByRole('link', { name: inactiveLabel })).not.toHaveAttribute('aria-current');
+  expect(nav.getAllByRole('link').filter(link => link.getAttribute('aria-current') === 'page')).toHaveLength(1);
+  expect(nav.getByRole('link', { name: 'Declaración de salud' })).toHaveAttribute('href', '/portal/declaracion-salud');
 });

@@ -1,5 +1,6 @@
+import { SubmitHealthDeclarationDto, HealthDeclarationStatusEnvelopeDto, HealthDeclarationListEnvelopeDto, HealthDeclarationDetailEnvelopeDto, HealthDocumentEnvelopeDto } from '../sala/health-declaration/health-declaration.dto';
 import { Body, Controller, Get, HttpCode, Param, Post, Req, Res } from '@nestjs/common';
-import { ApiOperation, ApiOkResponse, ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiOkResponse, ApiParam, ApiBody, ApiCreatedResponse, getSchemaPath, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { PORTAL_SESSION_TTL_MS } from './portal-session';
 import { PortalService } from './portal.service';
@@ -12,9 +13,23 @@ export class PortalController {
   }
   @Post('auth/login') @HttpCode(200) async login(@Body() body: { dni: string; pin: string }, @Req() req: Request, @Res({ passthrough: true }) res: Response) { const result = await this.portal.login(body.dni, body.pin); this.setSessionCookie(res, result.token); return { data: { ...result, token: undefined } }; }
   @Post('auth/logout') @HttpCode(200) async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) { await this.portal.logout(this.cookie(req)); res.clearCookie('athleta_portal_session', { path: '/' }); return { data: {} }; }
-  @Get('auth/session') async session(@Req() req: Request, @Res({ passthrough: true }) res: Response) { const c = await this.portal.current(this.cookie(req)); this.setSessionCookie(res, this.cookie(req)!); return { data: { person: this.portal.profile(c.person), mustChangePin: c.person.portalCredential?.mustChangePin ?? false, csrfToken: c.session.csrfToken } }; }
+  @Get('auth/session') @ApiOkResponse({ schema: { type: 'object', required: ['data'], properties: { data: { type: 'object', required: ['person', 'mustChangePin', 'csrfToken', 'healthDeclaration'], properties: { person: { type: 'object', additionalProperties: true }, mustChangePin: { type: 'boolean' }, csrfToken: { type: 'string' }, healthDeclaration: { $ref: getSchemaPath('HealthDeclarationStatusDto') } } } } } }) async session(@Req() req: Request, @Res({ passthrough: true }) res: Response) { const c = await this.portal.current(this.cookie(req)); this.setSessionCookie(res, this.cookie(req)!); return { data: { person: this.portal.profile(c.person), mustChangePin: c.person.portalCredential?.mustChangePin ?? false, csrfToken: c.session.csrfToken, healthDeclaration: await this.portal.healthStatus(this.cookie(req)) } }; }
   @Post('auth/change-pin') @HttpCode(200) async change(@Req() req: Request, @Body() body: { currentPin: string; nextPin: string }) { await this.portal.assertCsrf(this.cookie(req), req.header('x-csrf-token')); return { data: await this.portal.changePin(this.cookie(req), body.currentPin, body.nextPin) }; }
   @Get('me') async me(@Req() req: Request) { return { data: await this.portal.me(this.cookie(req)) }; }
+  @Get('health-declaration/status') @ApiOperation({ operationId: 'getPortalHealthDeclarationStatus' }) @ApiOkResponse({ type: HealthDeclarationStatusEnvelopeDto })
+  async healthStatus(@Req() req: Request) { return { data: await this.portal.healthStatus(this.cookie(req)) }; }
+  @Get('health-declaration/document') @ApiOperation({ operationId: 'getPortalHealthDocument' }) @ApiOkResponse({ type: HealthDocumentEnvelopeDto })
+  async healthDocument(@Req() req: Request) { return { data: await this.portal.healthDocument(this.cookie(req)) }; }
+  @Get('health-declarations') @ApiOperation({ operationId: 'listPortalHealthDeclarations' }) @ApiOkResponse({ type: HealthDeclarationListEnvelopeDto })
+  async healthHistory(@Req() req: Request) { return { data: await this.portal.healthHistory(this.cookie(req)) }; }
+  @Get('health-declarations/:id') @ApiOperation({ operationId: 'getPortalHealthDeclaration' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) @ApiOkResponse({ type: HealthDeclarationDetailEnvelopeDto })
+  async healthDetail(@Req() req: Request, @Param('id') id: string) { return { data: await this.portal.healthDetail(this.cookie(req), id) }; }
+  @Post('health-declarations/submit') @ApiOperation({ operationId: 'submitPortalHealthDeclaration' }) @ApiBody({ type: SubmitHealthDeclarationDto }) @ApiCreatedResponse({ type: HealthDeclarationStatusEnvelopeDto })
+  async submitHealth(@Req() req: Request, @Body() body: SubmitHealthDeclarationDto) {
+    await this.portal.assertCsrf(this.cookie(req), req.header('x-csrf-token'));
+    await this.portal.submitHealthDeclaration(this.cookie(req), body);
+    return { data: await this.portal.healthStatus(this.cookie(req)) };
+  }
   @Get('sala') async sala(@Req() req: Request) { return { data: await this.portal.sala(this.cookie(req)) }; }
   @Get('sala/services') async salaServices(@Req() req: Request) { return { data: await this.portal.salaServices(this.cookie(req)) }; }
   @Get('sala/availability') async availability(@Req() req: Request) { const query = req.query as { date?: string; excludeFixedBookingId?: string }; return { data: await this.portal.salaAvailability(this.cookie(req), String(query.date ?? ''), query.excludeFixedBookingId) }; }

@@ -1,3 +1,4 @@
+import { HealthDeclarationStatusEnvelopeDto, HealthDeclarationListEnvelopeDto, HealthDeclarationDetailEnvelopeDto } from './health-declaration/health-declaration.dto';
 import type { Permission } from '../team/permissions';
 import { Body, HttpCode, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBody, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
@@ -10,6 +11,12 @@ import type { Request } from 'express';
 @ApiTags('Sala') @Controller('sala') @UseGuards(PermissionsGuard)
 export class SalaController {
   constructor(private readonly sala: SalaService) {}
+  @Get('people/:personId/health-declaration/status') @RequirePermissions('SALA_RELATION_READ') @ApiOperation({ operationId: 'getPersonHealthDeclarationStatus' }) @ApiParam({ name: 'personId', type: String, format: 'uuid' }) @ApiOkResponse({ type: HealthDeclarationStatusEnvelopeDto })
+  async healthDeclarationStatus(@Param('personId') personId: string) { return { data: await this.sala.healthDeclarationStatus(personId) }; }
+  @Get('people/:personId/health-declarations') @RequirePermissions('SALA_RELATION_READ') @ApiOperation({ operationId: 'listPersonHealthDeclarations' }) @ApiParam({ name: 'personId', type: String, format: 'uuid' }) @ApiOkResponse({ type: HealthDeclarationListEnvelopeDto })
+  async healthDeclarationHistory(@Param('personId') personId: string) { return { data: await this.sala.healthDeclarationHistory(personId) }; }
+  @Get('people/:personId/health-declarations/:id') @RequirePermissions('SALA_PHYSICAL_EVALUATION_MANAGE') @ApiOperation({ operationId: 'getPersonHealthDeclaration' }) @ApiParam({ name: 'personId', type: String, format: 'uuid' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) @ApiOkResponse({ type: HealthDeclarationDetailEnvelopeDto })
+  async healthDeclarationDetail(@Param('personId') personId: string, @Param('id') id: string) { return { data: await this.sala.healthDeclarationDetail(personId, id) }; }
   @Get('participations/person/:personId') @RequirePermissions('SALA_RELATION_READ') @ApiOperation({ operationId: 'listPersonSalaParticipations' }) @ApiParam({ name: 'personId', type: String, format: 'uuid' }) @ApiOkResponse({ type: SalaParticipationListEnvelopeDto }) async personParticipations(@Param('personId') personId: string) { return { data: await this.sala.listParticipations(personId) }; }
   @Get('professors') @RequirePermissions('SALA_PARTICIPATION_MANAGE') @ApiOperation({ operationId: 'listSalaProfessors' }) @ApiOkResponse({ type: SalaProfessorListEnvelopeDto }) async professors() { return { data: await this.sala.listProfessors() }; }
   @Get('students') @RequirePermissions('SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ') @ApiOperation({ operationId: 'listSalaStudents' }) @ApiOkResponse({ type: SalaStudentListEnvelopeDto }) async students() { return { data: await this.sala.listStudents() }; }

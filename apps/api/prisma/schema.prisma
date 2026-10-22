@@ -225,6 +225,7 @@ model Person {
   reservations            OneOffReservation[]
   salaOccurrences         SalaOccurrence[]
   routines                Routine[]
+  healthDeclarations      HealthDeclaration[]
   physicalEvaluations     PhysicalEvaluation[]
   salaPayments            SalaPayment[]
   salaCharges             SalaCharge[]
@@ -1189,4 +1190,21 @@ model PortalCredential {
   person               Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
 
   @@map("portal_credentials")
+}
+
+// Confirmed submissions are append-only; no drafts or derived status are persisted.
+model HealthDeclaration {
+  id              String   @id @default(uuid()) @db.Uuid
+  personId        String   @map("person_id") @db.Uuid
+  submittedAt     DateTime @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  validUntil      DateTime @map("valid_until") @db.Timestamptz(6)
+  documentVersion String   @map("document_version") @db.VarChar(100)
+  identity        Json
+  answers         Json
+  consents        Json
+  document        Json
+  person          Person   @relation(fields: [personId], references: [id], onDelete: Restrict)
+
+  @@index([personId, submittedAt])
+  @@map("health_declarations")
 }

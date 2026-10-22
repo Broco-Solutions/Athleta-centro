@@ -274,6 +274,120 @@ export interface TeamCredentialResetDto {
   temporaryPassword: string;
 }
 
+export interface HealthDeclarationSummaryDto {
+  id: string;
+  submittedAt: string;
+  validUntil: string;
+  documentVersion: string;
+}
+
+export type HealthDeclarationStatusDtoStatus = typeof HealthDeclarationStatusDtoStatus[keyof typeof HealthDeclarationStatusDtoStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const HealthDeclarationStatusDtoStatus = {
+  MISSING: 'MISSING',
+  CURRENT: 'CURRENT',
+  EXPIRED: 'EXPIRED',
+} as const;
+
+/**
+ * @nullable
+ */
+export type HealthDeclarationStatusDtoLatest = HealthDeclarationSummaryDto | null;
+
+export interface HealthDeclarationStatusDto {
+  status: HealthDeclarationStatusDtoStatus;
+  required: boolean;
+  documentAvailable: boolean;
+  /** @nullable */
+  latest?: HealthDeclarationStatusDtoLatest;
+}
+
+export interface HealthDeclarationStatusEnvelopeDto {
+  data: HealthDeclarationStatusDto;
+}
+
+export interface HealthDeclarationListEnvelopeDto {
+  data: HealthDeclarationSummaryDto[];
+}
+
+export interface HealthPersonalDto {
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  address?: string;
+  locality?: string;
+  occupation?: string;
+  socialWork?: string;
+  affiliateNumber?: string;
+  primaryDoctor?: string;
+  guardianName?: string;
+  guardianDni?: string;
+  guardianConfirmed?: boolean;
+}
+
+export type HealthActivityDtoPractice = typeof HealthActivityDtoPractice[keyof typeof HealthActivityDtoPractice];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const HealthActivityDtoPractice = {
+  YES: 'YES',
+  NO: 'NO',
+  NOT_DISCLOSED: 'NOT_DISCLOSED',
+} as const;
+
+export interface HealthActivityDto {
+  practice?: HealthActivityDtoPractice;
+  sport?: string;
+  frequency?: string;
+  club?: string;
+  level?: string;
+}
+
+export interface HealthConsentsDto {
+  physicalActivity: boolean;
+  truthfulness: boolean;
+  emergenciesAndPrivacy: boolean;
+  healthDataProcessing?: boolean;
+  kinesiology?: boolean;
+  manualEvaluation?: boolean;
+  therapeuticExercise?: boolean;
+  manualTherapy?: boolean;
+  physicalAgents?: boolean;
+  dryNeedling?: boolean;
+  taping?: boolean;
+  shareWithDoctors: boolean;
+  shareWithClubs: boolean;
+  clinicalImage: boolean;
+  institutionalImage: boolean;
+}
+
+export type HealthDeclarationDetailDtoIdentity = { [key: string]: unknown };
+
+export type HealthDeclarationDetailDtoKinesiology = { [key: string]: unknown };
+
+export type HealthDeclarationDetailDtoAnswers = { [key: string]: unknown };
+
+export type HealthDeclarationDetailDtoDocument = { [key: string]: unknown };
+
+export interface HealthDeclarationDetailDto {
+  id: string;
+  submittedAt: string;
+  validUntil: string;
+  documentVersion: string;
+  identity: HealthDeclarationDetailDtoIdentity;
+  personal: HealthPersonalDto;
+  activity: HealthActivityDto;
+  kinesiology: HealthDeclarationDetailDtoKinesiology;
+  answers: HealthDeclarationDetailDtoAnswers;
+  consents: HealthConsentsDto;
+  document: HealthDeclarationDetailDtoDocument;
+}
+
+export interface HealthDeclarationDetailEnvelopeDto {
+  data: HealthDeclarationDetailDto;
+}
+
 export interface SalaParticipationPlanResponseDto {
   id: string;
   name: string;
@@ -1720,6 +1834,38 @@ export interface SalaSafeClinicalIndicationListEnvelopeDto {
   data: SalaSafeClinicalIndicationDto[];
 }
 
+/**
+ * @nullable
+ */
+export type HealthDocumentEnvelopeDtoData = { [key: string]: unknown } | null;
+
+export interface HealthDocumentEnvelopeDto {
+  /** @nullable */
+  data: HealthDocumentEnvelopeDtoData;
+}
+
+/**
+ * Optional kinesiological fields, only with healthDataProcessing consent.
+ */
+export type SubmitHealthDeclarationDtoKinesiology = { [key: string]: unknown };
+
+/**
+ * Document question IDs mapped to { answer: YES | NO | NOT_DISCLOSED, details?: string }.
+ */
+export type SubmitHealthDeclarationDtoAnswers = { [key: string]: unknown };
+
+export interface SubmitHealthDeclarationDto {
+  documentVersion: string;
+  personal: HealthPersonalDto;
+  activity: HealthActivityDto;
+  /** Optional kinesiological fields, only with healthDataProcessing consent. */
+  kinesiology: SubmitHealthDeclarationDtoKinesiology;
+  /** Document question IDs mapped to { answer: YES | NO | NOT_DISCLOSED, details?: string }. */
+  answers: SubmitHealthDeclarationDtoAnswers;
+  consents: HealthConsentsDto;
+  confirmed: boolean;
+}
+
 export interface ReservationsProfessionalDto {
   id: string;
   firstName: string;
@@ -1960,6 +2106,19 @@ personId: string;
 
 export type ListSalaClinicalIndicationsParams = {
 personId: string;
+};
+
+export type PortalControllerSession200DataPerson = { [key: string]: unknown };
+
+export type PortalControllerSession200Data = {
+  person: PortalControllerSession200DataPerson;
+  mustChangePin: boolean;
+  csrfToken: string;
+  healthDeclaration: HealthDeclarationStatusDto;
+};
+
+export type PortalControllerSession200 = {
+  data: PortalControllerSession200Data;
 };
 
 export type CancelPortalFixedOccurrence200DataStatus = typeof CancelPortalFixedOccurrence200DataStatus[keyof typeof CancelPortalFixedOccurrence200DataStatus];
@@ -2862,6 +3021,125 @@ export const resetTeamUserCredential = async (id: string, options?: RequestInit)
 
   const data: resetTeamUserCredentialResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as resetTeamUserCredentialResponse
+}
+
+
+
+export type getPersonHealthDeclarationStatusResponse200 = {
+  data: HealthDeclarationStatusEnvelopeDto
+  status: 200
+}
+
+export type getPersonHealthDeclarationStatusResponseSuccess = (getPersonHealthDeclarationStatusResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getPersonHealthDeclarationStatusResponse = (getPersonHealthDeclarationStatusResponseSuccess)
+
+export const getGetPersonHealthDeclarationStatusUrl = (personId: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/health-declaration/status`
+}
+
+export const getPersonHealthDeclarationStatus = async (personId: string, options?: RequestInit): Promise<getPersonHealthDeclarationStatusResponse> => {
+
+  const res = await fetch(getGetPersonHealthDeclarationStatusUrl(personId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getPersonHealthDeclarationStatusResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getPersonHealthDeclarationStatusResponse
+}
+
+
+
+export type listPersonHealthDeclarationsResponse200 = {
+  data: HealthDeclarationListEnvelopeDto
+  status: 200
+}
+
+export type listPersonHealthDeclarationsResponseSuccess = (listPersonHealthDeclarationsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPersonHealthDeclarationsResponse = (listPersonHealthDeclarationsResponseSuccess)
+
+export const getListPersonHealthDeclarationsUrl = (personId: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/health-declarations`
+}
+
+export const listPersonHealthDeclarations = async (personId: string, options?: RequestInit): Promise<listPersonHealthDeclarationsResponse> => {
+
+  const res = await fetch(getListPersonHealthDeclarationsUrl(personId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listPersonHealthDeclarationsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPersonHealthDeclarationsResponse
+}
+
+
+
+export type getPersonHealthDeclarationResponse200 = {
+  data: HealthDeclarationDetailEnvelopeDto
+  status: 200
+}
+
+export type getPersonHealthDeclarationResponseSuccess = (getPersonHealthDeclarationResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getPersonHealthDeclarationResponse = (getPersonHealthDeclarationResponseSuccess)
+
+export const getGetPersonHealthDeclarationUrl = (personId: string,
+    id: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/health-declarations/${id}`
+}
+
+export const getPersonHealthDeclaration = async (personId: string,
+    id: string, options?: RequestInit): Promise<getPersonHealthDeclarationResponse> => {
+
+  const res = await fetch(getGetPersonHealthDeclarationUrl(personId,id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getPersonHealthDeclarationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getPersonHealthDeclarationResponse
 }
 
 
@@ -8861,7 +9139,7 @@ export const portalControllerLogout = async ( options?: RequestInit): Promise<po
 
 
 export type portalControllerSessionResponse200 = {
-  data: void
+  data: PortalControllerSession200
   status: 200
 }
 
@@ -8973,6 +9251,202 @@ export const portalControllerMe = async ( options?: RequestInit): Promise<portal
 
   const data: portalControllerMeResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as portalControllerMeResponse
+}
+
+
+
+export type getPortalHealthDeclarationStatusResponse200 = {
+  data: HealthDeclarationStatusEnvelopeDto
+  status: 200
+}
+
+export type getPortalHealthDeclarationStatusResponseSuccess = (getPortalHealthDeclarationStatusResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getPortalHealthDeclarationStatusResponse = (getPortalHealthDeclarationStatusResponseSuccess)
+
+export const getGetPortalHealthDeclarationStatusUrl = () => {
+
+
+
+
+  return `/api/portal/health-declaration/status`
+}
+
+export const getPortalHealthDeclarationStatus = async ( options?: RequestInit): Promise<getPortalHealthDeclarationStatusResponse> => {
+
+  const res = await fetch(getGetPortalHealthDeclarationStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getPortalHealthDeclarationStatusResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getPortalHealthDeclarationStatusResponse
+}
+
+
+
+export type getPortalHealthDocumentResponse200 = {
+  data: HealthDocumentEnvelopeDto
+  status: 200
+}
+
+export type getPortalHealthDocumentResponseSuccess = (getPortalHealthDocumentResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getPortalHealthDocumentResponse = (getPortalHealthDocumentResponseSuccess)
+
+export const getGetPortalHealthDocumentUrl = () => {
+
+
+
+
+  return `/api/portal/health-declaration/document`
+}
+
+export const getPortalHealthDocument = async ( options?: RequestInit): Promise<getPortalHealthDocumentResponse> => {
+
+  const res = await fetch(getGetPortalHealthDocumentUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getPortalHealthDocumentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getPortalHealthDocumentResponse
+}
+
+
+
+export type listPortalHealthDeclarationsResponse200 = {
+  data: HealthDeclarationListEnvelopeDto
+  status: 200
+}
+
+export type listPortalHealthDeclarationsResponseSuccess = (listPortalHealthDeclarationsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPortalHealthDeclarationsResponse = (listPortalHealthDeclarationsResponseSuccess)
+
+export const getListPortalHealthDeclarationsUrl = () => {
+
+
+
+
+  return `/api/portal/health-declarations`
+}
+
+export const listPortalHealthDeclarations = async ( options?: RequestInit): Promise<listPortalHealthDeclarationsResponse> => {
+
+  const res = await fetch(getListPortalHealthDeclarationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listPortalHealthDeclarationsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPortalHealthDeclarationsResponse
+}
+
+
+
+export type getPortalHealthDeclarationResponse200 = {
+  data: HealthDeclarationDetailEnvelopeDto
+  status: 200
+}
+
+export type getPortalHealthDeclarationResponseSuccess = (getPortalHealthDeclarationResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getPortalHealthDeclarationResponse = (getPortalHealthDeclarationResponseSuccess)
+
+export const getGetPortalHealthDeclarationUrl = (id: string,) => {
+
+
+
+
+  return `/api/portal/health-declarations/${id}`
+}
+
+export const getPortalHealthDeclaration = async (id: string, options?: RequestInit): Promise<getPortalHealthDeclarationResponse> => {
+
+  const res = await fetch(getGetPortalHealthDeclarationUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getPortalHealthDeclarationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getPortalHealthDeclarationResponse
+}
+
+
+
+export type submitPortalHealthDeclarationResponse201 = {
+  data: HealthDeclarationStatusEnvelopeDto
+  status: 201
+}
+
+export type submitPortalHealthDeclarationResponseSuccess = (submitPortalHealthDeclarationResponse201) & {
+  headers: Headers;
+};
+;
+
+export type submitPortalHealthDeclarationResponse = (submitPortalHealthDeclarationResponseSuccess)
+
+export const getSubmitPortalHealthDeclarationUrl = () => {
+
+
+
+
+  return `/api/portal/health-declarations/submit`
+}
+
+export const submitPortalHealthDeclaration = async (submitHealthDeclarationDto: SubmitHealthDeclarationDto, options?: RequestInit): Promise<submitPortalHealthDeclarationResponse> => {
+
+  const res = await fetch(getSubmitPortalHealthDeclarationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      submitHealthDeclarationDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: submitPortalHealthDeclarationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as submitPortalHealthDeclarationResponse
 }
 
 

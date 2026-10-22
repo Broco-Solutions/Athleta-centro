@@ -307,7 +307,7 @@ it('shows the Professor header, exact tabs and four explicit dashboard actions',
   expect(screen.getByText('Participación activa')).toBeInTheDocument();
   expect(within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByRole('link', { name: 'Alumnos' })).toHaveAttribute('href', '/students');
   const tabs = within(screen.getByRole('navigation', { name: 'Secciones del alumno en Sala' }));
-  expect(tabs.getAllByRole('link').map(link => link.textContent)).toEqual(['Resumen', 'Rutina', 'Evaluaciones', 'Turnos', 'Pagos']);
+  expect(tabs.getAllByRole('link').map(link => link.textContent)).toEqual(['Resumen', 'Rutina', 'Evaluaciones', 'Turnos', 'Pagos', 'Declaración de salud']);
   expect(await screen.findByText('Activa')).toBeInTheDocument();
   expect(screen.getByText('1 día')).toBeInTheDocument();
   expect(await screen.findByText('Última: 02/10/2026')).toBeInTheDocument();
@@ -472,7 +472,7 @@ it.each([['ADMINISTRATIVE'], ['GENERAL_ADMIN'], ['KINESIOLOGIST'], ['OSTEOPATH']
   );
   renderWorkspace(); await screen.findByText('Workspace Sala');
   const tabs = within(screen.getByRole('navigation', { name: 'Secciones del alumno en Sala' }));
-  expect(tabs.getAllByRole('link').map(link => link.textContent)).toEqual(['Resumen', 'Reservas', 'Turno fijo', 'Rutina', ...(roles.some(role => ['ADMINISTRATIVE', 'GENERAL_ADMIN', 'PROFESSOR'].includes(role)) ? ['Evaluaciones físicas'] : [])]);
+  expect(tabs.getAllByRole('link').map(link => link.textContent)).toEqual(['Resumen', 'Reservas', 'Turno fijo', 'Rutina', ...(roles.some(role => ['ADMINISTRATIVE', 'GENERAL_ADMIN', 'PROFESSOR'].includes(role)) ? ['Evaluaciones físicas'] : []), 'Declaración de salud']);
   expect(await screen.findByRole('heading', { name: 'Pago' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Ver ficha de Persona' })).toBeInTheDocument();
 });

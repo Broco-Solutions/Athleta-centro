@@ -38,7 +38,8 @@ describe('Portal auth and PIN reset', () => {
     const cookie = (login.headers['set-cookie'][0] as string).split(';')[0]!;
     const csrf = login.body.data.csrfToken as string;
     const plan = await prisma.salaPlan.create({ data: { name: `Portal plan ${Date.now()}`, monthlyAmount: 1000 } });
-    const person = await prisma.person.create({ data: { firstName: 'Portal', lastName: 'Person', dni: `${Date.now()}`.slice(-8), normalizedDni: `${Date.now()}`.slice(-8), phone: '3515550000', birthDate: new Date('1990-01-01'), portalCredential: { create: { pinHash: await argon2.hash('1111', { type: argon2.argon2id }), mustChangePin: false } } } });
+    const personDni = `${Date.now()}`.slice(-8);
+    const person = await prisma.person.create({ data: { firstName: 'Portal', lastName: 'Person', dni: personDni, normalizedDni: personDni, phone: '3515550000', birthDate: new Date('1990-01-01'), portalCredential: { create: { pinHash: await argon2.hash('1111', { type: argon2.argon2id }), mustChangePin: false } } } });
     await prisma.salaParticipation.create({ data: { personId: person.id, mainProfessorId: admin.id, planId: plan.id, startDate: new Date('2020-01-01') } });
 
     const initial = await request(app.getHttpServer()).post('/api/portal/auth/login').send({ dni: person.dni, pin: '1111' }).expect(200);

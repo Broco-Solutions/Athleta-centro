@@ -1,3 +1,4 @@
+import { HealthDeclarationService } from './health-declaration/health-declaration.service';
 import { BadRequestException, ForbiddenException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { FinancialAdjustmentKind, Prisma, Role, RoutineStatus, SalaChargeKind, SalaOccurrenceOrigin, SalaOccurrenceStatus, SalaScheduleExceptionType, InternalUserStatus, SalaWeekday } from '@prisma/client';
 import { PeopleService } from '../people/people.service';
@@ -28,7 +29,11 @@ const planServicesInclude = {
 type PlanWithServices = Prisma.SalaPlanGetPayload<{ include: typeof planServicesInclude }>;
 @Injectable()
 export class SalaService {
-  constructor(private readonly prisma: PrismaService, private readonly financeCatalog: FinanceCatalogService, private readonly people: PeopleService) {}
+  constructor(private readonly prisma: PrismaService, private readonly financeCatalog: FinanceCatalogService, private readonly people: PeopleService, private readonly health: HealthDeclarationService) {}
+
+  healthDeclarationStatus(personId: string) { return this.health.status(personId); }
+  healthDeclarationHistory(personId: string) { return this.health.history(personId); }
+  healthDeclarationDetail(personId: string, id: string) { return this.health.detail(personId, id); }
 
   addCalendarMonthClamped(date: Date): Date {
     const year = date.getUTCFullYear();

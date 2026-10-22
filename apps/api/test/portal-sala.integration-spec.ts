@@ -1,3 +1,5 @@
+import { HealthDeclarationService } from '../src/sala/health-declaration/health-declaration.service';
+import { currentHealthDocument } from '../src/sala/health-declaration/health-document';
 import cookieParser from 'cookie-parser';
 import * as argon2 from 'argon2';
 import request from 'supertest';
@@ -59,6 +61,7 @@ describe('Portal Sala services from the current plan', () => {
       await prisma.physicalTestResult.deleteMany({ where: { evaluation: { personId } } });
       await prisma.physicalEvaluation.deleteMany({ where: { personId } });
       await prisma.salaParticipation.deleteMany({ where: { personId } });
+      await prisma.healthDeclaration.deleteMany({ where: { personId } });
       await prisma.portalCredential.deleteMany({ where: { personId } });
       await prisma.person.deleteMany({ where: { id: personId } });
     }
@@ -91,6 +94,10 @@ describe('Portal Sala services from the current plan', () => {
     const dni = `${Date.now()}`.slice(-10);
     const person = await prisma.person.create({ data: { firstName: 'Portal', lastName: 'Alumno sintético', dni, normalizedDni: dni, phone: '3515550000', birthDate: new Date('1990-01-01'), portalCredential: { create: { pinHash: await argon2.hash('1111', { type: argon2.argon2id }), mustChangePin: false } } } });
     personId = person.id;
+    await app.get(HealthDeclarationService).submit(person, {
+      documentVersion: currentHealthDocument()!.version, personal: { emergencyContactName: 'Contacto sintético', emergencyContactPhone: '0000000000' }, activity: {}, kinesiology: {}, answers: {}, confirmed: true,
+      consents: { physicalActivity: true, truthfulness: true, emergenciesAndPrivacy: true, healthDataProcessing: false, kinesiology: false, manualEvaluation: false, therapeuticExercise: false, manualTherapy: false, physicalAgents: false, dryNeedling: false, taping: false, shareWithDoctors: false, shareWithClubs: false, clinicalImage: false, institutionalImage: false },
+    });
     const participation = await sala.join({ personId: person.id, mainProfessorId: professor.id, planId: plan.id, startDate: '2020-01-01' });
     const day = new Date(`${date}T00:00:00.000Z`);
     const weekday = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'][day.getUTCDay()] as SalaWeekday;

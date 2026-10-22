@@ -57,10 +57,11 @@ export function PortalLogoutButton({ compactOnMobile = false }: { compactOnMobil
 export function PortalNav(): React.JSX.Element {
   const pathname = usePathname();
   const profileActive = pathname === '/portal/profile';
-  return <nav aria-label="Navegación del Portal" className="flex gap-6">
-    {[['/portal', 'Inicio'], ['/portal/profile', 'Mis datos']].map(([href, label]) => {
-      const active = href === '/portal/profile' ? profileActive : !profileActive;
-      return <Link key={href} href={href!} aria-current={active ? 'page' : undefined} className={'inline-flex min-h-12 items-center border-b-2 px-1 text-sm font-medium ' + (active ? 'border-primary!' : 'border-transparent!')}>{label}</Link>;
+  const healthActive = pathname === '/portal/declaracion-salud';
+  return <nav aria-label="Navegación del Portal" className="flex gap-4 overflow-x-auto">
+    {[['/portal', 'Inicio'], ['/portal/profile', 'Mis datos'], ['/portal/declaracion-salud', 'Declaración de salud']].map(([href, label]) => {
+      const active = href === '/portal/profile' ? profileActive : href === '/portal/declaracion-salud' ? healthActive : !profileActive && !healthActive;
+      return <Link key={href} href={href!} aria-current={active ? 'page' : undefined} className={'inline-flex min-h-12 shrink-0 items-center border-b-2 px-1 text-sm font-medium ' + (active ? 'border-primary!' : 'border-transparent!')}>{label}</Link>;
     })}
   </nav>;
 }
@@ -68,10 +69,15 @@ export function PortalNav(): React.JSX.Element {
 export function PortalFrame({ title, subtitle, action, backToHome = false, children }: {
   title: string; subtitle?: string; action?: React.ReactNode; backToHome?: boolean; children: React.ReactNode;
 }): React.JSX.Element {
-  const session = useQuery({ queryKey: ['portal', 'session'], queryFn: () => portalFetch('auth/session'), staleTime: Infinity, retry: false, refetchOnMount: 'always', refetchOnWindowFocus: false, refetchOnReconnect: false });
+  const pathname = usePathname();
+  const session = useQuery({ queryKey: ['portal', 'session'], queryFn: () => portalFetch<{ mustChangePin?: boolean; healthDeclaration?: { required: boolean } }>('auth/session'), staleTime: Infinity, retry: false, refetchOnMount: 'always', refetchOnWindowFocus: false, refetchOnReconnect: false });
   React.useEffect(() => {
     if (session.error instanceof PortalApiError && session.error.code === 'UNAUTHENTICATED') window.location.assign('/portal/login');
-  }, [session.error]);
+    if (session.isFetching) return;
+    if (session.data?.mustChangePin && pathname !== '/portal/change-pin') window.location.assign('/portal/change-pin');
+    else if (session.data?.healthDeclaration?.required && !['/portal/declaracion-salud', '/portal/change-pin', '/portal/profile'].includes(pathname)) window.location.assign('/portal/declaracion-salud');
+  }, [session.error, session.data, session.isFetching, pathname]);
+  const gated = session.data?.mustChangePin || (session.data?.healthDeclaration?.required && !['/portal/declaracion-salud', '/portal/change-pin', '/portal/profile'].includes(pathname));
   return <div className="flex min-h-screen flex-col bg-background">
     <header className="bg-sidebar text-sidebar-foreground">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-4 sm:gap-6 sm:px-6 lg:px-8">
@@ -89,7 +95,7 @@ export function PortalFrame({ title, subtitle, action, backToHome = false, child
         <div><p className="text-xs font-semibold tracking-widest text-muted-foreground">PORTAL ATHLETA</p><h1 className="mt-2 text-2xl font-semibold sm:text-3xl">{title}</h1>{subtitle ? <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p> : null}</div>
         {action ? <div className="w-full md:w-auto">{action}</div> : null}
       </header>
-      {children}
+      {gated ? <p role="status">Completá los requisitos de ingreso para continuar.</p> : children}
     </main>
     <footer className="border-t"><div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-5 text-xs text-muted-foreground sm:flex-row sm:justify-between sm:px-6 lg:px-8"><span>Athleta · Portal personal</span><DeveloperFooter /></div></footer>
   </div>;

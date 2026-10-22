@@ -41,7 +41,7 @@ it('lists every upcoming active reservation in endpoint order with cancellation 
   expect(main.queryByText(/21\/10\/2026|Cancelad/)).not.toBeInTheDocument();
   expect(main.getAllByRole('button', { name: 'Cancelar reserva' })).toHaveLength(3);
   for (const nav of screen.getAllByRole('navigation', { name: 'Navegación del Portal' })) {
-    expect(within(nav).getAllByRole('link').map(link => link.textContent)).toEqual(['Inicio', 'Mis datos']);
+    expect(within(nav).getAllByRole('link').map(link => link.textContent)).toEqual(['Inicio', 'Mis datos', 'Declaración de salud']);
   }
 });
 

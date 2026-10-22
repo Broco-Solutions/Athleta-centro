@@ -1,3 +1,5 @@
+import { HealthDeclarationService } from '../sala/health-declaration/health-declaration.service';
+import type { SubmitHealthDeclarationDto } from '../sala/health-declaration/health-declaration.dto';
 import { PORTAL_SESSION_TTL_MS } from './portal-session';
 import { Injectable, UnauthorizedException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import * as argon2 from 'argon2';
@@ -8,7 +10,7 @@ import { PersonActivityService } from '../people/person-activity.service';
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 @Injectable()
 export class PortalService {
-  constructor(private readonly prisma: PrismaService, private readonly salaService: SalaService, private readonly activity: PersonActivityService) {}
+  constructor(private readonly prisma: PrismaService, private readonly salaService: SalaService, private readonly activity: PersonActivityService, private readonly health: HealthDeclarationService) {}
   async login(dni: string, pin: string) { const p = await this.prisma.person.findUnique({ where: { normalizedDni: dni.replace(/\D/g, '') }, include: { portalCredential: true, socialWork: { select: { name: true } } } }); const ok = Boolean(p?.portalCredential && await argon2.verify(p.portalCredential.pinHash, pin)); if (!p || !ok || !(await this.activity.isActive(p.id))) throw new UnauthorizedException({ code: 'PORTAL_INVALID_CREDENTIALS', message: 'No pudimos ingresar con esos datos. Revisalos o comunicate con Athleta.' }); const token = randomBytes(32).toString('base64url'); const csrfToken = randomBytes(32).toString('base64url'); await this.prisma.session.create({ data: { kind: 'PORTAL', personId: p.id, secretHash: digest(token), csrfToken, expiresAt: new Date(Date.now() + PORTAL_SESSION_TTL_MS) } }); return { token, csrfToken, mustChangePin: p.portalCredential?.mustChangePin ?? true, person: this.profile(p) }; }
   async current(token?: string) {
     if (!token) throw new UnauthorizedException({ code: 'UNAUTHENTICATED', message: 'Authentication required' });
@@ -42,7 +44,16 @@ export class PortalService {
     }
     return { session: s, person: s.person };
   }
-  private async ready(token?: string) { const current = await this.current(token); if (current.person.portalCredential?.mustChangePin) throw new ForbiddenException({ code: 'PORTAL_PIN_CHANGE_REQUIRED', message: 'Debés cambiar tu PIN antes de continuar.' }); return current; }
+  private async ready(token?: string) { const current = await this.current(token); if (current.person.portalCredential?.mustChangePin) throw new ForbiddenException({ code: 'PORTAL_PIN_CHANGE_REQUIRED', message: 'Debés cambiar tu PIN antes de continuar.' }); if ((await this.health.status(current.person.id)).required) throw new ForbiddenException({ code: 'PORTAL_HEALTH_DECLARATION_REQUIRED', message: 'Debés completar la declaración de salud antes de continuar.' }); return current; }
+  async healthStatus(token?: string) { const { person } = await this.current(token); return this.health.status(person.id); }
+  async healthDocument(token?: string) { await this.current(token); return this.health.formDocument(); }
+  async healthHistory(token?: string) { const { person } = await this.current(token); return this.health.history(person.id); }
+  async healthDetail(token: string | undefined, id: string) { const { person } = await this.current(token); return this.health.detail(person.id, id); }
+  async submitHealthDeclaration(token: string | undefined, input: SubmitHealthDeclarationDto) {
+    const { person } = await this.current(token);
+    if (person.portalCredential?.mustChangePin) throw new ForbiddenException({ code: 'PORTAL_PIN_CHANGE_REQUIRED', message: 'Debés cambiar tu PIN antes de continuar.' });
+    return this.health.submit(person, input);
+  }
   async logout(token?: string) { if (token) await this.prisma.session.updateMany({ where: { secretHash: digest(token), kind: 'PORTAL', revokedAt: null }, data: { revokedAt: new Date() } }); }
   async assertCsrf(token: string | undefined, csrfToken: string | undefined) { const { session } = await this.current(token); if (!csrfToken || csrfToken !== session.csrfToken) throw new ForbiddenException({ code: 'CSRF_INVALID', message: 'Solicitud inválida.' }); }
   async changePin(token: string | undefined, currentPin: string, nextPin: string) { if (!/^\d{4}$/.test(nextPin)) throw new BadRequestException({ code: 'PIN_POLICY', message: 'El PIN debe tener 4 dígitos.' }); const { person } = await this.current(token); if (!person.portalCredential || !(await argon2.verify(person.portalCredential.pinHash, currentPin))) throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'El PIN actual no es válido.' }); await this.prisma.portalCredential.update({ where: { personId: person.id }, data: { pinHash: await argon2.hash(nextPin, { type: argon2.argon2id }), mustChangePin: false, credentialsUpdatedAt: new Date() } }); return { mustChangePin: false }; }
