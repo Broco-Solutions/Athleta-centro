@@ -1,6 +1,6 @@
 import { CreatePersonDto, PersonResponseDto } from '../people/person.dto';
 import { Type } from 'class-transformer';
-import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Max, Min, MinLength, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, IntersectionType, PickType } from '@nestjs/swagger';
 import { SalaOccurrenceStatus, SalaScheduleExceptionType, SalaWeekday } from '@prisma/client';
 
@@ -9,8 +9,9 @@ export class UpdateSalaConfigurationDto extends CapacityDto {}
 export class PlanDto {
   @ApiProperty({ type: String }) @IsString() @MinLength(1) @MaxLength(120) name!: string;
   @ApiProperty({ type: Number }) @Type(() => Number) @IsInt() monthlyAmount!: number;
-  @ApiProperty({ type: [String], format: 'uuid', minItems: 1, uniqueItems: true })
-  @IsArray() @ArrayMinSize(1) @ArrayUnique() @IsUUID(undefined, { each: true }) serviceTypeIds!: string[];
+  @ApiProperty({ type: Number, minimum: 2, maximum: 5 }) @Type(() => Number) @IsInt() @Min(2) @Max(5) weeklySessions!: number;
+  @ApiPropertyOptional({ type: [String], format: 'uuid', uniqueItems: true })
+  @IsOptional() @IsArray() @ArrayUnique() @IsUUID(undefined, { each: true }) serviceTypeIds?: string[];
   @ApiPropertyOptional({ type: Boolean }) @IsOptional() isSelectable?: boolean;
 }
 
@@ -22,8 +23,8 @@ export class ScheduleExceptionDto { @ApiProperty({ format: 'date' }) @IsDateStri
 export class JoinSalaDto { @ApiProperty({ type: String, format: 'uuid' }) @IsString() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsString() mainProfessorId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsString() planId!: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) startDate!: string; }
 export class ChangeProfessorDto { @ApiProperty({ type: String, format: 'uuid' }) @IsString() mainProfessorId!: string; }
 export class ChangePlanDto { @ApiProperty({ type: String, format: 'uuid' }) @IsString() planId!: string; }
-export class FixedBookingDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() salaParticipationId!: string; @ApiProperty({ type: String, format: 'uuid', description: 'Weekly opening window' }) @IsUUID() scheduleSlotId!: string; @ApiProperty({ type: String, format: 'uuid', required: true }) @IsUUID() serviceTypeId?: string; @ApiProperty({ type: String, example: '12:00', pattern: '^([01]\\d|2[0-3]):(00|30)$', required: true }) @Matches(/^([01]\d|2[0-3]):(00|30)$/) startTime?: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) startDate!: string; @ApiPropertyOptional({ type: String, format: 'date', nullable: true }) @IsOptional() @IsDateString({ strict: true }) endDate?: string | null; @ApiPropertyOptional({ type: Boolean }) @IsOptional() @IsBoolean() confirmOverbooking?: boolean; }
-export class OneOffReservationDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() salaParticipationId!: string; @ApiProperty({ type: String, format: 'uuid', description: 'Weekly opening window' }) @IsUUID() scheduleSlotId!: string; @ApiProperty({ type: String, format: 'uuid', required: true }) @IsUUID() serviceTypeId?: string; @ApiProperty({ type: String, example: '12:00', pattern: '^([01]\\d|2[0-3]):(00|30)$', required: true }) @Matches(/^([01]\d|2[0-3]):(00|30)$/) startTime?: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) date!: string; @ApiPropertyOptional({ type: Boolean }) @IsOptional() @IsBoolean() confirmOverbooking?: boolean; }
+export class FixedBookingDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() salaParticipationId!: string; @ApiProperty({ type: String, format: 'uuid', description: 'Weekly opening window' }) @IsUUID() scheduleSlotId!: string; @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() serviceTypeId?: string; @ApiProperty({ type: String, example: '12:00', pattern: '^([01]\\d|2[0-3]):00$', required: true }) @Matches(/^([01]\d|2[0-3]):00$/) startTime?: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) startDate!: string; @ApiPropertyOptional({ type: String, format: 'date', nullable: true }) @IsOptional() @IsDateString({ strict: true }) endDate?: string | null; @ApiPropertyOptional({ type: Boolean }) @IsOptional() @IsBoolean() confirmOverbooking?: boolean; }
+export class OneOffReservationDto { @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() salaParticipationId!: string; @ApiProperty({ type: String, format: 'uuid', description: 'Weekly opening window' }) @IsUUID() scheduleSlotId!: string; @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() serviceTypeId?: string; @ApiProperty({ type: String, example: '12:00', pattern: '^([01]\\d|2[0-3]):00$', required: true }) @Matches(/^([01]\d|2[0-3]):00$/) startTime?: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) date!: string; @ApiPropertyOptional({ type: Boolean }) @IsOptional() @IsBoolean() confirmOverbooking?: boolean; }
 export class ChangeFixedBookingDto extends FixedBookingDto { @ApiProperty({ type: String, format: 'uuid' }) @IsString() id!: string; }
 export class EndFixedBookingDto { @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) endDate!: string; }
 export class OccurrenceReferenceDto { @ApiProperty({ type: String, format: 'uuid' }) @IsString() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsString() scheduleSlotId!: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) date!: string; @ApiPropertyOptional({ type: String, example: '09:00' }) @IsOptional() @Matches(/^([01]\d|2[0-3]):[0-5]\d$/) startTime?: string; @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() sourceId?: string; }
@@ -31,7 +32,7 @@ export class SpontaneousOccurrenceDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string;
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() scheduleSlotId!: string;
   @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) date!: string;
-  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() serviceTypeId!: string;
+  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() serviceTypeId?: string;
   @ApiProperty({ type: String, example: '10:30', pattern: '^([01]\\d|2[0-3]):(00|15|30|45)$' }) @Matches(/^([01]\d|2[0-3]):(00|15|30|45)$/) startTime!: string;
   @ApiPropertyOptional({ type: Boolean }) @IsOptional() @IsBoolean() confirmOverbooking?: boolean;
 }
@@ -286,6 +287,7 @@ export class SalaRoutineListEnvelopeDto {
 export class SalaParticipationPlanResponseDto {
   @ApiProperty({ type: String }) id!: string;
   @ApiProperty({ type: String }) name!: string;
+  @ApiProperty({ type: Number, nullable: true }) weeklySessions!: number | null;
   @ApiProperty({ type: String }) monthlyAmount!: string;
 }
 export class SalaParticipationResponseDto {

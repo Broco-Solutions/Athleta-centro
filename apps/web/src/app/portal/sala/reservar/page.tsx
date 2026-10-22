@@ -24,7 +24,7 @@ function starts(rows: Slot[], service?: Service): StartOption[] {
   const count = service.durationMinutes / 15;
   if (!Number.isInteger(count) || count <= 0) return [];
   return rows.flatMap(item => {
-    if (!/:(00|30)$/.test(item.startTime)) return [];
+    if (!/:00$/.test(item.startTime)) return [];
     const start = minutes(item.startTime);
     const range = Array.from({ length: count }, (_, index) => rows.find(block =>
       block.scheduleSlotId === item.scheduleSlotId && block.date === item.date
@@ -58,8 +58,8 @@ export default function PortalReserve(): React.JSX.Element {
   const validUntil = sala.data?.validity.validUntil;
   const maxDate = validUntil && validUntil < addDays(currentDate, 30) ? validUntil : addDays(currentDate, 30);
   const hasValidity = sala.data?.validity.hasValidAccess === true;
-  const service = services.data?.length === 1 ? services.data[0]?.id ?? '' : serviceId;
-  const selectedService = services.data?.find(item => item.id === service);
+  const service = serviceId;
+  const selectedService = service ? services.data?.find(item => item.id === service) : { id: '', name: 'Sala', durationMinutes: 60 };
   const availability = useQuery({
     queryKey: ['portal', 'sala', 'availability', date],
     queryFn: async () => (await portalFetch<Slot[]>('sala/availability?date=' + date)).map(item => ({ ...item, startTime: formatTime(item.startTime), endTime: formatTime(item.endTime) })),
@@ -80,7 +80,7 @@ export default function PortalReserve(): React.JSX.Element {
       await portalFetch('sala/reservations', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-csrf-token': token },
-        body: JSON.stringify({ date, scheduleSlotId: selectedSlot.scheduleSlotId, serviceTypeId: service, startTime: selectedSlot.startTime }),
+        body: JSON.stringify({ date, scheduleSlotId: selectedSlot.scheduleSlotId, ...(service ? { serviceTypeId: service } : {}), startTime: selectedSlot.startTime }),
       });
       return confirmation;
     },
@@ -99,7 +99,6 @@ export default function PortalReserve(): React.JSX.Element {
     setDate(value); setSelection(''); setReservationError('');
   };
   const quickDates = [0, 1, 2].map(offset => addDays(currentDate, offset));
-  const hasServices = Boolean(services.data?.length);
 
   if (sala.isPending) return <PortalFrame title="Reservar en Sala" backToHome><p role="status">Cargando vigencia…</p></PortalFrame>;
   if (sala.isError) return <PortalFrame title="Reservar en Sala" backToHome><p role="alert">No pudimos cargar tu vigencia. Intentá nuevamente.</p></PortalFrame>;
@@ -123,13 +122,13 @@ export default function PortalReserve(): React.JSX.Element {
   </PortalFrame>;
   return <PortalFrame title="Reservar en Sala" subtitle="Elegí cuándo querés venir a entrenar." backToHome>
     {reservationConfirmation ? <section className="w-full max-w-2xl rounded-lg border bg-white p-5 sm:p-6" aria-labelledby="reservation-confirmation-title"><div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 shrink-0 text-green-700" size={22} aria-hidden="true"/><div><h2 id="reservation-confirmation-title" className="text-xl font-semibold">Reserva confirmada</h2><p className="mt-1 text-sm text-muted-foreground">Tu lugar quedó reservado.</p></div></div><dl className="mt-5 grid gap-3 border-t pt-4 text-sm sm:grid-cols-3"><div><dt className="text-muted-foreground">Servicio</dt><dd className="mt-1 font-medium">{reservationConfirmation.serviceName}</dd></div><div><dt className="text-muted-foreground">Fecha</dt><dd className="mt-1 font-medium capitalize">{dateLabel(reservationConfirmation.date, { weekday: 'long' })} {shortDate(reservationConfirmation.date)}</dd></div><div><dt className="text-muted-foreground">Hora</dt><dd className="mt-1 font-medium">{reservationConfirmation.startTime} – {reservationConfirmation.endTime}</dd></div></dl><Link href="/portal" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ArrowLeft aria-hidden="true" size={16}/>Volver a Inicio</Link></section> : <div className="max-w-4xl space-y-8 rounded-xl border bg-surface p-5 sm:p-8">
-      <Step number={1} title="Elegí el servicio">
-        {services.isLoading ? <p role="status" className="text-sm text-muted-foreground">Cargando servicios…</p> : services.isError ? <p role="alert">No pudimos cargar los servicios. Intentá nuevamente.</p> : !hasServices ? <p className="text-sm text-muted-foreground">Tu Plan actual no tiene servicios disponibles. Consultá con Athleta.</p> : <div className="grid gap-3 sm:grid-cols-2">{services.data?.map(item => <button type="button" key={item.id} aria-label={item.name + ' ' + item.durationMinutes + ' min'} aria-pressed={service === item.id} disabled={reserve.isPending} className={choiceClass(service === item.id)} onClick={() => { setServiceId(item.id); setSelection(''); setReservationError(''); }}><span><span className="block font-medium">{item.name}</span><span className="text-sm text-muted-foreground">{item.durationMinutes} min</span></span>{service === item.id ? <Check size={20} className="text-primary-hover" aria-hidden="true" /> : null}</button>)}</div>}
+      <Step number={1} title="Servicio (opcional)">
+        {services.isLoading ? <p role="status" className="text-sm text-muted-foreground">Cargando servicios…</p> : services.isError ? <p role="alert">No pudimos cargar los servicios. Intentá nuevamente.</p> : <div className="grid gap-3 sm:grid-cols-2">{[{ id: '', name: 'Sin servicio — Sala (60 min)', durationMinutes: 60 }, ...(services.data ?? [])].map(item => <button type="button" key={item.id} aria-label={item.name + ' ' + item.durationMinutes + ' min'} aria-pressed={service === item.id} disabled={reserve.isPending} className={choiceClass(service === item.id)} onClick={() => { setServiceId(item.id); setSelection(''); setReservationError(''); }}><span><span className="block font-medium">{item.name}</span><span className="text-sm text-muted-foreground">{item.durationMinutes} min</span></span>{service === item.id ? <Check size={20} className="text-primary-hover" aria-hidden="true" /> : null}</button>)}</div>}
       </Step>
       <Step number={2} title="Elegí la fecha">
-        <div className="grid grid-cols-3 gap-2 sm:gap-3">{quickDates.map((value, index) => <button type="button" key={value} aria-label={(index === 0 ? 'Hoy' : index === 1 ? 'Mañana' : dateLabel(value, { weekday: 'long' })) + ' ' + shortDate(value) + ' ' + dateLabel(value, { weekday: 'long' })} disabled={!hasServices || reserve.isPending || value > maxDate} aria-pressed={date === value} className={choiceClass(date === value) + ' relative justify-center px-2'} onClick={() => chooseDate(value)}><span className="text-center"><span className="block text-sm font-medium">{index === 0 ? 'Hoy' : index === 1 ? 'Mañana' : dateLabel(value, { weekday: 'long' })}</span><strong className="my-1 block">{shortDate(value)}</strong><span className="block text-xs capitalize text-muted-foreground">{dateLabel(value, { weekday: 'long' })}</span></span>{date === value ? <Check size={12} aria-hidden="true" className="absolute right-2 top-2 text-primary-hover" /> : null}</button>)}</div>
-        <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm capitalize text-muted-foreground">{dateLabel(date, { month: 'long', year: 'numeric' })}</p><button type="button" disabled={!hasServices || reserve.isPending} aria-expanded={calendar} aria-controls="reservation-date" className="inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-sm disabled:opacity-50" onClick={() => setCalendar(!calendar)}><CalendarDays size={16} aria-hidden="true" />Ver calendario</button></div>
-        {calendar ? <label className="grid gap-2 text-sm">Fecha<input id="reservation-date" type="date" className="min-h-11 rounded-lg border px-3" value={date} min={currentDate} max={maxDate} disabled={!hasServices || reserve.isPending} onChange={event => chooseDate(event.target.value)} /></label> : null}
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">{quickDates.map((value, index) => <button type="button" key={value} aria-label={(index === 0 ? 'Hoy' : index === 1 ? 'Mañana' : dateLabel(value, { weekday: 'long' })) + ' ' + shortDate(value) + ' ' + dateLabel(value, { weekday: 'long' })} disabled={reserve.isPending || value > maxDate} aria-pressed={date === value} className={choiceClass(date === value) + ' relative justify-center px-2'} onClick={() => chooseDate(value)}><span className="text-center"><span className="block text-sm font-medium">{index === 0 ? 'Hoy' : index === 1 ? 'Mañana' : dateLabel(value, { weekday: 'long' })}</span><strong className="my-1 block">{shortDate(value)}</strong><span className="block text-xs capitalize text-muted-foreground">{dateLabel(value, { weekday: 'long' })}</span></span>{date === value ? <Check size={12} aria-hidden="true" className="absolute right-2 top-2 text-primary-hover" /> : null}</button>)}</div>
+        <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm capitalize text-muted-foreground">{dateLabel(date, { month: 'long', year: 'numeric' })}</p><button type="button" disabled={reserve.isPending} aria-expanded={calendar} aria-controls="reservation-date" className="inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-sm disabled:opacity-50" onClick={() => setCalendar(!calendar)}><CalendarDays size={16} aria-hidden="true" />Ver calendario</button></div>
+        {calendar ? <label className="grid gap-2 text-sm">Fecha<input id="reservation-date" type="date" className="min-h-11 rounded-lg border px-3" value={date} min={currentDate} max={maxDate} disabled={reserve.isPending} onChange={event => chooseDate(event.target.value)} /></label> : null}
       </Step>
       <Step number={3} title="Elegí el horario">
         <div><p className="text-sm capitalize">{date === currentDate ? 'Hoy, ' : ''}{dateLabel(date, { weekday: 'long' }) + ' ' + shortDate(date)}</p>{selectedService ? <p className="mt-1 text-sm text-muted-foreground">{selectedService.name} · {selectedService.durationMinutes} min</p> : null}</div>

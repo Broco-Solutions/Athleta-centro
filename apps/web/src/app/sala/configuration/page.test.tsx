@@ -85,7 +85,7 @@ it.each([false, true])('shows plan administration only with its permission (mana
   expect(screen.getAllByRole('button', { name: '+ Agregar franja' })).toHaveLength(7);
 });
 
-it('creates a plan only after selecting services and sends the selected IDs', async () => {
+it('requires the weekly limit and permits optional service selections', async () => {
   let submitted: unknown;
   server.use(http.post('http://localhost:3000/api/sala/plans', async ({ request }) => {
     submitted = await request.json();
@@ -103,16 +103,18 @@ it('creates a plan only after selecting services and sends the selected IDs', as
   expect(within(form).getByRole('button', { name: 'Guardar' })).toBeDisabled();
   fireEvent.click(within(form).getByRole('button', { name: 'Guardar' }));
   expect(submitted).toBeUndefined();
+  fireEvent.change(within(form).getByLabelText('Sesiones por semana'), { target: { value: '2' } });
+  expect(within(form).getByRole('button', { name: 'Guardar' })).toBeEnabled();
   fireEvent.click(muscle);
   fireEvent.click(functional);
   expect(within(form).getByRole('button', { name: 'Guardar' })).toBeEnabled();
   fireEvent.click(within(form).getByRole('button', { name: 'Guardar' }));
-  await waitFor(() => expect(submitted).toEqual({ name: 'Plan Base', monthlyAmount: 20000, serviceTypeIds: [services[0]!.id, services[1]!.id] }));
+  await waitFor(() => expect(submitted).toEqual({ name: 'Plan Base', monthlyAmount: 20000, weeklySessions: 2, serviceTypeIds: [services[0]!.id, services[1]!.id] }));
 });
 it('preloads plan services and sends the complete replacement selection', async () => {
   let submitted: unknown;
   server.use(
-    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'plan', name: 'Plan Base', monthlyAmount: '20000', isSelectable: true, services: services.slice(0, 2) }] })),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'plan', name: 'Plan Base', monthlyAmount: '20000', weeklySessions: 2, isSelectable: true, services: services.slice(0, 2) }] })),
     http.patch('http://localhost:3000/api/sala/plans/plan', async ({ request }) => {
       submitted = await request.json();
       return HttpResponse.json({ data: { id: 'plan' } });
@@ -132,7 +134,7 @@ it('preloads plan services and sends the complete replacement selection', async 
   fireEvent.click(functional);
   fireEvent.click(calisthenics);
   fireEvent.click(within(form).getByRole('button', { name: 'Guardar' }));
-  await waitFor(() => expect(submitted).toEqual({ name: 'Plan Base', monthlyAmount: 20000, serviceTypeIds: [services[0]!.id, services[2]!.id] }));
+  await waitFor(() => expect(submitted).toEqual({ name: 'Plan Base', monthlyAmount: 20000, weeklySessions: 2, serviceTypeIds: [services[0]!.id, services[2]!.id] }));
 });
 it('shows legacy plans without inventing services and allows configuring them', async () => {
   server.use(http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'legacy', name: 'Plan anterior', monthlyAmount: '1000', isSelectable: true, services: [] }] })));
@@ -144,9 +146,12 @@ it('shows legacy plans without inventing services and allows configuring them', 
   await within(form).findByRole('checkbox', { name: 'Musculación · 60 min' });
   for (const checkbox of within(form).getAllByRole('checkbox')) expect(checkbox).not.toBeChecked();
   expect(within(form).getByRole('button', { name: 'Guardar' })).toBeDisabled();
+  expect(screen.getByText(/Sin límite configurado/)).toBeInTheDocument();
+  fireEvent.change(within(form).getByLabelText('Sesiones por semana'), { target: { value: '2' } });
+  expect(within(form).getByRole('button', { name: 'Guardar' })).toBeEnabled();
 });
 it('preloads retired linked services and requires removing them before saving', async () => {
-  server.use(http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'plan', name: 'Plan Base', monthlyAmount: '1000', isSelectable: true, services: [services[0], services[3]] }] })));
+  server.use(http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'plan', name: 'Plan Base', monthlyAmount: '1000', weeklySessions: 2, isSelectable: true, services: [services[0], services[3]] }] })));
   renderPage();
   fireEvent.click(await screen.findByText('Planes'));
   fireEvent.click(await within(screen.getByText('Planes').closest('details')!).findByRole('button', { name: 'Editar' }));

@@ -227,11 +227,11 @@ export class SalaService {
     await this.assertPlanNameAvailable(input.name);
     try {
       return await this.prisma.$transaction(async (tx) => {
-        await this.assertPlanServicesAvailable(tx, input.serviceTypeIds);
+        if (input.serviceTypeIds !== undefined) await this.assertPlanServicesAvailable(tx, input.serviceTypeIds);
         const plan = await tx.salaPlan.create({
           data: {
-            name: input.name.trim(), monthlyAmount: input.monthlyAmount, isSelectable: input.isSelectable ?? true,
-            services: { create: input.serviceTypeIds.map((serviceTypeId) => ({ serviceTypeId })) },
+            name: input.name.trim(), monthlyAmount: input.monthlyAmount, weeklySessions: input.weeklySessions, isSelectable: input.isSelectable ?? true,
+            services: { create: (input.serviceTypeIds ?? []).map((serviceTypeId) => ({ serviceTypeId })) },
           },
           include: planServicesInclude,
         });
@@ -246,13 +246,13 @@ export class SalaService {
     await this.assertPlanNameAvailable(input.name, id);
     try {
       return await this.prisma.$transaction(async (tx) => {
-        await this.assertPlanServicesAvailable(tx, input.serviceTypeIds);
+        if (input.serviceTypeIds !== undefined) await this.assertPlanServicesAvailable(tx, input.serviceTypeIds);
         const plan = await tx.salaPlan.update({
           where: { id },
           data: {
-            name: input.name.trim(), monthlyAmount: input.monthlyAmount,
+            name: input.name.trim(), monthlyAmount: input.monthlyAmount, weeklySessions: input.weeklySessions,
             ...(input.isSelectable !== undefined ? { isSelectable: input.isSelectable } : {}),
-            services: { deleteMany: {}, create: input.serviceTypeIds.map((serviceTypeId) => ({ serviceTypeId })) },
+            ...(input.serviceTypeIds !== undefined ? { services: { deleteMany: {}, create: input.serviceTypeIds.map((serviceTypeId) => ({ serviceTypeId })) } } : {}),
           },
           include: planServicesInclude,
         });
@@ -843,13 +843,16 @@ export class SalaService {
   }
   private async createSpontaneousOccurrenceWithinTransaction(tx: Prisma.TransactionClient, input: SpontaneousOccurrenceDto, actorId: string) {
     if (input.date > this.todayOperational()) throw new BadRequestException({ code: 'SALA_SPONTANEOUS_FUTURE_NOT_ALLOWED', message: 'La incorporación espontánea sólo puede registrarse para hoy o una fecha pasada.' });
+    const initialParticipation = await this.spontaneousParticipation(tx, input.personId, input.date);
+    if (!initialParticipation) throw new BadRequestException({ code: 'SALA_PARTICIPATION_REQUIRED', message: 'La Persona no tiene una participación válida de Sala para esa fecha.' });
+    await this.lockParticipations(tx, [initialParticipation.participation.id]);
     const day = this.date(input.date);
     await tx.$queryRaw`SELECT id FROM sala_schedule_slots WHERE id = ${input.scheduleSlotId}::uuid FOR UPDATE`;
     const [slot, person, resolved, service, existing, fixed, oneOff] = await Promise.all([
       tx.salaScheduleSlot.findFirst({ where: { id: input.scheduleSlotId, weekday: this.weekday(day), startsAt: { lte: day }, OR: [{ endedAt: null }, { endedAt: { gte: day } }] } }),
       tx.person.findUnique({ where: { id: input.personId }, select: { id: true } }),
       this.spontaneousParticipation(tx, input.personId, input.date),
-      tx.salaServiceType.findUnique({ where: { id: input.serviceTypeId } }),
+      input.serviceTypeId ? tx.salaServiceType.findUnique({ where: { id: input.serviceTypeId } }) : Promise.resolve(null),
       tx.salaOccurrence.findMany({ where: { personId: input.personId, date: day, status: { not: SalaOccurrenceStatus.CANCELLED } }, include: { scheduleSlot: true, serviceType: true } }),
       tx.fixedSalaBooking.findMany({ where: { personId: input.personId, startDate: { lte: day }, OR: [{ endDate: null }, { endDate: { gte: day } }] }, include: { scheduleSlot: true, serviceType: true } }),
       tx.oneOffReservation.findMany({ where: { personId: input.personId, date: day, cancelledAt: null }, include: { scheduleSlot: true, serviceType: true } }),
@@ -857,11 +860,14 @@ export class SalaService {
     if (!slot) throw new NotFoundException({ code: 'SALA_OCCURRENCE_SLOT_INVALID', message: 'Schedule occurrence not found' });
     if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
     if (!resolved) throw new BadRequestException({ code: 'SALA_PARTICIPATION_REQUIRED', message: 'La Persona no tiene una participación válida de Sala para esa fecha.' });
-    if (!service || !service.isSelectable) throw new BadRequestException({ code: 'SALA_SERVICE_TYPE_INVALID', message: 'El Servicio ya no está disponible.' });
-    const link = await tx.salaPlanService.findUnique({ where: { planId_serviceTypeId: { planId: resolved.plan.id, serviceTypeId: service.id } } });
-    if (!link) throw new BadRequestException({ code: 'SALA_SERVICE_NOT_INCLUDED_IN_PLAN', message: 'El Servicio no está incluido en el Plan de la Persona.' });
-    const durationMinutes = service.durationMinutes;
+    if (input.serviceTypeId && (!service || !service.isSelectable)) throw new BadRequestException({ code: 'SALA_SERVICE_TYPE_INVALID', message: 'El Servicio ya no está disponible.' });
+    if (service) {
+      const link = await tx.salaPlanService.findUnique({ where: { planId_serviceTypeId: { planId: resolved.plan.id, serviceTypeId: service.id } } });
+      if (!link) throw new BadRequestException({ code: 'SALA_SERVICE_NOT_INCLUDED_IN_PLAN', message: 'El Servicio no está incluido en el Plan de la Persona.' });
+    }
+    const durationMinutes = service?.durationMinutes ?? SALA_DEFAULT_DURATION_MINUTES;
     this.validateServiceDuration(durationMinutes);
+    await this.validateWeeklySessions(tx, resolved.plan.id, input.personId, day);
     const startTime = this.time(input.startTime);
     const now = new Date();
     const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
@@ -882,7 +888,7 @@ export class SalaService {
     if (states.length !== requiredSlots) throw new ConflictException({ code: 'SALA_REQUIRED_SLOTS_UNAVAILABLE', message: 'El Servicio no entra completo en el horario seleccionado.' });
     const fullSlots = states.filter((state) => state.reserved >= state.capacity).length;
     if (fullSlots && input.confirmOverbooking !== true) throw new ConflictException({ code: 'SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED', message: 'Confirmá la incorporación en sobrecupo.', details: { fullSlots, requiredSlots } });
-    return tx.salaOccurrence.create({ data: { personId: input.personId, scheduleSlotId: slot.id, date: day, startTime, serviceTypeId: service.id, serviceDurationMinutes: durationMinutes, origin: SalaOccurrenceOrigin.SPONTANEOUS, status: SalaOccurrenceStatus.ATTENDED, createdBy: actorId, lastModifiedBy: actorId }, include: { person: { select: { id: true, firstName: true, lastName: true, dni: true } } } });
+    return tx.salaOccurrence.create({ data: { personId: input.personId, scheduleSlotId: slot.id, date: day, startTime, serviceTypeId: service?.id ?? null, serviceDurationMinutes: durationMinutes, origin: SalaOccurrenceOrigin.SPONTANEOUS, status: SalaOccurrenceStatus.ATTENDED, createdBy: actorId, lastModifiedBy: actorId }, include: { person: { select: { id: true, firstName: true, lastName: true, dni: true } } } });
   }
   async commandOccurrence(input: OccurrenceReferenceDto & { status: SalaOccurrenceStatus; origin?: SalaOccurrenceOrigin }, actorId: string) {
     const day = this.date(input.date);
@@ -942,7 +948,7 @@ export class SalaService {
   private normalizeName(value: string): string { return value.trim().normalize('NFKC').toLocaleLowerCase('es-AR'); }
   private async assertPlanServicesAvailable(tx: Prisma.TransactionClient, serviceTypeIds: string[]): Promise<void> {
     const count = await tx.salaServiceType.count({ where: { id: { in: serviceTypeIds }, isSelectable: true } });
-    if (serviceTypeIds.length === 0 || count !== serviceTypeIds.length) {
+    if (count !== serviceTypeIds.length) {
       throw new BadRequestException({ code: 'SALA_PLAN_SERVICE_INVALID', message: 'Plan services must exist and be selectable' });
     }
   }
@@ -977,8 +983,69 @@ export class SalaService {
       throw new ConflictException({ code: start === otherStart ? 'SALA_RESERVATION_DUPLICATE' : 'SALA_BOOKING_OVERLAP', message: 'Ya tenés una actividad reservada en ese horario. Elegí otro horario.' });
     }
   }
-  private async validateBooking(tx: Prisma.TransactionClient, input: FixedBookingDto | OneOffReservationDto, date: string, excludingFixed?: { id: string }): Promise<{ startTime: Date; durationMinutes: number }> {
-    if (!input.serviceTypeId) throw new BadRequestException({ code: 'SALA_SERVICE_REQUIRED', message: 'Se requiere un Servicio para reservar.' });
+  private async validateWeeklySessions(
+    tx: Prisma.TransactionClient, planId: string, personId: string, day: Date,
+    recurrence?: { startDate: Date; endDate: Date | null; weekday: SalaWeekday }, replacingId?: string,
+  ): Promise<void> {
+    const plan = await tx.salaPlan.findUniqueOrThrow({ where: { id: planId }, select: { weeklySessions: true } });
+    if (plan.weeklySessions === null) return;
+    const [fixed, reservations, occurrences] = await Promise.all([
+      tx.fixedSalaBooking.findMany({ where: { personId }, include: { scheduleSlot: true } }),
+      tx.oneOffReservation.findMany({ where: { personId } }),
+      tx.salaOccurrence.findMany({ where: { personId } }),
+    ]);
+    const monday = (date: Date): number => date.getTime() - ((date.getUTCDay() + 6) % 7) * 86400000;
+    const weekLength = 7 * 86400000;
+    const firstWeek = monday(day);
+    const lastWeek = recurrence?.endDate ? monday(recurrence.endDate) : Infinity;
+    const weeks = new Set<number>([firstWeek]);
+    // A complete week after each boundary represents the stable recurrent pattern.
+    // Concrete reservations and occurrence overrides are the remaining changes.
+    if (recurrence) {
+      const boundaries = [recurrence.startDate, ...(recurrence.endDate ? [recurrence.endDate] : []),
+        ...fixed.flatMap(item => [item.startDate, item.scheduleSlot.startsAt,
+          ...(item.endDate ? [item.endDate] : []), ...(item.scheduleSlot.endedAt ? [item.scheduleSlot.endedAt] : [])]),
+        ...reservations.map(item => item.date), ...occurrences.map(item => item.date)];
+      for (const boundary of boundaries) {
+        weeks.add(monday(boundary));
+        weeks.add(monday(boundary) + weekLength);
+      }
+      weeks.add(firstWeek + weekLength);
+    }
+    const historic = (status: SalaOccurrenceStatus): boolean => status === SalaOccurrenceStatus.ATTENDED || status === SalaOccurrenceStatus.ABSENT;
+    for (const week of weeks) {
+      if (week < firstWeek || week > lastWeek) continue;
+      const consumed = new Set<string>();
+      for (const occurrence of occurrences) {
+        if (monday(occurrence.date) !== week || occurrence.status === SalaOccurrenceStatus.CANCELLED) continue;
+        if (occurrence.fixedSalaBookingId === replacingId && occurrence.date >= recurrence!.startDate) continue;
+        if (occurrence.oneOffReservationId && !historic(occurrence.status) && reservations.find(item => item.id === occurrence.oneOffReservationId)?.cancelledAt) continue;
+        consumed.add(occurrence.fixedSalaBookingId ? `fixed:${occurrence.fixedSalaBookingId}:${occurrence.date.getTime()}` : occurrence.oneOffReservationId ? `reservation:${occurrence.oneOffReservationId}` : `occurrence:${occurrence.id}`);
+      }
+      for (const booking of fixed) {
+        const date = this.nextWeekday(new Date(week), booking.scheduleSlot.weekday);
+        if (date < booking.startDate || (booking.endDate && date > booking.endDate) || date < booking.scheduleSlot.startsAt || (booking.scheduleSlot.endedAt && date > booking.scheduleSlot.endedAt)) continue;
+        if (booking.id === replacingId && date >= recurrence!.startDate) continue;
+        const occurrence = occurrences.find(item => item.fixedSalaBookingId === booking.id && item.date.getTime() === date.getTime());
+        if (occurrence?.status === SalaOccurrenceStatus.CANCELLED) continue;
+        consumed.add(`fixed:${booking.id}:${date.getTime()}`);
+      }
+      for (const reservation of reservations) {
+        if (monday(reservation.date) !== week || reservation.cancelledAt) continue;
+        const occurrence = occurrences.find(item => item.oneOffReservationId === reservation.id);
+        if (occurrence?.status === SalaOccurrenceStatus.CANCELLED) continue;
+        consumed.add(`reservation:${reservation.id}`);
+      }
+      const candidateDate = recurrence ? this.nextWeekday(new Date(week), recurrence.weekday) : day;
+      if (recurrence && (candidateDate < recurrence.startDate || (recurrence.endDate && candidateDate > recurrence.endDate))) continue;
+      if (consumed.size + 1 > plan.weeklySessions) throw new ConflictException({
+        code: 'SALA_WEEKLY_LIMIT_EXCEEDED',
+        message: 'Alcanzaste el límite de sesiones de tu plan para esta semana. Cancelá una reserva futura si necesitás cambiar de horario.',
+      });
+    }
+  }
+  private async validateBooking(tx: Prisma.TransactionClient, input: FixedBookingDto | OneOffReservationDto, date: string, excludingFixed?: { id: string; startDate?: Date; endDate?: Date | null }): Promise<{ startTime: Date; durationMinutes: number }> {
+    await this.lockParticipations(tx, [input.salaParticipationId]);
     const requestedDay = this.date(date);
     await tx.$queryRaw`SELECT id FROM sala_schedule_slots WHERE id = ${input.scheduleSlotId}::uuid FOR UPDATE`;
     const [participation, window, service] = await Promise.all([
@@ -992,25 +1059,28 @@ export class SalaService {
     if (!('startDate' in input) && this.weekday(day) !== window.weekday) throw new NotFoundException({ code: 'SALA_SCHEDULE_NOT_FOUND', message: 'Opening window not found for this date' });
     if (window.startsAt > day || (window.endedAt && window.endedAt < day)) throw new NotFoundException({ code: 'SALA_SCHEDULE_NOT_FOUND', message: 'Opening window not active for this date' });
     const exception = await tx.salaScheduleException.findUnique({ where: { scheduleSlotId_date: { scheduleSlotId: window.id, date: day } } });
-    if (!service) throw new BadRequestException({ code: 'SALA_SERVICE_TYPE_INVALID', message: 'Service is not selectable' });
-    const planService = await tx.salaPlanService.findUnique({
-      where: { planId_serviceTypeId: { planId: participation.planId, serviceTypeId: input.serviceTypeId } },
-      select: { planId: true },
-    });
-    if (!planService) throw new BadRequestException({
-      code: 'SALA_SERVICE_NOT_INCLUDED_IN_PLAN',
-      message: 'El servicio no está incluido en el Plan actual de la Persona.',
-    });
-    const durationMinutes = service.durationMinutes;
+    if (input.serviceTypeId && !service) throw new BadRequestException({ code: 'SALA_SERVICE_TYPE_INVALID', message: 'Service is not selectable' });
+    if (input.serviceTypeId) {
+      const planService = await tx.salaPlanService.findUnique({
+        where: { planId_serviceTypeId: { planId: participation.planId, serviceTypeId: input.serviceTypeId } },
+        select: { planId: true },
+      });
+      if (!planService) throw new BadRequestException({
+        code: 'SALA_SERVICE_NOT_INCLUDED_IN_PLAN',
+        message: 'El servicio no está incluido en el Plan actual de la Persona.',
+      });
+    }
+    const durationMinutes = service?.durationMinutes ?? SALA_DEFAULT_DURATION_MINUTES;
     this.validateServiceDuration(durationMinutes);
     const resolvedStartTime = this.time(input.startTime ?? this.formatMinutes(this.minutes(window.startTime)));
     const start = this.minutes(resolvedStartTime);
     const windowStart = this.minutes(window.startTime);
     const end = start + durationMinutes;
-    if (start % 30 !== 0 || start < windowStart || end > windowStart + window.durationMinutes) throw new ConflictException({ code: 'SALA_REQUIRED_SLOTS_UNAVAILABLE', message: 'The service does not fit completely within the opening window' });
+    if (start % 60 !== 0 || start < windowStart || end > windowStart + window.durationMinutes) throw new ConflictException({ code: 'SALA_REQUIRED_SLOTS_UNAVAILABLE', message: 'The service does not fit completely within the opening window' });
     if (exception?.type === SalaScheduleExceptionType.CLOSURE) throw new ConflictException({ code: 'SALA_SCHEDULE_CLOSED', message: 'Schedule is closed' });
     const validationDate = day.toISOString().slice(0, 10);
     await this.reconcileUnpaidFixed(validationDate, tx);
+    await this.validateWeeklySessions(tx, participation.planId, input.personId, day, 'startDate' in input ? { startDate: requestedDay, endDate: input.endDate === undefined && excludingFixed?.startDate?.getTime() === requestedDay.getTime() ? excludingFixed.endDate ?? null : input.endDate ? this.date(input.endDate) : null, weekday: window.weekday } : undefined, excludingFixed?.id);
     await this.assertBookingDoesNotOverlap(tx, input, day, start, durationMinutes, excludingFixed);
     const states = (await this.availability(validationDate, tx, excludingFixed?.id)).filter((state) => state.scheduleSlotId === window.id && this.parseMinutes(state.startTime) >= start && this.parseMinutes(state.startTime) < end);
     const requiredSlots = durationMinutes / 15;

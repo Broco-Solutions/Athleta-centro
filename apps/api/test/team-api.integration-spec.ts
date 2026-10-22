@@ -16,6 +16,24 @@ describe('Team management API', () => {
   async function actor(role: Role, suffix = role.toLowerCase()) { const user = await users.create({ firstName: 'Actor', lastName: 'Sintético', email: `${suffix}@team.test`, roles: [role] }); await auth.provisionCredential(user.id, 'ValidPass1!'); await prisma.internalCredential.update({ where: { internalUserId: user.id }, data: { mustChangePassword: false } }); const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200); return { user, cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string }; }
   const standard = { firstName: 'Nueva', lastName: 'Profesional', email: 'new.professional@team.test', dni: '27739784', roles: [Role.PROFESSOR] };
 
+  it('blocks new clinical roles while preserving existing clinical accounts', async () => {
+    const admin = await actor(Role.ADMINISTRATIVE);
+    const existing = await users.create({ firstName: 'Clínica', lastName: 'Histórica', email: 'clinical-existing@team.test', roles: [Role.KINESIOLOGIST] });
+    const prior = process.env.ATHLETA_CLINIC_ENABLED;
+    process.env.ATHLETA_CLINIC_ENABLED = 'false';
+    try {
+      const listed = await request(app.getHttpServer()).get('/api/team/users').set('Cookie', admin.cookie).expect(200);
+      expect(listed.body.data).toEqual(expect.arrayContaining([expect.objectContaining({ id: existing.id, roles: [Role.KINESIOLOGIST] })]));
+      const create = await request(app.getHttpServer()).post('/api/team/users').set('Cookie', admin.cookie).set('x-csrf-token', admin.csrf).send({ ...standard, email: 'new-kinesiologist@team.test', roles: [Role.KINESIOLOGIST] }).expect(400);
+      expect(create.body).toMatchObject({ code: 'CLINIC_ROLE_NOT_AVAILABLE', message: 'Los roles de Kinesiología y Osteopatía no están disponibles en esta entrega.' });
+      const add = await request(app.getHttpServer()).post(`/api/team/users/${existing.id}/roles`).set('Cookie', admin.cookie).set('x-csrf-token', admin.csrf).send({ role: Role.OSTEOPATH }).expect(400);
+      expect(add.body.code).toBe('CLINIC_ROLE_NOT_AVAILABLE');
+    } finally {
+      if (prior === undefined) delete process.env.ATHLETA_CLINIC_ENABLED;
+      else process.env.ATHLETA_CLINIC_ENABLED = prior;
+    }
+  });
+
   it('creates a user with DNI as the initial credential and requires a personal password before access', async () => {
     const admin = await actor(Role.ADMINISTRATIVE);
     const response = await request(app.getHttpServer()).post('/api/team/users').set('Cookie', admin.cookie).set('x-csrf-token', admin.csrf).send(standard).expect(201);

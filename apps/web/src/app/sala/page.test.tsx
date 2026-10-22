@@ -31,11 +31,12 @@ it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN'])('%s renders the shared vertical Sal
 });
 
 function renderStudents(): void { searchParams = new URLSearchParams(); render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SalaPage/></QueryClientProvider>); }
-it('hides global Sala navigation for clinical relation permissions', async () => {
+it('hides clinical navigation for clinical relation permissions', async () => {
   server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: ['KINESIOLOGIST'], permissions: ['SALA_RELATION_READ', 'SALA_CLINICAL_INDICATION_CLOSE', 'CLINIC_OPERATIONAL_READ'] } })));
   renderStudents(); const nav = await screen.findByRole('navigation', { name: 'Navegación principal' });
-  expect(await within(nav).findByRole('link', { name: 'Pacientes' })).toHaveAttribute('href', '/clinic?tab=Pacientes');
-  expect(within(nav).getByRole('link', { name: 'Turnos' })).toHaveAttribute('href', '/clinic?tab=Agenda');
+  expect(within(nav).getAllByRole('link').map(link => link.textContent)).toEqual(['Inicio', 'Reservas']);
+  expect(within(nav).queryByRole('link', { name: 'Pacientes' })).not.toBeInTheDocument();
+  expect(within(nav).queryByRole('link', { name: 'Turnos' })).not.toBeInTheDocument();
   expect(within(nav).queryByRole('link', { name: 'Sala' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Nuevo alumno' })).not.toBeInTheDocument();
 });

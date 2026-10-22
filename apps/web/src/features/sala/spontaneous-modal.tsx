@@ -16,6 +16,7 @@ type Plan = { id: string; name: string; isSelectable?: boolean; services: Servic
 type Submission = { values?: StudentValues | undefined; confirmed?: boolean };
 const fieldClass = 'mt-1 h-10 w-full rounded-md border bg-white px-3 text-sm';
 const messages: Record<string, string> = {
+  SALA_WEEKLY_LIMIT_EXCEEDED: 'Alcanzaste el límite de sesiones de tu plan para esta semana. Cancelá una reserva futura si necesitás cambiar de horario.',
   SALA_OCCURRENCE_DUPLICATE: 'La Persona ya tiene una presencia registrada para este horario.',
   SALA_PARTICIPATION_REQUIRED: 'La Persona no tiene una participación válida de Sala para esa fecha.',
   SALA_SERVICE_NOT_INCLUDED_IN_PLAN: 'El Servicio no está incluido en el Plan de la Persona.',
@@ -70,14 +71,14 @@ export function SpontaneousModal({ date, groups, initialSlotId, csrfToken, canMa
   const professorId = form.watch('mainProfessorId');
   const plan = plans.data?.find((item) => item.id === planId && item.isSelectable !== false);
   const services = mode === 'existing' && eligibility.data?.eligible ? eligibility.data.services : inline ? plan?.services.filter((service) => service.isSelectable !== false) ?? [] : [];
-  const service = services.find((item) => item.id === serviceTypeId);
+  const service = serviceTypeId ? services.find((item) => item.id === serviceTypeId) : { id: '', name: 'Sala', durationMinutes: 60 };
   const group = visibleGroups.find((item) => item.slot.id === slotId && !item.isClosed);
   const ready = !future && Boolean(service && group) && (mode === 'existing' && eligibility.data?.eligible ? true : inline && Boolean(plan && professorId)) && (mode === 'new' || Boolean(personId));
   const start = group ? minutes(group.slot.startTime) : 0;
   const full = Boolean(service && group && groups.some((item) => (item.slot.scheduleSlotId ?? item.slot.id) === (group.slot.scheduleSlotId ?? group.slot.id) && minutes(item.slot.startTime) >= start && minutes(item.slot.startTime) < start + service.durationMinutes && item.reserved >= item.capacity));
   const mutation = useMutation({ gcTime: 0, mutationFn: async ({ values, confirmed }: Submission) => {
-    if (!group || !service || !csrfToken) throw new Error('Seleccioná Persona, Servicio y horario.');
-    const occurrence = { date, scheduleSlotId: group.slot.scheduleSlotId ?? group.slot.id, startTime: group.slot.startTime, serviceTypeId: service.id, ...(confirmed ? { confirmOverbooking: true } : {}) };
+    if (!group || !service || !csrfToken) throw new Error('Seleccioná Persona y horario.');
+    const occurrence = { date, scheduleSlotId: group.slot.scheduleSlotId ?? group.slot.id, startTime: group.slot.startTime, ...(service.id ? { serviceTypeId: service.id } : {}), ...(confirmed ? { confirmOverbooking: true } : {}) };
     if (mode === 'new') {
       if (!values) throw new Error('Completá los datos de la Persona.');
       const { planId, mainProfessorId, ...generalPerson } = values;
@@ -125,22 +126,22 @@ export function SpontaneousModal({ date, groups, initialSlotId, csrfToken, canMa
         </>)}
         {(inline || (mode === 'existing' && eligibility.data?.eligible)) && <>
           {mode === 'new' ? <section className="border-t border-border pt-4 sm:col-span-2"><h3 className="mb-3 text-sm font-semibold">Incorporación</h3><div className="grid gap-4 sm:grid-cols-2">
-            <label className="text-sm">Servicio<select aria-label="Servicio" className={fieldClass} value={serviceTypeId} onChange={(event) => { setServiceTypeId(event.target.value); setConfirmation(null); mutation.reset(); }}><option value="">Seleccionar Servicio</option>{services.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.durationMinutes} min</option>)}</select></label>
+            <label className="text-sm">Servicio (opcional)<select aria-label="Servicio" className={fieldClass} value={serviceTypeId} onChange={(event) => { setServiceTypeId(event.target.value); setConfirmation(null); mutation.reset(); }}><option value="">Sin servicio — Sala (60 min)</option>{services.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.durationMinutes} min</option>)}</select></label>
             <label className="text-sm">Horario<select aria-label="Horario espontáneo" className={fieldClass} value={slotId} onChange={(event) => { setSlotId(event.target.value); setConfirmation(null); }}><option value="">Seleccionar horario</option>{visibleGroups.map((item) => <option key={item.slot.id} value={item.slot.id}>{item.slot.startTime}{item.available === 0 ? ' · Sin lugar' : ''}</option>)}</select></label>
-            {plan && !services.length && <p className="text-sm sm:col-span-2">El Plan seleccionado no tiene servicios disponibles.</p>}
-            {eligibility.data?.eligible && !services.length && <p className="text-sm sm:col-span-2">El Plan de la Persona no tiene servicios disponibles.</p>}
+            {plan && !services.length && <p className="text-sm sm:col-span-2">Podés registrar Sala sin seleccionar un Servicio.</p>}
+            {eligibility.data?.eligible && !services.length && <p className="text-sm sm:col-span-2">Podés registrar Sala sin seleccionar un Servicio.</p>}
           </div></section> : <>
-            <label className="text-sm">Servicio<select aria-label="Servicio" className={fieldClass} value={serviceTypeId} onChange={(event) => { setServiceTypeId(event.target.value); setConfirmation(null); mutation.reset(); }}><option value="">Seleccionar Servicio</option>{services.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.durationMinutes} min</option>)}</select></label>
+            <label className="text-sm">Servicio (opcional)<select aria-label="Servicio" className={fieldClass} value={serviceTypeId} onChange={(event) => { setServiceTypeId(event.target.value); setConfirmation(null); mutation.reset(); }}><option value="">Sin servicio — Sala (60 min)</option>{services.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.durationMinutes} min</option>)}</select></label>
             <label className="text-sm">Horario<select aria-label="Horario espontáneo" className={fieldClass} value={slotId} onChange={(event) => { setSlotId(event.target.value); setConfirmation(null); }}><option value="">Seleccionar horario</option>{visibleGroups.map((item) => <option key={item.slot.id} value={item.slot.id}>{item.slot.startTime}{item.available === 0 ? ' · Sin lugar' : ''}</option>)}</select></label>
-            {plan && !services.length && <p className="text-sm sm:col-span-2">El Plan seleccionado no tiene servicios disponibles.</p>}
-            {eligibility.data?.eligible && !services.length && <p className="text-sm sm:col-span-2">El Plan de la Persona no tiene servicios disponibles.</p>}
+            {plan && !services.length && <p className="text-sm sm:col-span-2">Podés registrar Sala sin seleccionar un Servicio.</p>}
+            {eligibility.data?.eligible && !services.length && <p className="text-sm sm:col-span-2">Podés registrar Sala sin seleccionar un Servicio.</p>}
           </>}
         </>}
         {date === today && visibleGroups.length === 0 && <p className="text-sm sm:col-span-2">No quedan horarios disponibles para hoy.</p>}
         {mutation.isError && (mutation.error as { code?: string }).code !== 'SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED' && <p role="alert" className="text-sm text-red-700 sm:col-span-2">{mutation.error.message}</p>}
         <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="secondary" disabled={mutation.isPending} onClick={onClose}>Cancelar</Button><Button type="submit" disabled={!ready || mutation.isPending}>{mutation.isPending ? 'Incorporando…' : 'Incorporar'}</Button></div>
       </form>
-      {confirmation && <div role="alertdialog" aria-modal="true" aria-label="Confirmar sobrecupo" className="mt-5 rounded-md border border-amber-200 bg-amber-50 p-4"><p className="text-sm">Este Servicio supera la capacidad disponible en el horario seleccionado. ¿Querés incorporar igualmente?</p><div className="mt-3 flex justify-end gap-2"><Button type="button" variant="secondary" disabled={mutation.isPending} onClick={() => setConfirmation(null)}>Cancelar</Button><Button type="button" disabled={mutation.isPending} onClick={() => { mutation.mutate({ ...confirmation, confirmed: true }); setConfirmation(null); }}>Incorporar igualmente</Button></div></div>}
+      {confirmation && <div role="alertdialog" aria-modal="true" aria-label="Confirmar sobrecupo" className="mt-5 rounded-md border border-amber-200 bg-amber-50 p-4"><p className="text-sm">{serviceTypeId ? 'Este Servicio' : 'Sala'} supera la capacidad disponible en el horario seleccionado. ¿Querés incorporar igualmente?</p><div className="mt-3 flex justify-end gap-2"><Button type="button" variant="secondary" disabled={mutation.isPending} onClick={() => setConfirmation(null)}>Cancelar</Button><Button type="button" disabled={mutation.isPending} onClick={() => { mutation.mutate({ ...confirmation, confirmed: true }); setConfirmation(null); }}>Incorporar igualmente</Button></div></div>}
     </>}
   </div></div>;
 }

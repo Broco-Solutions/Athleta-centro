@@ -6,6 +6,7 @@ import { ClinicService } from '../clinic/clinic.service';
 import { InternalUserService } from '../team/internal-user.service';
 import { SalaService } from '../sala/sala.service';
 import { effectivePermissions } from '../team/permissions';
+import { isClinicEnabled } from '../config/env';
 
 const clinicalProfessionalRoles = new Set<Role>([Role.KINESIOLOGIST, Role.OSTEOPATH]);
 const discipline = (roles: Role[]): string => {
@@ -25,7 +26,7 @@ export class ReservationsService {
     const actorPermissions = effectivePermissions(actor.status, actor.roles.map((entry) => entry.role));
     const canReadSala = actorPermissions.has('SALA_RELATION_READ');
     const canReadSalaIndications = actorPermissions.has('SALA_CLINICAL_INDICATION_READ');
-    const canReadClinic = actorPermissions.has('CLINIC_OPERATIONAL_READ');
+    const canReadClinic = isClinicEnabled() && actorPermissions.has('CLINIC_OPERATIONAL_READ');
     const [salaGroups, appointments, users] = await Promise.all([
       canReadSala ? this.sala.agenda(date) : Promise.resolve([]),
       canReadClinic ? this.clinic.list({ from: dateAt(date, 0), to: dateAt(nextDate(date), 0) }) : Promise.resolve([]),
@@ -38,7 +39,7 @@ export class ReservationsService {
     const clinicBookings = appointments.map((appointment) => ({ id: appointment.id, source: 'CLINIC' as const, person: appointment.person, startTime: time(appointment.startAt), durationMinutes: appointment.durationMinutes, serviceName: 'Consulta clínica', status: appointment.status, origin: 'APPOINTMENT', professional: { ...appointment.professional, discipline: discipline(users.find((user) => user.id === appointment.professional.id)?.roles.map((entry) => entry.role) ?? []) } }));
     const bookings = [...salaBookings, ...clinicBookings];
     const salaRow = { kind: 'SALA' as const, professional: null, bookings: salaBookings };
-    const professionalRows = activeProfessionals.map((user) => ({ kind: 'PROFESSIONAL' as const, professional: { id: user.id, firstName: user.firstName, lastName: user.lastName, discipline: discipline(user.roles.map((entry) => entry.role)) }, bookings: clinicBookings.filter((booking) => booking.professional?.id === user.id) }));
+    const professionalRows = canReadClinic ? activeProfessionals.map((user) => ({ kind: 'PROFESSIONAL' as const, professional: { id: user.id, firstName: user.firstName, lastName: user.lastName, discipline: discipline(user.roles.map((entry) => entry.role)) }, bookings: clinicBookings.filter((booking) => booking.professional?.id === user.id) })) : [];
     const allTimes = salaGroups.map((group) => { const [hour = 0, minute = 0] = group.slot.startTime.split(':').map(Number); return hour * 60 + minute; }).concat(bookings.map((booking) => { const [hour = 0, minute = 0] = booking.startTime.split(':').map(Number); return hour * 60 + minute; }));
     const starts = allTimes;
     const startMinutes = starts.length ? Math.min(...starts) : 8 * 60;

@@ -51,13 +51,15 @@ it('uses the person services endpoint instead of the global catalog for a new re
   expect(personServicesRequests).toBe(1);
   expect(catalogRequests).toBe(0);
 });
-it.each(['reservations', 'fixed'])('shows an empty plan state and prevents creation on the %s tab', async (tab) => {
+it.each(['reservations', 'fixed'])('allows general Sala without configured services on the %s tab', async (tab) => {
   navigation.tab = tab;
   server.use(http.get(`http://localhost:3000/api/sala/people/${personId}/services`, () => HttpResponse.json({ data: [] })));
   renderWorkspace();
-  expect(await waitFor(() => booking().getByText('El Plan actual no tiene servicios disponibles para nuevas reservas.'))).toBeInTheDocument();
+  expect(await waitFor(() => booking().getByText('Podés reservar Sala sin seleccionar un Servicio.'))).toBeInTheDocument();
   expect(screen.getByRole('button', { name: tab === 'fixed' ? 'Crear turno fijo' : 'Crear reserva' })).toBeDisabled();
   expect(booking().getByLabelText('Servicio').querySelectorAll('option')).toHaveLength(1);
+  fireEvent.change(booking().getByLabelText('Horario'), { target: { value: 'window:09:00' } });
+  expect(screen.getByRole('button', { name: tab === 'fixed' ? 'Crear turno fijo' : 'Crear reserva' })).toBeEnabled();
 });
 it.each([true, false])('preloads a fixed service only when the current plan permits it (allowed=%s)', async (allowed) => {
   navigation.tab = 'fixed';
@@ -73,7 +75,7 @@ it.each([true, false])('preloads a fixed service only when the current plan perm
   expect(booking().queryByRole('option', { name: 'Calistenia' })).not.toBeInTheDocument();
   if (!allowed) {
     expect(screen.getByText(/Calistenia · MONDAY/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled();
     fireEvent.change(booking().getByLabelText('Servicio'), { target: { value: 'functional' } });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled());
   }
@@ -87,21 +89,21 @@ it('does not query person services without an active participation', async () =>
   expect(catalogRequests).toBe(0);
 });
 
-it.each(['reservations', 'fixed'])('offers only half-hour starts and submits distinct starts from one window on %s', async tab => {
+it.each(['reservations', 'fixed'])('offers only exact-hour starts and submits distinct starts from one window on %s', async tab => {
   navigation.tab = tab;
   const submitted: Record<string, string>[] = [];
   server.use(
-    http.get('http://localhost:3000/api/sala/availability', () => HttpResponse.json({ data: ['12:00', '12:15', '12:30', '12:45'].map(startTime => ({ slotId: `window:${startTime}`, scheduleSlotId: 'window', startTime })) })),
+    http.get('http://localhost:3000/api/sala/availability', () => HttpResponse.json({ data: ['12:00', '12:15', '12:30', '12:45', '13:00'].map(startTime => ({ slotId: `window:${startTime}`, scheduleSlotId: 'window', startTime })) })),
     http.post(`http://localhost:3000/api/sala/${tab === 'fixed' ? 'fixed-bookings' : 'reservations'}`, async ({ request }) => { submitted.push(await request.json() as Record<string, string>); return HttpResponse.json({ data: {} }, { status: 201 }); }),
   );
   renderWorkspace();
   await findBookingOption( { name: 'Musculación' });
-  await findBookingOption( { name: '12:30' });
+  await findBookingOption( { name: '13:00' });
   expect(booking().getByRole('option', { name: '12:00' })).toBeInTheDocument();
   expect(booking().queryByRole('option', { name: '12:15' })).not.toBeInTheDocument();
   expect(booking().queryByRole('option', { name: '12:45' })).not.toBeInTheDocument();
   fireEvent.change(booking().getByLabelText('Servicio'), { target: { value: 'muscle' } });
-  for (const [index, startTime] of ['12:00', '12:30'].entries()) {
+  for (const [index, startTime] of ['12:00', '13:00'].entries()) {
     fireEvent.change(booking().getByLabelText('Horario'), { target: { value: `window:${startTime}` } });
     expect(booking().getByLabelText('Horario')).toHaveValue(`window:${startTime}`);
     const submit = screen.getByRole('button', { name: tab === 'fixed' ? 'Crear turno fijo' : 'Crear reserva' });
@@ -117,12 +119,12 @@ it.each(['reservations', 'fixed'])('offers only half-hour starts and submits dis
     }
   }
 });
-it.each(['12:15', '12:45'])('shows historical fixed start %s and requires a new half-hour selection', async startTime => {
+it.each(['12:15', '12:45'])('shows historical fixed start %s and requires a new exact-hour selection', async startTime => {
   navigation.tab = 'fixed';
   let submitted: unknown;
   server.use(
     http.get(`http://localhost:3000/api/sala/people/${personId}/fixed-bookings`, () => HttpResponse.json({ data: [{ id: 'historical', startDate: '2026-08-31', startTime, scheduleSlot: { id: 'window', weekday: 'MONDAY', startTime: '12:00' }, serviceType: services[0] }] })),
-    http.get('http://localhost:3000/api/sala/availability', () => HttpResponse.json({ data: ['12:00', '12:15', '12:30', '12:45'].map(startTime => ({ slotId: `window:${startTime}`, scheduleSlotId: 'window', startTime })) })),
+    http.get('http://localhost:3000/api/sala/availability', () => HttpResponse.json({ data: ['12:00', '12:15', '12:30', '12:45', '13:00'].map(startTime => ({ slotId: `window:${startTime}`, scheduleSlotId: 'window', startTime })) })),
     http.post('http://localhost:3000/api/sala/fixed-bookings/historical/change', async ({ request }) => { submitted = await request.json(); return HttpResponse.json({ data: {} }); }),
   );
   renderWorkspace();
@@ -131,11 +133,11 @@ it.each(['12:15', '12:45'])('shows historical fixed start %s and requires a new 
   fireEvent.click(screen.getByRole('button', { name: 'Modificar' }));
   expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeDisabled();
   expect(booking().queryByRole('option', { name: startTime })).not.toBeInTheDocument();
-  await findBookingOption( { name: '12:30' });
-  fireEvent.change(booking().getByLabelText('Horario'), { target: { value: 'window:12:30' } });
+  await findBookingOption( { name: '13:00' });
+  fireEvent.change(booking().getByLabelText('Horario'), { target: { value: 'window:13:00' } });
   await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
-  await waitFor(() => expect(submitted).toEqual({ personId, salaParticipationId: 'participation', scheduleSlotId: 'window', serviceTypeId: 'muscle', startTime: '12:30', startDate: expect.any(String), id: 'historical' }));
+  await waitFor(() => expect(submitted).toEqual({ personId, salaParticipationId: 'participation', scheduleSlotId: 'window', serviceTypeId: 'muscle', startTime: '13:00', startDate: expect.any(String), id: 'historical' }));
   expect(submitted).not.toHaveProperty('date');
 });
 
@@ -363,32 +365,25 @@ it('keeps dashboard queries independent on HTTP errors and does not turn failure
   renderWorkspace();
   expect(await screen.findByText('Activa')).toBeInTheDocument();
   expect(await screen.findByText('Sin vigencia')).toBeInTheDocument();
-  await waitFor(() => expect(screen.getAllByText('No pudimos cargar esta información.')).toHaveLength(2));
+  await waitFor(() => expect(screen.getAllByText('No pudimos cargar esta información.')).toHaveLength(1));
   expect(screen.queryByText('Sin evaluaciones')).not.toBeInTheDocument();
   expect(screen.queryByText('Sin indicaciones especiales para entrenar.')).not.toBeInTheDocument();
   expect(screen.queryByText(/private/)).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Ver evaluaciones' })).toBeInTheDocument();
 });
-it('shows safe clinical indications individually in priority order without extra clinical fields', async () => {
+it('does not request or show clinical indications in the Professor summary during this delivery', async () => {
   dashboardHandlers();
-  server.use(http.get(`http://localhost:3000/api/sala/people/${personId}/clinical-indications`, () => HttpResponse.json({ data: [
+  let reads = 0;
+  server.use(http.get(`http://localhost:3000/api/sala/people/${personId}/clinical-indications`, () => { reads++; return HttpResponse.json({ data: [
     { id: 'clear', trainingCondition: 'NO_RESTRICTIONS', lastUpdate: '2026-10-13T01:00:00Z' },
     { id: 'restricted', trainingCondition: 'RESTRICTED', affectedArea: 'Rodilla derecha', instructions: 'Evitar impacto y flexión profunda.', lastUpdate: '2026-10-13T01:00:00Z', responsibleProfessional: { firstName: 'Profesional', lastName: 'Demo' }, diagnosis: 'Diagnóstico privado', treatment: { objective: 'Objetivo clínico privado' }, evolution: 'Evolución privada', studies: 'Estudios privados' },
     { id: 'stop', trainingCondition: 'DO_NOT_TRAIN', lastUpdate: '2026-10-13T01:00:00Z' },
-  ] })));
+  ] }); }));
   renderWorkspace();
-  expect(await screen.findByText('Con restricciones')).toBeInTheDocument();
-  expect(screen.getByText('Rodilla derecha')).toBeInTheDocument();
-  expect(screen.getByText('Evitar impacto y flexión profunda.')).toBeInTheDocument();
-  expect(screen.getByText('Profesional: Profesional Demo')).toBeInTheDocument();
-  const indications = within(screen.getByRole('heading', { name: 'Indicaciones para entrenar' }).closest('section')!);
-  expect(indications.getAllByRole('heading', { level: 4 }).map(item => item.textContent)).toEqual(['No entrenar', 'Con restricciones', 'Sin restricciones']);
-  expect(indications.getAllByText('Actualizado 12/10/2026')).toHaveLength(3);
-  for (const text of ['Diagnóstico privado', 'Objetivo clínico privado', 'Evolución privada', 'Estudios privados']) expect(screen.queryByText(text)).not.toBeInTheDocument();
-});
-it('explicitly confirms no special training indications', async () => {
-  dashboardHandlers(); renderWorkspace();
-  expect(await screen.findByText('Sin indicaciones especiales para entrenar.')).toBeInTheDocument();
+  expect(await screen.findByText('Activa')).toBeInTheDocument();
+  expect(screen.queryByText('Indicaciones para entrenar')).not.toBeInTheDocument();
+  expect(screen.queryByText('Rodilla derecha')).not.toBeInTheDocument();
+  expect(reads).toBe(0);
 });
 it('does not request or display clinical indications without the permission', async () => {
   dashboardHandlers(); routineSession(professorPermissions.filter(permission => permission !== 'SALA_CLINICAL_INDICATION_READ'));

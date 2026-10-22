@@ -277,6 +277,8 @@ export interface TeamCredentialResetDto {
 export interface SalaParticipationPlanResponseDto {
   id: string;
   name: string;
+  /** @nullable */
+  weeklySessions: number | null;
   monthlyAmount: string;
 }
 
@@ -501,8 +503,8 @@ export interface FixedBookingDto {
   salaParticipationId: string;
   /** Weekly opening window */
   scheduleSlotId: string;
-  serviceTypeId: string;
-  /** @pattern ^([01]\d|2[0-3]):(00|30)$ */
+  serviceTypeId?: string;
+  /** @pattern ^([01]\d|2[0-3]):00$ */
   startTime: string;
   startDate: string;
   /** @nullable */
@@ -515,8 +517,8 @@ export interface ChangeFixedBookingDto {
   salaParticipationId: string;
   /** Weekly opening window */
   scheduleSlotId: string;
-  serviceTypeId: string;
-  /** @pattern ^([01]\d|2[0-3]):(00|30)$ */
+  serviceTypeId?: string;
+  /** @pattern ^([01]\d|2[0-3]):00$ */
   startTime: string;
   startDate: string;
   /** @nullable */
@@ -534,8 +536,8 @@ export interface OneOffReservationDto {
   salaParticipationId: string;
   /** Weekly opening window */
   scheduleSlotId: string;
-  serviceTypeId: string;
-  /** @pattern ^([01]\d|2[0-3]):(00|30)$ */
+  serviceTypeId?: string;
+  /** @pattern ^([01]\d|2[0-3]):00$ */
   startTime: string;
   date: string;
   confirmOverbooking?: boolean;
@@ -753,7 +755,7 @@ export interface JoinSpontaneousSalaDto {
   personId: string;
   scheduleSlotId: string;
   date: string;
-  serviceTypeId: string;
+  serviceTypeId?: string;
   /** @pattern ^([01]\d|2[0-3]):(00|15|30|45)$ */
   startTime: string;
   confirmOverbooking?: boolean;
@@ -785,7 +787,7 @@ export interface CreateSpontaneousSalaStudentDto {
   planId: string;
   scheduleSlotId: string;
   date: string;
-  serviceTypeId: string;
+  serviceTypeId?: string;
   /** @pattern ^([01]\d|2[0-3]):(00|15|30|45)$ */
   startTime: string;
   confirmOverbooking?: boolean;
@@ -806,7 +808,7 @@ export interface SpontaneousOccurrenceDto {
   personId: string;
   scheduleSlotId: string;
   date: string;
-  serviceTypeId: string;
+  serviceTypeId?: string;
   /** @pattern ^([01]\d|2[0-3]):(00|15|30|45)$ */
   startTime: string;
   confirmOverbooking?: boolean;
@@ -1160,8 +1162,12 @@ export interface UpdateSalaConfigurationDto {
 export interface PlanDto {
   name: string;
   monthlyAmount: number;
-  /** @minItems 1 */
-  serviceTypeIds: string[];
+  /**
+   * @minimum 2
+   * @maximum 5
+   */
+  weeklySessions: number;
+  serviceTypeIds?: string[];
   isSelectable?: boolean;
 }
 
@@ -9245,123 +9251,6 @@ export const portalControllerFixed = async ( options?: RequestInit): Promise<por
 
   const data: portalControllerFixedResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as portalControllerFixedResponse
-}
-
-
-
-export type portalControllerCreateFixedResponse201 = {
-  data: void
-  status: 201
-}
-
-export type portalControllerCreateFixedResponseSuccess = (portalControllerCreateFixedResponse201) & {
-  headers: Headers;
-};
-;
-
-export type portalControllerCreateFixedResponse = (portalControllerCreateFixedResponseSuccess)
-
-export const getPortalControllerCreateFixedUrl = () => {
-
-
-
-
-  return `/api/portal/sala/fixed-bookings`
-}
-
-export const portalControllerCreateFixed = async ( options?: RequestInit): Promise<portalControllerCreateFixedResponse> => {
-
-  const res = await fetch(getPortalControllerCreateFixedUrl(),
-  {
-    ...options,
-    method: 'POST'
-
-
-  }
-)
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: portalControllerCreateFixedResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as portalControllerCreateFixedResponse
-}
-
-
-
-export type portalControllerChangeFixedResponse201 = {
-  data: void
-  status: 201
-}
-
-export type portalControllerChangeFixedResponseSuccess = (portalControllerChangeFixedResponse201) & {
-  headers: Headers;
-};
-;
-
-export type portalControllerChangeFixedResponse = (portalControllerChangeFixedResponseSuccess)
-
-export const getPortalControllerChangeFixedUrl = (id: string,) => {
-
-
-
-
-  return `/api/portal/sala/fixed-bookings/${id}/change`
-}
-
-export const portalControllerChangeFixed = async (id: string, options?: RequestInit): Promise<portalControllerChangeFixedResponse> => {
-
-  const res = await fetch(getPortalControllerChangeFixedUrl(id),
-  {
-    ...options,
-    method: 'POST'
-
-
-  }
-)
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: portalControllerChangeFixedResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as portalControllerChangeFixedResponse
-}
-
-
-
-export type portalControllerEndFixedResponse201 = {
-  data: void
-  status: 201
-}
-
-export type portalControllerEndFixedResponseSuccess = (portalControllerEndFixedResponse201) & {
-  headers: Headers;
-};
-;
-
-export type portalControllerEndFixedResponse = (portalControllerEndFixedResponseSuccess)
-
-export const getPortalControllerEndFixedUrl = (id: string,) => {
-
-
-
-
-  return `/api/portal/sala/fixed-bookings/${id}/end`
-}
-
-export const portalControllerEndFixed = async (id: string, options?: RequestInit): Promise<portalControllerEndFixedResponse> => {
-
-  const res = await fetch(getPortalControllerEndFixedUrl(id),
-  {
-    ...options,
-    method: 'POST'
-
-
-  }
-)
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: portalControllerEndFixedResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as portalControllerEndFixedResponse
 }
 
 

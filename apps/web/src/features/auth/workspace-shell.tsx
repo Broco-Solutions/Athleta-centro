@@ -22,19 +22,13 @@ type NavigationGroup = { key: 'home' | 'sala' | 'clinic' | 'finance' | 'team'; l
 const hasAny = (permissions: string[], values: string[]) => values.some((value) => permissions.includes(value));
 const hasDomainPermission = (permissions: string[], prefix: string) => permissions.some((permission) => permission.startsWith(prefix));
 
-const clinicNavigation: NavigationItem[] = [
-  { key: 'clinic-patients', href: '/clinic?tab=Pacientes', label: 'Pacientes', icon: Users, canAccess: (permissions) => permissions.includes('CLINIC_OPERATIONAL_READ') },
-  { key: 'clinic-appointments', href: '/clinic?tab=Agenda', label: 'Turnos', icon: CalendarDays, canAccess: (permissions) => permissions.includes('CLINIC_OPERATIONAL_READ') },
-];
-
 const navigation: NavigationItem[] = [
   { key: 'home', href: '/', label: 'Inicio', icon: Activity, canAccess: () => true },
   { key: 'people', href: '/people', label: 'Personas', icon: Users, canAccess: (permissions) => hasAny(permissions, ['PEOPLE_READ', 'PEOPLE_CREATE', 'PEOPLE_UPDATE_GENERAL']) },
   { key: 'team', href: '/team', label: 'Equipo', icon: UserCog, canAccess: (permissions) => hasDomainPermission(permissions, 'TEAM_') },
   { key: 'sala-agenda', href: '/sala', label: 'Sala', icon: Dumbbell, canAccess: (permissions) => hasAny(permissions, ['SALA_PARTICIPATION_MANAGE', 'SALA_SCHEDULE_MANAGE', 'SALA_AGENDA_MANAGE', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE', 'SALA_PHYSICAL_EVALUATION_READ', 'SALA_PHYSICAL_EVALUATION_MANAGE', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_MANAGE']) },
   { key: 'routines', href: '/routines', label: 'Rutinas', icon: ClipboardList, canAccess: (permissions) => permissions.includes('SALA_ROUTINE_MANAGE') },
-  { key: 'reservations', href: '/reservations', label: 'Reservas', icon: ClipboardList, canAccess: (permissions) => hasAny(permissions, ['SALA_RELATION_READ', 'CLINIC_OPERATIONAL_READ']) },
-  ...clinicNavigation,
+  { key: 'reservations', href: '/reservations', label: 'Reservas', icon: ClipboardList, canAccess: (permissions) => permissions.includes('SALA_RELATION_READ') },
   { key: 'finance-summary', href: '/finance', label: 'Finanzas', icon: Wallet, canAccess: (permissions) => hasDomainPermission(permissions, 'FINANCE_') || permissions.includes('PAYMENT_METHOD_CATALOG_MANAGE') },
 ];
 
@@ -70,7 +64,7 @@ function groupedNavigation(permissions: string[]): NavigationGroup[] {
 }
 
 export function WorkspaceShell({ children, active }: { children: React.ReactNode; active: string }): React.JSX.Element {
-  const activeKey = active === 'clinic' ? 'clinic-patients' : active;
+  const activeKey = active;
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = React.useState(true);
   const closeMenuRef = React.useRef<HTMLButtonElement>(null);
@@ -143,7 +137,7 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
         <div id={contentId} hidden={!isOpen} className="space-y-1">{group.items.map((item) => itemLink(item, onNavigate))}</div>
       </section>;
     })
-    : visibleNavigation.map((item) => <React.Fragment key={item.key}>{item.key === 'clinic-patients' && <h2 className="px-3 pt-3 text-xs font-semibold uppercase tracking-wide text-zinc-300">Clínica</h2>}{itemLink(item, onNavigate)}</React.Fragment>);
+    : visibleNavigation.map((item) => <React.Fragment key={item.key}>{itemLink(item, onNavigate)}</React.Fragment>);
 
   return <AuthShell desktopSidebarOpen={desktopSidebarOpen} onToggleDesktopSidebar={() => setDesktopSidebarOpen((open) => !open)} mobileNavigationTrigger={<Button variant="ghost" aria-label="Abrir menú" aria-expanded={mobileMenuOpen} aria-controls="internal-mobile-navigation" className="h-11 gap-2 px-3 md:hidden" onClick={() => setMobileMenuOpen(true)}><Menu aria-hidden="true" size={20} />Menú</Button>}>
     <main className={`flex min-h-screen min-w-0 flex-col bg-background pt-14 transition-[margin] duration-200 ${desktopSidebarOpen ? 'md:ml-60 md:pt-0' : 'md:ml-0 md:pt-14'}`}>

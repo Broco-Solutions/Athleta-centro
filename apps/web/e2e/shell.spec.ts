@@ -21,17 +21,39 @@ test('exposes Portal Sala, Clínica and profile workflows after login', async ({
   await expect(page.getByRole('link', { name: 'Sala', exact: true })).toBeVisible(); await expect(page.getByRole('link', { name: 'Mis datos', exact: true })).toBeVisible(); await page.getByRole('link', { name: 'Sala', exact: true }).click(); await expect(page).toHaveURL(/\/portal\/sala$/); await expect(page.getByRole('heading', { name: 'Reservar horario' })).toBeVisible(); await expect(page.getByRole('heading', { name: 'Mi rutina' })).toBeVisible(); await page.getByRole('link', { name: 'Mis datos', exact: true }).click(); await expect(page).toHaveURL(/\/portal\/profile$/); await expect(page.getByText('DNI')).toBeVisible(); await expect(page.getByText('id:')).toHaveCount(0);
 });
 
-test('modifies and finalizes a real Portal fixed booking', async ({ page }) => {
-  fixture('portal-reset'); await page.goto('/portal/login'); await page.getByLabel('DNI').fill('40999444'); await page.getByLabel('PIN de 4 dígitos').fill('1234'); await page.getByRole('button', { name: 'Ingresar' }).click(); await page.goto('/portal/sala');
-  const service = page.getByLabel('Servicio turno fijo'); await service.selectOption({ index: 1 });
-  const day = page.getByLabel('Día turno fijo'); const dayOptions = await day.locator('option').evaluateAll((options) => options.map((option) => option.getAttribute('value')).filter((value): value is string => Boolean(value))); const hour = page.getByLabel('Hora turno fijo'); let dayWithAvailability = false; for (const weekday of dayOptions) { await day.selectOption(weekday); await page.waitForTimeout(250); if (await hour.locator('option').count() > 2) { dayWithAvailability = true; break; } } expect(dayWithAvailability).toBe(true); await hour.selectOption({ index: 2 }); await page.getByRole('button', { name: 'Crear turno fijo' }).click(); await expect(page.getByText('Turno fijo creado.')).toBeVisible();
-  await page.getByRole('button', { name: 'Modificar' }).click(); const edit = page.getByRole('dialog', { name: 'Modificar turno fijo' }); await expect(edit).toBeVisible(); const editDay = edit.getByRole('combobox', { name: 'Día' }); const currentEditDay = await editDay.inputValue(); const editDays = await editDay.locator('option').evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value)); const nextDay = editDays.find((value) => value && value !== currentEditDay); expect(nextDay).toBeTruthy(); await editDay.selectOption(nextDay!); const editHour = edit.getByRole('combobox', { name: 'Hora' }); await expect.poll(async () => editHour.locator('option').count()).toBeGreaterThan(2); const editHourValues = await editHour.locator('option').evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value)); const nextHour = editHourValues.find((value) => value && !value.startsWith('Actual')); expect(nextHour).toBeTruthy(); await editHour.selectOption(nextHour!); const [changeResponse] = await Promise.all([page.waitForResponse((response) => response.url().includes('/sala/fixed-bookings/') && response.url().endsWith('/change')), edit.getByRole('button', { name: 'Guardar cambios' }).click()]); expect(changeResponse.status(), JSON.stringify({ payload: changeResponse.request().postDataJSON(), response: await changeResponse.text() })).toBe(201); await expect(page.getByText('Turno fijo modificado.')).toBeVisible(); await page.reload(); await expect(page.getByText(nextHour!)).toBeVisible();
-  await page.getByRole('button', { name: 'Finalizar' }).click(); const confirmation = page.getByRole('dialog', { name: 'Finalizar turno fijo' }); await expect(confirmation).toBeVisible(); await confirmation.getByRole('button', { name: 'Finalizar turno' }).click(); await expect(page.getByText('Turno fijo finalizado.')).toBeVisible(); await page.reload(); await expect(page.getByText('No tenés un turno fijo.')).toBeVisible();
+test('consults assigned Portal fixed bookings and returns 404 for recurrence writes', async ({ page }) => {
+  fixture('portal-fixed-edit');
+  await page.goto('/portal/login');
+  await page.getByLabel('DNI').fill('40999445');
+  await page.getByLabel('PIN de 4 dígitos').fill('1234');
+  await page.getByRole('button', { name: 'Ingresar' }).click();
+  await expect(page).toHaveURL('/portal');
+  await expect(page.getByRole('heading', { name: 'Mis turnos fijos' })).toBeVisible();
+  for (const name of ['Agregar turno fijo', 'Modificar', 'Finalizar']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
+  const before = (await (await page.request.get('/api/portal/sala')).json()).data;
+  expect(before.fixed.length).toBe(1);
+  const session = (await (await page.request.get('/api/portal/auth/session')).json()).data;
+  for (const path of ['fixed-bookings', `fixed-bookings/${before.fixed[0].id}/change`, `fixed-bookings/${before.fixed[0].id}/end`]) {
+    const denied = await page.request.post(`/api/portal/sala/${path}`, { headers: { 'x-csrf-token': session.csrfToken }, data: {} });
+    expect(denied.status()).toBe(404);
+  }
+  const after = (await (await page.request.get('/api/portal/sala')).json()).data;
+  expect(after.fixed).toEqual(before.fixed);
 });
-test('edits Monday fixed booking independently from Wednesday one-off date', async ({ page }) => {
-  fixture('portal-fixed-edit'); await page.goto('/portal/login'); await page.getByLabel('DNI').fill('40999445'); await page.getByLabel('PIN de 4 dígitos').fill('1234'); await page.getByRole('button', { name: 'Ingresar' }).click(); await page.goto('/portal/sala');
-  await page.getByLabel('Fecha').fill('2026-09-02'); await page.getByRole('button', { name: 'Modificar' }).click(); const edit = page.getByRole('dialog', { name: 'Modificar turno fijo' }); await expect(edit).toBeVisible(); await expect(edit.getByLabel('Día')).toHaveValue('MONDAY'); const hour = edit.getByLabel('Hora'); const offered = hour.locator('option').filter({ hasText: /^11:00/ }).first(); await expect(offered).toHaveCount(1); const offeredValue = await offered.getAttribute('value'); expect(offeredValue).toMatch(/^[0-9a-f-]{36}:11:00$/); await hour.selectOption(offeredValue!);
-  const [response] = await Promise.all([page.waitForResponse((item) => item.url().includes('/sala/fixed-bookings/') && item.url().endsWith('/change')), edit.getByRole('button', { name: 'Guardar cambios' }).click()]); expect(response.status()).toBe(201); expect(response.request().postDataJSON()).toMatchObject({ scheduleSlotId: offeredValue!.split(':')[0], serviceTypeId: expect.any(String), startTime: '11:00', startDate: '2026-09-07' }); await expect(page.getByText('Turno fijo modificado.')).toBeVisible(); await expect(page.getByText('11:00')).toBeVisible(); await page.reload(); await expect(page.getByText('11:00')).toBeVisible();
+test('keeps the historical fixed schedule available for consultation after reload', async ({ page }) => {
+  fixture('portal-fixed-edit');
+  await page.goto('/portal/login');
+  await page.getByLabel('DNI').fill('40999445');
+  await page.getByLabel('PIN de 4 dígitos').fill('1234');
+  await page.getByRole('button', { name: 'Ingresar' }).click();
+  await expect(page).toHaveURL('/portal');
+  const before = (await (await page.request.get('/api/portal/sala/fixed-bookings')).json()).data;
+  expect(before).toHaveLength(1);
+  await expect(page.getByText(/Lunes · 10:00/)).toBeVisible();
+  await page.reload();
+  await expect(page.getByText(/Lunes · 10:00/)).toBeVisible();
+  expect((await (await page.request.get('/api/portal/sala/fixed-bookings')).json()).data).toEqual(before);
+  await expect(page.getByRole('dialog', { name: 'Modificar turno fijo' })).toHaveCount(0);
 });
 test('manages a standard team account through explicit lifecycle actions', async ({ page }) => {
   fixture('team');
@@ -318,7 +340,7 @@ test('cancels one Portal fixed date and keeps the weekly recurrence', async ({ p
   await expect(page.getByText('Fecha cancelada.')).toBeVisible();
   await expect(row.getByText('Cancelado', { exact: true })).toBeVisible();
   await expect(row.getByRole('button', { name: 'Cancelar esta fecha' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Modificar', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Modificar', exact: true })).toHaveCount(0);
   const after = (await (await page.request.get('/api/portal/sala')).json()).data;
   expect(after.fixed).toEqual(before.fixed);
   expect(after.fixedOccurrences).toContainEqual(next);

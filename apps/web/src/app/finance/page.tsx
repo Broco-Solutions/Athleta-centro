@@ -249,7 +249,7 @@ function FinancePageContent(): React.JSX.Element {
             {personResults.length ? <ul className="mt-1 rounded border">{personResults.map(person => <li key={person.id}><button type="button" aria-label={`${person.firstName} ${person.lastName}${person.dni ? ` DNI ${person.dni}` : ''}`} className="w-full px-3 py-2 text-left hover:bg-surface-muted focus-visible:outline focus-visible:outline-2" onClick={() => { setSelectedIncomePerson(person); setIncomePersonSearch(''); }}><span className="block font-medium">{person.firstName} {person.lastName}</span>{person.dni ? <span className="block text-muted-foreground">DNI {person.dni}</span> : null}</button></li>)}</ul> : null}
           </>}
         </div>
-        <HistorySelect label="Origen" value={incomeSource} onChange={setIncomeSource} options={[{ id: 'SALA', name: 'Sala' }, { id: 'CLINIC', name: 'Clínica' }]} />
+        <HistorySelect label="Origen" value={incomeSource} onChange={setIncomeSource} options={[{ id: 'SALA', name: 'Sala' }]} />
         <HistorySelect label="Medio de pago" value={incomeMethod} onChange={setIncomeMethod} options={incomeMethods} />
         {incomePeriod.changed || incomeFilterCount || incomePersonSearch ? <div className="md:col-span-3 md:text-right"><Button type="button" variant="secondary" onClick={() => { incomePeriod.reset(); setSelectedIncomePerson(undefined); setIncomePersonSearch(''); setIncomeSource(''); setIncomeMethod(''); }}>Limpiar filtros</Button></div> : null}
       </div> : null}

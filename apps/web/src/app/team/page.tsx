@@ -28,7 +28,7 @@ function TeamDialog({ user, onClose }: { user?: TeamUserDto; onClose: () => void
   const isSupport = user?.roles.includes('BROCO_SUPPORT') ?? false;
   const canManageTarget = Boolean(user && !isSelf && !isSupport && (user.roles.includes('GENERAL_ADMIN') ? canGeneral : canStandard));
   const canEditPersonal = !user || isSelf || canManageTarget;
-  const availableRoles = roles.filter((role) => role !== 'GENERAL_ADMIN' || canGeneral);
+  const availableRoles = roles.filter((role) => (process.env.ATHLETA_CLINIC_ENABLED === 'true' || (role !== 'KINESIOLOGIST' && role !== 'OSTEOPATH')) && (role !== 'GENERAL_ADMIN' || canGeneral));
   const form = useForm<TeamProfileFormValues>({ resolver: zodResolver(teamProfileSchema), defaultValues: profileDefaults(user) });
   useEffect(() => { form.reset(profileDefaults(user)); setSelectedRoles(user?.roles.filter((role): role is (typeof roles)[number] => roles.includes(role as (typeof roles)[number])) ?? ['PROFESSOR']); setRolesError(undefined); }, [form, user]);
   const save = useMutation({ mutationFn: async (values: TeamProfileFormValues) => { const csrf = session.data?.csrfToken; if (!csrf) throw new Error('Sesión inválida'); const profile = toProfileInput(values); if (user) return { data: await editTeamUser(user.id, profile, csrf) }; return addTeamUser({ ...profile, roles: selectedRoles } as CreateTeamUserDto, csrf); }, onSuccess: async (result) => { await client.invalidateQueries({ queryKey: ['team'] }); if ('temporaryPassword' in result) setTemporary(result.temporaryPassword); else onClose(); } });

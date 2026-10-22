@@ -1,6 +1,17 @@
 import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   transpilePackages: ['@athleta/ui'],
+  env: { ATHLETA_CLINIC_ENABLED: process.env.ATHLETA_CLINIC_ENABLED === 'true' ? 'true' : 'false' },
+  async redirects() {
+    if (process.env.ATHLETA_CLINIC_ENABLED === 'true') return [];
+    return [
+      { source: '/clinic', destination: '/', permanent: false },
+      { source: '/clinic/:path*', destination: '/', permanent: false },
+      { source: '/portal/clinic', destination: '/portal', permanent: false },
+      { source: '/portal/clinic/:path*', destination: '/portal', permanent: false },
+      { source: '/finance/clinical-income/new', destination: '/finance', permanent: false },
+    ];
+  },
   async rewrites() { return [{ source: '/api/:path*', destination: `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api/:path*` }]; },
 };
 export default nextConfig;

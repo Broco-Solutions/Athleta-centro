@@ -57,4 +57,47 @@ describe('Finance API', () => {
     expect(income.body.data[0].registeredBy).toEqual({ id: actor.id, firstName: actor.firstName, lastName: actor.lastName });
   });
 
+  it('returns 404 for every clinical API surface while the first delivery flag is disabled', async () => {
+    const prior = process.env.ATHLETA_CLINIC_ENABLED;
+    process.env.ATHLETA_CLINIC_ENABLED = 'false';
+    try {
+      await request(app.getHttpServer()).get('/api/clinic/appointments').expect(404);
+      await request(app.getHttpServer()).get('/api/portal/clinic/appointments').expect(404);
+      await request(app.getHttpServer()).get('/api/finance/clinical-incomes').expect(404);
+      await request(app.getHttpServer()).get('/api/clinicx/appointments').expect(404);
+    } finally {
+      if (prior === undefined) delete process.env.ATHLETA_CLINIC_ENABLED;
+      else process.env.ATHLETA_CLINIC_ENABLED = prior;
+    }
+  });
+
+  it('excludes historical clinical movements from first-delivery finance queries and totals', async () => {
+    const prior = process.env.ATHLETA_CLINIC_ENABLED;
+    process.env.ATHLETA_CLINIC_ENABLED = 'false';
+    try {
+      const authn = await session(Role.GENERAL_ADMIN);
+      const actor = await users.create({ firstName: 'Registro', lastName: 'Sintético', email: 'delivery-finance-actor@finance.test', roles: [Role.ADMINISTRATIVE] });
+      const person = await prisma.person.create({ data: { firstName: 'Persona', lastName: 'Sintética', dni: '88000005', normalizedDni: '88000005', phone: '3515550000', birthDate: new Date('1990-01-01') } });
+      const method = await prisma.paymentMethod.create({ data: { name: 'Transferencia' } });
+      const category = await prisma.expenseCategory.create({ data: { name: 'Materiales', normalizedName: 'materiales' } });
+      await prisma.clinicalIncome.create({ data: { personId: person.id, cashDate: new Date('2026-10-01'), amount: 5000, paymentMethodId: method.id, payer: 'PATIENT', registeredById: actor.id, operationId: randomUUID() } });
+      await prisma.expense.createMany({ data: [
+        { cashDate: new Date('2026-10-01'), amount: 300, categoryId: category.id, paymentMethodId: method.id, area: 'CLINIC', operationId: randomUUID(), registeredById: actor.id },
+        { cashDate: new Date('2026-10-01'), amount: 200, categoryId: category.id, paymentMethodId: method.id, area: 'GENERAL', operationId: randomUUID(), registeredById: actor.id },
+      ] });
+      const headers = { Cookie: authn.cookie };
+      await request(app.getHttpServer()).post('/api/finance/expenses').set({ ...headers, 'x-csrf-token': authn.csrf }).send({ cashDate: '2026-10-01', amount: '100', categoryId: category.id, paymentMethodId: method.id, area: 'CLINIC', operationId: randomUUID() }).expect(404);
+      expect((await request(app.getHttpServer()).get('/api/finance/income?area=CLINIC').set(headers).expect(200)).body.data).toEqual([]);
+      expect((await request(app.getHttpServer()).get('/api/finance/expenses?area=CLINIC').set(headers).expect(200)).body.data).toEqual([]);
+      expect((await request(app.getHttpServer()).get('/api/finance/expenses').set(headers).expect(200)).body.data.map((row: { area: string }) => row.area)).toEqual(['GENERAL']);
+      const oldClinicalExpense = await prisma.expense.findFirstOrThrow({ where: { area: 'CLINIC' } });
+      await request(app.getHttpServer()).delete(`/api/finance/expenses/${oldClinicalExpense.id}`).set({ ...headers, 'x-csrf-token': authn.csrf }).expect(404);
+      expect(await prisma.expense.count({ where: { area: 'CLINIC' } })).toBe(1);
+      expect((await request(app.getHttpServer()).get('/api/finance/executive-totals').set(headers).expect(200)).body.data).toMatchObject({ clinicalIncome: '0', totalIncome: '0', expenses: '200', net: '-200' });
+    } finally {
+      if (prior === undefined) delete process.env.ATHLETA_CLINIC_ENABLED;
+      else process.env.ATHLETA_CLINIC_ENABLED = prior;
+    }
+  });
+
 });

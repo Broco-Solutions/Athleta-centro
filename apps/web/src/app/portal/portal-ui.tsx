@@ -97,6 +97,7 @@ export function PortalFrame({ title, subtitle, action, backToHome = false, child
 
 export function bookingError(error: unknown): string {
   if (!(error instanceof PortalApiError)) return 'No pudimos completar la operación. Tus datos no fueron modificados. Intentá nuevamente.';
+  if (error.code === 'SALA_WEEKLY_LIMIT_EXCEEDED') return 'Alcanzaste el límite de sesiones de tu plan para esta semana. Cancelá una reserva futura si necesitás cambiar de horario.';
   if (error.code === 'PORTAL_SALA_TIME_PASSED') return 'Ese horario ya no admite nuevas reservas. Elegí otro horario.';
   if (error.code === 'PORTAL_SALA_VALIDITY_REQUIRED' || error.code === 'PORTAL_SALA_PAYMENT_REQUIRED') return 'Tu cuota no está vigente para esta fecha. Consultá en recepción para renovarla.';
   if (error.code === 'SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED' || error.code === 'SALA_CAPACITY_FULL') return 'Ese horario acaba de quedarse sin lugar. Elegí otro horario disponible.';

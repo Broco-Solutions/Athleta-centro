@@ -565,6 +565,7 @@ model SalaConfiguration {
 }
 
 model SalaPlan {
+  weeklySessions Int? @map("weekly_sessions")
   id             String               @id @default(uuid()) @db.Uuid
   name           String
   monthlyAmount  Decimal              @map("monthly_amount") @db.Decimal(14, 0)

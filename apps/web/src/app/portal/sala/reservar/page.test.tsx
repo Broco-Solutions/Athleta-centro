@@ -48,9 +48,9 @@ beforeEach(() => {
 afterEach(() => { server.resetHandlers(); vi.restoreAllMocks(); });
 afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 
-it('automatically selects the only plan service and offers complete half-hour starts without selects', async () => {
+it('defaults to general Sala and offers only exact-hour starts', async () => {
   renderReserve();
-  expect(await screen.findByRole('button', { name: 'Musculación 60 min' })).toHaveAttribute('aria-pressed', 'true');
+  expect(await screen.findByRole('button', { name: 'Musculación 60 min' })).toHaveAttribute('aria-pressed', 'false');
   await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' });
   expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /17:15–/ })).not.toBeInTheDocument();
@@ -68,7 +68,7 @@ it('keeps an ongoing activity visible with exactly twenty minutes remaining', as
 it('removes an activity with less than twenty minutes remaining while retaining later starts', async () => {
   vi.mocked(Date.now).mockReturnValue(new Date('2026-10-08T17:40:00.001-03:00').getTime());
   renderReserve();
-  expect(await screen.findByRole('button', { name: '17:30–18:30 Hay lugar' })).toBeEnabled();
+  expect(await screen.findByRole('button', { name: '18:00–19:00 Hay lugar' })).toBeEnabled();
   expect(screen.queryByText('17:00–18:00')).not.toBeInTheDocument();
 });
 
@@ -90,7 +90,7 @@ it('expires a selected activity on the local clock tick without requesting avail
     expect(screen.queryByText(/17:00–18:00/)).not.toBeInTheDocument();
     expect(screen.getByText(/ · Elegí un horario/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '17:30–18:30 Hay lugar' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '18:00–19:00 Hay lugar' })).toBeEnabled();
     expect(availabilityCalls).toBe(1);
   } finally {
     cleanup();
@@ -162,18 +162,21 @@ it('does not join separate windows or gaps to manufacture a complete range', asy
   expect(await screen.findByText('No hay horarios disponibles para esta fecha.')).toBeInTheDocument();
 });
 
-it('disables the remaining flow when the plan has no services', async () => {
+it('allows general Sala when the plan has no services', async () => {
   server.use(http.get(base + 'sala/services', () => HttpResponse.json({ data: [] })));
   renderReserve();
-  expect(await screen.findByText('Tu Plan actual no tiene servicios disponibles. Consultá con Athleta.')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /Hoy 08\/10/ })).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Ver calendario' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeDisabled();
-  expect(availabilityCalls).toBe(0);
+  expect(await screen.findByRole('button', { name: /Sin servicio — Sala/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('button', { name: /Hoy 08\/10/ })).toBeEnabled();
+  fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Reservar en Sala' }));
+  await screen.findByRole('heading', { name: 'Reserva confirmada' });
+  expect(submitted).toEqual({ date: '2026-10-08', scheduleSlotId: 'window', startTime: '17:00' });
+  expect(screen.getByText('Sala')).toBeInTheDocument();
 });
 
 it('preserves the exact payload and CSRF token, refreshes queries and retains the service and date after success', async () => {
   const client = renderReserve();
+  fireEvent.click(await screen.findByRole('button', { name: 'Musculación 60 min' }));
   const invalidate = vi.spyOn(client, 'invalidateQueries');
   fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
   fireEvent.click(screen.getByRole('button', { name: 'Reservar en Sala' }));

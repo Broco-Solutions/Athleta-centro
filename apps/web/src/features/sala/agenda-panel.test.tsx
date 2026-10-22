@@ -267,11 +267,14 @@ it('keeps duplicate DNI data visible and directs the user to existing Persons', 
   await openFlow(); await fillNew(); fireEvent.click(screen.getByRole('button', { name: 'Incorporar' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Ya existe una Persona con ese DNI. Seleccionala como Persona existente.'); expect(screen.getByLabelText('DNI')).toHaveValue('30.123-456');
 });
-it('disables incorporation for a Plan without selectable services', async () => {
+it('allows general Sala for a Plan without selectable services', async () => {
   mockFlow(false, false); server.use(http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: planId, name: 'Plan Base', services: [] }] })));
   await openFlow(); await selectPerson();
   await screen.findByRole('option', { name: 'Plan Base' }); fireEvent.change(screen.getByLabelText('Plan'), { target: { value: planId } });
-  expect(await screen.findByText('El Plan seleccionado no tiene servicios disponibles.')).toBeVisible(); expect(screen.getByRole('button', { name: 'Incorporar' })).toBeDisabled();
+  expect(await screen.findByText('Podés registrar Sala sin seleccionar un Servicio.')).toBeVisible();
+  fireEvent.change(screen.getByLabelText('Profesor principal'), { target: { value: professional.id } });
+  expect(screen.getByLabelText('Servicio')).toHaveValue('');
+  expect(screen.getByRole('button', { name: 'Incorporar' })).toBeEnabled();
 });
 
 it.each([

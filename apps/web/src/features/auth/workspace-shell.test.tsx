@@ -60,7 +60,7 @@ describe('WorkspaceShell', () => {
     ['Sala', 'SALA_AGENDA_MANAGE', ['Sala']],
     ['Rutinas', 'SALA_ROUTINE_MANAGE', ['Sala', 'Rutinas']],
     ['Reservas', 'SALA_RELATION_READ', ['Reservas']],
-    ['Clínica', 'CLINIC_OPERATIONAL_READ', ['Reservas', 'Pacientes', 'Turnos']],
+    ['Clínica', 'CLINIC_OPERATIONAL_READ', []],
     ['Finanzas', 'FINANCE_OPERATIONAL_READ', ['Finanzas']],
   ])('mantiene la regla de acceso actual de %s', async (_label, permission, expectedLabels) => {
     renderShell({ permissions: [permission] });
@@ -190,11 +190,11 @@ it('gives pure Professor exactly Inicio, Reservas, Alumnos and Rutinas on deskto
     for (const label of ['Personas', 'Sala', 'Equipo', 'Clínica', 'Finanzas']) expect(navigation.queryByRole('link', { name: label })).not.toBeInTheDocument();
   }
 });
-it('preserves permission navigation for PROFESSOR + KINESIOLOGIST', async () => {
+it('hides clinical navigation for PROFESSOR + KINESIOLOGIST while preserving Sala navigation', async () => {
   renderShell({ roles: ['PROFESSOR', 'KINESIOLOGIST'], permissions: ['PEOPLE_READ', 'SALA_ROUTINE_MANAGE', 'CLINIC_OPERATIONAL_READ'] });
   await screen.findByRole('link', { name: 'Personas' });
   fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
-  for (const name of ['Navegación principal', 'Navegación móvil']) expect(within(screen.getByRole('navigation', { name })).getAllByRole('link').map((link) => link.textContent)).toEqual(['Inicio', 'Personas', 'Sala', 'Rutinas', 'Reservas', 'Pacientes', 'Turnos']);
+  for (const name of ['Navegación principal', 'Navegación móvil']) expect(within(screen.getByRole('navigation', { name })).getAllByRole('link').map((link) => link.textContent)).toEqual(['Inicio', 'Personas', 'Sala', 'Rutinas']);
 });
 
 it.each([{ roles: ['GENERAL_ADMIN'] }, { roles: ['GENERAL_ADMIN', 'PROFESSOR'] }, { roles: ['GENERAL_ADMIN', 'KINESIOLOGIST'] }, { roles: ['ADMINISTRATIVE'] }, { roles: ['ADMINISTRATIVE', 'OSTEOPATH'] }])('uses administrative grouped navigation for roles %j on desktop and mobile', async ({ roles }) => {
@@ -310,13 +310,11 @@ it('opens the active General Admin group and only one group at a time, with acti
   expect(nav.getByRole('link', { name: 'Agenda' })).toHaveAttribute('aria-current', 'page');
 });
 
-it.each(['KINESIOLOGIST', 'OSTEOPATH'])('exposes Patients and Appointments through effective permissions for %s', async (role) => {
+it.each(['KINESIOLOGIST', 'OSTEOPATH'])('keeps %s accounts but hides clinical navigation during this delivery', async (role) => {
   renderShell({ roles: [role], permissions: ['CLINIC_OPERATIONAL_READ'], active: 'clinic-patients' });
   const nav = within(await screen.findByRole('navigation', { name: 'Navegación principal' }));
-  expect(await nav.findByRole('link', { name: 'Pacientes' })).toHaveAttribute('href', '/clinic?tab=Pacientes');
-  expect(nav.getByRole('link', { name: 'Turnos' })).toHaveAttribute('href', '/clinic?tab=Agenda');
-  expect(nav.getByRole('link', { name: 'Pacientes' })).toHaveAttribute('aria-current', 'page');
-  expect(nav.queryByRole('link', { name: 'Clínica' })).not.toBeInTheDocument();
+  expect(nav.getAllByRole('link').map((link) => link.textContent)).toEqual(['Inicio']);
+  for (const name of ['Clínica', 'Pacientes', 'Turnos']) expect(nav.queryByRole('link', { name })).not.toBeInTheDocument();
 });
 
 it('links group headings to the first permitted item', async () => {

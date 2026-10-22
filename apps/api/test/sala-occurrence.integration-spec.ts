@@ -8,6 +8,8 @@ import { AppModule } from '../src/app.module';
 import { AuthService } from '../src/auth/auth.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ReservationsService } from '../src/reservations/reservations.service';
+import { ReservationsController } from '../src/reservations/reservations.controller';
+import { ClinicService } from '../src/clinic/clinic.service';
 import { IndicationService } from '../src/clinic/indication.service';
 import { SalaService } from '../src/sala/sala.service';
 import { InternalUserService } from '../src/team/internal-user.service';
@@ -19,6 +21,7 @@ describe('SalaOccurrence persistence and API', () => {
   let users: InternalUserService;
   let auth: AuthService;
   let reservations: ReservationsService;
+  let clinic: ClinicService;
   let indications: IndicationService;
 
   beforeAll(async () => {
@@ -33,6 +36,7 @@ describe('SalaOccurrence persistence and API', () => {
     users = app.get(InternalUserService);
     auth = app.get(AuthService);
     reservations = app.get(ReservationsService);
+    clinic = app.get(ClinicService);
     indications = app.get(IndicationService);
   });
 
@@ -140,6 +144,31 @@ describe('SalaOccurrence persistence and API', () => {
     const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: f.professor.email, password: 'ValidPass1!' }).expect(200);
     const response = await request(app.getHttpServer()).get(`/api/reservations?date=${f.date}`).set('Cookie', login.headers['set-cookie'][0] as string).expect(200);
     expect(response.body).toEqual({ data: timeline });
+  });
+
+  it('serves only Sala and skips clinical/professional queries when Clinic is disabled', async () => {
+    const f = await setup();
+    await sala.createReservation({ personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, date: f.date, startTime: '09:00' });
+    await auth.provisionCredential(f.professor.id, 'ValidPass1!');
+    await prisma.internalCredential.update({ where: { internalUserId: f.professor.id }, data: { mustChangePassword: false } });
+    const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: f.professor.email, password: 'ValidPass1!' }).expect(200);
+    const clinicRead = jest.spyOn(clinic, 'list');
+    const teamRead = jest.spyOn(users, 'list');
+    const prior = process.env.ATHLETA_CLINIC_ENABLED;
+    process.env.ATHLETA_CLINIC_ENABLED = 'false';
+    try {
+      const direct = await reservations.list(f.date, f.professor.id);
+      expect(direct.rows.map((row) => row.kind)).toEqual(['SALA']);
+      expect(direct.rows.flatMap((row) => row.bookings).every((booking) => booking.source === 'SALA')).toBe(true);
+      const response = await request(app.getHttpServer()).get(`/api/reservations?date=${f.date}`).set('Cookie', login.headers['set-cookie'][0] as string).expect(200);
+      expect(response.body.data.rows.map((row: { kind: string }) => row.kind)).toEqual(['SALA']);
+      expect(clinicRead).not.toHaveBeenCalled();
+      expect(teamRead).not.toHaveBeenCalled();
+      await expect(app.get(ReservationsController).list({ date: f.date }, { athletaUserId: f.professor.id, athletaPermissions: ['CLINIC_OPERATIONAL_READ'] })).rejects.toMatchObject({ response: { code: 'PERMISSION_DENIED' } });
+    } finally {
+      if (prior === undefined) delete process.env.ATHLETA_CLINIC_ENABLED;
+      else process.env.ATHLETA_CLINIC_ENABLED = prior;
+    }
   });
 
   it('projects active indications in one bulk call only for authorized Sala readers', async () => {
