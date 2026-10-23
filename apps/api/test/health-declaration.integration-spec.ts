@@ -18,7 +18,7 @@ const testDocument: HealthDocument = {
   consents: HEALTH_CONSENT_KEYS.map(key => ({ key, text: `Synthetic test consent ${key}` })),
   guardianConfirmation: 'Synthetic test guardian confirmation', finalConfirmation: 'Synthetic test final confirmation',
 };
-const payload = (): SubmitHealthDeclarationDto => ({ documentVersion: testDocument.version, personal: { emergencyContactName: 'Contacto sintético', emergencyContactPhone: '0000000000' }, activity: {}, kinesiology: {}, answers: {}, consents: { physicalActivity: true, truthfulness: true, emergenciesAndPrivacy: true, healthDataProcessing: false, kinesiology: false, manualEvaluation: false, therapeuticExercise: false, manualTherapy: false, physicalAgents: false, dryNeedling: false, taping: false, shareWithDoctors: false, shareWithClubs: false, clinicalImage: false, institutionalImage: false }, confirmed: true });
+const payload = (): SubmitHealthDeclarationDto => ({ documentVersion: testDocument.version, personal: { emergencyContactName: 'Contacto sintético', emergencyContactPhone: '0000000000' }, activity: {}, kinesiology: {}, answers: { testQuestion: { answer: 'NOT_DISCLOSED' } }, consents: { physicalActivity: true, truthfulness: true, emergenciesAndPrivacy: true, healthDataProcessing: true, kinesiology: false, manualEvaluation: false, therapeuticExercise: false, manualTherapy: false, physicalAgents: false, dryNeedling: false, taping: false, shareWithDoctors: false, shareWithClubs: false, clinicalImage: false, institutionalImage: false }, confirmed: true });
 
 describe('Health declaration onboarding and privacy', () => {
   let app: INestApplication; let prisma: PrismaService; let health: HealthDeclarationService;
@@ -90,7 +90,7 @@ describe('Health declaration onboarding and privacy', () => {
     expect(result.body.data).toMatchObject({ status: 'CURRENT', required: false });
     const row = await prisma.healthDeclaration.findFirstOrThrow({ where: { personId } });
     expect(row.consents).toEqual(payload().consents); expect(row.documentVersion).toBe(testDocument.version);
-    expect(row.answers).toMatchObject({ kinesiology: {}, answers: {}, personal: payload().personal });
+    expect(row.answers).toMatchObject({ kinesiology: {}, answers: payload().answers, personal: payload().personal });
     expect(Object.keys(row.identity as object).sort()).toEqual(['birthDate', 'confirmed', 'declarant', 'dni', 'firstName', 'lastName', 'phone']);
     expect(row.identity).toMatchObject({ confirmed: true, dni, declarant: { name: 'Alumno Sintético salud', dni } });
     expect(row.validUntil.getUTCFullYear()).toBe(row.submittedAt.getUTCFullYear() + 1);
@@ -114,6 +114,31 @@ describe('Health declaration onboarding and privacy', () => {
     await submit(undecided).expect(400);
     expect(await prisma.healthDeclaration.count({ where: { personId } })).toBe(0);
   });
+  it('rejects missing or refused medical processing consent even without medical details', async () => {
+    for (const consent of [false, undefined]) {
+      const data = payload();
+      if (consent === undefined) delete data.consents.healthDataProcessing;
+      else data.consents.healthDataProcessing = consent;
+      await submit(data).expect(400);
+    }
+    expect(await prisma.healthDeclaration.count({ where: { personId } })).toBe(0);
+  });
+  it('requires explicit consistent category answers and never persists incomplete questionnaires', async () => {
+    jest.spyOn(health, 'document').mockReturnValue({ ...testDocument, questions: [
+      ...testDocument.questions, { id: 'second', category: 'Synthetic category', text: 'Second condition' },
+      { id: 'free', category: 'Free text category', text: 'Optional text', responseType: 'TEXT' },
+    ] });
+    for (const answers of [{}, { testQuestion: { answer: 'YES' as const } }, {
+      testQuestion: { answer: 'YES' as const }, second: { answer: 'NOT_DISCLOSED' as const }, free: { answer: 'NO' as const },
+    }]) {
+      expect((await submit({ ...payload(), answers }).expect(400)).body.code).toBe('HEALTH_CATEGORY_REQUIRED');
+    }
+    expect(await prisma.healthDeclaration.count({ where: { personId } })).toBe(0);
+    const answers = { testQuestion: { answer: 'YES', details: 'Synthetic detail' }, second: { answer: 'NO', details: 'Hidden detail' }, free: { answer: 'NOT_DISCLOSED' } };
+    await submit({ ...payload(), answers }).expect(201);
+    expect((await prisma.healthDeclaration.findFirstOrThrow({ where: { personId } })).answers).toMatchObject({ answers: { testQuestion: answers.testQuestion, second: { answer: 'NO' }, free: answers.free } });
+    expect((await prisma.healthDeclaration.findFirstOrThrow({ where: { personId } })).answers).not.toMatchObject({ answers: { second: { details: 'Hidden detail' } } });
+  });
   it('requires guardian identification and express confirmation for minors', async () => {
     await prisma.person.update({ where: { id: personId }, data: { birthDate: new Date('2015-01-01') } });
     expect((await submit().expect(400)).body.code).toBe('HEALTH_GUARDIAN_REQUIRED');
@@ -123,8 +148,8 @@ describe('Health declaration onboarding and privacy', () => {
     expect((await prisma.healthDeclaration.findFirstOrThrow({ where: { personId } })).identity).toMatchObject({ declarant: { name: 'Tutor sintético', dni: '00000001' } });
   });
   it('does not persist medical data without consent and preserves it when authorized', async () => {
-    const data = payload(); data.answers = { testQuestion: { answer: 'YES', details: 'Dato médico sintético' } }; data.kinesiology = { reason: 'Motivo sintético' };
-    expect((await submit(data).expect(400)).body.code).toBe('HEALTH_PROCESSING_CONSENT_REQUIRED');
+    const data = payload(); data.consents.healthDataProcessing = false; data.answers = { testQuestion: { answer: 'YES', details: 'Dato médico sintético' } }; data.kinesiology = { reason: 'Motivo sintético' };
+    expect((await submit(data).expect(400)).body.code).toBe('HEALTH_DECLARATION_INVALID');
     expect(await prisma.healthDeclaration.count({ where: { personId } })).toBe(0);
     data.consents.healthDataProcessing = true;
     await submit(data).expect(201);
@@ -173,7 +198,7 @@ describe('Health declaration onboarding and privacy', () => {
   it('accepts the actual client document and stores its exact source/version and individual procedure decisions', async () => {
     jest.restoreAllMocks();
     const document = currentHealthDocument()!;
-    const data = payload(); data.documentVersion = document.version;
+    const data = payload(); data.documentVersion = document.version; data.answers = Object.fromEntries(document.questions.map(question => [question.id, { answer: 'NOT_DISCLOSED' }]));
     await submit(data).expect(201);
     const record = await prisma.healthDeclaration.findFirstOrThrow({ where: { personId } });
     expect(record.document).toMatchObject({ sourceSha256: document.sourceSha256, questions: document.questions });

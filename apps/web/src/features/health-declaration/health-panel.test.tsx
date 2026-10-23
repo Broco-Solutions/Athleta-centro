@@ -26,3 +26,10 @@ it('fetches an authorized read-only declaration only after the user requests it'
   await waitFor(() => expect(getPersonHealthDeclaration).toHaveBeenCalledWith('synthetic-person', submission.id, { credentials: 'include' }));
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
 });
+it('hides technical fingerprints from administrative history and confirmed copies', async () => {
+  vi.mocked(getPersonHealthDeclaration).mockResolvedValue({ status: 200, headers: new Headers(), data: { data: { ...submission, identity: { firstName: 'Alumno sintético', confirmed: true }, personal: { emergencyContactName: 'Contacto sintético', emergencyContactPhone: '0000000000' }, activity: {}, kinesiology: {}, answers: {}, consents: { physicalActivity: true, truthfulness: true, emergenciesAndPrivacy: true, shareWithDoctors: false, shareWithClubs: false, clinicalImage: false, institutionalImage: false }, document: { version: 'hidden-version', sourceSha256: 'hidden-hash' } } } });
+  view(true);
+  fireEvent.click(await screen.findByRole('button', { name: /Consultar declaración/ }));
+  expect(await screen.findByText('Contacto sintético', { exact: true })).toBeVisible();
+  expect(screen.queryByText(/TEST-ONLY|hidden-version|hidden-hash|Versión/)).not.toBeInTheDocument();
+});

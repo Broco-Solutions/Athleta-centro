@@ -355,16 +355,16 @@ describe('Sala configuration API', () => {
     const monday = await sala.createFixed({ ...f.booking, startDate: f.booking.date });
     await sala.createFixed({ ...f.booking, scheduleSlotId: f.thursday.id, startDate: '2099-02-02' });
     await sala.cancelFixedOccurrenceFromPortal(monday.id, f.person.id, f.booking.date, new Date('2099-01-04'));
-    await expect(sala.createFixed({ ...f.booking, startDate: f.booking.date, scheduleSlotId: f.wednesday.id })).rejects.toMatchObject({ response: { code: 'SALA_WEEKLY_LIMIT_EXCEEDED' } });
+    await expect(sala.createFixed({ ...f.booking, startDate: f.booking.date, scheduleSlotId: f.wednesday.id })).rejects.toMatchObject({ response: { code: 'SALA_FIXED_BOOKING_LIMIT_EXCEEDED' } });
     expect(await prisma.fixedSalaBooking.count()).toBe(2);
   });
-  it('checks the week after an end boundary and future one-off weeks for an unbounded recurrence', async () => {
+  it('ignores ended bookings and future one-off consumption when configuring a recurrence', async () => {
     const f = await weeklyFixture();
     await sala.createFixed({ ...f.booking, startDate: f.booking.date, endDate: '2099-01-05' });
     await sala.createReservation({ ...f.booking, scheduleSlotId: f.wednesday.id, date: '2099-02-04' });
     await sala.createReservation({ ...f.booking, scheduleSlotId: f.thursday.id, date: '2099-02-05' });
-    await expect(sala.createFixed({ ...f.booking, startDate: '2099-01-12' })).rejects.toMatchObject({ response: { code: 'SALA_WEEKLY_LIMIT_EXCEEDED' } });
-    expect(await prisma.fixedSalaBooking.count()).toBe(1);
+    await sala.createFixed({ ...f.booking, startDate: '2099-01-12' });
+    expect(await prisma.fixedSalaBooking.count()).toBe(2);
   });
   it('excludes the replaced recurrence and preserves its prefix in the transition week', async () => {
     const f = await weeklyFixture();
@@ -372,8 +372,45 @@ describe('Sala configuration API', () => {
     const thursday = await sala.createFixed({ ...f.booking, startDate: f.booking.date, scheduleSlotId: f.thursday.id });
     const changed = await sala.changeFixed({ ...f.booking, startDate: f.booking.date, id: thursday.id, scheduleSlotId: f.wednesday.id });
     expect(changed.id).toBe(thursday.id);
-    await expect(sala.changeFixed({ ...f.booking, id: monday.id, scheduleSlotId: f.thursday.id, startDate: '2099-01-06' })).rejects.toMatchObject({ response: { code: 'SALA_WEEKLY_LIMIT_EXCEEDED' } });
-    expect(await prisma.fixedSalaBooking.findUnique({ where: { id: monday.id } })).toMatchObject({ endDate: null });
+    await sala.changeFixed({ ...f.booking, id: monday.id, scheduleSlotId: f.thursday.id, startDate: '2099-01-06' });
+    expect(await prisma.fixedSalaBooking.findUnique({ where: { id: monday.id } })).toMatchObject({ endDate: new Date('2099-01-05') });
+  });
+  it('configures exactly two fixed bookings despite ended bookings and consumed weekly history', async () => {
+    const f = await weeklyFixture();
+    const old = await sala.createFixed({ ...f.booking, startDate: '2098-12-01', endDate: '2099-01-04' });
+    await sala.createFixed({ ...f.booking, scheduleSlotId: f.thursday.id, startDate: '2098-12-01', endDate: '2099-01-04' });
+    const reservation = await sala.createReservation({ ...f.booking, startTime: '08:00' });
+    await prisma.salaOccurrence.create({ data: { personId: f.person.id, scheduleSlotId: f.booking.scheduleSlotId, date: new Date(f.booking.date), origin: 'ONE_OFF', status: 'ATTENDED', oneOffReservationId: reservation.id } });
+    await sala.createFixed({ ...f.booking, startDate: f.booking.date });
+    await sala.createFixed({ ...f.booking, startDate: f.booking.date, scheduleSlotId: f.thursday.id });
+    await expect(sala.createFixed({ ...f.booking, startDate: f.booking.date, scheduleSlotId: f.wednesday.id })).rejects.toMatchObject({ response: { code: 'SALA_FIXED_BOOKING_LIMIT_EXCEEDED' } });
+    expect(await prisma.fixedSalaBooking.count({ where: { salaParticipationId: f.participation.id, endDate: null } })).toBe(2);
+    expect(await prisma.fixedSalaBooking.findUnique({ where: { id: old.id } })).toMatchObject({ endDate: new Date('2099-01-04') });
+    expect(await prisma.oneOffReservation.count()).toBe(1);
+    expect(await prisma.salaOccurrence.count({ where: { status: 'ATTENDED' } })).toBe(1);
+  });
+  it('serializes concurrent fixed-booking creation under the participation lock', async () => {
+    const f = await weeklyFixture();
+    await sala.createFixed({ ...f.booking, startDate: f.booking.date });
+    const results = await Promise.allSettled([
+      sala.createFixed({ ...f.booking, startDate: f.booking.date, scheduleSlotId: f.wednesday.id }),
+      sala.createFixed({ ...f.booking, startDate: f.booking.date, scheduleSlotId: f.thursday.id }),
+    ]);
+    expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter(result => result.status === 'rejected')).toEqual([expect.objectContaining({ reason: expect.objectContaining({ response: expect.objectContaining({ code: 'SALA_FIXED_BOOKING_LIMIT_EXCEEDED' }) }) })]);
+    expect(await prisma.fixedSalaBooking.count({ where: { salaParticipationId: f.participation.id, endDate: null } })).toBe(2);
+  });
+  it.each([Role.PROFESSOR, Role.ADMINISTRATIVE, Role.GENERAL_ADMIN, Role.KINESIOLOGIST, Role.OSTEOPATH])('preserves fixed-booking create/change/end permissions for %s', async role => {
+    const f = await weeklyFixture();
+    const authn = await session(role);
+    const allowed = new Set<Role>([Role.PROFESSOR, Role.ADMINISTRATIVE, Role.GENERAL_ADMIN]).has(role);
+    const body = { personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: f.booking.scheduleSlotId, startTime: '09:00', startDate: f.booking.date };
+    const post = (path: string, input: object) => request(app.getHttpServer()).post(`/api/sala/fixed-bookings${path}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(input);
+    const created = await post('', body).expect(allowed ? 201 : 403);
+    const id = allowed ? created.body.data.id : (await sala.createFixed(body)).id;
+    await post(`/${id}/change`, { ...body, id, startTime: '10:00' }).expect(allowed ? 201 : 403);
+    await post(`/${id}/end`, { endDate: f.booking.date }).expect(allowed ? 201 : 403);
+    expect(await prisma.fixedSalaBooking.findUnique({ where: { id } })).toMatchObject({ endDate: allowed ? new Date(f.booking.date) : null });
   });
   it('does not double count a materialized recurrence while changing its time', async () => {
     const f = await weeklyFixture();

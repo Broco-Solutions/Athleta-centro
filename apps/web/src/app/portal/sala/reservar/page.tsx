@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, Circle, Minus } from 'lucide-react';
-import { PortalFrame, portalFetch, formatTime, today, bookingError } from '../../portal-ui';
+import { PortalFrame, portalFetch, formatTime, today, bookingError, replacementDateAllowed, firstReplacementDate, type ReplacementWeek } from '../../portal-ui';
 
 type Service = { id: string; name: string; durationMinutes: number };
 type Slot = { scheduleSlotId: string; startTime: string; endTime: string; available: boolean; date: string };
@@ -42,7 +42,7 @@ function Step({ number, title, children }: { number: number; title: string; chil
 export default function PortalReserve(): React.JSX.Element {
   const client = useQueryClient();
   const currentDate = today();
-  const [date, setDate] = useState(currentDate);
+  const [chosenDate, setDate] = useState('');
   const [serviceId, setServiceId] = useState('');
   const [selection, setSelection] = useState('');
   const [reservationNow, setReservationNow] = useState(Date.now);
@@ -53,17 +53,21 @@ export default function PortalReserve(): React.JSX.Element {
   const [calendar, setCalendar] = useState(false);
   const [reservationConfirmation, setReservationConfirmation] = useState<ReservationConfirmation | null>(null);
   const [reservationError, setReservationError] = useState('');
-  const services = useQuery({ queryKey: ['portal', 'sala', 'services'], queryFn: () => portalFetch<Service[]>('sala/services') });
-  const sala = useQuery({ queryKey: ['portal', 'sala'], queryFn: () => portalFetch<{ validity: { hasValidAccess: boolean; validUntil: string | null } }>('sala') });
+  const sala = useQuery({ queryKey: ['portal', 'sala'], queryFn: () => portalFetch<{ replacementWeeks: ReplacementWeek[]; validity: { hasValidAccess: boolean; validUntil: string | null } }>('sala') });
   const validUntil = sala.data?.validity.validUntil;
   const maxDate = validUntil && validUntil < addDays(currentDate, 30) ? validUntil : addDays(currentDate, 30);
   const hasValidity = sala.data?.validity.hasValidAccess === true;
+  const replacementWeeks = sala.data?.replacementWeeks ?? [];
+  const initialDate = firstReplacementDate(replacementWeeks, currentDate, maxDate);
+  const date = chosenDate || initialDate || currentDate;
+  const validReplacementDate = replacementDateAllowed(date, replacementWeeks) && date >= currentDate && date <= maxDate;
+  const services = useQuery({ queryKey: ['portal', 'sala', 'services'], queryFn: () => portalFetch<Service[]>('sala/services'), enabled: Boolean(initialDate) && hasValidity });
   const service = serviceId;
   const selectedService = service ? services.data?.find(item => item.id === service) : { id: '', name: 'Sala', durationMinutes: 60 };
   const availability = useQuery({
     queryKey: ['portal', 'sala', 'availability', date],
     queryFn: async () => (await portalFetch<Slot[]>('sala/availability?date=' + date)).map(item => ({ ...item, startTime: formatTime(item.startTime), endTime: formatTime(item.endTime) })),
-    enabled: Boolean(selectedService) && hasValidity,
+    enabled: Boolean(selectedService) && hasValidity && validReplacementDate,
   });
   const options = starts(availability.data ?? [], selectedService).filter(item => {
     if (date < currentDate) return false;
@@ -74,7 +78,7 @@ export default function PortalReserve(): React.JSX.Element {
   const selectedSlot = options.find(item => item.key === selection && item.available);
   const reserve = useMutation({
     mutationFn: async () => {
-      if (!selectedSlot || !selectedService || !hasValidity || date > maxDate) throw new Error('SLOT_REQUIRED');
+      if (!selectedSlot || !selectedService || !hasValidity || !validReplacementDate) throw new Error('SLOT_REQUIRED');
       const confirmation = { serviceName: selectedService.name, date, startTime: selectedSlot.startTime, endTime: selectedSlot.endTime };
       const token = (await portalFetch<{ csrfToken: string }>('auth/session')).csrfToken;
       await portalFetch('sala/reservations', {
@@ -100,9 +104,9 @@ export default function PortalReserve(): React.JSX.Element {
   };
   const quickDates = [0, 1, 2].map(offset => addDays(currentDate, offset));
 
-  if (sala.isPending) return <PortalFrame title="Reservar en Sala" backToHome><p role="status">Cargando vigencia…</p></PortalFrame>;
-  if (sala.isError) return <PortalFrame title="Reservar en Sala" backToHome><p role="alert">No pudimos cargar tu vigencia. Intentá nuevamente.</p></PortalFrame>;
-  if (!hasValidity) return <PortalFrame title="Reservar en Sala" backToHome>
+  if (sala.isPending) return <PortalFrame title="Reservar reemplazo" backToHome><p role="status">Cargando vigencia…</p></PortalFrame>;
+  if (sala.isError) return <PortalFrame title="Reservar reemplazo" backToHome><p role="alert">No pudimos cargar tu vigencia. Intentá nuevamente.</p></PortalFrame>;
+  if (!hasValidity) return <PortalFrame title="Reservar reemplazo" backToHome>
     <section aria-labelledby="reservation-validity-title" className="w-full max-w-2xl rounded-lg border border-amber-200 bg-amber-50 p-5 sm:p-6">
       <div className="flex items-start gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-800">
@@ -120,7 +124,8 @@ export default function PortalReserve(): React.JSX.Element {
       </div>
     </section>
   </PortalFrame>;
-  return <PortalFrame title="Reservar en Sala" subtitle="Elegí cuándo querés venir a entrenar." backToHome>
+  if (!initialDate && !reservationConfirmation) return <PortalFrame title="Reservar reemplazo" backToHome><section className="space-y-3"><h2 className="font-semibold">No tenés un cambio disponible.</h2><p>Para reservar otro horario, primero cancelá una fecha de uno de tus turnos fijos.</p><Link href="/portal" className="inline-flex min-h-11 items-center underline">Volver a Inicio</Link></section></PortalFrame>;
+  return <PortalFrame title="Reservar reemplazo" subtitle="Elegí otro horario dentro de la misma semana del turno que cancelaste." backToHome>
     {reservationConfirmation ? <section className="w-full max-w-2xl rounded-lg border bg-white p-5 sm:p-6" aria-labelledby="reservation-confirmation-title"><div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 shrink-0 text-green-700" size={22} aria-hidden="true"/><div><h2 id="reservation-confirmation-title" className="text-xl font-semibold">Reserva confirmada</h2><p className="mt-1 text-sm text-muted-foreground">Tu lugar quedó reservado.</p></div></div><dl className="mt-5 grid gap-3 border-t pt-4 text-sm sm:grid-cols-3"><div><dt className="text-muted-foreground">Servicio</dt><dd className="mt-1 font-medium">{reservationConfirmation.serviceName}</dd></div><div><dt className="text-muted-foreground">Fecha</dt><dd className="mt-1 font-medium capitalize">{dateLabel(reservationConfirmation.date, { weekday: 'long' })} {shortDate(reservationConfirmation.date)}</dd></div><div><dt className="text-muted-foreground">Hora</dt><dd className="mt-1 font-medium">{reservationConfirmation.startTime} – {reservationConfirmation.endTime}</dd></div></dl><Link href="/portal" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ArrowLeft aria-hidden="true" size={16}/>Volver a Inicio</Link></section> : <div className="max-w-4xl space-y-8 rounded-xl border bg-surface p-5 sm:p-8">
       <Step number={1} title="Servicio (opcional)">
         {services.isLoading ? <p role="status" className="text-sm text-muted-foreground">Cargando servicios…</p> : services.isError ? <p role="alert">No pudimos cargar los servicios. Intentá nuevamente.</p> : <div className="grid gap-3 sm:grid-cols-2">{[{ id: '', name: 'Sin servicio — Sala (60 min)', durationMinutes: 60 }, ...(services.data ?? [])].map(item => <button type="button" key={item.id} aria-label={item.name + ' ' + item.durationMinutes + ' min'} aria-pressed={service === item.id} disabled={reserve.isPending} className={choiceClass(service === item.id)} onClick={() => { setServiceId(item.id); setSelection(''); setReservationError(''); }}><span><span className="block font-medium">{item.name}</span><span className="text-sm text-muted-foreground">{item.durationMinutes} min</span></span>{service === item.id ? <Check size={20} className="text-primary-hover" aria-hidden="true" /> : null}</button>)}</div>}
@@ -132,11 +137,11 @@ export default function PortalReserve(): React.JSX.Element {
       </Step>
       <Step number={3} title="Elegí el horario">
         <div><p className="text-sm capitalize">{date === currentDate ? 'Hoy, ' : ''}{dateLabel(date, { weekday: 'long' }) + ' ' + shortDate(date)}</p>{selectedService ? <p className="mt-1 text-sm text-muted-foreground">{selectedService.name} · {selectedService.durationMinutes} min</p> : null}</div>
-        {!selectedService ? <p className="text-sm text-muted-foreground">Elegí un servicio para consultar los horarios.</p> : availability.isLoading ? <p role="status" className="text-sm text-muted-foreground">Cargando horarios…</p> : availability.isError ? <p role="alert">No pudimos cargar los horarios. Intentá nuevamente.</p> : options.length ? <div className="grid gap-3 md:grid-cols-3">{options.map(item => <button type="button" key={item.key} aria-label={item.startTime + '–' + item.endTime + ' ' + (item.available ? 'Hay lugar' : 'Sin lugar')} disabled={!item.available || reserve.isPending} aria-pressed={selectedSlot?.key === item.key} className={choiceClass(selectedSlot?.key === item.key)} onClick={() => { setSelection(item.key); setReservationError(''); }}><span><strong className="block text-sm">{item.startTime}–{item.endTime}</strong><span className="text-xs text-muted-foreground">{item.available ? 'Hay lugar' : 'Sin lugar'}</span></span>{!item.available ? <Minus size={18} aria-hidden="true" /> : selectedSlot?.key === item.key ? <Check size={18} aria-hidden="true" className="text-primary-hover" /> : <Circle size={16} aria-hidden="true" className="text-muted-foreground" />}</button>)}</div> : <p className="text-sm text-muted-foreground">No hay horarios disponibles para esta fecha.</p>}
+        {!validReplacementDate ? <p>Elegí una fecha dentro de la semana habilitada por tu cancelación.</p> : !selectedService ? <p className="text-sm text-muted-foreground">Elegí un servicio para consultar los horarios.</p> : availability.isLoading ? <p role="status" className="text-sm text-muted-foreground">Cargando horarios…</p> : availability.isError ? <p role="alert">No pudimos cargar los horarios. Intentá nuevamente.</p> : options.length ? <div className="grid gap-3 md:grid-cols-3">{options.map(item => <button type="button" key={item.key} aria-label={item.startTime + '–' + item.endTime + ' ' + (item.available ? 'Hay lugar' : 'Sin lugar')} disabled={!item.available || reserve.isPending} aria-pressed={selectedSlot?.key === item.key} className={choiceClass(selectedSlot?.key === item.key)} onClick={() => { setSelection(item.key); setReservationError(''); }}><span><strong className="block text-sm">{item.startTime}–{item.endTime}</strong><span className="text-xs text-muted-foreground">{item.available ? 'Hay lugar' : 'Sin lugar'}</span></span>{!item.available ? <Minus size={18} aria-hidden="true" /> : selectedSlot?.key === item.key ? <Check size={18} aria-hidden="true" className="text-primary-hover" /> : <Circle size={16} aria-hidden="true" className="text-muted-foreground" />}</button>)}</div> : <p className="text-sm text-muted-foreground">No hay horarios disponibles para esta fecha.</p>}
       </Step>
       <Step number={4} title="Revisá y reservá">
         <div className="rounded-lg border bg-surface-muted p-4"><h3 className="text-sm font-semibold">Tu selección</h3>{selectedService ? <p className="mt-2 text-sm">{selectedService.name} · {selectedService.durationMinutes} min</p> : null}<p className="mt-1 text-sm capitalize text-muted-foreground">{dateLabel(date, { weekday: 'long' }) + ' ' + shortDate(date)}{selectedSlot ? ' · ' + selectedSlot.startTime + '–' + selectedSlot.endTime : ' · Elegí un horario'}</p></div>
-        <button type="button" className="min-h-12 w-full rounded-lg bg-primary px-5 font-semibold hover:bg-primary-hover disabled:opacity-50 sm:w-auto" disabled={!selectedService || !selectedSlot || reserve.isPending} onClick={() => reserve.mutate()}>{reserve.isPending ? 'Reservando…' : 'Reservar en Sala'}</button>
+        <button type="button" className="min-h-12 w-full rounded-lg bg-primary px-5 font-semibold hover:bg-primary-hover disabled:opacity-50 sm:w-auto" disabled={!validReplacementDate || !selectedService || !selectedSlot || reserve.isPending} onClick={() => reserve.mutate()}>{reserve.isPending ? 'Reservando…' : 'Reservar reemplazo'}</button>
         {reservationError ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{reservationError}</p> : null}
       </Step>
     </div>}

@@ -35,11 +35,19 @@ test('synthetic document: completes with optional authorizations rejected and en
   await page.goto('/portal/declaracion-salud');
   await page.getByLabel('Contacto de emergencia *').fill('Contacto sintético');
   await page.getByLabel('Teléfono de emergencia *').fill('0000000000');
-  for (let step = 2; step <= 4; step++) { await page.getByRole('button', { name: 'Continuar' }).click(); await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', String(step)); }
-  const groups = page.getByRole('group');
-  for (let index = 0; index < await groups.count(); index++) { const group = groups.nth(index); await group.getByRole('radio', { name: index < 3 ? 'Sí' : 'No', exact: true }).check(); }
+  for (let step = 2; step <= 3; step++) { await page.getByRole('button', { name: 'Continuar' }).click(); await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', String(step)); }
+  for (const width of [1440, 768, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: `/tmp/athleta-health-medical-${width}.png`, fullPage: true });
+  }
+  for (const group of await page.getByRole('group').all()) await group.getByRole('radio', { name: 'Prefiero no informar', exact: true }).check();
   await page.getByRole('button', { name: 'Continuar' }).click();
-  await page.getByLabel('Confirmación sintética final').check();
+  await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '4');
+  const groups = page.getByRole('group');
+  for (let index = 0; index < await groups.count(); index++) { const group = groups.nth(index); await group.getByRole('radio', { name: index < 4 ? 'Sí' : 'No', exact: true }).check(); }
+  await page.getByRole('button', { name: 'Continuar' }).click();
+  await page.getByLabel('Declaro haber leído y comprendido la información anterior y confirmo la veracidad de los datos proporcionados.').check();
   await page.getByRole('button', { name: 'Confirmar y finalizar' }).click();
   await expect(page.getByText('Tu declaración se guardó correctamente. Ya podés acceder al Portal.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Ir al inicio' })).toBeVisible();
@@ -56,12 +64,15 @@ test('real DOCX and API: PIN change, mandatory declaration, portal access, staff
     await page.getByLabel('PIN actual').fill('1111'); await page.getByLabel('Nuevo PIN').fill('2222'); await page.getByRole('button', { name: 'Guardar PIN' }).click();
     await expect(page).toHaveURL('/portal/declaracion-salud');
     await page.getByLabel('Contacto de emergencia *').fill('Contacto sintético'); await page.getByLabel('Teléfono de emergencia *').fill('0000000000');
-    for (let step = 2; step <= 4; step++) { await page.getByRole('button', { name: 'Continuar' }).click(); await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', String(step)); }
-    await expect(page.getByText(/Los turnos se cancelan o reprograman con al menos 24 horas/)).toBeVisible();
-    const groups = page.getByRole('group');
-    for (let index = 0; index < await groups.count(); index++) await groups.nth(index).getByRole('radio', { name: index < 3 ? 'Sí' : 'No', exact: true }).check();
+    for (let step = 2; step <= 3; step++) { await page.getByRole('button', { name: 'Continuar' }).click(); await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', String(step)); }
+    for (const group of await page.getByRole('group').all()) await group.getByRole('radio', { name: 'Prefiero no informar', exact: true }).check();
     await page.getByRole('button', { name: 'Continuar' }).click();
-    await page.getByLabel(/^Con mi firma declaro/).check(); await page.getByRole('button', { name: 'Confirmar y finalizar' }).click();
+    await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '4');
+    const groups = page.getByRole('group');
+    for (let index = 0; index < await groups.count(); index++) await groups.nth(index).getByRole('radio', { name: index < 4 ? 'Sí' : 'No', exact: true }).check();
+    await page.getByRole('button', { name: 'Continuar' }).click();
+    await expect(page.getByText(/Los turnos se cancelan o reprograman con al menos 24 horas/)).toBeVisible();
+    await page.getByLabel('Declaro haber leído y comprendido la información anterior y confirmo la veracidad de los datos proporcionados.').check(); await page.getByRole('button', { name: 'Confirmar y finalizar' }).click();
     await expect(page.getByText('Tu declaración se guardó correctamente. Ya podés acceder al Portal.')).toBeVisible();
     await page.getByRole('link', { name: 'Ir al inicio' }).click(); await expect(page).toHaveURL('/portal');
     expect((await page.request.get('/api/portal/sala')).status()).toBe(200);

@@ -13,6 +13,12 @@ vi.mock('next/navigation', () => ({ usePathname: () => navigation.pathname }));
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
 const baseBlocks = (date = '2026-09-07', available?: (time: string) => boolean) => ['09:00', '09:15', '09:30', '09:45', '10:00', '10:15', '10:30', '10:45', '11:00', '11:15', '11:30', '11:45'].map(startTime => ({ scheduleSlotId: 'window', startTime, endTime: `${String(Number(startTime.slice(0, 2)) + (startTime.endsWith('45') ? 1 : 0)).padStart(2, '0')}:${startTime.endsWith('45') ? '00' : String(Number(startTime.slice(3)) + 15).padStart(2, '0')}`, available: available?.(startTime) ?? true, date }));
+function availableWeeks() {
+  const day = new Date(`${portalUi.today()}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() - (day.getUTCDay() + 6) % 7);
+  const end = new Date(day); end.setUTCDate(end.getUTCDate() + 6);
+  return [{ weekStart: day.toISOString().slice(0, 10), weekEnd: end.toISOString().slice(0, 10), available: 1 }];
+}
 beforeAll(() => {
   globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch;
   server.listen({ onUnhandledRequest: 'bypass' });
@@ -21,7 +27,7 @@ beforeEach(() => {
   navigation.pathname = '/portal';
   server.use(
     http.get('http://localhost:3000/api/portal/clinic/appointments', () => HttpResponse.json({ data: [] })),
-    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
+    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, evaluations: [], replacementWeeks: availableWeeks(), validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
     http.get('http://localhost:3000/api/portal/sala/services', () => HttpResponse.json({ data: [{ id: 'service', name: 'Rehabilitación', durationMinutes: 45 }] })),
     http.get('http://localhost:3000/api/portal/sala/availability', ({ request }) => HttpResponse.json({ data: baseBlocks(new URL(request.url).searchParams.get('date') ?? undefined) })),
     http.get('http://localhost:3000/api/portal/auth/session', () => HttpResponse.json({ data: { csrfToken: 'csrf' } })),
@@ -33,7 +39,7 @@ function renderPortalHome(): void { render(<QueryClientProvider client={new Quer
 
 it('shows a routine summary and links to its read-only detail page', async () => {
   server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: {
-    reservations: [], fixed: [], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' },
+    reservations: [], fixed: [], evaluations: [], replacementWeeks: availableWeeks(), validity: { hasValidAccess: true, validUntil: '2026-11-20' },
     routine: { days: [{ id: 'day-1', position: 1, name: null, exercises: [
       { exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla', description: 'Descenso controlado' }, series: '3', repetitions: '10', duration: null, load: '40 kg', rest: '60 s', notes: 'Controlar técnica' },
       { exerciseDefinitionId: 'plank', exerciseDefinition: { name: 'Plancha', description: null }, series: '3', repetitions: null, duration: '45 s', load: null, rest: '30 s', notes: null },
@@ -53,7 +59,7 @@ it('shows a routine summary and links to its read-only detail page', async () =>
 
 it('shows the empty state when there is no active routine', async () => {
   server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: {
-    reservations: [], fixed: [], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' }, routine: null,
+    reservations: [], fixed: [], evaluations: [], replacementWeeks: availableWeeks(), validity: { hasValidAccess: true, validUntil: '2026-11-20' }, routine: null,
   } })));
   renderPortalHome();
   await screen.findByText('No hay una rutina activa.');
@@ -67,7 +73,7 @@ it('shows the empty state when there is no active routine', async () => {
 
 function fixedHandlers(state: { weekday: string; startTime: string; active: boolean }, onChange?: (body: Record<string, string>) => void, onAvailability?: (url: string) => void): void {
   server.use(
-    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: state.active ? [{ id: 'fixed-1', startDate: '2026-09-07', startTime: state.startTime, serviceType: { id: 'service', name: 'Rehabilitación', durationMinutes: 45 }, scheduleSlot: { id: 'window', weekday: state.weekday } }] : [], routine: null, evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
+    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: state.active ? [{ id: 'fixed-1', startDate: '2026-09-07', startTime: state.startTime, serviceType: { id: 'service', name: 'Rehabilitación', durationMinutes: 45 }, scheduleSlot: { id: 'window', weekday: state.weekday } }] : [], routine: null, evaluations: [], replacementWeeks: availableWeeks(), validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
     http.get('http://localhost:3000/api/portal/sala/availability', ({ request }) => { onAvailability?.(request.url); return HttpResponse.json({ data: baseBlocks(new URL(request.url).searchParams.get('date') ?? '2026-09-07') }); }),
     http.post('http://localhost:3000/api/portal/sala/fixed-bookings/fixed-1/change', async ({ request }) => { onChange?.(await request.json() as Record<string, string>); return HttpResponse.json({ data: {} }); }),
     http.post('http://localhost:3000/api/portal/sala/fixed-bookings/fixed-1/end', () => { state.active = false; return HttpResponse.json({ data: {} }); }),
@@ -81,7 +87,7 @@ it('shows fixed bookings as the main Sala section and no persistent editor', asy
   expect(screen.queryByRole('button', { name: 'Agregar turno fijo' })).not.toBeInTheDocument();
   expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   expect(screen.queryByRole('heading', { name: 'Elegí el servicio' })).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Reservar horario' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeInTheDocument();
   for (const id of ['turnos-fijos', 'rutina', 'evaluaciones']) expect(document.getElementById(id)).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Volver a Inicio' })).not.toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Inicio', level: 1 })).toBeVisible();
@@ -90,7 +96,7 @@ it('shows fixed bookings as the main Sala section and no persistent editor', asy
 it('keeps fixed occurrence statuses and presents service duration and translated weekday', async () => {
   server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [{ id: 'fixed-1', startDate: '2026-10-12', startTime: '17:00', serviceType: { id: 'service', name: 'Musculación', durationMinutes: 60 }, scheduleSlot: { id: 'window', weekday: 'MONDAY' } }], fixedOccurrences: [
     ...(['RESERVED', 'PENDING_PAYMENT', 'CANCELLED', 'ATTENDED', 'ABSENT'] as const).map((status, index) => ({ fixedSalaBookingId: 'fixed-1', date: `2026-10-${String(12 + index).padStart(2, '0')}`, startTime: '17:00', status, cancelledForNonPayment: false })),
-  ], routine: null, evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })));
+  ], routine: null, evaluations: [], replacementWeeks: availableWeeks(), validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })));
   renderPortalHome();
   expect(await screen.findByText('Musculación · 60 min')).toBeInTheDocument();
   expect(screen.getByText('Lunes · 17:00–18:00')).toBeInTheDocument();
@@ -108,7 +114,7 @@ it('keeps every allowed service available without selecting one automatically', 
   server.use(http.get('http://localhost:3000/api/portal/sala/services', () => HttpResponse.json({ data: [{ id: 'muscle', name: 'Musculación', durationMinutes: 60 }, { id: 'functional', name: 'Funcional', durationMinutes: 45 }] })));
   vi.spyOn(portalUi, 'today').mockReturnValue('2026-10-16');
   renderPortalHome();
-  fireEvent.click(await screen.findByRole('button', { name: 'Reservar horario' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Reservar reemplazo' }));
   const dialog = screen.getByRole('dialog');
   expect(await within(dialog).findByRole('button', { name: 'Musculación 60 min' })).toHaveAttribute('aria-pressed', 'false');
   expect(within(dialog).getByRole('button', { name: 'Funcional 45 min' })).toHaveAttribute('aria-pressed', 'false');
@@ -139,7 +145,7 @@ it('lists the assigned fixed booking without modification controls or mutation r
   expect(changed).toBe(false);
 });
 it('continues showing the historical fixed service even when it is absent from current choices', async () => {
-  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [{ id: 'old-fixed', startDate: '2026-09-07', startTime: '09:00', serviceType: { id: 'old', name: 'Calistenia' }, scheduleSlot: { id: 'window', weekday: 'MONDAY' } }], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })));
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [{ id: 'old-fixed', startDate: '2026-09-07', startTime: '09:00', serviceType: { id: 'old', name: 'Calistenia' }, scheduleSlot: { id: 'window', weekday: 'MONDAY' } }], evaluations: [], replacementWeeks: availableWeeks(), validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })));
   renderPortalHome();
   expect(await screen.findByText('Calistenia')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Modificar' })).not.toBeInTheDocument();
@@ -165,7 +171,7 @@ it('permits general Sala without plan services and omits serviceTypeId from the 
   vi.spyOn(portalUi, 'today').mockReturnValue('2026-10-16');
   vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-10-16T11:00:00Z').getTime());
   renderPortalHome();
-  fireEvent.click(await screen.findByRole('button', { name: 'Reservar horario' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Reservar reemplazo' }));
   const dialog = screen.getByRole('dialog');
   expect(within(dialog).getByRole('button', { name: /Sin servicio — Sala/ })).toHaveAttribute('aria-pressed', 'true');
   fireEvent.click(await within(dialog).findByRole('button', { name: '09:00–10:00 Hay lugar' }));
@@ -182,15 +188,15 @@ it('keeps a generic fetch error when the response is not structured', async () =
 
 it.each(['2026-10-05', '2026-10-15', '2026-10-16', '2026-10-25'])('prevents a new reservation without validity on %s', async date => {
   vi.spyOn(portalUi, 'today').mockReturnValue(date);
-  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, evaluations: [], validity: { hasValidAccess: false, validUntil: null } } })));
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, evaluations: [], replacementWeeks: availableWeeks(), validity: { hasValidAccess: false, validUntil: null } } })));
   renderPortalHome();
   expect(await screen.findByText('Sin vigencia')).toBeInTheDocument();
   expect(screen.getByText('Necesitás renovar tu vigencia para realizar nuevas reservas.')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Reservar horario' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeDisabled();
 });
 it('shows registered payment without pending guidance', async () => {
   vi.spyOn(portalUi, 'today').mockReturnValue('2026-10-16');
-  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })));
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, evaluations: [], replacementWeeks: availableWeeks(), validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })));
   renderPortalHome();
   expect(await screen.findByText('Vigente hasta 20/11/2026')).toBeInTheDocument();
   expect(screen.queryByText('Sin vigencia')).not.toBeInTheDocument();
@@ -201,10 +207,10 @@ async function openReservation(now = '2026-10-16T12:49:00Z'): Promise<HTMLElemen
   vi.spyOn(portalUi, 'today').mockReturnValue('2026-10-16');
   vi.spyOn(Date, 'now').mockReturnValue(new Date(now).getTime());
   renderPortalHome();
-  const open = await screen.findByRole('button', { name: 'Reservar horario' });
+  const open = await screen.findByRole('button', { name: 'Reservar reemplazo' });
   await waitFor(() => expect(open).toBeEnabled());
   fireEvent.click(open);
-  const dialog = await screen.findByRole('dialog', { name: 'Reserva puntual' });
+  const dialog = await screen.findByRole('dialog', { name: 'Reserva de reemplazo' });
   fireEvent.click(await within(dialog).findByRole('button', { name: 'Rehabilitación 45 min' }));
   return dialog;
 }
@@ -223,7 +229,7 @@ it('confirms an ongoing reservation with its selected details and returns to the
   let submitted: Record<string, string> | undefined;
   let reservationCreated = false;
   server.use(
-    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: reservationCreated ? [{ id: 'created', date: '2026-10-16', startTime: '10:00', serviceType: { name: 'Rehabilitación' } }] : [], fixed: [], routine: null, evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
+    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: reservationCreated ? [{ id: 'created', date: '2026-10-16', startTime: '10:00', serviceType: { name: 'Rehabilitación' } }] : [], fixed: [], routine: null, evaluations: [], replacementWeeks: reservationCreated ? [] : availableWeeks(), validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
     http.post('http://localhost:3000/api/portal/sala/reservations', async ({ request }) => { submitted = await request.json() as Record<string, string>; reservationCreated = true; return HttpResponse.json({ data: {} }); }),
   );
   const dialog = await openReservation();
@@ -236,7 +242,8 @@ it('confirms an ongoing reservation with its selected details and returns to the
   expect(within(dialog).getByText('10:00 – 10:45')).toBeInTheDocument();
   expect(submitted).toEqual({ date: '2026-10-16', scheduleSlotId: 'window', serviceTypeId: 'service', startTime: '10:00' });
   fireEvent.click(within(dialog).getByRole('button', { name: 'Volver a Inicio' }));
-  expect(screen.queryByRole('dialog', { name: 'Reserva puntual' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('dialog', { name: 'Reserva de reemplazo' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Reservar reemplazo' })).not.toBeInTheDocument();
   expect(await screen.findByText('Rehabilitación · Reservado')).toBeInTheDocument();
 });
 it('expires a selected start automatically below 20 minutes and refreshes the clock when reopening', async () => {
@@ -256,7 +263,7 @@ it('expires a selected start automatically below 20 minutes and refreshes the cl
     const requestsBeforeTick = availabilityRequests;
     vi.mocked(Date.now).mockReturnValue(new Date('2026-10-16T13:25:00.001Z').getTime());
     act(() => vi.advanceTimersByTime(60_000));
-    expect(screen.getByRole('dialog', { name: 'Reserva puntual' })).toBe(dialog);
+    expect(screen.getByRole('dialog', { name: 'Reserva de reemplazo' })).toBe(dialog);
     expect(within(dialog).getByLabelText('Fecha de la reserva')).toHaveValue('2026-10-16');
     expect(within(dialog).queryByRole('button', { name: '10:00–10:45 Hay lugar' })).not.toBeInTheDocument();
     expect(confirm).toBeDisabled();
@@ -267,8 +274,8 @@ it('expires a selected start automatically below 20 minutes and refreshes the cl
     fireEvent.click(within(dialog).getByRole('button', { name: 'Volver' }));
     expect(vi.getTimerCount()).toBe(0);
     vi.mocked(Date.now).mockReturnValue(new Date('2026-10-16T13:25:00.001Z').getTime());
-    fireEvent.click(screen.getByRole('button', { name: 'Reservar horario' }));
-    const reopened = screen.getByRole('dialog', { name: 'Reserva puntual' });
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar reemplazo' }));
+    const reopened = screen.getByRole('dialog', { name: 'Reserva de reemplazo' });
     fireEvent.click(within(reopened).getByRole('button', { name: 'Rehabilitación 45 min' }));
     expect(within(reopened).queryByRole('button', { name: '10:00–10:45 Hay lugar' })).not.toBeInTheDocument();
     expect(within(reopened).getByRole('button', { name: 'Confirmar reserva' })).toBeDisabled();
@@ -296,7 +303,7 @@ it('shows only the earliest active reservation even when future reservations arr
       { id: 'later', date: '2026-10-22', startTime: '18:00' },
       { id: 'same-day-later', date: '2026-10-20', startTime: '18:00' },
       { id: 'next', date: '2026-10-20', startTime: '17:00', serviceType: { name: 'Calistenia' } },
-    ], fixed: [], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' },
+    ], fixed: [], evaluations: [], replacementWeeks: availableWeeks(), validity: { hasValidAccess: true, validUntil: '2026-11-20' },
   } })));
   renderPortalHome();
   const section = within((await screen.findByRole('heading', { name: 'Próxima reserva' })).closest('section')!);
@@ -310,7 +317,7 @@ it('shows only the earliest active reservation even when future reservations arr
 it.each([false, true])('shows no upcoming reservations when only cancelled records remain (cancelled=%s)', async cancelled => {
   server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: {
     reservations: cancelled ? [{ id: 'cancelled', date: '2026-10-20', startTime: '09:30', cancelledAt: '2026-10-16T12:00:00Z' }] : [],
-    fixed: [], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' },
+    fixed: [], evaluations: [], replacementWeeks: availableWeeks(), validity: { hasValidAccess: true, validUntil: '2026-11-20' },
   } })));
   renderPortalHome();
   const section = within((await screen.findByRole('heading', { name: 'Próxima reserva' })).closest('section')!);
@@ -328,7 +335,7 @@ it.each([false, true])('refreshes the next reservation after cancellation with C
       reservations: [
         { id: 'first', date: '2026-10-20', startTime: '17:00', cancelledAt: cancelled ? '2026-10-19T12:00:00Z' : null },
         ...(hasNext ? [{ id: 'second', date: '2026-10-21', startTime: '09:00' }] : []),
-      ], fixed: [], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' },
+      ], fixed: [], evaluations: [], replacementWeeks: availableWeeks(), validity: { hasValidAccess: true, validUntil: '2026-11-20' },
     } })),
     http.post('http://localhost:3000/api/portal/sala/reservations/first/cancel', async ({ request }) => {
       submitted = { method: request.method, csrf: request.headers.get('x-csrf-token'), body: await request.text() };
@@ -347,7 +354,7 @@ it.each([false, true])('refreshes the next reservation after cancellation with C
 
 it('groups physical results by test chronologically, preserving repeated results and hiding internal observation', async () => {
   const strength = { id: 'strength', name: 'Test Fuerza' }; const mobility = { id: 'mobility', name: 'Movilidad' };
-  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, validity: { hasValidAccess: true, validUntil: '2026-11-20' }, evaluations: [
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, replacementWeeks: availableWeeks(), validity: { hasValidAccess: true, validUntil: '2026-11-20' }, evaluations: [
     { id: 'oct', evaluationDate: '2026-10-01', observation: 'Nota interna del Profesor', professor: { firstName: 'Secreto' }, results: [{ testDefinition: strength, resultText: '90 kg' }] },
     { id: 'aug', evaluationDate: '2026-08-01', results: [{ testDefinition: strength, resultText: '80 kg' }, { testDefinition: strength, resultText: '81 kg' }] },
     { id: 'sep', evaluationDate: '2026-09-01', results: [{ testDefinition: strength, resultText: '85 kg' }] },
@@ -362,7 +369,7 @@ it('groups physical results by test chronologically, preserving repeated results
 });
 
 it.each(['RESERVED', 'PENDING_PAYMENT', 'CANCELLED', 'ATTENDED', 'ABSENT'])('offers date cancellation only for eligible %s occurrences', async status => {
-  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' }, fixedOccurrences: [{ fixedSalaBookingId: 'fixed-1', date: '2026-10-20', startTime: '17:00', status, cancelledForNonPayment: false }] } })));
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], evaluations: [], replacementWeeks: availableWeeks(), validity: { hasValidAccess: true, validUntil: '2026-11-20' }, fixedOccurrences: [{ fixedSalaBookingId: 'fixed-1', date: '2026-10-20', startTime: '17:00', status, cancelledForNonPayment: false }] } })));
   renderPortalHome();
   await screen.findByRole('heading', { name: 'Próximos turnos fijos' });
   const button = screen.queryByRole('button', { name: 'Cancelar esta fecha' });
@@ -372,10 +379,11 @@ it.each(['RESERVED', 'PENDING_PAYMENT', 'CANCELLED', 'ATTENDED', 'ABSENT'])('off
 });
 
 it.each([false, true])('confirms one date with CSRF and preserves the recurrence (error=%s)', async fail => {
+  vi.spyOn(portalUi, 'today').mockReturnValue('2026-10-16');
   let cancelled = false;
   let submitted: { method: string; csrf: string | null; body: string } | undefined;
   server.use(
-    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [{ id: 'fixed-1', startDate: '2026-10-13', startTime: '17:00', serviceType: { id: 'service', name: 'Rehabilitación', durationMinutes: 45 }, scheduleSlot: { id: 'window', weekday: 'TUESDAY' } }], fixedOccurrences: [{ fixedSalaBookingId: 'fixed-1', date: '2026-10-20', startTime: '17:00', status: cancelled ? 'CANCELLED' : 'RESERVED', cancelledForNonPayment: false }], evaluations: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
+    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [{ id: 'fixed-1', startDate: '2026-10-13', startTime: '17:00', serviceType: { id: 'service', name: 'Rehabilitación', durationMinutes: 45 }, scheduleSlot: { id: 'window', weekday: 'TUESDAY' } }], fixedOccurrences: [{ fixedSalaBookingId: 'fixed-1', date: '2026-10-20', startTime: '17:00', status: cancelled ? 'CANCELLED' : 'RESERVED', cancelledForNonPayment: false }], evaluations: [], replacementWeeks: cancelled ? [{ weekStart: '2026-10-19', weekEnd: '2026-10-25', available: 1 }] : [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
     http.post('http://localhost:3000/api/portal/sala/fixed-bookings/fixed-1/occurrences/2026-10-20/cancel', async ({ request }) => {
       submitted = { method: request.method, csrf: request.headers.get('x-csrf-token'), body: await request.text() };
       if (fail) return HttpResponse.json({ code: 'PORTAL_FIXED_OCCURRENCE_STARTED', message: 'El turno ya comenzó.' }, { status: 409 });
@@ -397,7 +405,8 @@ it.each([false, true])('confirms one date with CSRF and preserves the recurrence
     expect(screen.queryByText('Fecha cancelada.')).not.toBeInTheDocument();
     expect(screen.getByText('Reservado')).toBeInTheDocument();
   } else {
-    expect(await screen.findByText('Fecha cancelada.')).toBeInTheDocument();
+    expect(await screen.findByText('Fecha cancelada. Ahora podés reservar un reemplazo para esta semana.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeEnabled();
     await screen.findByText('Cancelado');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Cancelar esta fecha' })).not.toBeInTheDocument();
@@ -409,9 +418,9 @@ it.each([false, true])('confirms one date with CSRF and preserves the recurrence
 
 it.each([['2026-10-20', '2026-10-20'], ['2026-12-20', '2026-11-15']])('caps reservation dates at coverage %s and the general 30-day window', async (validUntil, expectedMax) => {
   vi.spyOn(portalUi, 'today').mockReturnValue('2026-10-16');
-  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, evaluations: [], validity: { hasValidAccess: true, validUntil } } })));
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], routine: null, evaluations: [], replacementWeeks: availableWeeks(), validity: { hasValidAccess: true, validUntil } } })));
   renderPortalHome();
-  const open = await screen.findByRole('button', { name: 'Reservar horario' });
+  const open = await screen.findByRole('button', { name: 'Reservar reemplazo' });
   await waitFor(() => expect(open).toBeEnabled()); fireEvent.click(open);
   expect(await screen.findByLabelText('Fecha de la reserva')).toHaveAttribute('max', expectedMax);
 });
@@ -447,7 +456,7 @@ it('keeps Inicio and Mis datos usable when Sala is unavailable without querying 
   await waitFor(() => expect(screen.queryByText('Cargando Sala…')).not.toBeInTheDocument());
   expect(screen.getByRole('heading', { name: 'Inicio', level: 1 })).toBeVisible();
   for (const nav of screen.getAllByRole('navigation', { name: 'Navegación del Portal' })) expect(within(nav).getByRole('link', { name: 'Mis datos' })).toHaveAttribute('href', '/portal/profile');
-  expect(screen.queryByRole('button', { name: 'Reservar horario' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Reservar reemplazo' })).not.toBeInTheDocument();
   expect(screen.queryByRole('heading', { name: 'Mis turnos fijos' })).not.toBeInTheDocument();
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   expect(reads).toBe(0);
@@ -483,4 +492,28 @@ it.each(['/portal', '/portal/sala/rutina', '/portal/sala/reservas', '/portal/sal
   expect(nav.getByRole('link', { name: activeLabel })).toHaveAttribute('aria-current', 'page');
   expect(nav.getAllByRole('link').filter(link => link.getAttribute('aria-current') === 'page')).toHaveLength(1);
   expect(nav.getByRole('link', { name: 'Declaración de salud' })).toHaveAttribute('href', '/portal/declaracion-salud');
+});
+
+it('does not offer free reservations when there is no replacement week', async () => {
+  server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], evaluations: [], replacementWeeks: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })));
+  renderPortalHome();
+  expect(await screen.findByText('Para reservar otro horario, primero cancelá una fecha de uno de tus turnos fijos.')).toBeVisible();
+  expect(screen.queryByRole('button', { name: /Reservar/ })).not.toBeInTheDocument();
+});
+it('starts in the credited week and rejects dates in another week without querying availability', async () => {
+  vi.spyOn(portalUi, 'today').mockReturnValue('2026-10-16');
+  let availabilityCalls = 0;
+  server.use(
+    http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: { reservations: [], fixed: [], evaluations: [], replacementWeeks: [{ weekStart: '2026-10-19', weekEnd: '2026-10-25', available: 1 }], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
+    http.get('http://localhost:3000/api/portal/sala/availability', ({ request }) => { availabilityCalls++; return HttpResponse.json({ data: baseBlocks(new URL(request.url).searchParams.get('date')!) }); }),
+  );
+  renderPortalHome(); fireEvent.click(await screen.findByRole('button', { name: 'Reservar reemplazo' }));
+  const dialog = within(screen.getByRole('dialog', { name: 'Reserva de reemplazo' }));
+  expect(dialog.getByLabelText('Fecha de la reserva')).toHaveValue('2026-10-19');
+  await dialog.findByRole('button', { name: '09:00–10:00 Hay lugar' });
+  const calls = availabilityCalls;
+  fireEvent.change(dialog.getByLabelText('Fecha de la reserva'), { target: { value: '2026-10-26' } });
+  expect(dialog.getByText('Elegí una fecha dentro de la semana habilitada por tu cancelación.')).toBeVisible();
+  expect(dialog.getByRole('button', { name: 'Confirmar reserva' })).toBeDisabled();
+  expect(availabilityCalls).toBe(calls);
 });

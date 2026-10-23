@@ -545,7 +545,7 @@ export class SalaService {
     return result;
   }
   async createFixed(input: FixedBookingDto) { if (input.endDate && input.endDate < input.startDate) throw new BadRequestException({ code: 'SALA_BOOKING_DATE_INVALID', message: 'End date must be on or after start date' }); return this.prisma.$transaction(async (tx) => { const resolved = await this.validateBooking(tx, input, input.startDate); try { return await tx.fixedSalaBooking.create({ data: { personId: input.personId, salaParticipationId: input.salaParticipationId, scheduleSlotId: input.scheduleSlotId, serviceTypeId: input.serviceTypeId ?? null, serviceDurationMinutes: resolved.durationMinutes, startTime: resolved.startTime, startDate: this.date(input.startDate), endDate: input.endDate ? this.date(input.endDate) : null }, include: { scheduleSlot: true, serviceType: true } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_FIXED_BOOKING_DUPLICATE', message: 'Equivalent fixed booking already exists' }); throw error; } }); }
-  async createReservation(input: OneOffReservationDto, beforeCreate?: (resolved: { startTime: Date; durationMinutes: number }) => void) { return this.prisma.$transaction(async (tx) => { const resolved = await this.validateBooking(tx, input, input.date); beforeCreate?.(resolved); try { return await tx.oneOffReservation.create({ data: { personId: input.personId, salaParticipationId: input.salaParticipationId, scheduleSlotId: input.scheduleSlotId, serviceTypeId: input.serviceTypeId ?? null, serviceDurationMinutes: resolved.durationMinutes, startTime: resolved.startTime, date: this.date(input.date) }, include: { scheduleSlot: true, serviceType: true } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_RESERVATION_DUPLICATE', message: 'Reservation already exists' }); throw error; } }); }
+  async createReservation(input: OneOffReservationDto, beforeCreate?: (resolved: { startTime: Date; durationMinutes: number }) => void, options: { requirePortalReplacement?: boolean } = {}) { return this.prisma.$transaction(async (tx) => { const resolved = await this.validateBooking(tx, input, input.date, undefined, options.requirePortalReplacement); beforeCreate?.(resolved); try { return await tx.oneOffReservation.create({ data: { personId: input.personId, salaParticipationId: input.salaParticipationId, scheduleSlotId: input.scheduleSlotId, serviceTypeId: input.serviceTypeId ?? null, serviceDurationMinutes: resolved.durationMinutes, startTime: resolved.startTime, date: this.date(input.date) }, include: { scheduleSlot: true, serviceType: true } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_RESERVATION_DUPLICATE', message: 'Reservation already exists' }); throw error; } }); }
   async listFixed(personId: string) { return this.prisma.fixedSalaBooking.findMany({ where: { personId }, include: { scheduleSlot: true, serviceType: true }, orderBy: { startDate: 'desc' } }); }
   async changeFixed(input: ChangeFixedBookingDto) { if (input.endDate && input.endDate < input.startDate) throw new BadRequestException({ code: 'SALA_BOOKING_DATE_INVALID', message: 'End date must be on or after start date' }); return this.prisma.$transaction(async (tx) => { const current = await tx.fixedSalaBooking.findUnique({ where: { id: input.id } }); if (!current) throw new NotFoundException({ code: 'SALA_FIXED_BOOKING_NOT_FOUND', message: 'Fixed booking not found' }); const resolved = await this.validateBooking(tx, input, input.startDate, current); const effective = this.date(input.startDate); if (current.startDate.getTime() === effective.getTime()) { return tx.fixedSalaBooking.update({ where: { id: input.id }, data: { scheduleSlotId: input.scheduleSlotId, serviceTypeId: input.serviceTypeId ?? null, serviceDurationMinutes: resolved.durationMinutes, startTime: resolved.startTime, ...(input.endDate !== undefined ? { endDate: input.endDate ? this.date(input.endDate) : null } : {}) }, include: { scheduleSlot: true, serviceType: true } }); } await tx.fixedSalaBooking.update({ where: { id: input.id }, data: { endDate: new Date(effective.getTime() - 86400000) } }); try { return await tx.fixedSalaBooking.create({ data: { personId: input.personId, salaParticipationId: input.salaParticipationId, scheduleSlotId: input.scheduleSlotId, serviceTypeId: input.serviceTypeId ?? null, serviceDurationMinutes: resolved.durationMinutes, startTime: resolved.startTime, startDate: effective, endDate: input.endDate ? this.date(input.endDate) : null }, include: { scheduleSlot: true, serviceType: true } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_FIXED_BOOKING_DUPLICATE', message: 'Equivalent fixed booking already exists' }); throw error; } }); }
   async listReservations(personId: string) { return this.prisma.oneOffReservation.findMany({ where: { personId }, include: { scheduleSlot: true, serviceType: true }, orderBy: { date: 'desc' } }); }
@@ -988,6 +988,69 @@ export class SalaService {
       throw new ConflictException({ code: start === otherStart ? 'SALA_RESERVATION_DUPLICATE' : 'SALA_BOOKING_OVERLAP', message: 'Ya tenés una actividad reservada en ese horario. Elegí otro horario.' });
     }
   }
+  private async validateFixedBookingLimit(
+    tx: Prisma.TransactionClient, participation: { id: string; personId: string; planId: string },
+    startDate: Date, endDate: Date | null, replacingId?: string,
+  ): Promise<void> {
+    const plan = await tx.salaPlan.findUniqueOrThrow({ where: { id: participation.planId }, select: { weeklySessions: true } });
+    if (plan.weeklySessions === null) return;
+    const existing = await tx.fixedSalaBooking.count({ where: {
+      personId: participation.personId, salaParticipationId: participation.id,
+      ...(replacingId ? { id: { not: replacingId } } : {}),
+      ...(endDate ? { startDate: { lte: endDate } } : {}),
+      OR: [{ endDate: null }, { endDate: { gte: startDate } }],
+    } });
+    if (existing + 1 > plan.weeklySessions) throw new ConflictException({
+      code: 'SALA_FIXED_BOOKING_LIMIT_EXCEEDED',
+      message: 'El alumno ya tiene asignada la cantidad máxima de turnos fijos permitida por su Plan.',
+    });
+  }
+
+  private replacementWeek(day: Date): { start: Date; end: Date } {
+    const start = new Date(day);
+    start.setUTCDate(start.getUTCDate() - (start.getUTCDay() + 6) % 7);
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 6);
+    return { start, end };
+  }
+
+  private async portalReplacementAllowanceForWeek(client: Prisma.TransactionClient | PrismaService, personId: string, day: Date): Promise<number> {
+    const { start, end } = this.replacementWeek(day);
+    const date = { gte: start, lte: end };
+    const [cancelled, used] = await Promise.all([
+      client.salaOccurrence.count({ where: {
+        personId, date, origin: SalaOccurrenceOrigin.FIXED, status: SalaOccurrenceStatus.CANCELLED,
+        fixedSalaBookingId: { not: null }, cancelledForNonPaymentAt: null, lastModifiedBy: null,
+      } }),
+      client.oneOffReservation.count({ where: {
+        personId, date, cancelledAt: null, occurrences: { none: { status: SalaOccurrenceStatus.CANCELLED } },
+      } }),
+    ]);
+    return Math.max(0, cancelled - used);
+  }
+
+  private async assertPortalReplacementAvailable(tx: Prisma.TransactionClient, personId: string, day: Date): Promise<void> {
+    if (await this.portalReplacementAllowanceForWeek(tx, personId, day) < 1) throw new ForbiddenException({
+      code: 'PORTAL_SALA_REPLACEMENT_REQUIRED',
+      message: 'Para reservar otro horario primero cancelá una fecha de uno de tus turnos fijos de esta semana.',
+    });
+  }
+
+  async listPortalReplacementWeeks(personId: string, today: string): Promise<Array<{ weekStart: string; weekEnd: string; available: number }>> {
+    const first = this.replacementWeek(this.date(today)).start;
+    const horizon = this.date(today);
+    horizon.setUTCDate(horizon.getUTCDate() + 30);
+    const weeks: Array<{ weekStart: string; weekEnd: string; available: number }> = [];
+    for (const day = new Date(first); day <= horizon; day.setUTCDate(day.getUTCDate() + 7)) {
+      const available = await this.portalReplacementAllowanceForWeek(this.prisma, personId, day);
+      if (available > 0) {
+        const { start, end } = this.replacementWeek(day);
+        weeks.push({ weekStart: start.toISOString().slice(0, 10), weekEnd: end.toISOString().slice(0, 10), available });
+      }
+    }
+    return weeks;
+  }
+
   private async validateWeeklySessions(
     tx: Prisma.TransactionClient, planId: string, personId: string, day: Date,
     recurrence?: { startDate: Date; endDate: Date | null; weekday: SalaWeekday }, replacingId?: string,
@@ -1049,7 +1112,7 @@ export class SalaService {
       });
     }
   }
-  private async validateBooking(tx: Prisma.TransactionClient, input: FixedBookingDto | OneOffReservationDto, date: string, excludingFixed?: { id: string; startDate?: Date; endDate?: Date | null }): Promise<{ startTime: Date; durationMinutes: number }> {
+  private async validateBooking(tx: Prisma.TransactionClient, input: FixedBookingDto | OneOffReservationDto, date: string, excludingFixed?: { id: string; startDate?: Date; endDate?: Date | null }, requirePortalReplacement = false): Promise<{ startTime: Date; durationMinutes: number }> {
     await this.lockParticipations(tx, [input.salaParticipationId]);
     const requestedDay = this.date(date);
     await tx.$queryRaw`SELECT id FROM sala_schedule_slots WHERE id = ${input.scheduleSlotId}::uuid FOR UPDATE`;
@@ -1085,7 +1148,13 @@ export class SalaService {
     if (exception?.type === SalaScheduleExceptionType.CLOSURE) throw new ConflictException({ code: 'SALA_SCHEDULE_CLOSED', message: 'Schedule is closed' });
     const validationDate = day.toISOString().slice(0, 10);
     await this.reconcileUnpaidFixed(validationDate, tx);
-    await this.validateWeeklySessions(tx, participation.planId, input.personId, day, 'startDate' in input ? { startDate: requestedDay, endDate: input.endDate === undefined && excludingFixed?.startDate?.getTime() === requestedDay.getTime() ? excludingFixed.endDate ?? null : input.endDate ? this.date(input.endDate) : null, weekday: window.weekday } : undefined, excludingFixed?.id);
+    if ('startDate' in input) {
+      const endDate = input.endDate === undefined && excludingFixed?.startDate?.getTime() === requestedDay.getTime() ? excludingFixed.endDate ?? null : input.endDate ? this.date(input.endDate) : null;
+      await this.validateFixedBookingLimit(tx, participation, requestedDay, endDate, excludingFixed?.id);
+    } else {
+      if (requirePortalReplacement) await this.assertPortalReplacementAvailable(tx, input.personId, day);
+      await this.validateWeeklySessions(tx, participation.planId, input.personId, day);
+    }
     await this.assertBookingDoesNotOverlap(tx, input, day, start, durationMinutes, excludingFixed);
     const states = (await this.availability(validationDate, tx, excludingFixed?.id)).filter((state) => state.scheduleSlotId === window.id && this.parseMinutes(state.startTime) >= start && this.parseMinutes(state.startTime) < end);
     const requiredSlots = durationMinutes / 15;

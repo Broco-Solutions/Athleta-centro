@@ -9,14 +9,13 @@ export function ReadOnlyHealthData({ value }: { value: unknown }): React.JSX.Ele
   if (typeof value === 'string' || typeof value === 'number') return <span className="whitespace-pre-wrap break-words">{value === 'YES' ? 'Sí' : value === 'NO' ? 'No' : value === 'NOT_DISCLOSED' ? 'Sin informar' : String(value)}</span>;
   if (Array.isArray(value)) return <ul className="space-y-3 text-sm">{value.map((item: unknown, index: number) => <li key={index}><ReadOnlyHealthData value={item} /></li>)}</ul>;
   if (Object.keys(value).length === 0) return <span>Sin informar</span>;
-  return <dl className="space-y-2 text-sm">{Object.entries(value).filter(([key]) => key !== 'id').map(([key, item]) => <div key={key} className="pl-3"><dt className="text-muted-foreground">{labels[key] ?? key}</dt><dd><ReadOnlyHealthData value={item} /></dd></div>)}</dl>;
+  return <dl className="space-y-2 text-sm">{Object.entries(value).filter(([key]) => !['id', 'version', 'documentVersion', 'sourceSha256'].includes(key)).map(([key, item]) => <div key={key} className="pl-3"><dt className="text-muted-foreground">{labels[key] ?? key}</dt><dd><ReadOnlyHealthData value={item} /></dd></div>)}</dl>;
 }
 
 export function ConfirmedHealthDeclaration({ declaration }: { declaration: HealthDeclarationDetailDto }): React.JSX.Element {
   const document = parseHealthDocument(declaration.document);
   return <article className="space-y-4 text-sm">
     <p>Presentación: {new Date(declaration.submittedAt).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })} · Vigencia hasta: {new Date(declaration.validUntil).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}</p>
-    <p>Versión: {declaration.documentVersion}</p>
     <h4 className="font-semibold">Identidad y confirmación</h4><ReadOnlyHealthData value={declaration.identity} />
     <h4 className="font-semibold">Datos personales</h4><ReadOnlyHealthData value={declaration.personal} />
     <h4 className="font-semibold">Actividad física</h4><ReadOnlyHealthData value={declaration.activity} />

@@ -16,7 +16,7 @@ const inputSchema = z.strictObject({
   activity: z.strictObject({ practice: z.enum(['YES', 'NO', 'NOT_DISCLOSED']).optional(), sport: optionalText, frequency: optionalText, club: optionalText, level: optionalText }),
   kinesiology: z.strictObject({ reason: optionalText, affectedArea: optionalText, pain: z.string().refine(value => value === '' || (/^\d+(\.\d+)?$/.test(value) && Number(value) >= 0 && Number(value) <= 10)).optional(), diagnosis: optionalText, referral: optionalText, studies: optionalText }),
   answers: z.record(z.string().max(100), z.strictObject({ answer: z.enum(['YES', 'NO', 'NOT_DISCLOSED']), details: z.string().trim().max(2000).optional() })),
-  consents: z.strictObject({ physicalActivity: z.literal(true), truthfulness: z.literal(true), emergenciesAndPrivacy: z.literal(true), healthDataProcessing: z.boolean().optional().default(false), kinesiology: z.boolean().optional().default(false), manualEvaluation: z.boolean().optional().default(false), therapeuticExercise: z.boolean().optional().default(false), manualTherapy: z.boolean().optional().default(false), physicalAgents: z.boolean().optional().default(false), dryNeedling: z.boolean().optional().default(false), taping: z.boolean().optional().default(false), shareWithDoctors: z.boolean(), shareWithClubs: z.boolean(), clinicalImage: z.boolean(), institutionalImage: z.boolean() }),
+  consents: z.strictObject({ physicalActivity: z.literal(true), truthfulness: z.literal(true), emergenciesAndPrivacy: z.literal(true), healthDataProcessing: z.literal(true), kinesiology: z.boolean().optional().default(false), manualEvaluation: z.boolean().optional().default(false), therapeuticExercise: z.boolean().optional().default(false), manualTherapy: z.boolean().optional().default(false), physicalAgents: z.boolean().optional().default(false), dryNeedling: z.boolean().optional().default(false), taping: z.boolean().optional().default(false), shareWithDoctors: z.boolean(), shareWithClubs: z.boolean(), clinicalImage: z.boolean(), institutionalImage: z.boolean() }),
   confirmed: z.literal(true),
 });
 @Injectable()
@@ -53,8 +53,16 @@ export class HealthDeclarationService {
     const data = parsed.data;
     if (data.documentVersion !== document.version) throw new ConflictException({ code: 'HEALTH_DOCUMENT_VERSION_CHANGED', message: 'El documento cambió. Volvé a revisar los consentimientos.' });
     if (Object.keys(data.answers).some(id => !document.questions.some(question => question.id === id))) throw new BadRequestException({ code: 'HEALTH_ANSWER_UNKNOWN', message: 'La respuesta no pertenece al documento vigente.' });
-    const hasMedicalData = Object.values(data.kinesiology).some(Boolean) || Object.values(data.answers).some(answer => answer.answer !== 'NOT_DISCLOSED' || Boolean(answer.details));
-    if (hasMedicalData && !data.consents.healthDataProcessing) throw new BadRequestException({ code: 'HEALTH_PROCESSING_CONSENT_REQUIRED', message: 'Para guardar información médica voluntaria debés autorizar su tratamiento.' });
+    const categories = new Map<string, typeof document.questions>();
+    for (const question of document.questions) categories.set(question.category, [...(categories.get(question.category) ?? []), question]);
+    for (const questions of categories.values()) {
+      const choices = questions.filter(question => question.responseType !== 'TEXT');
+      const required = choices.length ? choices : questions;
+      const responses = required.map(question => data.answers[question.id]?.answer);
+      if (!responses.every(answer => answer === 'NOT_DISCLOSED') && !responses.every(answer => answer === 'YES' || answer === 'NO')) {
+        throw new BadRequestException({ code: 'HEALTH_CATEGORY_REQUIRED', message: 'Respondé cada categoría de antecedentes.', details: { category: required[0]!.category } });
+      }
+    }
     const row = await this.prisma.$transaction(async tx => {
       const submittedAt = new Date();
       const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(submittedAt);

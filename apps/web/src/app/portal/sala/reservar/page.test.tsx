@@ -38,7 +38,7 @@ beforeEach(() => {
   vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-10-08T09:00:00-03:00').getTime());
   submitted = undefined; csrfHeader = null; availabilityCalls = 0;
   server.use(
-    http.get(base + 'sala', () => HttpResponse.json({ data: { validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
+    http.get(base + 'sala', () => HttpResponse.json({ data: { replacementWeeks: [{ weekStart: '2026-10-05', weekEnd: '2026-10-11', available: 1 }], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
     http.get(base + 'sala/services', () => HttpResponse.json({ data: [services[0]] })),
     http.get(base + 'sala/availability', () => { availabilityCalls++; return HttpResponse.json({ data: blocks() }); }),
     http.get(base + 'auth/session', () => HttpResponse.json({ data: { csrfToken: 'csrf' } })),
@@ -56,7 +56,7 @@ it('defaults to general Sala and offers only exact-hour starts', async () => {
   expect(screen.queryByRole('button', { name: /17:15–/ })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /17:45–/ })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /18:30–/ })).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeDisabled();
 });
 
 it('keeps an ongoing activity visible with exactly twenty minutes remaining', async () => {
@@ -80,7 +80,7 @@ it('expires a selected activity on the local clock tick without requesting avail
   try {
     renderReserve();
     fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
-    expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeEnabled();
     expect(screen.getByText(/ · 17:00–18:00/)).toBeInTheDocument();
     expect(availabilityCalls).toBe(1);
 
@@ -89,7 +89,7 @@ it('expires a selected activity on the local clock tick without requesting avail
     expect(screen.queryByRole('button', { name: /17:00–18:00/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/17:00–18:00/)).not.toBeInTheDocument();
     expect(screen.getByText(/ · Elegí un horario/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '18:00–19:00 Hay lugar' })).toBeEnabled();
     expect(availabilityCalls).toBe(1);
   } finally {
@@ -117,12 +117,12 @@ it('requires a manual service selection and only displays services supplied by t
   expect(muscle).toHaveAttribute('aria-pressed', 'false');
   expect(screen.getByRole('button', { name: 'Funcional 45 min' })).toHaveAttribute('aria-pressed', 'false');
   expect(screen.queryByText('Calistenia')).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeDisabled();
   fireEvent.click(muscle);
   fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
-  expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: 'Funcional 45 min' }));
-  expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeDisabled();
   expect(screen.getByRole('button', { name: /Hoy 08\/10/ })).toHaveAttribute('aria-pressed', 'true');
   expect(await screen.findByRole('button', { name: '17:00–17:45 Hay lugar' })).toBeEnabled();
 });
@@ -142,7 +142,7 @@ it('offers three quick dates and an optional calendar limited to thirty operatio
   fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
   fireEvent.click(screen.getByRole('button', { name: /Mañana 09\/10/ }));
   expect(screen.getByLabelText('Fecha')).toHaveValue('2026-10-09');
-  expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeDisabled();
 });
 
 it('disables a complete time range when an intermediate block is full while retaining other choices', async () => {
@@ -151,9 +151,9 @@ it('disables a complete time range when an intermediate block is full while reta
   const full = await screen.findByRole('button', { name: '17:00–18:00 Sin lugar' });
   expect(full).toBeDisabled();
   fireEvent.click(full);
-  expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: '18:00–19:00 Hay lugar' }));
-  expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeEnabled();
 });
 
 it('does not join separate windows or gaps to manufacture a complete range', async () => {
@@ -168,7 +168,7 @@ it('allows general Sala when the plan has no services', async () => {
   expect(await screen.findByRole('button', { name: /Sin servicio — Sala/ })).toHaveAttribute('aria-pressed', 'true');
   expect(screen.getByRole('button', { name: /Hoy 08\/10/ })).toBeEnabled();
   fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Reservar en Sala' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Reservar reemplazo' }));
   await screen.findByRole('heading', { name: 'Reserva confirmada' });
   expect(submitted).toEqual({ date: '2026-10-08', scheduleSlotId: 'window', startTime: '17:00' });
   expect(screen.getByText('Sala')).toBeInTheDocument();
@@ -179,7 +179,7 @@ it('preserves the exact payload and CSRF token, refreshes queries and retains th
   fireEvent.click(await screen.findByRole('button', { name: 'Musculación 60 min' }));
   const invalidate = vi.spyOn(client, 'invalidateQueries');
   fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Reservar en Sala' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Reservar reemplazo' }));
   expect(await screen.findByRole('heading', { name: 'Reserva confirmada' })).toBeInTheDocument();
   expect(screen.getByText('Tu lugar quedó reservado.')).toBeInTheDocument();
   expect(screen.getByText('Musculación')).toBeInTheDocument();
@@ -187,7 +187,7 @@ it('preserves the exact payload and CSRF token, refreshes queries and retains th
   expect(screen.getByText('17:00 – 18:00')).toBeInTheDocument();
   for (const link of screen.getAllByRole('link', { name: 'Volver a Inicio' })) expect(link).toHaveAttribute('href', '/portal');
   expect(screen.queryByRole('link', { name: 'Volver a Sala' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Reservar en Sala' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Reservar reemplazo' })).not.toBeInTheDocument();
   expect(submitted).toEqual({ date: '2026-10-08', scheduleSlotId: 'window', serviceTypeId: 'muscle', startTime: '17:00' });
   expect(csrfHeader).toBe('csrf');
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ['portal', 'sala'] });
@@ -197,6 +197,7 @@ it('preserves the exact payload and CSRF token, refreshes queries and retains th
 });
 
 it.each([
+  ['PORTAL_SALA_REPLACEMENT_REQUIRED', 'Para reservar otro horario primero cancelá una fecha de uno de tus turnos fijos de esta semana.'],
   ['PORTAL_SALA_TIME_PASSED', 'Ese horario ya no admite nuevas reservas. Elegí otro horario.'],
   ['PORTAL_SALA_VALIDITY_REQUIRED', 'Tu cuota no está vigente para esta fecha. Consultá en recepción para renovarla.'],
   ['PORTAL_SALA_PAYMENT_REQUIRED', 'Tu cuota no está vigente para esta fecha. Consultá en recepción para renovarla.'],
@@ -213,7 +214,7 @@ it.each([
   server.use(http.post(base + 'sala/reservations', () => HttpResponse.json({ code, message: 'Conflict' }, { status: 409 })));
   renderReserve();
   fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Reservar en Sala' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Reservar reemplazo' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(expected);
   await waitFor(() => expect(availabilityCalls).toBeGreaterThan(1));
 });
@@ -222,7 +223,7 @@ it('uses a safe fallback for an unknown reservation error', async () => {
   server.use(http.post(base + 'sala/reservations', () => HttpResponse.json({ code: 'UNEXPECTED', message: 'Internal database detail' }, { status: 500 })));
   renderReserve();
   fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Reservar en Sala' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Reservar reemplazo' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos completar la operación. Tus datos no fueron modificados. Intentá nuevamente.');
   expect(screen.queryByText('Internal database detail')).not.toBeInTheDocument();
 });
@@ -235,7 +236,7 @@ it('keeps the selected date when changing service and clears the previous time',
   fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
   fireEvent.click(screen.getByRole('button', { name: 'Funcional 45 min' }));
   expect(screen.getByRole('button', { name: /Mañana 09\/10/ })).toHaveAttribute('aria-pressed', 'true');
-  expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeDisabled();
 });
 
 it('shows Reservando and prevents another submit while the mutation is pending', async () => {
@@ -247,7 +248,7 @@ it('shows Reservando and prevents another submit while the mutation is pending',
   }));
   renderReserve();
   fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Reservar en Sala' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Reservar reemplazo' }));
   expect(await screen.findByRole('button', { name: 'Reservando…' })).toBeDisabled();
   finish();
   expect(await screen.findByRole('heading', { name: 'Reserva confirmada' })).toBeInTheDocument();
@@ -264,14 +265,14 @@ it('turns a stale selected time into a disabled full time after a capacity rejec
   );
   renderReserve();
   fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Reservar en Sala' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Reservar reemplazo' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Ese horario acaba de quedarse sin lugar. Elegí otro horario disponible.');
   expect(await screen.findByRole('button', { name: '17:00–18:00 Sin lugar' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Reservar en Sala' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeDisabled();
 });
 
 it('blocks the dedicated reservation route when current validity is missing', async () => {
-  server.use(http.get(base + 'sala', () => HttpResponse.json({ data: { validity: { hasValidAccess: false, validUntil: null } } })));
+  server.use(http.get(base + 'sala', () => HttpResponse.json({ data: { replacementWeeks: [{ weekStart: '2026-10-05', weekEnd: '2026-10-11', available: 1 }], validity: { hasValidAccess: false, validUntil: null } } })));
   renderReserve();
   expect(await screen.findByRole('heading', { name: 'Cuota sin vigencia' })).toBeVisible();
   expect(screen.getByText('No podés realizar nuevas reservas por el momento.')).toBeVisible();
@@ -281,11 +282,32 @@ it('blocks the dedicated reservation route when current validity is missing', as
   expect(screen.queryByText('Vigencia de Sala')).not.toBeInTheDocument();
   expect(screen.queryByText('Sin vigencia')).not.toBeInTheDocument();
   expect(screen.queryByText('Necesitás renovar tu vigencia para realizar nuevas reservas.')).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Reservar en Sala' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Reservar reemplazo' })).not.toBeInTheDocument();
 });
 it('limits the dedicated reservation calendar to the end of current validity', async () => {
-  server.use(http.get(base + 'sala', () => HttpResponse.json({ data: { validity: { hasValidAccess: true, validUntil: '2026-10-09' } } })));
+  server.use(http.get(base + 'sala', () => HttpResponse.json({ data: { replacementWeeks: [{ weekStart: '2026-10-05', weekEnd: '2026-10-11', available: 1 }], validity: { hasValidAccess: true, validUntil: '2026-10-09' } } })));
   renderReserve();
   fireEvent.click(await screen.findByRole('button', { name: 'Ver calendario' }));
   expect(screen.getByLabelText('Fecha')).toHaveAttribute('max', '2026-10-09');
+});
+
+it('hides all booking inputs and the booking action without an available replacement', async () => {
+  server.use(http.get(base + 'sala', () => HttpResponse.json({ data: { replacementWeeks: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })));
+  renderReserve();
+  expect(await screen.findByText('No tenés un cambio disponible.')).toBeVisible();
+  expect(screen.getByText('Para reservar otro horario, primero cancelá una fecha de uno de tus turnos fijos.')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Reservar reemplazo' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Servicio (opcional)')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Fecha')).not.toBeInTheDocument();
+  expect(screen.queryByText('Elegí el horario')).not.toBeInTheDocument();
+  expect(availabilityCalls).toBe(0);
+});
+it('blocks an uncredited week and does not request its availability', async () => {
+  renderReserve(); await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' });
+  fireEvent.click(screen.getByRole('button', { name: 'Ver calendario' }));
+  const calls = availabilityCalls;
+  fireEvent.change(screen.getByLabelText('Fecha'), { target: { value: '2026-10-12' } });
+  expect(screen.getByText('Elegí una fecha dentro de la semana habilitada por tu cancelación.')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeDisabled();
+  expect(availabilityCalls).toBe(calls);
 });
