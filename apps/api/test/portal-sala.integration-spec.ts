@@ -268,6 +268,23 @@ describe('Portal Sala services from the current plan', () => {
     await f.reserveAt('13:00').expect(201);
     expect(await prisma.oneOffReservation.count({ where: { personId, cancelledAt: null } })).toBe(2);
   });
+  it('grants no replacement credit for an internal reassignment, including after its reservation is cancelled', async () => {
+    const f = await fixedFixture();
+    const destination = await sala.createSlot({ weekday: 'WEDNESDAY', startTime: '09:00', durationMinutes: 120, specificCapacity: 5 });
+    try {
+      const replacement = await sala.reassignFixedOccurrence(f.fixed.id, '2026-10-20', { targetDate: '2026-10-21', scheduleSlotId: destination.id, startTime: '09:00' }, professorId);
+      expect(await prisma.salaOccurrence.findFirstOrThrow({ where: { fixedSalaBookingId: f.fixed.id } })).toMatchObject({ status: 'CANCELLED', lastModifiedBy: professorId, cancelledForNonPaymentAt: null });
+      const projection = () => request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
+      expect((await projection()).body.data.replacementWeeks).toEqual([]);
+      await sala.cancelReservation(replacement.id);
+      expect((await projection()).body.data.replacementWeeks).toEqual([]);
+      await f.cancelDate('2026-10-27').expect(200);
+      expect((await projection()).body.data.replacementWeeks).toEqual([{ weekStart: '2026-10-26', weekEnd: '2026-11-01', available: 1 }]);
+    } finally {
+      await prisma.oneOffReservation.deleteMany({ where: { scheduleSlotId: destination.id } });
+      await prisma.salaScheduleSlot.delete({ where: { id: destination.id } });
+    }
+  });
   it.each(['nonpayment', 'administrative'] as const)('does not grant Portal replacements for %s cancellation', async kind => {
     const f = await replacementFixture();
     await sala.commandOccurrence({ personId, scheduleSlotId: windowId, date: f.body.date, sourceId: f.first.id, startTime: '09:00', status: 'CANCELLED' }, professorId);

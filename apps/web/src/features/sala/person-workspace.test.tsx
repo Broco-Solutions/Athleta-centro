@@ -473,7 +473,7 @@ it.each([['ADMINISTRATIVE'], ['GENERAL_ADMIN'], ['KINESIOLOGIST'], ['OSTEOPATH']
   );
   renderWorkspace(); await screen.findByText('Workspace Sala');
   const tabs = within(screen.getByRole('navigation', { name: 'Secciones del alumno en Sala' }));
-  expect(tabs.getAllByRole('link').map(link => link.textContent)).toEqual(['Resumen', 'Reservas', 'Turno fijo', 'Rutina', ...(roles.some(role => ['ADMINISTRATIVE', 'GENERAL_ADMIN', 'PROFESSOR'].includes(role)) ? ['Evaluaciones físicas'] : []), 'Declaración de salud']);
+  expect(tabs.getAllByRole('link').map(link => link.textContent)).toEqual(['Resumen', 'Turno fijo', 'Reservas', 'Rutina', ...(roles.some(role => ['ADMINISTRATIVE', 'GENERAL_ADMIN', 'PROFESSOR'].includes(role)) ? ['Evaluaciones físicas'] : []), 'Declaración de salud']);
   expect(await screen.findByRole('heading', { name: 'Pago' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Ver ficha de Persona' })).toBeInTheDocument();
 });
@@ -705,4 +705,111 @@ it.each(['PROFESSOR', 'ADMINISTRATIVE', 'GENERAL_ADMIN'])('keeps the Day and Tim
   fireEvent.click(form.getByRole('button', { name: 'Crear turno fijo' }));
   expect(await form.findByRole('alert')).toHaveTextContent('El alumno ya tiene asignada la cantidad máxima de turnos fijos permitida por su Plan.');
   if (role === 'ADMINISTRATIVE') expect(screen.getByRole('link', { name: 'Turno fijo' })).toHaveAttribute('aria-current', 'page');
+});
+
+const fixedFixtureRows = () => [
+  { id: 'fixed-a', salaParticipationId: 'participation', startDate: '2026-10-01', startTime: '10:00', scheduleSlot: { id: 'window', weekday: 'SATURDAY', startTime: '10:00' }, endDate: null as string | null },
+  { id: 'fixed-b', salaParticipationId: 'participation', startDate: '2026-10-02', startTime: '11:00', scheduleSlot: { id: 'window', weekday: 'MONDAY', startTime: '11:00' }, endDate: null as string | null },
+];
+async function freezeBookingDate() {
+  vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-23T12:00:00Z'));
+}
+it('hides bookings ended yesterday and today, showing actions only for the active booking', async () => {
+  await freezeBookingDate();
+  try {
+    navigation.tab = 'fixed'; const [a, b] = fixedFixtureRows();
+    server.use(http.get(`http://localhost:3000/api/sala/people/${personId}/fixed-bookings`, () => HttpResponse.json({ data: [a, { ...b, endDate: '2026-10-22' }, { ...b, id: 'ended-today', endDate: '2026-10-23' }] })));
+    renderWorkspace(); await screen.findByText('Turnos fijos: 1 de 2');
+    expect(screen.queryByText(/Lunes · 11:00/)).not.toBeInTheDocument();
+    for (const name of ['Modificar', 'Reprogramar fecha', 'Finalizar']) expect(screen.getAllByRole('button', { name })).toHaveLength(1);
+  } finally { vi.useRealTimers(); }
+});
+it('ends a booking today, exits its editor and frees the Plan slot immediately', async () => {
+  await freezeBookingDate();
+  try {
+    navigation.tab = 'fixed'; const rows = fixedFixtureRows();
+    server.use(
+      http.get(`http://localhost:3000/api/sala/people/${personId}/fixed-bookings`, () => HttpResponse.json({ data: rows })),
+      http.post('http://localhost:3000/api/sala/fixed-bookings/fixed-a/end', async ({ request }) => { expect(await request.json()).toEqual({ endDate: '2026-10-23' }); rows[0]!.endDate = '2026-10-23'; return HttpResponse.json({ data: {} }, { status: 201 }); }),
+    );
+    renderWorkspace(); await screen.findByText('Turnos fijos: 2 de 2');
+    expect(screen.getByRole('button', { name: 'Crear turno fijo' })).toBeDisabled();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Modificar' })[0]!);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Finalizar' })[0]!);
+    await screen.findByText('Turnos fijos: 1 de 2');
+    expect(screen.queryByText(/Sábado · 10:00/)).not.toBeInTheDocument();
+    await findBookingOption({ name: '09:00' }); fireEvent.change(booking().getByLabelText('Horario'), { target: { value: 'window:09:00' } });
+    expect(screen.getByRole('button', { name: 'Crear turno fijo' })).toBeEnabled();
+  } finally { vi.useRealTimers(); }
+});
+it('submits a recurrence change while at 2 of 2 with its new Day and Time', async () => {
+  await freezeBookingDate();
+  try {
+    navigation.tab = 'fixed'; let submitted: unknown;
+    server.use(http.get(`http://localhost:3000/api/sala/people/${personId}/fixed-bookings`, () => HttpResponse.json({ data: fixedFixtureRows() })),
+      http.post('http://localhost:3000/api/sala/fixed-bookings/fixed-a/change', async ({ request }) => { submitted = await request.json(); return HttpResponse.json({ data: {} }, { status: 201 }); }));
+    renderWorkspace(); await screen.findByText('Turnos fijos: 2 de 2'); fireEvent.click(screen.getAllByRole('button', { name: 'Modificar' })[0]!);
+    fireEvent.change(booking().getByLabelText('Día'), { target: { value: 'FRIDAY' } });
+    await findBookingOption({ name: '09:00' }); fireEvent.change(booking().getByLabelText('Horario'), { target: { value: 'window:09:00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(submitted).toEqual({ id: 'fixed-a', personId, salaParticipationId: 'participation', scheduleSlotId: 'window', startTime: '09:00', startDate: '2026-10-23' }));
+    await screen.findByRole('button', { name: 'Crear turno fijo' }); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  } finally { vi.useRealTimers(); }
+});
+it.each(['PROFESSOR', 'ADMINISTRATIVE', 'GENERAL_ADMIN'])('reassigns one occurrence through the generated API as %s with independent form state', async role => {
+  await freezeBookingDate();
+  try {
+    navigation.tab = role === 'PROFESSOR' ? 'turns' : 'fixed'; let submitted: unknown;
+    let replacementRows: Array<{ id: string; date: string; startTime: string; scheduleSlot: { id: string; startTime: string } }> = [];
+    server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'staff', firstName: 'Staff', lastName: 'Sintético' }, roles: [role], permissions: ['SALA_RELATION_READ', 'SALA_AGENDA_MANAGE'], csrfToken: 'csrf' } })),
+      http.get(`http://localhost:3000/api/sala/people/${personId}/fixed-bookings`, () => HttpResponse.json({ data: [fixedFixtureRows()[0]] })),
+      http.get(`http://localhost:3000/api/sala/people/${personId}/reservations`, () => HttpResponse.json({ data: replacementRows })),
+      http.get('http://localhost:3000/api/sala/availability', () => HttpResponse.json({ data: [0, 15, 30, 45].map(minute => ({ slotId: `window:09:${minute}`, scheduleSlotId: 'window', startTime: `09:${String(minute).padStart(2, '0')}`, available: 5, isClosed: false })) })),
+      http.post('http://localhost:3000/api/sala/fixed-bookings/fixed-a/occurrences/2026-10-31/reassign', async ({ request }) => { const body = await request.json() as { targetDate: string; scheduleSlotId: string; startTime: string }; submitted = body; replacementRows = [{ id: 'replacement', date: body.targetDate, startTime: body.startTime, scheduleSlot: { id: body.scheduleSlotId, startTime: '08:00' } }]; return HttpResponse.json({ data: {} }, { status: 201 }); }));
+    renderWorkspace(); fireEvent.click(await screen.findByRole('button', { name: 'Reprogramar fecha' }));
+    const form = within(screen.getByRole('form', { name: 'Reprogramar una fecha' }));
+    expect(form.getByLabelText('Nuevo día')).toHaveAttribute('min', '2026-10-23'); expect(form.getByLabelText('Nuevo día')).toHaveAttribute('max', '2026-10-25');
+    fireEvent.change(form.getByLabelText('Fecha a cambiar'), { target: { value: '2026-10-31' } });
+    expect(form.getByLabelText('Nuevo día')).toHaveAttribute('min', '2026-10-26'); expect(form.getByLabelText('Nuevo día')).toHaveAttribute('max', '2026-11-01');
+    fireEvent.change(form.getByLabelText('Nuevo día'), { target: { value: '2026-11-02' } });
+    expect(form.getByRole('button', { name: 'Confirmar reprogramación' })).toBeDisabled();
+    fireEvent.change(form.getByLabelText('Nuevo día'), { target: { value: '2026-10-29' } });
+    await waitFor(() => expect(form.getByRole('option', { name: '09:00' })).toBeInTheDocument());
+    expect(form.queryByRole('option', { name: '09:15' })).not.toBeInTheDocument();
+    fireEvent.change(form.getByLabelText('Nuevo horario'), { target: { value: 'window:09:00' } });
+    if (role === 'PROFESSOR') {
+      const fixedHeading = screen.getByRole('heading', { name: 'Turno fijo' }); const reserveHeading = screen.getByRole('heading', { name: 'Nueva reserva puntual' });
+      expect(fixedHeading.compareDocumentPosition(reserveHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const reserveForm = within(reserveHeading.parentElement!);
+      fireEvent.change(reserveForm.getByLabelText('Fecha'), { target: { value: '2026-11-20' } }); fireEvent.change(reserveForm.getByLabelText('Servicio'), { target: { value: 'muscle' } });
+      expect(form.getByLabelText('Nuevo día')).toHaveValue('2026-10-29'); expect(form.getByLabelText('Nuevo horario')).toHaveValue('window:09:00');
+      fireEvent.change(form.getByLabelText('Nuevo día'), { target: { value: '2026-10-28' } });
+      expect(reserveForm.getByLabelText('Fecha')).toHaveValue('2026-11-20'); expect(reserveForm.getByLabelText('Servicio')).toHaveValue('muscle');
+      await waitFor(() => expect(form.getByRole('option', { name: '09:00' })).toBeInTheDocument()); fireEvent.change(form.getByLabelText('Nuevo horario'), { target: { value: 'window:09:00' } });
+    }
+    fireEvent.click(form.getByRole('button', { name: 'Confirmar reprogramación' }));
+    await screen.findByText('Fecha reprogramada correctamente.');
+    expect(submitted).toEqual({ targetDate: role === 'PROFESSOR' ? '2026-10-28' : '2026-10-29', scheduleSlotId: 'window', startTime: '09:00' });
+    expect(screen.queryByRole('form', { name: 'Reprogramar una fecha' })).not.toBeInTheDocument(); expect(screen.getByText(/Sábado · 10:00 · Desde/)).toBeInTheDocument();
+    if (role === 'PROFESSOR') expect(await screen.findByText('28/10/2026 · 09:00 · Activa')).toBeInTheDocument();
+  } finally { vi.useRealTimers(); }
+});
+
+it.each([true, false])('offers only real, unstarted occurrences within booking dates and 30 days (bounded=%s)', async bounded => {
+  await freezeBookingDate();
+  try {
+    navigation.tab = 'fixed';
+    const row = bounded ? { ...fixedFixtureRows()[0], startDate: '2026-10-31', endDate: '2026-11-07' } : { ...fixedFixtureRows()[0], startTime: null, scheduleSlot: { id: 'window', weekday: 'FRIDAY', startTime: '1970-01-01T09:00:00.000Z' } };
+    server.use(http.get(`http://localhost:3000/api/sala/people/${personId}/fixed-bookings`, () => HttpResponse.json({ data: [row] })));
+    renderWorkspace(); fireEvent.click(await screen.findByRole('button', { name: 'Reprogramar fecha' }));
+    const source = screen.getByLabelText('Fecha a cambiar') as HTMLSelectElement;
+    expect(Array.from(source.options).map(option => option.value)).toEqual(bounded ? ['', '2026-10-31', '2026-11-07'] : ['', '2026-10-30', '2026-11-06', '2026-11-13', '2026-11-20']);
+  } finally { vi.useRealTimers(); }
+});
+it.each(['KINESIOLOGIST', 'OSTEOPATH'])('shows fixed configuration without management actions for %s', async role => {
+  navigation.tab = 'fixed'; routineSession(['SALA_RELATION_READ'], [role]);
+  server.use(http.get(`http://localhost:3000/api/sala/people/${personId}/fixed-bookings`, () => HttpResponse.json({ data: fixedFixtureRows() })));
+  renderWorkspace(); await screen.findByText('Turnos fijos: 2 de 2');
+  for (const name of ['Modificar', 'Finalizar', 'Reprogramar fecha']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Crear turno fijo' })).toBeDisabled();
 });

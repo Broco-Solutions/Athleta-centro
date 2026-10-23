@@ -641,6 +641,13 @@ export interface ChangeFixedBookingDto {
   id: string;
 }
 
+export interface ReassignFixedOccurrenceDto {
+  targetDate: string;
+  scheduleSlotId: string;
+  /** @pattern ^([01]\d|2[0-3]):00$ */
+  startTime: string;
+}
+
 export interface EndFixedBookingDto {
   endDate: string;
 }
@@ -3803,6 +3810,49 @@ export const changeFixedSalaBooking = async (id: string,
 
   const data: changeFixedSalaBookingResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as changeFixedSalaBookingResponse
+}
+
+
+
+export type reassignFixedSalaOccurrenceResponse201 = {
+  data: void
+  status: 201
+}
+
+export type reassignFixedSalaOccurrenceResponseSuccess = (reassignFixedSalaOccurrenceResponse201) & {
+  headers: Headers;
+};
+;
+
+export type reassignFixedSalaOccurrenceResponse = (reassignFixedSalaOccurrenceResponseSuccess)
+
+export const getReassignFixedSalaOccurrenceUrl = (id: string,
+    date: string,) => {
+
+
+
+
+  return `/api/sala/fixed-bookings/${id}/occurrences/${date}/reassign`
+}
+
+export const reassignFixedSalaOccurrence = async (id: string,
+    date: string,
+    reassignFixedOccurrenceDto: ReassignFixedOccurrenceDto, options?: RequestInit): Promise<reassignFixedSalaOccurrenceResponse> => {
+
+  const res = await fetch(getReassignFixedSalaOccurrenceUrl(id,date),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      reassignFixedOccurrenceDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: reassignFixedSalaOccurrenceResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as reassignFixedSalaOccurrenceResponse
 }
 
 

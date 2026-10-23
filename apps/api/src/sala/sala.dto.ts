@@ -393,3 +393,9 @@ export class SalaPaymentEnvelopeDto {
 export class SalaPaymentListEnvelopeDto {
   @ApiProperty({ type: () => [SalaPaymentResponseDto] }) data!: SalaPaymentResponseDto[];
 }
+
+export class ReassignFixedOccurrenceDto {
+  @ApiProperty({ type: String, format: 'date' }) @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) targetDate!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() scheduleSlotId!: string;
+  @ApiProperty({ type: String, pattern: '^([01]\\d|2[0-3]):00$' }) @Matches(/^([01]\d|2[0-3]):00$/) startTime!: string;
+}
