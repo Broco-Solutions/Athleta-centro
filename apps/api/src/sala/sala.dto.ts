@@ -28,6 +28,9 @@ export class OneOffReservationDto { @ApiProperty({ type: String, format: 'uuid' 
 export class ChangeFixedBookingDto extends FixedBookingDto { @ApiProperty({ type: String, format: 'uuid' }) @IsString() id!: string; }
 export class EndFixedBookingDto { @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) endDate!: string; }
 export class OccurrenceReferenceDto { @ApiProperty({ type: String, format: 'uuid' }) @IsString() personId!: string; @ApiProperty({ type: String, format: 'uuid' }) @IsString() scheduleSlotId!: string; @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) date!: string; @ApiPropertyOptional({ type: String, example: '09:00' }) @IsOptional() @Matches(/^([01]\d|2[0-3]):[0-5]\d$/) startTime?: string; @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() sourceId?: string; }
+export class CheckInByDniDto { @ApiProperty({ type: String, example: '30123456' }) @IsString() @Matches(/^\d{7,8}$/) dni!: string; }
+export class CheckInResultDto { @ApiProperty({ type: String }) status!: string; @ApiProperty({ type: String }) message!: string; @ApiPropertyOptional({ type: String }) person?: string; @ApiPropertyOptional({ type: String }) startTime?: string; @ApiPropertyOptional({ type: String, nullable: true }) validUntil?: string | null; @ApiPropertyOptional({ type: String, nullable: true }) renewalMessage?: string | null; }
+export class CheckInResultEnvelopeDto { @ApiProperty({ type: () => CheckInResultDto }) data!: CheckInResultDto; }
 export class SpontaneousOccurrenceDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string;
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() scheduleSlotId!: string;

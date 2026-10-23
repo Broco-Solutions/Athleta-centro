@@ -41,6 +41,8 @@ describe('SalaOccurrence persistence and API', () => {
   });
 
   afterEach(async () => {
+    await prisma.salaPayment.deleteMany();
+    await prisma.paymentMethod.deleteMany();
     jest.restoreAllMocks();
     await prisma.salaClinicalIndication.deleteMany();
     await prisma.salaOccurrence.deleteMany();
@@ -95,6 +97,53 @@ describe('SalaOccurrence persistence and API', () => {
     expect(await prisma.salaOccurrence.count()).toBe(1);
     expect((await prisma.fixedSalaBooking.findUniqueOrThrow({ where: { id: fixed.id } })).endDate).toBeNull();
     expect((await sala.agenda('2026-09-03'))[0]?.people[0]?.status).toBe('RESERVED');
+  });
+
+  it('registers DNI check-ins at both inclusive limits and makes simultaneous requests idempotent', async () => {
+    const f = await setup();
+    await sala.createFixed({ personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, startDate: '2026-01-01', confirmOverbooking: true });
+    const paymentMethod = await prisma.paymentMethod.create({ data: { name: `Check-in-${randomUUID()}` } });
+    await prisma.salaPayment.create({ data: { personId: f.person.id, year: 2026, month: 8, paidAt: new Date('2026-08-01T00:00:00Z'), coverageStartDate: new Date('2026-08-01T00:00:00Z'), coverageEndDate: new Date('2026-08-27T00:00:00Z'), amount: 1000, paymentMethodId: paymentMethod.id, registeredById: f.actor.id, operationId: randomUUID(), createdAt: new Date('2026-08-01T12:00:00Z') } });
+    const simultaneous = await Promise.all([1, 2].map(() => sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, new Date('2026-08-27T11:40:00Z'))));
+    expect(simultaneous.map((result) => result.status).sort()).toEqual(['ALREADY_REGISTERED', 'REGISTERED']);
+    expect(simultaneous).toContainEqual(expect.objectContaining({ status: 'REGISTERED', message: '¡Asistencia registrada! Que tengas un buen entrenamiento.', startTime: '09:00', renewalMessage: 'Tu plan vence hoy. Recordá renovarlo para continuar entrenando.' }));
+    const duplicate = await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, new Date('2026-08-27T12:20:00Z'));
+    expect(duplicate).toMatchObject({ status: 'ALREADY_REGISTERED', message: 'Ya registraste tu asistencia a este turno.' });
+    expect(await prisma.salaOccurrence.count({ where: { personId: f.person.id } })).toBe(1);
+    expect(await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, new Date('2026-08-27T12:21:00Z'))).toMatchObject({ status: 'OUT_OF_WINDOW', message: 'Finalizó el horario de fichaje. Podías registrarte hasta las 09:20. Consultá con un profesor.' });
+  });
+
+  it('rejects early, expired, missing, and manually absent check-ins without changing manual attendance', async () => {
+    const f = await setup();
+    await sala.createFixed({ personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, startDate: '2026-01-01', confirmOverbooking: true });
+    const early = await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, new Date('2026-08-27T11:39:00Z'));
+    expect(early).toMatchObject({ status: 'TOO_EARLY', message: 'Tu fichaje todavía no está habilitado. Podés registrarte desde las 08:40.' });
+    expect(await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, new Date('2026-08-27T12:00:00Z'))).toMatchObject({ status: 'EXPIRED', message: 'Tu plan está vencido. No pudimos registrar tu asistencia. Acercate a recepción para renovar.' });
+    expect(await sala.checkInByDni({ dni: '99999999' }, f.actor.id, new Date('2026-08-27T12:00:00Z'))).toMatchObject({ status: 'NOT_FOUND' });
+    await sala.commandOccurrence({ personId: f.person.id, scheduleSlotId: f.slot.id, date: f.date, status: SalaOccurrenceStatus.ABSENT }, f.actor.id);
+    expect(await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, new Date('2026-08-27T12:00:00Z'))).toMatchObject({ status: 'MANUAL_REVIEW' });
+    expect((await prisma.salaOccurrence.findFirstOrThrow({ where: { personId: f.person.id } })).status).toBe('ABSENT');
+    await sala.commandOccurrence({ personId: f.person.id, scheduleSlotId: f.slot.id, date: f.date, status: SalaOccurrenceStatus.CANCELLED }, f.actor.id);
+    expect(await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, new Date('2026-08-27T12:00:00Z'))).toMatchObject({ status: 'CANCELLED', message: 'Este turno fue cancelado. Consultá con un profesor.' });
+  });
+
+  it('returns no-booking and inactive-participation results without creating occurrences', async () => {
+    const f = await setup();
+    expect(await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, new Date('2026-08-27T12:00:00Z'))).toMatchObject({ status: 'NO_BOOKING', message: 'No tenés un turno reservado para este horario. Consultá con un profesor.' });
+    await sala.leave(f.participation.id);
+    expect(await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id)).toMatchObject({ status: 'NOT_FOUND', message: 'No encontramos un alumno activo con ese DNI. Revisalo o consultá en recepción.' });
+    expect(await prisma.salaOccurrence.count()).toBe(0);
+  });
+
+  it('returns a calendar-based renewal countdown after a current one-off reservation check-in', async () => {
+    const f = await setup();
+    await sala.createFixed({ personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, startDate: '2026-01-01', confirmOverbooking: true });
+    await sala.commandOccurrence({ personId: f.person.id, scheduleSlotId: f.slot.id, date: f.date, status: SalaOccurrenceStatus.CANCELLED }, f.actor.id);
+    await sala.createReservation({ personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, date: f.date, startTime: '09:00' });
+    const paymentMethod = await prisma.paymentMethod.create({ data: { name: `Check-in-countdown-${randomUUID()}` } });
+    await prisma.salaPayment.create({ data: { personId: f.person.id, year: 2026, month: 8, paidAt: new Date('2026-08-01T00:00:00Z'), coverageStartDate: new Date('2026-08-01T00:00:00Z'), coverageEndDate: new Date('2026-09-10T00:00:00Z'), amount: 1000, paymentMethodId: paymentMethod.id, registeredById: f.actor.id, operationId: randomUUID(), createdAt: new Date('2026-08-01T12:00:00Z') } });
+    const result = await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, new Date('2026-08-27T11:40:00Z'));
+    expect(result).toMatchObject({ status: 'REGISTERED', startTime: '09:00', renewalMessage: 'Tu plan vence en 14 días, el 10/09.' });
   });
 
   it('cancels one fixed occurrence without ending its recurrence', async () => {
@@ -317,15 +366,24 @@ describe('SalaOccurrence persistence and API', () => {
     await auth.provisionCredential(unauthorized.id, 'ValidPass1!');
     await prisma.internalCredential.update({ where: { internalUserId: unauthorized.id }, data: { mustChangePassword: false } });
     const deniedLogin = await request(app.getHttpServer()).post('/api/auth/login').send({ email: unauthorized.email, password: 'ValidPass1!' }).expect(200);
+    await request(app.getHttpServer()).post('/api/sala/check-in').set('Cookie', deniedLogin.headers['set-cookie'][0] as string).set('x-csrf-token', deniedLogin.body.data.csrfToken as string).send({ dni: fixture.person.normalizedDni }).expect(403);
     await request(app.getHttpServer()).post('/api/sala/occurrences/attend').set('Cookie', deniedLogin.headers['set-cookie'][0] as string).set('x-csrf-token', deniedLogin.body.data.csrfToken as string).send(payload).expect(403);
     await request(app.getHttpServer()).post('/api/sala/occurrences/correct').set('Cookie', deniedLogin.headers['set-cookie'][0] as string).set('x-csrf-token', deniedLogin.body.data.csrfToken as string).send({ ...payload, status: 'RESERVED' }).expect(403);
     expect(await prisma.salaOccurrence.count()).toBe(0);
     await auth.provisionCredential(fixture.actor.id, 'ValidPass1!');
     await prisma.internalCredential.update({ where: { internalUserId: fixture.actor.id }, data: { mustChangePassword: false } });
     const allowedLogin = await request(app.getHttpServer()).post('/api/auth/login').send({ email: fixture.actor.email, password: 'ValidPass1!' }).expect(200);
+    await request(app.getHttpServer()).post('/api/sala/check-in').set('Cookie', allowedLogin.headers['set-cookie'][0] as string).set('x-csrf-token', allowedLogin.body.data.csrfToken as string).send({ dni: fixture.person.normalizedDni }).expect(200);
     await request(app.getHttpServer()).post('/api/sala/occurrences/attend').set('Cookie', allowedLogin.headers['set-cookie'][0] as string).set('x-csrf-token', allowedLogin.body.data.csrfToken as string).send(payload).expect(201);
     const correction = await request(app.getHttpServer()).post('/api/sala/occurrences/correct').set('Cookie', allowedLogin.headers['set-cookie'][0] as string).set('x-csrf-token', allowedLogin.body.data.csrfToken as string).send({ ...payload, status: 'RESERVED' }).expect(201);
     expect(correction.body.data).toMatchObject({ status: 'RESERVED', lastModifiedBy: fixture.actor.id });
     expect(await prisma.salaOccurrence.findMany()).toEqual([expect.objectContaining({ id: correction.body.data.id, status: 'RESERVED' })]);
+    for (const role of [Role.PROFESSOR, Role.GENERAL_ADMIN]) {
+      const user = await users.create({ firstName: 'Check-in', lastName: role, email: `check-in-${role}-${randomUUID()}@athleta.test`, roles: [role] });
+      await auth.provisionCredential(user.id, 'ValidPass1!');
+      await prisma.internalCredential.update({ where: { internalUserId: user.id }, data: { mustChangePassword: false } });
+      const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200);
+      await request(app.getHttpServer()).post('/api/sala/check-in').set('Cookie', login.headers['set-cookie'][0] as string).set('x-csrf-token', login.body.data.csrfToken as string).send({ dni: fixture.person.normalizedDni }).expect(200);
+    }
   });
 });

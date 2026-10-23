@@ -4,7 +4,7 @@ import { FinancialAdjustmentKind, Prisma, Role, RoutineStatus, SalaChargeKind, S
 import { PeopleService } from '../people/people.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinanceCatalogService } from '../finance/finance.service';
-import type { SalaStudentListItemDto, SalaDashboardDto, SalaDashboardPersonDto, JoinSpontaneousSalaDto, CreateSpontaneousSalaStudentDto, SalaPaymentDto, CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, CorrectPhysicalEvaluationDto, PhysicalTestResultDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, RoutineTemplateDto, RoutineDayDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
+import type { SalaStudentListItemDto, SalaDashboardDto, SalaDashboardPersonDto, JoinSpontaneousSalaDto, CreateSpontaneousSalaStudentDto, SalaPaymentDto, CreateSalaStudentDto, ChangeFixedBookingDto, ExerciseDefinitionDto, FixedBookingDto, OneOffReservationDto, OccurrenceReferenceDto, CheckInByDniDto, CorrectPhysicalEvaluationDto, PhysicalTestResultDto, PhysicalEvaluationDto, PhysicalTestDefinitionDto, PlanDto, RoutineTemplateDto, RoutineDayDto, ReplaceRoutineDto, ReplaceScheduleSlotDto, ReplaceWeeklyScheduleDto, SalaServiceTypeDto, ScheduleExceptionDto, ScheduleSlotDto, SpontaneousOccurrenceDto, UpdateSalaConfigurationDto } from './sala.dto';
 const paymentActorSelect = { id: true, firstName: true, lastName: true } satisfies Prisma.InternalUserSelect;
 const paymentResponseInclude = {
   paymentMethod: true,
@@ -805,6 +805,92 @@ export class SalaService {
       const people = [...entries.values()].map((value) => ({ personId: value.person.id, person: value.person, origin: value.origin, status: value.status, sourceId: value.sourceId, isMaterialized: value.isMaterialized, cancelledForNonPayment: value.cancelledForNonPayment, ...value.details }));
       return { slot: { id: state.slotId, scheduleSlotId: window.id, weekday: window.weekday, startTime: state.startTime, durationMinutes: 15 }, capacity: state.capacity, reserved: state.reserved, available: state.available, isOverbooked: state.isOverbooked, isClosed: state.isClosed, people };
     });
+  }
+  async checkInByDni(input: CheckInByDniDto, actorId: string, now = new Date()) {
+    const dni = input.dni.replace(/\D/g, '');
+    const person = await this.prisma.person.findUnique({ where: { normalizedDni: dni }, select: { id: true, firstName: true, lastName: true } });
+    const date = this.todayOperational(now);
+    const denied = (status: string, message: string) => ({ status, message });
+    const messages = {
+      registered: '¡Asistencia registrada! Que tengas un buen entrenamiento.',
+      already: 'Ya registraste tu asistencia a este turno.',
+      early: (time: string) => `Tu fichaje todavía no está habilitado. Podés registrarte desde las ${time}.`,
+      late: (time: string) => `Finalizó el horario de fichaje. Podías registrarte hasta las ${time}. Consultá con un profesor.`,
+      expired: 'Tu plan está vencido. No pudimos registrar tu asistencia. Acercate a recepción para renovar.',
+      noBooking: 'No tenés un turno reservado para este horario. Consultá con un profesor.',
+      cancelled: 'Este turno fue cancelado. Consultá con un profesor.',
+      notFound: 'No encontramos un alumno activo con ese DNI. Revisalo o consultá en recepción.',
+      manual: 'No pudimos registrar automáticamente tu asistencia. Consultá con un profesor.',
+    };
+    if (!person || !(await this.prisma.salaParticipation.findFirst({ where: { personId: person.id, startDate: { lte: this.date(date) }, OR: [{ endDate: null }, { endDate: { gte: this.date(date) } }] }, select: { id: true } }))) return denied('NOT_FOUND', messages.notFound);
+    const groups = await this.agenda(date);
+    const entries = groups.flatMap((group) => group.people).filter((entry) => entry.personId === person.id);
+    const unique = [...new Map(entries.map((entry) => [`${entry.origin}:${entry.sourceId}`, entry])).values()];
+    const windowFor = (entry: typeof unique[number]) => {
+      const startsAt = this.operationalStart(date, this.time(entry.startTime));
+      return { startsAt, opensAt: new Date(startsAt.getTime() - 20 * 60_000), closesAt: new Date(startsAt.getTime() + 20 * 60_000) };
+    };
+    const current = unique.filter((entry) => { const w = windowFor(entry); return now >= w.opensAt && now <= w.closesAt; });
+    if (current.some((entry) => entry.origin === SalaOccurrenceOrigin.SPONTANEOUS)) return denied('MANUAL_REVIEW', messages.manual);
+    const eligible = current.filter((entry) => entry.status !== SalaOccurrenceStatus.CANCELLED && entry.status !== SalaOccurrenceStatus.ABSENT);
+    const targetSet = eligible.length ? eligible : current;
+    if (targetSet.length > 1) return denied('MANUAL_REVIEW', messages.manual);
+    if (!targetSet.length) {
+      if (!unique.length) return denied('NO_BOOKING', messages.noBooking);
+      const upcoming = unique.filter((entry) => windowFor(entry).opensAt > now).sort((a, b) => windowFor(a).opensAt.getTime() - windowFor(b).opensAt.getTime())[0];
+      if (upcoming) return denied('TOO_EARLY', messages.early(this.formatMinutes(this.minutes(this.time(upcoming.startTime)) - 20)));
+      const latest = unique.sort((a, b) => windowFor(b).closesAt.getTime() - windowFor(a).closesAt.getTime())[0]!;
+      return denied(latest.status === SalaOccurrenceStatus.CANCELLED ? 'CANCELLED' : 'OUT_OF_WINDOW', latest.status === SalaOccurrenceStatus.CANCELLED ? messages.cancelled : messages.late(this.formatMinutes(this.minutes(this.time(latest.startTime)) + 20)));
+    }
+    const target = targetSet[0]!;
+    if (target.status === SalaOccurrenceStatus.ATTENDED) {
+      const validity = await this.validity(person.id, date);
+      return { status: 'ALREADY_REGISTERED', message: messages.already, person: `${person.firstName} ${person.lastName}`, startTime: target.startTime, validUntil: validity.validUntil, renewalMessage: this.checkInRenewalMessage(validity.validUntil, date) };
+    }
+    if (target.status === SalaOccurrenceStatus.CANCELLED) return denied('CANCELLED', messages.cancelled);
+    if (target.status === SalaOccurrenceStatus.ABSENT || (target.status !== 'RESERVED' && target.status !== 'PENDING_PAYMENT')) return denied('MANUAL_REVIEW', messages.manual);
+    const validity = await this.validity(person.id, date);
+    if (!validity.hasValidAccess) return denied('EXPIRED', messages.expired);
+    try {
+      const saved = await this.prisma.$transaction(async (tx) => {
+        const participation = await tx.salaParticipation.findFirst({ where: { personId: person.id, endDate: null }, select: { id: true } });
+        if (!participation) return null;
+        await this.lockParticipations(tx, [participation.id]);
+        const stillActive = await tx.salaParticipation.findFirst({ where: { id: participation.id, startDate: { lte: this.date(date) }, OR: [{ endDate: null }, { endDate: { gte: this.date(date) } }] }, select: { id: true } });
+        if (!stillActive) return null;
+        await tx.$queryRaw`SELECT id FROM sala_schedule_slots WHERE id = ${groups.find((g) => g.people.some((e) => e.personId === person.id && e.sourceId === target.sourceId))!.slot.scheduleSlotId}::uuid FOR UPDATE`;
+        const scheduleSlotId = groups.find((g) => g.people.some((e) => e.personId === person.id && e.sourceId === target.sourceId))!.slot.scheduleSlotId;
+        const reference = { personId: person.id, scheduleSlotId, date: this.date(date) };
+        const occurrences = await tx.salaOccurrence.findMany({ where: reference });
+        const existing = occurrences.find((item) => target.origin === SalaOccurrenceOrigin.FIXED ? item.fixedSalaBookingId === target.sourceId : item.oneOffReservationId === target.sourceId);
+        if (existing?.status === SalaOccurrenceStatus.ATTENDED) return { occurrence: existing, already: true };
+        if (existing && existing.status !== SalaOccurrenceStatus.RESERVED) return null;
+        if (target.origin === SalaOccurrenceOrigin.FIXED) {
+          const booking = await tx.fixedSalaBooking.findUnique({ where: { id: target.sourceId }, include: { scheduleSlot: true } });
+          if (!booking || booking.personId !== person.id) return null;
+          return { occurrence: existing ? await tx.salaOccurrence.update({ where: { id: existing.id }, data: { status: SalaOccurrenceStatus.ATTENDED, lastModifiedBy: actorId } }) : await tx.salaOccurrence.create({ data: { ...reference, startTime: booking.startTime ?? booking.scheduleSlot.startTime, serviceTypeId: booking.serviceTypeId, serviceDurationMinutes: booking.serviceDurationMinutes, fixedSalaBookingId: booking.id, origin: SalaOccurrenceOrigin.FIXED, status: SalaOccurrenceStatus.ATTENDED, createdBy: actorId, lastModifiedBy: actorId } }), already: false };
+        }
+        if (target.origin === SalaOccurrenceOrigin.ONE_OFF) {
+          const reservation = await tx.oneOffReservation.findUnique({ where: { id: target.sourceId }, include: { scheduleSlot: true } });
+          if (!reservation || reservation.personId !== person.id || reservation.cancelledAt) return null;
+          return { occurrence: existing ? await tx.salaOccurrence.update({ where: { id: existing.id }, data: { status: SalaOccurrenceStatus.ATTENDED, lastModifiedBy: actorId } }) : await tx.salaOccurrence.create({ data: { ...reference, startTime: reservation.startTime ?? reservation.scheduleSlot.startTime, serviceTypeId: reservation.serviceTypeId, serviceDurationMinutes: reservation.serviceDurationMinutes, oneOffReservationId: reservation.id, origin: SalaOccurrenceOrigin.ONE_OFF, status: SalaOccurrenceStatus.ATTENDED, createdBy: actorId, lastModifiedBy: actorId } }), already: false };
+        }
+        return null;
+      });
+      if (!saved) return denied('MANUAL_REVIEW', messages.manual);
+      const refreshedValidity = await this.validity(person.id, date);
+      return { status: saved.already ? 'ALREADY_REGISTERED' : 'REGISTERED', message: saved.already ? messages.already : messages.registered, person: `${person.firstName} ${person.lastName}`, startTime: target.startTime, validUntil: refreshedValidity.validUntil, renewalMessage: this.checkInRenewalMessage(refreshedValidity.validUntil, date) };
+    } catch {
+      return denied('ERROR', 'No pudimos verificar tu asistencia. Intentá nuevamente.');
+    }
+  }
+  private checkInRenewalMessage(validUntil: string | null, today: string): string | null {
+    if (!validUntil) return null;
+    const days = (this.date(validUntil).getTime() - this.date(today).getTime()) / 86_400_000;
+    if (days === 0) return 'Tu plan vence hoy. Recordá renovarlo para continuar entrenando.';
+    if (days === 1) return 'Tu plan vence mañana. Recordá renovarlo.';
+    if (days > 1) return `Tu plan vence en ${days} días, el ${validUntil.slice(8, 10)}/${validUntil.slice(5, 7)}.`;
+    return null;
   }
   private async spontaneousParticipation(client: Prisma.TransactionClient | PrismaService, personId: string, date: string) {
     const day = this.date(date);

@@ -814,6 +814,25 @@ export interface SalaAgendaResponseDto {
   data: SalaAgendaGroupDto[];
 }
 
+export interface CheckInByDniDto {
+  dni: string;
+}
+
+export interface CheckInResultDto {
+  status: string;
+  message: string;
+  person?: string;
+  startTime?: string;
+  /** @nullable */
+  validUntil?: string | null;
+  /** @nullable */
+  renewalMessage?: string | null;
+}
+
+export interface CheckInResultEnvelopeDto {
+  data: CheckInResultDto;
+}
+
 export interface OccurrenceReferenceDto {
   personId: string;
   scheduleSlotId: string;
@@ -4035,6 +4054,46 @@ export const getSalaAgenda = async (params: GetSalaAgendaParams, options?: Reque
 
   const data: getSalaAgendaResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getSalaAgendaResponse
+}
+
+
+
+export type checkInSalaByDniResponse200 = {
+  data: CheckInResultEnvelopeDto
+  status: 200
+}
+
+export type checkInSalaByDniResponseSuccess = (checkInSalaByDniResponse200) & {
+  headers: Headers;
+};
+;
+
+export type checkInSalaByDniResponse = (checkInSalaByDniResponseSuccess)
+
+export const getCheckInSalaByDniUrl = () => {
+
+
+
+
+  return `/api/sala/check-in`
+}
+
+export const checkInSalaByDni = async (checkInByDniDto: CheckInByDniDto, options?: RequestInit): Promise<checkInSalaByDniResponse> => {
+
+  const res = await fetch(getCheckInSalaByDniUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      checkInByDniDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: checkInSalaByDniResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as checkInSalaByDniResponse
 }
 
 

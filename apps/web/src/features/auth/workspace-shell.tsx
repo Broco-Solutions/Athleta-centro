@@ -35,6 +35,7 @@ const navigation: NavigationItem[] = [
 const professorNavigation: NavigationItem[] = [
   { key: 'home', href: '/', label: 'Inicio', icon: Activity, canAccess: () => true },
   { key: 'sala-agenda', href: '/sala', label: 'Agenda', icon: CalendarDays, canAccess: (permissions) => permissions.includes('SALA_RELATION_READ') },
+  { key: 'sala-check-in', href: '/sala/fichaje', label: 'Fichaje', icon: ClipboardList, canAccess: (permissions) => permissions.includes('SALA_AGENDA_MANAGE') },
   { key: 'sala-students', href: '/students', label: 'Alumnos', icon: Users, canAccess: () => true },
   { key: 'routines', href: '/routines', label: 'Rutinas', icon: ClipboardList, canAccess: () => true },
 ];
@@ -47,6 +48,7 @@ function groupedNavigation(permissions: string[]): NavigationGroup[] {
     ] },
     { key: 'sala', label: 'Sala', items: [
       { key: 'sala-agenda', href: '/sala', label: 'Agenda', icon: CalendarDays, canAccess: (values) => values.includes('SALA_AGENDA_MANAGE') },
+      { key: 'sala-check-in', href: '/sala/fichaje', label: 'Fichaje', icon: ClipboardList, canAccess: (values) => values.includes('SALA_AGENDA_MANAGE') },
       { key: 'sala-students', href: '/students', label: 'Alumnos', icon: Users, canAccess: (values) => values.includes('SALA_PARTICIPATION_MANAGE') },
       { key: 'routines', href: '/routines', label: 'Rutinas', icon: ClipboardList, canAccess: (values) => values.includes('SALA_ROUTINE_MANAGE') },
       { key: 'sala-configuration', href: '/sala/configuration', label: 'Configuración', icon: Dumbbell, canAccess: (values) => hasAny(values, ['SALA_SCHEDULE_MANAGE', 'SALA_PLAN_CATALOG_MANAGE', 'SALA_SERVICE_DURATION_MANAGE']) },
