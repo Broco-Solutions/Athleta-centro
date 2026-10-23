@@ -34,6 +34,7 @@ const navigation: NavigationItem[] = [
 
 const professorNavigation: NavigationItem[] = [
   { key: 'home', href: '/', label: 'Inicio', icon: Activity, canAccess: () => true },
+  { key: 'sala-agenda', href: '/sala', label: 'Agenda', icon: CalendarDays, canAccess: (permissions) => permissions.includes('SALA_RELATION_READ') },
   { key: 'reservations', href: '/reservations', label: 'Reservas', icon: CalendarDays, canAccess: () => true },
   { key: 'sala-students', href: '/students', label: 'Alumnos', icon: Users, canAccess: () => true },
   { key: 'routines', href: '/routines', label: 'Rutinas', icon: ClipboardList, canAccess: () => true },
@@ -98,7 +99,7 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
   const groups = hasAdministrativeNavigation ? groupedNavigation(permissions) : null;
   const activeGroupKey = groups?.find((group) => group.items.some((item) => item.key === activeKey))?.key;
   const [openGroupKey, setOpenGroupKey] = React.useState<NavigationGroup['key'] | undefined>(activeGroupKey);
-  const visibleNavigation = roles.includes('GENERAL_ADMIN') ? (groups?.flatMap((group) => group.items) ?? []) : hasAdministrativeNavigation ? (groups?.flatMap((group) => group.items) ?? []) : isProfessorOnly ? professorNavigation : navigation.filter((item) => item.canAccess(permissions));
+  const visibleNavigation = roles.includes('GENERAL_ADMIN') ? (groups?.flatMap((group) => group.items) ?? []) : hasAdministrativeNavigation ? (groups?.flatMap((group) => group.items) ?? []) : isProfessorOnly ? professorNavigation.filter((item) => item.canAccess(permissions)) : navigation.filter((item) => item.canAccess(permissions));
 
   React.useEffect(() => {
     setOpenGroupKey(activeGroupKey);

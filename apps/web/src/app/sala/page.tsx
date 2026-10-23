@@ -1,23 +1,21 @@
 'use client';
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { WorkspaceShell } from '../../features/auth/workspace-shell';
 import { currentSession } from '../../features/auth/auth';
 import { SalaNavigation } from '../../features/sala/sala-navigation';
-import { AgendaPanel } from '../../features/sala/agenda-panel';
-import { SalaReservationsAgenda } from '../../features/reservations/sala-reservations-agenda';
-const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
+import { FixedBookingsCalendar } from '../../features/sala/fixed-bookings-calendar';
 function SalaPageContent(): React.JSX.Element {
-  const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false }); const [date, setDate] = useState(today); const view = useSearchParams()?.get('view') === 'students' ? 'students' : 'agenda';
+  const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false }); const view = useSearchParams()?.get('view') === 'students' ? 'students' : 'agenda';
   const isProfessorOnly = session.data?.roles.length === 1 && session.data.roles.includes('PROFESSOR');
   const hasAdministrativeNavigation = session.data?.roles.some((role) => role === 'ADMINISTRATIVE' || role === 'GENERAL_ADMIN') ?? false;
   const router = useRouter();
-  useEffect(() => { if (view === 'students') router.replace('/students'); else if (isProfessorOnly) router.replace('/reservations'); }, [isProfessorOnly, router, view]);
-  if (session.isPending || isProfessorOnly || view === 'students') return <main className="p-6" role="status">Cargando…</main>;
+  useEffect(() => { if (view === 'students') router.replace('/students'); }, [router, view]);
+  if (session.isPending || view === 'students') return <main className="p-6" role="status">Cargando…</main>;
   const pageActive = 'sala-agenda';
-  return <WorkspaceShell active={pageActive}><div className="mx-auto max-w-7xl space-y-5"><header className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm text-muted-foreground">Módulo global</p><h1 className="text-3xl font-semibold">Sala</h1><p className="mt-1 text-sm text-muted-foreground">Operación diaria y personas con participación activa.</p></div>{!hasAdministrativeNavigation ? <Link href="/people" className="text-sm font-medium underline">Ver Personas</Link> : null}</header>{!hasAdministrativeNavigation ? <SalaNavigation active={view}/> : null}{hasAdministrativeNavigation ? <SalaReservationsAgenda csrfToken={session.data?.csrfToken ?? ''} isProfessorOnly={false} canManageAgenda={session.data?.permissions.includes('SALA_AGENDA_MANAGE') ?? false} canManageParticipation={session.data?.permissions.includes('SALA_PARTICIPATION_MANAGE') ?? false} canCreatePerson={session.data?.permissions.includes('PEOPLE_CREATE') ?? false} title="Agenda" description="Turnos fijos, reservas puntuales e incorporaciones espontáneas de Sala." /> : <AgendaPanel canManageAgenda={session.data?.permissions.includes('SALA_AGENDA_MANAGE') ?? false} canManageParticipation={session.data?.permissions.includes('SALA_PARTICIPATION_MANAGE') ?? false} canCreatePerson={!isProfessorOnly && (session.data?.permissions.includes('PEOPLE_CREATE') ?? false)} date={date} onDateChange={setDate} csrfToken={session.data?.csrfToken ?? ''}/>}</div></WorkspaceShell>;
+  return <WorkspaceShell active={pageActive}><div className="mx-auto max-w-7xl space-y-5"><header className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm text-muted-foreground">Módulo global</p><h1 className="text-3xl font-semibold">Sala</h1><p className="mt-1 text-sm text-muted-foreground">Operación diaria y personas con participación activa.</p></div>{!hasAdministrativeNavigation ? <Link href="/people" className="text-sm font-medium underline">Ver Personas</Link> : null}</header>{!hasAdministrativeNavigation ? <SalaNavigation active={view}/> : null}{session.data?.permissions.includes('SALA_RELATION_READ') ? <FixedBookingsCalendar csrfToken={session.data.csrfToken} canManageAgenda={session.data.permissions.includes('SALA_AGENDA_MANAGE')} canManageParticipation={session.data.permissions.includes('SALA_PARTICIPATION_MANAGE')} canCreatePerson={!isProfessorOnly && session.data.permissions.includes('PEOPLE_CREATE')} /> : <p role="alert">No tenés permiso para consultar la agenda.</p>}</div></WorkspaceShell>;
 }
 
 export default function SalaPage(): React.JSX.Element { return <Suspense fallback={<main className="p-6">Cargando Sala…</main>}><SalaPageContent /></Suspense>; }
