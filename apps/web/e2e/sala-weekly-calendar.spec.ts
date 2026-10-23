@@ -47,9 +47,15 @@ for (const [width, role] of [[1440, 'PROFESSOR'], [768, 'ADMINISTRATIVE'], [390,
       scrollWidth: document.documentElement.scrollWidth,
       calendar: document.querySelector('[aria-label="Calendario semanal"]')!.getBoundingClientRect().toJSON() as { x: number; y: number },
       panel: document.querySelector('aside[aria-label="Turno seleccionado"]')!.getBoundingClientRect().toJSON() as { x: number; y: number },
+      morning: document.querySelector('[aria-label="Franjas horarias"] button[aria-pressed="true"]')!.getBoundingClientRect().toJSON() as { width: number },
+      afternoon: document.querySelector('[aria-label="Franjas horarias"] button[aria-pressed="false"]')!.getBoundingClientRect().toJSON() as { width: number },
     }));
     expect(geometry.scrollWidth).toBeLessThanOrEqual(width);
-    if (width === 1440) expect(geometry.panel.x).toBeLessThan(geometry.calendar.x);
+    expect(Math.abs(geometry.morning.width - geometry.afternoon.width)).toBeLessThanOrEqual(2);
+    if (width === 1440) {
+      expect(Math.abs(geometry.calendar.y - geometry.panel.y)).toBeLessThanOrEqual(2);
+      expect(geometry.panel.x).toBeGreaterThan(geometry.calendar.x);
+    }
     else expect(geometry.panel.y).toBeGreaterThan(geometry.calendar.y);
     await expect(page.getByRole('button', { name: /^lunes 09:00:/ })).toHaveCSS('border-color', 'rgb(252, 204, 5)');
     await page.evaluate(() => window.scrollTo(0, 0));

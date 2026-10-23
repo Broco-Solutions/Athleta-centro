@@ -253,30 +253,144 @@ it('keeps assignment open and displays a rejected Plan limit without changing oc
   expect(panel.getByText('1 / 6')).toBeVisible();
 });
 
+it('creates a new student from assignment and assigns the selected fixed slot before showing the Portal PIN', async () => {
+  const createdId = 'created-student';
+  let fixedPayload: unknown;
+  let assigned = false;
+  let studentsRead = 0;
+  server.use(
+    http.get('http://localhost:3000/api/sala/agenda', ({ request }) => {
+      const date = new URL(request.url).searchParams.get('date')!;
+      const entries = assigned && date === '2026-10-19' ? [fixedStudent, { ...fixedStudent, personId: createdId, sourceId: 'created-fixed', person: { id: createdId, firstName: 'Eva', lastName: 'Nueva', dni: '88000003' } }] : [fixedStudent];
+      return HttpResponse.json({ data: new Date(`${date}T12:00Z`).getUTCDay() === 0 ? [] : [...hourGroups(9, entries, entries.length), ...hourGroups(16), ...hourGroups(21)] });
+    }),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'plan', name: 'Plan Base', isSelectable: true }] })),
+    http.get('http://localhost:3000/api/sala/professors', () => HttpResponse.json({ data: [{ id: 'professor', firstName: 'Ana', lastName: 'Profesora' }] })),
+    http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: [] })),
+    http.post('http://localhost:3000/api/sala/students', async ({ request }) => {
+      expect(request.headers.get('x-csrf-token')).toBe('csrf');
+      expect(await request.json()).toMatchObject({ firstName: 'Eva', lastName: 'Nueva', planId: 'plan', mainProfessorId: 'professor' });
+      return HttpResponse.json({ data: { id: createdId, firstName: 'Eva', lastName: 'Nueva', initialPin: '4812' } }, { status: 201 });
+    }),
+    http.get('http://localhost:3000/api/sala/students', () => {
+      studentsRead += 1;
+      return HttpResponse.json({ data: [
+        { id: 'new-student', participationId: 'participation-real', firstName: 'Ada', lastName: 'Sintética', dni: '88000002', hasValidAccess: true },
+        ...(studentsRead > 1 ? [{ id: createdId, participationId: 'participation-created', firstName: 'Eva', lastName: 'Nueva', dni: '88000003', hasValidAccess: true }] : []),
+      ] });
+    }),
+    http.post('http://localhost:3000/api/sala/fixed-bookings', async ({ request }) => {
+      fixedPayload = await request.json();
+      assigned = true;
+      return HttpResponse.json({ data: {} }, { status: 201 });
+    }),
+  );
+  renderPage();
+  const panel = within(await selectMonday());
+  fireEvent.click(panel.getByRole('button', { name: 'Asignar alumno' }));
+  const assignment = within(await screen.findByRole('dialog', { name: 'Asignar alumno' }));
+  fireEvent.click(await assignment.findByRole('button', { name: /Nuevo alumno/ }));
+  fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Eva' } });
+  fireEvent.change(screen.getByLabelText('Apellido'), { target: { value: 'Nueva' } });
+  fireEvent.change(screen.getByLabelText('DNI'), { target: { value: '88000003' } });
+  fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '3415551234' } });
+  fireEvent.change(screen.getByLabelText('Fecha de nacimiento'), { target: { value: '2000-01-01' } });
+  await screen.findByRole('option', { name: 'Plan Base' });
+  await screen.findByRole('option', { name: 'Profesora, Ana' });
+  fireEvent.change(screen.getByLabelText('Plan'), { target: { value: 'plan' } });
+  fireEvent.change(screen.getByLabelText('Profesor principal'), { target: { value: 'professor' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar e asignar' }));
+  await screen.findByRole('dialog', { name: 'Alumno guardado correctamente' });
+  expect(fixedPayload).toEqual({ personId: createdId, salaParticipationId: 'participation-created', scheduleSlotId: 'slot-9', startTime: '09:00', startDate: '2026-10-19' });
+  expect(screen.getByText('PIN temporal del Portal')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Entendido' }));
+  await waitFor(() => expect(panel.getByText('Eva Nueva')).toBeVisible());
+});
+
+it('does not offer Nuevo alumno when person creation is not permitted', async () => {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: session.permissions.filter(permission => permission !== 'PEOPLE_CREATE') } })));
+  renderPage();
+  const panel = within(await selectMonday());
+  fireEvent.click(panel.getByRole('button', { name: 'Asignar alumno' }));
+  const dialog = within(await screen.findByRole('dialog', { name: 'Asignar alumno' }));
+  expect(dialog.queryByRole('button', { name: /Nuevo alumno/ })).not.toBeInTheDocument();
+  fireEvent.change(dialog.getByLabelText('Buscar alumno'), { target: { value: 'Ada' } });
+  expect(await dialog.findByRole('button', { name: /Ada Sintética/ })).toBeVisible();
+});
+
+it('keeps the one-time PIN and refreshes students when automatic assignment fails', async () => {
+  let createdCount = 0;
+  let fixedCount = 0;
+  server.use(
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'plan', name: 'Plan Base', isSelectable: true }] })),
+    http.get('http://localhost:3000/api/sala/professors', () => HttpResponse.json({ data: [{ id: 'professor', firstName: 'Ana', lastName: 'Profesora' }] })),
+    http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: [] })),
+    http.post('http://localhost:3000/api/sala/students', () => { createdCount += 1; return HttpResponse.json({ data: { id: 'partial-student', firstName: 'Eva', lastName: 'Nueva', initialPin: '4812' } }, { status: 201 }); }),
+    http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: [
+      { id: 'new-student', participationId: 'participation-real', firstName: 'Ada', lastName: 'Sintética', dni: '88000002', hasValidAccess: true },
+      ...(createdCount ? [{ id: 'partial-student', participationId: 'partial-participation', firstName: 'Eva', lastName: 'Nueva', dni: '88000003', hasValidAccess: true }] : []),
+    ] })),
+    http.post('http://localhost:3000/api/sala/fixed-bookings', () => {
+      fixedCount += 1;
+      return fixedCount === 1 ? HttpResponse.json({ code: 'SALA_WEEKLY_LIMIT_EXCEEDED' }, { status: 409 }) : HttpResponse.json({ data: {} }, { status: 201 });
+    }),
+  );
+  renderPage();
+  const panel = within(await selectMonday());
+  fireEvent.click(panel.getByRole('button', { name: 'Asignar alumno' }));
+  const assignment = within(await screen.findByRole('dialog', { name: 'Asignar alumno' }));
+  fireEvent.click(await assignment.findByRole('button', { name: /Nuevo alumno/ }));
+  fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Eva' } });
+  fireEvent.change(screen.getByLabelText('Apellido'), { target: { value: 'Nueva' } });
+  fireEvent.change(screen.getByLabelText('DNI'), { target: { value: '88000003' } });
+  fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '3415551234' } });
+  fireEvent.change(screen.getByLabelText('Fecha de nacimiento'), { target: { value: '2000-01-01' } });
+  await screen.findByRole('option', { name: 'Plan Base' });
+  fireEvent.change(screen.getByLabelText('Plan'), { target: { value: 'plan' } });
+  fireEvent.change(screen.getByLabelText('Profesor principal'), { target: { value: 'professor' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar e asignar' }));
+  const pinDialog = await screen.findByRole('dialog', { name: 'Alumno guardado correctamente' });
+  expect(within(pinDialog).getByRole('alert')).toHaveTextContent('no pudo asignarse automáticamente');
+  expect(within(pinDialog).getByLabelText('PIN temporal')).toHaveTextContent('4812');
+  fireEvent.click(within(pinDialog).getByRole('button', { name: 'Entendido' }));
+  expect(createdCount).toBe(1);
+  fireEvent.click(panel.getByRole('button', { name: 'Asignar alumno' }));
+  const retry = within(await screen.findByRole('dialog', { name: 'Asignar alumno' }));
+  fireEvent.change(retry.getByLabelText('Buscar alumno'), { target: { value: 'Eva' } });
+  expect(await retry.findByRole('button', { name: /Eva Nueva/ })).toBeVisible();
+  fireEvent.click(retry.getByRole('button', { name: /Eva Nueva/ }));
+  fireEvent.click(retry.getByRole('button', { name: 'Confirmar asignación' }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Asignar alumno' })).not.toBeInTheDocument());
+  expect(createdCount).toBe(1);
+  expect(fixedCount).toBe(2);
+});
+
 it('starts directly with Agenda, identifies the week and orders the calendar before the detail', async () => {
   renderPage();
   const calendar = await screen.findByTestId('fixed-bookings-calendar');
   expect(screen.getByRole('heading', { name: 'Agenda', level: 1 })).toBeVisible();
   for (const text of ['Módulo global', 'Operación diaria y personas con participación activa.']) expect(screen.queryByText(text)).not.toBeInTheDocument();
   expect(screen.queryByRole('heading', { name: 'Sala', level: 1 })).not.toBeInTheDocument();
-  expect(screen.getByText('Semana del 19 al 25 de octubre de 2026')).toBeVisible();
-  expect(screen.getByText('Lunes 19/10/2026 — Domingo 25/10/2026')).toBeVisible();
-  expect(screen.getByText('Semana actual')).toBeVisible();
+  const toolbar = within(calendar).getByRole('toolbar', { name: 'Navegación semanal' });
+  expect(within(toolbar).getByText('Semana del 19 al 25 de octubre de 2026')).toBeVisible();
+  expect(within(calendar).queryByText('Lunes 19/10/2026 — Domingo 25/10/2026')).not.toBeInTheDocument();
+  expect(within(calendar).queryByText('Semana actual')).not.toBeInTheDocument();
   const panel = within(calendar).getByRole('complementary');
   const grid = panel.parentElement!;
   expect(grid).toHaveClass('lg:grid-cols-[minmax(0,7fr)_minmax(280px,3fr)]');
-  expect(panel).toHaveClass('order-2');
-  expect(panel.nextElementSibling).toHaveClass('order-1');
+  expect(grid.firstElementChild).toContainElement(within(calendar).getByLabelText('Calendario semanal'));
+  expect(within(calendar).getByLabelText('Franjas horarias')).toHaveClass('grid', 'grid-cols-2', 'w-full');
+  expect(within(calendar).getByRole('button', { name: /Mañana/ })).toBeVisible();
+  expect(within(calendar).getByRole('button', { name: /Tarde/ })).toBeVisible();
   expect(within(calendar).getByLabelText('Calendario semanal')).toHaveClass('overflow-x-auto');
 });
 
 it.each([
-  ['2026-10-26T10:00:00Z', 'Semana del 26 de octubre al 1 de noviembre de 2026', 'Lunes 26/10/2026 — Domingo 01/11/2026'],
-  ['2026-12-28T10:00:00Z', 'Semana del 28 de diciembre de 2026 al 3 de enero de 2027', 'Lunes 28/12/2026 — Domingo 03/01/2027'],
-])('formats a week crossing month or year (%s)', async (date, label, range) => {
+  ['2026-10-26T10:00:00Z', 'Semana del 26 de octubre al 1 de noviembre de 2026'],
+  ['2026-12-28T10:00:00Z', 'Semana del 28 de diciembre de 2026 al 3 de enero de 2027'],
+])('formats a week crossing month or year (%s)', async (date, label) => {
   vi.setSystemTime(new Date(date)); renderPage();
-  expect(await screen.findByText(label)).toBeVisible();
-  expect(screen.getByText(range)).toBeVisible();
+  expect(await within(await screen.findByRole('toolbar', { name: 'Navegación semanal' })).findByText(label)).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: 'Semana anterior' }));
   expect(screen.queryByText('Semana actual')).not.toBeInTheDocument();
 });
@@ -295,35 +409,30 @@ it('keeps full times red, including after selection, and highlights the selected
   expect(screen.getByText('Completo')).toHaveClass('text-red-800');
 });
 
-it.each(['2026-10-20T02:00:00Z', '2026-10-19T13:00:00Z'])('summarizes historical activities once each at Buenos Aires time (%s)', async now => {
+it.each(['2026-10-20T02:00:00Z', '2026-10-19T13:00:00Z'])('shows historical details only after selecting a finalized cell (%s)', async now => {
   vi.setSystemTime(new Date(now));
   const entries: AgendaEntry[] = [
     { ...fixedStudent, status: 'ATTENDED' },
-    { ...fixedStudent, sourceId: 'attended-punctual', origin: 'ONE_OFF', status: 'ATTENDED' },
-    { ...fixedStudent, sourceId: 'absent', status: 'ABSENT' },
-    { ...fixedStudent, sourceId: 'cancelled', origin: 'ONE_OFF', status: 'CANCELLED' },
-    { ...fixedStudent, sourceId: 'spontaneous', origin: 'SPONTANEOUS', status: 'ATTENDED', startTime: '08:45', durationMinutes: 90 },
-    { ...fixedStudent, sourceId: 'unregistered', status: 'RESERVED' },
-    { ...fixedStudent, sourceId: 'pending', status: 'PENDING_PAYMENT' },
+    { ...fixedStudent, personId: 'bruno', person: { ...fixedStudent.person, id: 'bruno', firstName: 'Bruno' }, sourceId: 'absent', status: 'ABSENT' },
+    { ...fixedStudent, personId: 'carla', person: { ...fixedStudent.person, id: 'carla', firstName: 'Carla' }, sourceId: 'cancelled', origin: 'ONE_OFF', status: 'CANCELLED' },
+    { ...fixedStudent, personId: 'diego', person: { ...fixedStudent.person, id: 'diego', firstName: 'Diego' }, sourceId: 'spontaneous', origin: 'SPONTANEOUS', status: 'ATTENDED' },
+    { ...fixedStudent, personId: 'elena', person: { ...fixedStudent.person, id: 'elena', firstName: 'Elena' }, sourceId: 'unregistered', status: 'RESERVED' },
   ];
   const groups = hourGroups(9, entries, 2);
-  groups[1] = { ...groups[1]!, people: entries }; // Repeated overlapping entries must not inflate counts.
+  groups[1] = { ...groups[1]!, people: entries };
   server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: groups })));
   renderPage();
   const cell = await screen.findByRole('button', { name: /^lunes 09:00:/ });
   expect(cell).toHaveTextContent('Finalizado');
+  for (const label of ['Asistieron:', 'No asistieron:', 'Ausentes:', 'Cancelaron:', 'Sin registrar:']) expect(within(cell).queryByText(new RegExp(label))).not.toBeInTheDocument();
   expect(cell).toHaveClass('bg-slate-100');
   fireEvent.click(cell);
-  const panel = screen.getByRole('complementary', { name: 'Turno seleccionado' });
-  for (const element of [cell, panel]) {
-    const view = within(element);
-    expect(view.getByText('Asistieron: 3')).toBeVisible();
-    expect(view.getByText('No asistieron: 2')).toBeVisible();
-    expect(view.getByText('Ausentes: 1 · Cancelaron: 1')).toBeVisible();
-    expect(view.getByText('Sin registrar: 2')).toBeVisible();
-    expect(view.queryByText(/lugares libres|Quedan/)).not.toBeInTheDocument();
+  const panel = within(screen.getByRole('complementary', { name: 'Turno seleccionado' }));
+  for (const [category, person] of [['Asistieron', 'Ana Sintética'], ['Ausentes', 'Bruno Sintética'], ['Cancelaron', 'Carla Sintética'], ['Incorporaciones espontáneas', 'Diego Sintética'], ['Sin registrar', 'Elena Sintética']] as const) {
+    expect(panel.getByRole('heading', { name: category })).toBeVisible();
+    expect(panel.getByText(person)).toBeVisible();
   }
-  expect(within(panel).queryByRole('button', { name: 'Asignar alumno' })).not.toBeInTheDocument();
+  expect(panel.queryByRole('button', { name: 'Asignar alumno' })).not.toBeInTheDocument();
 });
 
 it('keeps previous dates historical and allows correcting their attendance with the original date', async () => {
@@ -333,7 +442,6 @@ it('keeps previous dates historical and allows correcting their attendance with 
   const panel = within(await selectMonday());
   expect(panel.getByText('Finalizado')).toBeVisible();
   expect(panel.queryByRole('button', { name: 'Asignar alumno' })).not.toBeInTheDocument();
-  fireEvent.click(panel.getByRole('button', { name: /^Ver alumnos asignados/ }));
   fireEvent.click(panel.getByRole('button', { name: 'Ver reserva y asistencia' }));
   fireEvent.click(screen.getByRole('button', { name: 'Corregir estado' }));
   fireEvent.change(screen.getByLabelText('Nuevo estado'), { target: { value: 'ATTENDED' } });
@@ -349,7 +457,7 @@ it.each(['Semana anterior', 'Semana siguiente'])('opens spontaneous incorporatio
   const dialog = within(await screen.findByRole('dialog', { name: 'Incorporación espontánea' }));
   expect(dialog.getByText('La fecha seleccionada es 2026-10-19.')).toBeVisible();
   expect(dialog.getByText('La incorporación espontánea se realiza únicamente en el día de hoy. Te llevamos a los horarios disponibles de hoy.')).toBeVisible();
-  expect(screen.getByText('Semana actual')).toBeVisible();
+  expect(within(screen.getByRole('toolbar', { name: 'Navegación semanal' })).getByText('Semana del 19 al 25 de octubre de 2026')).toBeVisible();
   expect(screen.getByText('Seleccioná un horario del calendario para consultar sus alumnos y operar la agenda.')).toBeVisible();
   expect(dialog.queryByText(/no se utiliza para fechas futuras/)).not.toBeInTheDocument();
   fireEvent.change(dialog.getByLabelText('Buscar Persona'), { target: { value: 'Ada' } });
