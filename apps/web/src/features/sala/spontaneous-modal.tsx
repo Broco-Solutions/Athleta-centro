@@ -97,6 +97,7 @@ export function SpontaneousModal({ date, groups, initialSlotId, csrfToken, canMa
   return <div className="fixed inset-0 z-40 grid place-items-center bg-black/40 p-4" role="presentation"><div className={`max-h-[90vh] w-full ${mode === 'new' ? 'max-w-4xl' : 'max-w-xl'} overflow-auto rounded-md bg-white p-6 shadow-sm`} role="dialog" aria-modal="true" aria-labelledby="spontaneous-title">
     <h2 id="spontaneous-title" className="text-xl font-semibold">Incorporación espontánea</h2>
     <p className="mt-1 text-sm text-muted-foreground">La fecha seleccionada es {date}.</p>
+    {date === today ? <p className="mt-3 text-sm">La incorporación espontánea se realiza únicamente en el día de hoy. Te llevamos a los horarios disponibles de hoy.</p> : null}
     {future ? <><p className="mt-5 text-sm">La incorporación espontánea no se utiliza para fechas futuras. Para una fecha futura usá una Reserva puntual o un Turno fijo.</p><Button className="mt-5" variant="secondary" onClick={onClose}>Cerrar</Button></> : <>
       {date === today && canManageParticipation && canCreatePerson && <Button className="mt-4" variant="secondary" onClick={() => { setMode(mode === 'new' ? 'existing' : 'new'); resetSelection(); }}>{mode === 'new' ? 'Persona existente' : 'Nueva Persona'}</Button>}
       <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={mode === 'new' ? form.handleSubmit(submit) : (event) => { event.preventDefault(); submit(); }}>

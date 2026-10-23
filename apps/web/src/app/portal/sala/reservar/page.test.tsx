@@ -14,10 +14,6 @@ const base = 'http://localhost:3000/api/portal/';
 let submitted: unknown;
 let csrfHeader: string | null;
 let availabilityCalls: number;
-const services = [
-  { id: 'muscle', name: 'Musculación', durationMinutes: 60 },
-  { id: 'functional', name: 'Funcional', durationMinutes: 45 },
-];
 function blocks(full = '') {
   return ['17:00', '17:15', '17:30', '17:45', '18:00', '18:15', '18:30', '18:45'].map(startTime => {
     const end = Number(startTime.slice(0, 2)) * 60 + Number(startTime.slice(3)) + 15;
@@ -39,7 +35,6 @@ beforeEach(() => {
   submitted = undefined; csrfHeader = null; availabilityCalls = 0;
   server.use(
     http.get(base + 'sala', () => HttpResponse.json({ data: { replacementWeeks: [{ weekStart: '2026-10-05', weekEnd: '2026-10-11', available: 1 }], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
-    http.get(base + 'sala/services', () => HttpResponse.json({ data: [services[0]] })),
     http.get(base + 'sala/availability', () => { availabilityCalls++; return HttpResponse.json({ data: blocks() }); }),
     http.get(base + 'auth/session', () => HttpResponse.json({ data: { csrfToken: 'csrf' } })),
     http.post(base + 'sala/reservations', async ({ request }) => { submitted = await request.json(); csrfHeader = request.headers.get('x-csrf-token'); return HttpResponse.json({ data: { id: 'reservation' } }, { status: 201 }); }),
@@ -50,7 +45,6 @@ afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 
 it('defaults to general Sala and offers only exact-hour starts', async () => {
   renderReserve();
-  expect(await screen.findByRole('button', { name: 'Musculación 60 min' })).toHaveAttribute('aria-pressed', 'false');
   await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' });
   expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /17:15–/ })).not.toBeInTheDocument();
@@ -106,43 +100,8 @@ it('retains tomorrow’s activities even when their equivalent time has passed t
   }));
   renderReserve();
   await screen.findByText('No hay horarios disponibles para esta fecha.');
-  fireEvent.click(screen.getByRole('button', { name: /Mañana 09\/10/ }));
+  fireEvent.click(screen.getByRole('button', { name: /viernes 09\/10/i }));
   expect(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' })).toBeEnabled();
-});
-
-it('requires a manual service selection and only displays services supplied by the plan endpoint', async () => {
-  server.use(http.get(base + 'sala/services', () => HttpResponse.json({ data: services })));
-  renderReserve();
-  const muscle = await screen.findByRole('button', { name: 'Musculación 60 min' });
-  expect(muscle).toHaveAttribute('aria-pressed', 'false');
-  expect(screen.getByRole('button', { name: 'Funcional 45 min' })).toHaveAttribute('aria-pressed', 'false');
-  expect(screen.queryByText('Calistenia')).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeDisabled();
-  fireEvent.click(muscle);
-  fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
-  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeEnabled();
-  fireEvent.click(screen.getByRole('button', { name: 'Funcional 45 min' }));
-  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: /Hoy 08\/10/ })).toHaveAttribute('aria-pressed', 'true');
-  expect(await screen.findByRole('button', { name: '17:00–17:45 Hay lugar' })).toBeEnabled();
-});
-
-it('offers three quick dates and an optional calendar limited to thirty operational days', async () => {
-  renderReserve();
-  await screen.findByRole('button', { name: 'Musculación 60 min' });
-  expect(screen.getByRole('button', { name: /Hoy 08\/10/ })).toBeEnabled();
-  expect(screen.getByRole('button', { name: /Mañana 09\/10/ })).toBeEnabled();
-  expect(screen.getByRole('button', { name: /sábado 10\/10/i })).toBeEnabled();
-  expect(screen.queryByLabelText('Fecha')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Ver calendario' }));
-  expect(screen.getByLabelText('Fecha')).toHaveAttribute('min', '2026-10-08');
-  expect(screen.getByLabelText('Fecha')).toHaveAttribute('max', '2026-11-07');
-  fireEvent.change(screen.getByLabelText('Fecha'), { target: { value: '2026-11-08' } });
-  expect(screen.getByLabelText('Fecha')).toHaveValue('2026-10-08');
-  fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
-  fireEvent.click(screen.getByRole('button', { name: /Mañana 09\/10/ }));
-  expect(screen.getByLabelText('Fecha')).toHaveValue('2026-10-09');
-  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeDisabled();
 });
 
 it('disables a complete time range when an intermediate block is full while retaining other choices', async () => {
@@ -160,40 +119,6 @@ it('does not join separate windows or gaps to manufacture a complete range', asy
   server.use(http.get(base + 'sala/availability', () => HttpResponse.json({ data: blocks().slice(0, 4).map((block, index) => ({ ...block, scheduleSlotId: index === 2 ? 'other-window' : 'window' })) })));
   renderReserve();
   expect(await screen.findByText('No hay horarios disponibles para esta fecha.')).toBeInTheDocument();
-});
-
-it('allows general Sala when the plan has no services', async () => {
-  server.use(http.get(base + 'sala/services', () => HttpResponse.json({ data: [] })));
-  renderReserve();
-  expect(await screen.findByRole('button', { name: /Sin servicio — Sala/ })).toHaveAttribute('aria-pressed', 'true');
-  expect(screen.getByRole('button', { name: /Hoy 08\/10/ })).toBeEnabled();
-  fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Reservar reemplazo' }));
-  await screen.findByRole('heading', { name: 'Reserva confirmada' });
-  expect(submitted).toEqual({ date: '2026-10-08', scheduleSlotId: 'window', startTime: '17:00' });
-  expect(screen.getByText('Sala')).toBeInTheDocument();
-});
-
-it('preserves the exact payload and CSRF token, refreshes queries and retains the service and date after success', async () => {
-  const client = renderReserve();
-  fireEvent.click(await screen.findByRole('button', { name: 'Musculación 60 min' }));
-  const invalidate = vi.spyOn(client, 'invalidateQueries');
-  fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Reservar reemplazo' }));
-  expect(await screen.findByRole('heading', { name: 'Reserva confirmada' })).toBeInTheDocument();
-  expect(screen.getByText('Tu lugar quedó reservado.')).toBeInTheDocument();
-  expect(screen.getByText('Musculación')).toBeInTheDocument();
-  expect(screen.getByText(/jueves 08\/10/i)).toBeInTheDocument();
-  expect(screen.getByText('17:00 – 18:00')).toBeInTheDocument();
-  for (const link of screen.getAllByRole('link', { name: 'Volver a Inicio' })) expect(link).toHaveAttribute('href', '/portal');
-  expect(screen.queryByRole('link', { name: 'Volver a Sala' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Reservar reemplazo' })).not.toBeInTheDocument();
-  expect(submitted).toEqual({ date: '2026-10-08', scheduleSlotId: 'window', serviceTypeId: 'muscle', startTime: '17:00' });
-  expect(csrfHeader).toBe('csrf');
-  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['portal', 'sala'] });
-  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['portal', 'sala', 'availability'] });
-  expect(screen.queryByRole('button', { name: 'Musculación 60 min' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: /Hoy 08\/10/ })).not.toBeInTheDocument();
 });
 
 it.each([
@@ -226,17 +151,6 @@ it('uses a safe fallback for an unknown reservation error', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Reservar reemplazo' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos completar la operación. Tus datos no fueron modificados. Intentá nuevamente.');
   expect(screen.queryByText('Internal database detail')).not.toBeInTheDocument();
-});
-
-it('keeps the selected date when changing service and clears the previous time', async () => {
-  server.use(http.get(base + 'sala/services', () => HttpResponse.json({ data: services })));
-  renderReserve();
-  fireEvent.click(await screen.findByRole('button', { name: 'Musculación 60 min' }));
-  fireEvent.click(screen.getByRole('button', { name: /Mañana 09\/10/ }));
-  fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Funcional 45 min' }));
-  expect(screen.getByRole('button', { name: /Mañana 09\/10/ })).toHaveAttribute('aria-pressed', 'true');
-  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeDisabled();
 });
 
 it('shows Reservando and prevents another submit while the mutation is pending', async () => {
@@ -284,13 +198,6 @@ it('blocks the dedicated reservation route when current validity is missing', as
   expect(screen.queryByText('Necesitás renovar tu vigencia para realizar nuevas reservas.')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Reservar reemplazo' })).not.toBeInTheDocument();
 });
-it('limits the dedicated reservation calendar to the end of current validity', async () => {
-  server.use(http.get(base + 'sala', () => HttpResponse.json({ data: { replacementWeeks: [{ weekStart: '2026-10-05', weekEnd: '2026-10-11', available: 1 }], validity: { hasValidAccess: true, validUntil: '2026-10-09' } } })));
-  renderReserve();
-  fireEvent.click(await screen.findByRole('button', { name: 'Ver calendario' }));
-  expect(screen.getByLabelText('Fecha')).toHaveAttribute('max', '2026-10-09');
-});
-
 it('hides all booking inputs and the booking action without an available replacement', async () => {
   server.use(http.get(base + 'sala', () => HttpResponse.json({ data: { replacementWeeks: [], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })));
   renderReserve();
@@ -302,12 +209,67 @@ it('hides all booking inputs and the booking action without an available replace
   expect(screen.queryByText('Elegí el horario')).not.toBeInTheDocument();
   expect(availabilityCalls).toBe(0);
 });
-it('blocks an uncredited week and does not request its availability', async () => {
-  renderReserve(); await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' });
-  fireEvent.click(screen.getByRole('button', { name: 'Ver calendario' }));
-  const calls = availabilityCalls;
-  fireEvent.change(screen.getByLabelText('Fecha'), { target: { value: '2026-10-12' } });
-  expect(screen.getByText('Elegí una fecha dentro de la semana habilitada por tu cancelación.')).toBeVisible();
+
+it('shows only the first chronological enabled week with three steps and no service or calendar', async () => {
+  vi.mocked(portalUi.today).mockReturnValue('2026-10-26');
+  server.use(http.get(base + 'sala', () => HttpResponse.json({ data: { replacementWeeks: [
+    { weekStart: '2026-11-02', weekEnd: '2026-11-08', available: 1 },
+    { weekStart: '2026-10-19', weekEnd: '2026-10-25', available: 0 },
+    { weekStart: '2026-10-26', weekEnd: '2026-11-01', available: 1 },
+  ], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })));
+  renderReserve();
+  expect(await screen.findByRole('heading', { name: 'Semana disponible' })).toBeVisible();
+  expect(screen.getByText('26/10/2026 — 01/11/2026')).toBeVisible();
+  const dayButtons = screen.getAllByRole('button').filter(button => /\d{2}\/\d{2}/.test(button.getAttribute('aria-label') ?? ''));
+  expect(dayButtons.map(button => button.getAttribute('aria-label'))).toEqual(['lunes 26/10', 'martes 27/10', 'miércoles 28/10', 'jueves 29/10', 'viernes 30/10', 'sábado 31/10', 'domingo 01/11']);
+  for (const [number, title] of [[1, 'Elegí el día'], [2, 'Elegí el horario'], [3, 'Confirmá']]) expect(screen.getByRole('heading', { name: `${number} ${title}` })).toBeVisible();
+  expect(document.querySelector('input[type="date"]')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Ver calendario' })).not.toBeInTheDocument();
+  expect(screen.queryByText(/Servicio|Sin servicio|60 min/)).not.toBeInTheDocument();
+});
+
+it('sends only date, slot and time with CSRF and keeps confirmation after consuming the replacement', async () => {
+  vi.mocked(portalUi.today).mockReturnValue('2026-10-28');
+  let consumed = false;
+  server.use(
+    http.get(base + 'sala', () => HttpResponse.json({ data: { replacementWeeks: consumed ? [] : [{ weekStart: '2026-10-26', weekEnd: '2026-11-01', available: 1 }], validity: { hasValidAccess: true, validUntil: '2026-11-20' } } })),
+    http.get(base + 'sala/availability', () => HttpResponse.json({ data: blocks().map(block => ({ ...block, date: '2026-10-28' })) })),
+    http.post(base + 'sala/reservations', async ({ request }) => { submitted = await request.json(); csrfHeader = request.headers.get('x-csrf-token'); consumed = true; return HttpResponse.json({ data: {} }, { status: 201 }); }),
+  );
+  const client = renderReserve();
+  const invalidate = vi.spyOn(client, 'invalidateQueries');
+  fireEvent.click(await screen.findByRole('button', { name: '18:00–19:00 Hay lugar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Reservar reemplazo' }));
+  await screen.findByRole('heading', { name: 'Reserva confirmada' });
+  await waitFor(() => expect(client.getQueryData<{ replacementWeeks: unknown[] }>(['portal', 'sala'])?.replacementWeeks).toEqual([]));
+  expect(submitted).toEqual({ date: '2026-10-28', scheduleSlotId: 'window', startTime: '18:00' });
+  expect(csrfHeader).toBe('csrf');
+  expect(screen.getByText('Fecha')).toBeVisible();
+  expect(screen.getByText('Hora')).toBeVisible();
+  expect(screen.getByText(/miércoles 28\/10/i)).toBeVisible();
+  expect(screen.getByText('18:00 – 19:00')).toBeVisible();
+  expect(screen.getByText('Tu lugar quedó reservado.')).toBeVisible();
+  expect(screen.queryByText(/Servicio|Sala · 60 min|Sin servicio/)).not.toBeInTheDocument();
+  for (const link of screen.getAllByRole('link', { name: 'Volver a Inicio' })) expect(link).toHaveAttribute('href', '/portal');
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['portal', 'sala'] });
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['portal', 'sala', 'availability'] });
+});
+
+it('offers only remaining days within validity and clears time selection when the day changes', async () => {
+  server.use(http.get(base + 'sala', () => HttpResponse.json({ data: { replacementWeeks: [{ weekStart: '2026-10-05', weekEnd: '2026-10-11', available: 1 }], validity: { hasValidAccess: true, validUntil: '2026-10-09' } } })));
+  renderReserve();
+  fireEvent.click(await screen.findByRole('button', { name: '17:00–18:00 Hay lugar' }));
+  expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'jueves 08/10' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'viernes 09/10' }));
   expect(screen.getByRole('button', { name: 'Reservar reemplazo' })).toBeDisabled();
-  expect(availabilityCalls).toBe(calls);
+  expect(screen.queryByRole('button', { name: /sábado|domingo|lunes|martes|miércoles/i })).not.toBeInTheDocument();
+});
+
+it('caps an enabled week at thirty days from today', async () => {
+  server.use(http.get(base + 'sala', () => HttpResponse.json({ data: { replacementWeeks: [{ weekStart: '2026-11-02', weekEnd: '2026-11-08', available: 1 }], validity: { hasValidAccess: true, validUntil: '2026-12-20' } } })));
+  renderReserve();
+  await screen.findByRole('heading', { name: 'Semana disponible' });
+  expect(screen.getByRole('button', { name: 'sábado 07/11' })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: 'domingo 08/11' })).not.toBeInTheDocument();
 });
