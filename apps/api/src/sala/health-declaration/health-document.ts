@@ -36,3 +36,7 @@ export function ageOnDate(birthDate: string, today: string): number {
   const years = Number(today.slice(0, 4)) - Number(birthDate.slice(0, 4));
   return years - (today.slice(5) < birthDate.slice(5) ? 1 : 0);
 }
+
+export function operationalToday(now = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+}

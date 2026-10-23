@@ -1,5 +1,6 @@
 'use client';
 
+import { PaperDeclarationFields, usePaperDeclaration } from '../health-declaration/paper-declaration-fields';
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -72,6 +73,7 @@ function availabilityLabel(group: AgendaGroup): string { return group.isClosed ?
 
 function AssignmentDialog({ selection, csrfToken, canManageParticipation, canCreatePerson, onSaved, onStudentCreated, onClose }: { selection: Selection; csrfToken: string; canManageParticipation: boolean; canCreatePerson: boolean; onSaved: () => Promise<void>; onStudentCreated: (notice: Notice, assigned: boolean) => Promise<void>; onClose: () => void }): React.JSX.Element {
   const [search, setSearch] = useState('');
+  const paper = usePaperDeclaration();
   const [creatingStudent, setCreatingStudent] = useState(false);
   const startDate = assignmentDate(selection.date);
   const form = useForm<z.infer<typeof assignmentSchema>>({ resolver: zodResolver(assignmentSchema), defaultValues: { personId: '' } });
@@ -111,7 +113,7 @@ function AssignmentDialog({ selection, csrfToken, canManageParticipation, canCre
     if (!canManageParticipation || !canCreatePerson || !slot || agenda.isPending || agenda.isError || agenda.isFetching) throw new Error('El horario está cerrado, incompleto o sin cupo para la fecha de inicio.');
     if (!csrfToken) throw new Error('Sesión inválida.');
     const { planId, mainProfessorId, ...generalPerson } = values;
-    const createdResponse = await createSalaStudent({ ...personInput(generalPerson), planId, mainProfessorId }, { ...readOptions, headers: { 'x-csrf-token': csrfToken } });
+    const createdResponse = await createSalaStudent({ ...personInput(generalPerson), planId, mainProfessorId, ...paper.input() }, { ...readOptions, headers: { 'x-csrf-token': csrfToken } });
     if (createdResponse.status < 200 || createdResponse.status >= 300) throw new Error('No pudimos crear al alumno. Revisá los datos e intentá nuevamente.');
     const created = createdResponse.data.data;
     if (!created.initialPin) throw new Error('El alumno fue creado, pero no se recibió el PIN temporal.');
@@ -138,6 +140,7 @@ function AssignmentDialog({ selection, csrfToken, canManageParticipation, canCre
     {creatingStudent ? <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={studentForm.handleSubmit((values) => createStudent.mutate(values))}>
       <GeneralPersonFields form={studentForm as unknown as import('react-hook-form').UseFormReturn<PersonValues>} />
       <StudentTrainingFields form={studentForm} canPlanManage={false} />
+      <PaperDeclarationFields value={paper} disabled={createStudent.isPending} />
       {agenda.isPending ? <p role="status" className="sm:col-span-2">Verificando disponibilidad…</p> : agenda.isError ? <p role="alert" className="sm:col-span-2">No se pudo consultar la disponibilidad.</p> : !slot ? <p role="alert" className="sm:col-span-2">El horario está cerrado, incompleto o sin cupo para la fecha de inicio.</p> : null}
       {createStudent.isError ? <p role="alert" className="text-sm text-red-800 sm:col-span-2">{createStudent.error.message}</p> : null}
       <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="secondary" disabled={createStudent.isPending} onClick={() => setCreatingStudent(false)}>Volver</Button><Button type="submit" disabled={!slot || agenda.isPending || agenda.isError || agenda.isFetching || createStudent.isPending}>{createStudent.isPending ? 'Guardando…' : 'Guardar e asignar'}</Button></div>

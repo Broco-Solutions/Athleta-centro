@@ -31,8 +31,9 @@ type PlanWithServices = Prisma.SalaPlanGetPayload<{ include: typeof planServices
 export class SalaService {
   constructor(private readonly prisma: PrismaService, private readonly financeCatalog: FinanceCatalogService, private readonly people: PeopleService, private readonly health: HealthDeclarationService) {}
 
+  registerPaperHealthDeclaration(personId: string, signedOn: string, actorId: string) { return this.health.registerPaper(personId, signedOn, actorId); }
   healthDeclarationStatus(personId: string) { return this.health.status(personId); }
-  healthDeclarationHistory(personId: string) { return this.health.history(personId); }
+  healthDeclarationHistory(personId: string) { return this.health.history(personId, true); }
   healthDeclarationDetail(personId: string, id: string) { return this.health.detail(personId, id); }
 
   addCalendarMonthClamped(date: Date): Date {
@@ -306,20 +307,20 @@ export class SalaService {
     });
   }
 
-  async createStudent(input: CreateSalaStudentDto) {
+  async createStudent(input: CreateSalaStudentDto, actorId?: string) {
     const { personId, initialPin } = await this.prisma.$transaction(async (tx) => {
       const created = await this.people.createWithinTransaction(input, tx);
-      await this.joinWithinTransaction(tx, { personId: created.personId, mainProfessorId: input.mainProfessorId, planId: input.planId, startDate: this.todayOperational() });
+      await this.joinWithinTransaction(tx, { personId: created.personId, mainProfessorId: input.mainProfessorId, planId: input.planId, startDate: this.todayOperational(), paperHealthDeclarationSignedOn: input.paperHealthDeclarationSignedOn }, actorId);
       return created;
     });
     return { ...(await this.people.get(personId)), initialPin };
   }
 
-  async join(input: { personId: string; mainProfessorId: string; planId: string; startDate: string }) {
-    return this.prisma.$transaction((tx) => this.joinWithinTransaction(tx, input));
+  async join(input: { personId: string; mainProfessorId: string; planId: string; startDate: string; paperHealthDeclarationSignedOn?: string | undefined }, actorId?: string) {
+    return this.prisma.$transaction((tx) => this.joinWithinTransaction(tx, input, actorId));
   }
 
-  private async joinWithinTransaction(tx: Prisma.TransactionClient, input: { personId: string; mainProfessorId: string; planId: string; startDate: string }) {
+  private async joinWithinTransaction(tx: Prisma.TransactionClient, input: { personId: string; mainProfessorId: string; planId: string; startDate: string; paperHealthDeclarationSignedOn?: string | undefined }, actorId?: string) {
     const [person, professor, plan] = await Promise.all([tx.person.findUnique({ where: { id: input.personId }, select: { id: true } }), tx.internalUser.findFirst({ where: { id: input.mainProfessorId, ...eligibleProfessorWhere }, select: { id: true } }), tx.salaPlan.findUnique({ where: { id: input.planId } })]);
     if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
     if (!professor) throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Professor is not eligible' });
@@ -327,6 +328,10 @@ export class SalaService {
     try {
       const startDate = this.date(input.startDate);
       const participation = await tx.salaParticipation.create({ data: { personId: input.personId, mainProfessorId: input.mainProfessorId, planId: input.planId, startDate, planAssignments: { create: { planId: input.planId, effectiveFrom: startDate } } }, include: { plan: true, mainProfessor: true } });
+      if (input.paperHealthDeclarationSignedOn !== undefined) {
+        if (!actorId) throw new Error('Authenticated actor missing');
+        await this.health.registerPaperWithinTransaction(tx, input.personId, input.paperHealthDeclarationSignedOn, actorId);
+      }
       return participation;
     } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_ACTIVE_PARTICIPATION_EXISTS', message: 'Person already has an active Sala participation' }); throw error; }
   }
@@ -966,7 +971,7 @@ export class SalaService {
   async joinAndCreateSpontaneousOccurrence(input: JoinSpontaneousSalaDto, actorId: string) {
     this.assertSpontaneousOnboardingToday(input.date);
     return this.prisma.$transaction(async (tx) => {
-      await this.joinWithinTransaction(tx, { ...input, startDate: input.date });
+      await this.joinWithinTransaction(tx, { ...input, startDate: input.date }, actorId);
       return this.createSpontaneousOccurrenceWithinTransaction(tx, input, actorId);
     });
   }
@@ -974,7 +979,7 @@ export class SalaService {
     this.assertSpontaneousOnboardingToday(input.date);
     const result = await this.prisma.$transaction(async (tx) => {
       const created = await this.people.createWithinTransaction(input, tx);
-      await this.joinWithinTransaction(tx, { personId: created.personId, planId: input.planId, mainProfessorId: input.mainProfessorId, startDate: input.date });
+      await this.joinWithinTransaction(tx, { personId: created.personId, planId: input.planId, mainProfessorId: input.mainProfessorId, startDate: input.date, paperHealthDeclarationSignedOn: input.paperHealthDeclarationSignedOn }, actorId);
       const occurrence = await this.createSpontaneousOccurrenceWithinTransaction(tx, { ...input, personId: created.personId }, actorId);
       return { ...created, occurrence };
     });

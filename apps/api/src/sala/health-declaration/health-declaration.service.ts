@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException, 
 import { Prisma, type HealthDeclaration } from '@prisma/client';
 import { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service';
-import { currentHealthDocument, declarationValidUntil, ageOnDate, HEALTH_CONSENT_KEYS, HEALTH_DATA_CONTROLLER } from './health-document';
+import { currentHealthDocument, declarationValidUntil, ageOnDate, HEALTH_CONSENT_KEYS, HEALTH_DATA_CONTROLLER, operationalToday } from './health-document';
 import type { SubmitHealthDeclarationDto, HealthDeclarationStatusDto, HealthDeclarationSummaryDto, HealthDeclarationDetailDto } from './health-declaration.dto';
 const optionalText = z.string().trim().max(300).optional();
 const inputSchema = z.strictObject({
@@ -24,14 +24,48 @@ export class HealthDeclarationService {
   constructor(private readonly prisma: PrismaService) {}
   document() { return currentHealthDocument(); }
   formDocument() { const document = this.document(); return document ? { ...document, dataController: HEALTH_DATA_CONTROLLER } : null; }
-  async status(personId: string): Promise<HealthDeclarationStatusDto> {
-    const latest = await this.prisma.healthDeclaration.findFirst({ where: { personId }, orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }], select: { id: true, submittedAt: true, validUntil: true, documentVersion: true } });
-    const status = !latest ? 'MISSING' : latest.validUntil > new Date() ? 'CURRENT' : 'EXPIRED';
-    const documentAvailable = this.document() !== null;
-    return { status, documentAvailable, required: status !== 'CURRENT', latest: latest ? this.summary(latest) : null };
+  async status(personId: string, client: Prisma.TransactionClient = this.prisma): Promise<HealthDeclarationStatusDto> {
+    // Expiry, not administrative insertion time, determines which evidence is relevant.
+    const [digital, paper] = await Promise.all([
+      client.healthDeclaration.findFirst({ where: { personId }, orderBy: [{ validUntil: 'desc' }, { id: 'desc' }], select: { id: true, submittedAt: true, validUntil: true, documentVersion: true } }),
+      client.paperHealthDeclaration.findFirst({ where: { personId }, orderBy: [{ validUntil: 'desc' }, { id: 'desc' }], select: { id: true, signedOn: true, validUntil: true } }),
+    ]);
+    const digitalCurrent = digital !== null && digital.validUntil > new Date();
+    const paperCurrent = paper !== null && paper.validUntil.toISOString().slice(0, 10) >= operationalToday();
+    const latest = digitalCurrent ? this.summary(digital!) : paperCurrent ? this.paperSummary(paper!) :
+      paper && (!digital || paper.validUntil >= digital.validUntil) ? this.paperSummary(paper) : digital ? this.summary(digital) : null;
+    const status = digitalCurrent || paperCurrent ? 'CURRENT' : latest ? 'EXPIRED' : 'MISSING';
+    return { status, documentAvailable: this.document() !== null, required: status !== 'CURRENT', latest };
   }
-  async history(personId: string): Promise<HealthDeclarationSummaryDto[]> {
-    return (await this.prisma.healthDeclaration.findMany({ where: { personId }, orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }], select: { id: true, submittedAt: true, validUntil: true, documentVersion: true } })).map(item => this.summary(item));
+  async history(personId: string, includeRegistrar = false): Promise<HealthDeclarationSummaryDto[]> {
+    const [digital, paper] = await Promise.all([
+      this.prisma.healthDeclaration.findMany({ where: { personId }, select: { id: true, submittedAt: true, validUntil: true, documentVersion: true } }),
+      this.prisma.paperHealthDeclaration.findMany({ where: { personId }, select: { id: true, signedOn: true, validUntil: true, ...(includeRegistrar ? { registeredAt: true, registeredBy: true, registrar: { select: { firstName: true, lastName: true } } } : {}) } }),
+    ]);
+    return [...digital.map(item => this.summary(item)), ...paper.map(item => this.paperSummary(item))].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt) || b.id.localeCompare(a.id));
+  }
+  private paperSummary(row: { id: string; signedOn: Date; validUntil: Date; registeredAt?: Date; registeredBy?: string; registrar?: { firstName: string; lastName: string } }): HealthDeclarationSummaryDto {
+    return { id: row.id, origin: 'PAPER', signedOn: row.signedOn.toISOString().slice(0, 10), submittedAt: row.signedOn.toISOString().slice(0, 10), validUntil: row.validUntil.toISOString().slice(0, 10), ...(row.registeredAt ? { registeredAt: row.registeredAt.toISOString(), ...(row.registeredBy ? { registeredBy: row.registeredBy } : {}), ...(row.registrar ? { registeredByName: `${row.registrar.firstName} ${row.registrar.lastName}` } : {}) } : {}) };
+  }
+  private async lockPerson(tx: Prisma.TransactionClient, personId: string) {
+    const rows = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM people WHERE id = ${personId}::uuid FOR UPDATE`;
+    if (!rows.length) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Persona no encontrada.' });
+  }
+  private async assertNoCurrent(tx: Prisma.TransactionClient, personId: string) {
+    await this.lockPerson(tx, personId);
+    if (!(await this.status(personId, tx)).required) throw new ConflictException({ code: 'HEALTH_DECLARATION_CURRENT', message: 'Tu declaración de salud continúa vigente. Podrás completar una nueva cuando venza la actual.' });
+  }
+  async registerPaper(personId: string, signedOn: string, actorId: string) {
+    await this.prisma.$transaction(tx => this.registerPaperWithinTransaction(tx, personId, signedOn, actorId));
+    return this.status(personId);
+  }
+  async registerPaperWithinTransaction(tx: Prisma.TransactionClient, personId: string, signedOn: string, actorId: string) {
+    const parsed = z.iso.date().safeParse(signedOn);
+    if (!parsed.success || signedOn > operationalToday()) throw new BadRequestException({ code: 'HEALTH_PAPER_SIGNATURE_DATE_INVALID', message: 'Ingresá la fecha real de firma, sin fechas futuras.' });
+    await this.assertNoCurrent(tx, personId);
+    const date = new Date(`${signedOn}T00:00:00.000Z`);
+    if (await tx.paperHealthDeclaration.findFirst({ where: { personId, signedOn: date }, select: { id: true } })) throw new ConflictException({ code: 'HEALTH_PAPER_ALREADY_REGISTERED', message: 'La declaración firmada en esa fecha ya fue registrada.' });
+    return tx.paperHealthDeclaration.create({ data: { personId, signedOn: date, validUntil: declarationValidUntil(date), registeredBy: actorId } });
   }
   async detail(personId: string, id: string): Promise<HealthDeclarationDetailDto> {
     const declaration = await this.prisma.healthDeclaration.findFirst({ where: { id, personId } });
@@ -64,6 +98,7 @@ export class HealthDeclarationService {
       }
     }
     const row = await this.prisma.$transaction(async tx => {
+      await this.assertNoCurrent(tx, personId);
       const submittedAt = new Date();
       const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(submittedAt);
       const birthDate = person.birthDate.toISOString().slice(0, 10);
@@ -82,6 +117,6 @@ export class HealthDeclarationService {
     return this.summary(row);
   }
   private summary(row: Pick<HealthDeclaration, 'id' | 'submittedAt' | 'validUntil' | 'documentVersion'>): HealthDeclarationSummaryDto {
-    return { id: row.id, submittedAt: row.submittedAt.toISOString(), validUntil: row.validUntil.toISOString(), documentVersion: row.documentVersion };
+    return { origin: 'DIGITAL', id: row.id, submittedAt: row.submittedAt.toISOString(), validUntil: row.validUntil.toISOString(), documentVersion: row.documentVersion };
   }
 }

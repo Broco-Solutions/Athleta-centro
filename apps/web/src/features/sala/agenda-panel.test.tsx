@@ -311,7 +311,10 @@ it('uses the shared wide Person form and submits sport, club and coverage in the
   fireEvent.change(screen.getByLabelText('Número de afiliado (opcional)'), { target: { value: '  ABC  ' } });
   await screen.findByRole('option', { name: 'Funcional · 45 min' });
   fireEvent.change(screen.getByLabelText('Servicio'), { target: { value: serviceId } });
+  fireEvent.click(screen.getByRole('checkbox', { name: /firmada en papel/ }));
+  fireEvent.change(screen.getByLabelText('Fecha de firma'), { target: { value: '2026-01-01' } });
   fireEvent.click(screen.getByRole('button', { name: 'Incorporar' }));
   await waitFor(() => expect(submitted).toMatchObject({ firstName: 'Ana', lastName: 'Nueva', dni: '30123456', phone: '3415551234', sport: 'Natación', club: 'Athleta Test', socialWorkId: 'work', affiliateNumber: 'ABC', planId, mainProfessorId: professional.id, date: operationalToday, serviceTypeId: serviceId }));
   expect(submitted).toHaveProperty('email', null);
+  expect(submitted).toHaveProperty('paperHealthDeclarationSignedOn', '2026-01-01');
 });

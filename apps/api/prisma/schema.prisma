@@ -56,6 +56,7 @@ model InternalUser {
   clinicalIncomesRegistered      ClinicalIncome[]
   clinicalAppointments           ClinicalAppointment[]      @relation("ClinicalAppointmentProfessional")
   registeredPatients             ClinicalPatient[]
+  paperHealthDeclarations        PaperHealthDeclaration[]
   clinicalAttentions             ClinicalAttention[]
   treatments                     Treatment[]
   evolutionsAuthored             Evolution[]                @relation("EvolutionAuthor")
@@ -226,6 +227,7 @@ model Person {
   salaOccurrences         SalaOccurrence[]
   routines                Routine[]
   healthDeclarations      HealthDeclaration[]
+  paperHealthDeclarations PaperHealthDeclaration[]
   physicalEvaluations     PhysicalEvaluation[]
   salaPayments            SalaPayment[]
   salaCharges             SalaCharge[]
@@ -1207,4 +1209,19 @@ model HealthDeclaration {
 
   @@index([personId, submittedAt])
   @@map("health_declarations")
+}
+
+// Administrative evidence only; never a digital medical questionnaire.
+model PaperHealthDeclaration {
+  id           String       @id @default(uuid()) @db.Uuid
+  personId     String       @map("person_id") @db.Uuid
+  signedOn     DateTime     @map("signed_on") @db.Date
+  validUntil   DateTime     @map("valid_until") @db.Date
+  registeredAt DateTime     @default(now()) @map("registered_at") @db.Timestamptz(6)
+  registeredBy String       @map("registered_by") @db.Uuid
+  person       Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
+  registrar    InternalUser @relation(fields: [registeredBy], references: [id], onDelete: Restrict)
+
+  @@index([personId, validUntil])
+  @@map("paper_health_declarations")
 }

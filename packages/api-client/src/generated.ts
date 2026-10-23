@@ -274,11 +274,31 @@ export interface TeamCredentialResetDto {
   temporaryPassword: string;
 }
 
+export interface RegisterPaperHealthDeclarationDto {
+  signedOn: string;
+}
+
+export type HealthDeclarationSummaryDtoOrigin = typeof HealthDeclarationSummaryDtoOrigin[keyof typeof HealthDeclarationSummaryDtoOrigin];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const HealthDeclarationSummaryDtoOrigin = {
+  DIGITAL: 'DIGITAL',
+  PAPER: 'PAPER',
+} as const;
+
 export interface HealthDeclarationSummaryDto {
+  origin: HealthDeclarationSummaryDtoOrigin;
+  signedOn?: string;
+  registeredAt?: string;
+  registeredBy?: string;
+  registeredByName?: string;
   id: string;
+  /** ISO timestamp for DIGITAL; signature date YYYY-MM-DD for PAPER. */
   submittedAt: string;
+  /** ISO timestamp for DIGITAL; inclusive expiry date YYYY-MM-DD for PAPER (Argentina). */
   validUntil: string;
-  documentVersion: string;
+  documentVersion?: string;
 }
 
 export type HealthDeclarationStatusDtoStatus = typeof HealthDeclarationStatusDtoStatus[keyof typeof HealthDeclarationStatusDtoStatus];
@@ -362,6 +382,15 @@ export interface HealthConsentsDto {
   institutionalImage: boolean;
 }
 
+export type HealthDeclarationDetailDtoOrigin = typeof HealthDeclarationDetailDtoOrigin[keyof typeof HealthDeclarationDetailDtoOrigin];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const HealthDeclarationDetailDtoOrigin = {
+  DIGITAL: 'DIGITAL',
+  PAPER: 'PAPER',
+} as const;
+
 export type HealthDeclarationDetailDtoIdentity = { [key: string]: unknown };
 
 export type HealthDeclarationDetailDtoKinesiology = { [key: string]: unknown };
@@ -371,10 +400,17 @@ export type HealthDeclarationDetailDtoAnswers = { [key: string]: unknown };
 export type HealthDeclarationDetailDtoDocument = { [key: string]: unknown };
 
 export interface HealthDeclarationDetailDto {
+  origin: HealthDeclarationDetailDtoOrigin;
+  signedOn?: string;
+  registeredAt?: string;
+  registeredBy?: string;
+  registeredByName?: string;
   id: string;
+  /** ISO timestamp for DIGITAL; signature date YYYY-MM-DD for PAPER. */
   submittedAt: string;
+  /** ISO timestamp for DIGITAL; inclusive expiry date YYYY-MM-DD for PAPER (Argentina). */
   validUntil: string;
-  documentVersion: string;
+  documentVersion?: string;
   identity: HealthDeclarationDetailDtoIdentity;
   personal: HealthPersonalDto;
   activity: HealthActivityDto;
@@ -485,11 +521,13 @@ export interface CreateSalaStudentDto {
   /** @nullable */
   socialWorkId?: string | null;
   affiliateNumber?: string;
+  paperHealthDeclarationSignedOn?: string;
   mainProfessorId: string;
   planId: string;
 }
 
 export interface JoinSalaDto {
+  paperHealthDeclarationSignedOn?: string;
   personId: string;
   mainProfessorId: string;
   planId: string;
@@ -899,6 +937,7 @@ export interface JoinSpontaneousSalaDto {
   /** @pattern ^([01]\d|2[0-3]):(00|15|30|45)$ */
   startTime: string;
   confirmOverbooking?: boolean;
+  paperHealthDeclarationSignedOn?: string;
   planId: string;
   mainProfessorId: string;
 }
@@ -923,6 +962,7 @@ export interface CreateSpontaneousSalaStudentDto {
   /** @nullable */
   socialWorkId?: string | null;
   affiliateNumber?: string;
+  paperHealthDeclarationSignedOn?: string;
   mainProfessorId: string;
   planId: string;
   scheduleSlotId: string;
@@ -3047,6 +3087,47 @@ export const resetTeamUserCredential = async (id: string, options?: RequestInit)
 
   const data: resetTeamUserCredentialResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as resetTeamUserCredentialResponse
+}
+
+
+
+export type registerPaperHealthDeclarationResponse201 = {
+  data: HealthDeclarationStatusEnvelopeDto
+  status: 201
+}
+
+export type registerPaperHealthDeclarationResponseSuccess = (registerPaperHealthDeclarationResponse201) & {
+  headers: Headers;
+};
+;
+
+export type registerPaperHealthDeclarationResponse = (registerPaperHealthDeclarationResponseSuccess)
+
+export const getRegisterPaperHealthDeclarationUrl = (personId: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/health-declarations/register-paper`
+}
+
+export const registerPaperHealthDeclaration = async (personId: string,
+    registerPaperHealthDeclarationDto: RegisterPaperHealthDeclarationDto, options?: RequestInit): Promise<registerPaperHealthDeclarationResponse> => {
+
+  const res = await fetch(getRegisterPaperHealthDeclarationUrl(personId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      registerPaperHealthDeclarationDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: registerPaperHealthDeclarationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as registerPaperHealthDeclarationResponse
 }
 
 

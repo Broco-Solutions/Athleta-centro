@@ -1,4 +1,5 @@
 'use client';
+import { PaperDeclarationFields, usePaperDeclaration } from '../health-declaration/paper-declaration-fields';
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useForm, type UseFormReturn } from 'react-hook-form';
@@ -68,16 +69,17 @@ function OnboardingDialog({ mode, csrfToken, canPlanManage, onClose, onSaved }: 
   const selectablePlans = plans.data?.filter((plan) => plan.isSelectable !== false) ?? [];
   const ready = selectablePlans.length > 0 && (professors.data?.length ?? 0) > 0 && !plans.isError && !professors.isError;
   const form = useForm<StudentValues>({ resolver: zodResolver(studentSchema), defaultValues: { ...personDefaults(), planId: '', mainProfessorId: '' } });
+  const paper = usePaperDeclaration();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [personId, setPersonId] = useState('');
   const candidates = useQuery({ queryKey: ['people', 'sala-candidates', search, page], enabled: mode === 'existing', queryFn: async () => checked(await listPeople({ search, page, pageSize: 25 }, options)) });
   const mutation = useMutation({ gcTime: 0, mutationFn: async (values?: StudentValues) => {
     if (!csrfToken) throw new Error('Sesión inválida');
-    if (mode === 'existing') { checked(await joinSala({ personId, planId: form.getValues('planId'), mainProfessorId: form.getValues('mainProfessorId'), startDate: todayOperational() }, options)); return; }
+    if (mode === 'existing') { checked(await joinSala({ personId, planId: form.getValues('planId'), mainProfessorId: form.getValues('mainProfessorId'), startDate: todayOperational(), ...paper.input() }, options)); return; }
     if (!values) throw new Error('Datos incompletos');
     const { planId, mainProfessorId, ...generalPerson } = values;
-    const result = checked(await createSalaStudent({ ...personInput(generalPerson), planId, mainProfessorId }, options)).data;
+    const result = checked(await createSalaStudent({ ...personInput(generalPerson), planId, mainProfessorId, ...paper.input() }, options)).data;
     return result.initialPin ? { pin: result.initialPin, firstName: result.firstName, lastName: result.lastName } : undefined;
   }, onSuccess: onSaved });
   const error = mutation.error as { status?: number; response?: { code?: string } } | null;
@@ -97,6 +99,7 @@ function OnboardingDialog({ mode, csrfToken, canPlanManage, onClose, onSaved }: 
         {!professors.isError && !professors.data?.length && <p className="text-sm sm:col-span-2">No hay Profesores activos disponibles.</p>}
       </> : null}
       {mode === 'existing' && (plans.isError || professors.isError) && <p role="alert" className="sm:col-span-2">No pudimos cargar los Planes o Profesores.</p>}
+      <PaperDeclarationFields value={paper} disabled={mutation.isPending} />
       {mutation.isError && <p role="alert" className="text-sm text-red-700 sm:col-span-2">{error?.status === 409 && error.response?.code === 'PERSON_DNI_ALREADY_EXISTS' ? 'Ya existe una Persona con ese DNI. Podés incorporarla a Sala como Persona existente.' : 'No pudimos incorporar a Sala. Revisá los datos e intentá nuevamente.'}</p>}
       <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="secondary" disabled={mutation.isPending} onClick={onClose}>Cancelar</Button><Button type="submit" disabled={!ready || mutation.isPending || (mode === 'existing' && !personId)}>{mutation.isPending ? 'Guardando…' : mode === 'new' ? 'Guardar e incorporar' : 'Incorporar a Sala'}</Button></div>
     </form>

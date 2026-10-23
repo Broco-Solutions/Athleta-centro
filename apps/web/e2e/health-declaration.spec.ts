@@ -3,6 +3,8 @@ const person = { firstName: 'Alumno', lastName: 'Sintético', dni: '00000001', b
 test('unavailable health document: responsive five-step navigation keeps answers and prevents confirmation', async ({ page }) => {
   await page.route('**/api/portal/auth/session', route => route.fulfill({ json: { data: { person, csrfToken: 'synthetic-csrf', mustChangePin: false, healthDeclaration: { status: 'MISSING', documentAvailable: false, required: true, latest: null } } } }));
   await page.route('**/api/portal/me', route => route.fulfill({ json: { data: person } }));
+  await page.route('**/api/portal/health-declaration/status', route => route.fulfill({ json: { data: { status: 'MISSING', required: true, documentAvailable: true, latest: null } } }));
+  await page.route('**/api/portal/health-declarations', route => route.fulfill({ json: { data: [] } }));
   await page.route('**/api/portal/health-declaration/document', route => route.fulfill({ json: { data: null } }));
   await page.goto('/portal/declaracion-salud');
   await page.getByLabel('Contacto de emergencia *').fill('Contacto sintético');
@@ -23,6 +25,8 @@ test('synthetic document: completes with optional authorizations rejected and en
   const keys = ['physicalActivity', 'truthfulness', 'emergenciesAndPrivacy', 'healthDataProcessing', 'kinesiology', 'manualEvaluation', 'therapeuticExercise', 'manualTherapy', 'physicalAgents', 'dryNeedling', 'taping', 'shareWithDoctors', 'shareWithClubs', 'clinicalImage', 'institutionalImage'];
   const doc = { version: 'SYNTHETIC-TEST-ONLY', questions: [{ id: 'testQuestion', category: 'Categoría sintética', text: 'Pregunta sintética' }], consents: keys.map(key => ({ key, text: `Consentimiento sintético ${key}` })), guardianConfirmation: 'Confirmación sintética tutor', finalConfirmation: 'Confirmación sintética final' };
   let saved = false;
+  await page.route('**/api/portal/health-declaration/status', route => route.fulfill({ json: { data: { status: saved ? 'CURRENT' : 'MISSING', required: !saved, documentAvailable: true, latest: null } } }));
+  await page.route('**/api/portal/health-declarations', route => route.fulfill({ json: { data: [] } }));
   await page.route('**/api/portal/auth/session', route => route.fulfill({ json: { data: { person, csrfToken: 'synthetic-csrf', mustChangePin: false, healthDeclaration: { status: saved ? 'CURRENT' : 'MISSING', documentAvailable: true, required: !saved, latest: null } } } }));
   await page.route('**/api/portal/me', route => route.fulfill({ json: { data: person } }));
   await page.route('**/api/portal/health-declaration/document', route => route.fulfill({ json: { data: doc } }));
@@ -86,4 +90,24 @@ test('real DOCX and API: PIN change, mandatory declaration, portal access, staff
   } finally {
     execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/health-declaration-e2e-fixture.ts', 'cleanup', fixture.personId, fixture.professorId, fixture.planId], { cwd: '../..', stdio: 'pipe' });
   }
+});
+
+for (const origin of ['DIGITAL', 'PAPER']) test(`current ${origin}: read-only Portal at desktop and mobile widths`, async ({ page }) => {
+  const latest = { id: 'synthetic', origin, submittedAt: '2026-10-23', validUntil: '2027-10-23' };
+  const status = { status: 'CURRENT', required: false, documentAvailable: true, latest };
+  await page.route('**/api/portal/auth/session', route => route.fulfill({ json: { data: { person, csrfToken: 'synthetic', mustChangePin: false, healthDeclaration: status } } }));
+  await page.route('**/api/portal/health-declaration/status', route => route.fulfill({ json: { data: status } }));
+  await page.route('**/api/portal/health-declarations', route => route.fulfill({ json: { data: [latest] } }));
+  await page.route('**/api/portal/me', route => route.fulfill({ json: { data: person } }));
+  await page.goto('/portal/declaracion-salud');
+  await expect(page.getByRole('heading', { name: 'Declaración vigente' })).toBeVisible();
+  await expect(page.getByRole('progressbar')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Actualizar declaración|Completar nuevamente/ })).toHaveCount(0);
+  if (origin === 'PAPER') await expect(page.getByRole('button', { name: /Consultar|Imprimir/ })).toHaveCount(0);
+  for (const width of [1440, 768, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: `/tmp/athleta-health-current-${origin}-${width}.png`, fullPage: true });
+  }
+  await expect(page.getByRole('link', { name: 'Ir al inicio' })).toBeVisible();
 });

@@ -65,10 +65,13 @@ it('shows both incorporation actions and creates a student through one atomic re
   fireEvent.change(screen.getByLabelText('Obra social (opcional)'), { target: { value: '' } });
   expect(affiliate).toHaveValue(''); expect(affiliate).toBeDisabled();
   fireEvent.change(screen.getByLabelText('Teléfono de emergencia (opcional)'), { target: { value: '11 1234-5678' } });
+  fireEvent.click(screen.getByRole('checkbox', { name: /firmada en papel/ }));
+  fireEvent.change(screen.getByLabelText('Fecha de firma'), { target: { value: '2026-01-01' } });
   fireEvent.click(screen.getByRole('button', { name: 'Guardar e incorporar' }));
   const dialog = await screen.findByRole('dialog', { name: 'Alumno guardado correctamente' });
   expect(posted).toMatchObject({ firstName: 'Ana', dni: '30123456', phone: '3415551234', emergencyContactPhone: '1112345678', socialWorkId: null, affiliateNumber: '', planId, mainProfessorId: professorId });
   expect(posted).not.toHaveProperty('startDate');
+  expect(posted).toHaveProperty('paperHealthDeclarationSignedOn', '2026-01-01');
   expect(within(dialog).getByText('PIN temporal del Portal')).toBeVisible();
   expect(screen.queryByLabelText('Nombre')).not.toBeInTheDocument();
   expect(studentsReads).toBeGreaterThan(1);

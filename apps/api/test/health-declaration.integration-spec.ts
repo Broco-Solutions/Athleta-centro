@@ -10,6 +10,8 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { InternalUserService } from '../src/team/internal-user.service';
 import { HealthDeclarationService } from '../src/sala/health-declaration/health-declaration.service';
 import { HEALTH_CONSENT_KEYS, currentHealthDocument, type HealthDocument } from '../src/sala/health-declaration/health-document';
+import { SalaService } from '../src/sala/sala.service';
+import { operationalToday } from '../src/sala/health-declaration/health-document';
 import type { SubmitHealthDeclarationDto } from '../src/sala/health-declaration/health-declaration.dto';
 
 // Synthetic test content verifies mechanics only. These strings are never published as legal text.
@@ -42,8 +44,10 @@ describe('Health declaration onboarding and privacy', () => {
   });
   afterEach(async () => {
     jest.restoreAllMocks();
+    await prisma.paperHealthDeclaration.deleteMany({ where: { personId } });
     await prisma.healthDeclaration.deleteMany({ where: { personId } });
     await prisma.session.deleteMany({ where: { personId } });
+    await prisma.salaPlanAssignment.deleteMany({ where: { salaParticipation: { personId } } });
     await prisma.salaParticipation.deleteMany({ where: { personId } });
     await prisma.portalCredential.deleteMany({ where: { personId } });
     await prisma.person.delete({ where: { id: personId } });
@@ -158,8 +162,8 @@ describe('Health declaration onboarding and privacy', () => {
   it('renews expired declarations, preserves history and prevents overwrites in PostgreSQL', async () => {
     await submit().expect(201);
     const first = await prisma.healthDeclaration.findFirstOrThrow({ where: { personId } });
-    await submit().expect(201); // Voluntary update while still current.
-    expect(await prisma.healthDeclaration.count({ where: { personId } })).toBe(2);
+    expect((await submit().expect(409)).body.code).toBe('HEALTH_DECLARATION_CURRENT');
+    expect(await prisma.healthDeclaration.count({ where: { personId } })).toBe(1);
     expect(await prisma.healthDeclaration.findUnique({ where: { id: first.id } })).toEqual(first);
     await expect(prisma.healthDeclaration.update({ where: { id: first.id }, data: { documentVersion: 'overwritten' } })).rejects.toThrow();
     expect((await prisma.healthDeclaration.findUniqueOrThrow({ where: { id: first.id } })).documentVersion).toBe(first.documentVersion);
@@ -176,7 +180,7 @@ describe('Health declaration onboarding and privacy', () => {
     await submit().expect(201); const row = await prisma.healthDeclaration.findFirstOrThrow({ where: { personId } });
     const administrative = await internalCookie(Role.ADMINISTRATIVE);
     const status = await request(app.getHttpServer()).get(`/api/sala/people/${personId}/health-declaration/status`).set('Cookie', administrative).expect(200);
-    expect(Object.keys(status.body.data.latest).sort()).toEqual(['documentVersion', 'id', 'submittedAt', 'validUntil']);
+    expect(Object.keys(status.body.data.latest).sort()).toEqual(['documentVersion', 'id', 'origin', 'submittedAt', 'validUntil']);
     await request(app.getHttpServer()).get(`/api/sala/people/${personId}/health-declarations/${row.id}`).set('Cookie', administrative).expect(403);
     await request(app.getHttpServer()).get(`/api/sala/people/${personId}/health-declarations`).set('Cookie', administrative).expect(200);
     for (const role of [Role.PROFESSOR, Role.GENERAL_ADMIN]) {
@@ -213,4 +217,102 @@ describe('Health declaration onboarding and privacy', () => {
     await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', cookie).expect(403);
     expect(await prisma.healthDeclaration.count({ where: { personId } })).toBe(0);
   });
+  async function registerAs(role: Role, signedOn?: string) {
+    const staffCookie = await internalCookie(role);
+    const session = await request(app.getHttpServer()).get('/api/auth/session').set('Cookie', staffCookie).expect(200);
+    return request(app.getHttpServer()).post(`/api/sala/people/${personId}/health-declarations/register-paper`).set('Cookie', staffCookie).set('x-csrf-token', session.body.data.csrfToken).send(signedOn === undefined ? {} : { signedOn });
+  }
+  it('registers paper metadata with authenticated actor, unlocks the Portal and rejects digital resubmission', async () => {
+    const date = operationalToday();
+    const result = await registerAs(Role.ADMINISTRATIVE, date);
+    expect(result.status).toBe(201);
+    expect(result.body.data).toMatchObject({ status: 'CURRENT', required: false, latest: { origin: 'PAPER', signedOn: date } });
+    const paper = await prisma.paperHealthDeclaration.findFirstOrThrow({ where: { personId } });
+    expect(Object.keys(paper).sort()).toEqual(['id', 'personId', 'registeredAt', 'registeredBy', 'signedOn', 'validUntil']);
+    expect(userIds).toContain(paper.registeredBy);
+    expect(await prisma.healthDeclaration.count({ where: { personId } })).toBe(0);
+    await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', cookie).expect(200);
+    expect((await submit().expect(409)).body.code).toBe('HEALTH_DECLARATION_CURRENT');
+    expect((await registerAs(Role.PROFESSOR, date)).status).toBe(409);
+    const history = await health.history(personId, true);
+    expect(history[0]).toMatchObject({ origin: 'PAPER', registeredBy: paper.registeredBy, registeredByName: expect.any(String) });
+    expect((await health.history(personId))[0]).not.toHaveProperty('registeredBy');
+    await expect(prisma.paperHealthDeclaration.update({ where: { id: paper.id }, data: { signedOn: new Date('2000-01-01') } })).rejects.toThrow();
+    expect(await prisma.paperHealthDeclaration.findUnique({ where: { id: paper.id } })).toEqual(paper);
+    await request(app.getHttpServer()).get(`/api/portal/health-declarations/${paper.id}`).set('Cookie', cookie).expect(404);
+  });
+  it('validates required dates, future dates and participation permission without persisting anything', async () => {
+    for (const date of [undefined, '', '2099-01-01', '2026-02-30']) expect((await registerAs(Role.ADMINISTRATIVE, date)).status).toBe(400);
+    expect((await registerAs(Role.KINESIOLOGIST, operationalToday())).status).toBe(403);
+    expect(await prisma.paperHealthDeclaration.count({ where: { personId } })).toBe(0);
+  });
+  it('preserves expired paper evidence, including leap-day expiry, then permits digital renewal', async () => {
+    await health.registerPaper(personId, '2024-02-29', professorId);
+    const paper = await prisma.paperHealthDeclaration.findFirstOrThrow({ where: { personId } });
+    expect(paper.validUntil.toISOString().slice(0, 10)).toBe('2025-02-28');
+    expect(await health.status(personId)).toMatchObject({ status: 'EXPIRED', required: true });
+    await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', cookie).expect(403);
+    await submit().expect(201);
+    expect((await health.history(personId)).map(item => item.origin)).toEqual(['DIGITAL', 'PAPER']);
+    expect(await prisma.paperHealthDeclaration.findUnique({ where: { id: paper.id } })).toEqual(paper);
+  });
+  it('keeps paper current through the expiry date in Argentina and expires at the next local midnight', async () => {
+    await health.registerPaper(personId, '2024-02-29', professorId);
+    jest.useFakeTimers({ now: new Date('2025-03-01T02:59:59Z'), doNotFake: ['hrtime', 'nextTick', 'performance', 'queueMicrotask', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+    try {
+      expect(await health.status(personId)).toMatchObject({ status: 'CURRENT', required: false });
+      jest.setSystemTime(new Date('2025-03-01T03:00:00Z'));
+      expect(await health.status(personId)).toMatchObject({ status: 'EXPIRED', required: true });
+    } finally { jest.useRealTimers(); }
+  });
+  it('does not let an old paper entry registered later override a current digital declaration', async () => {
+    await submit().expect(201);
+    await prisma.paperHealthDeclaration.create({ data: { personId, signedOn: new Date('2020-01-01'), validUntil: new Date('2021-01-01'), registeredBy: professorId } });
+    expect(await health.status(personId)).toMatchObject({ status: 'CURRENT', required: false, latest: { origin: 'DIGITAL' } });
+  });
+  it('serializes concurrent digital requests and paper versus digital requests', async () => {
+    const digital = await Promise.all([submit(), submit()]);
+    expect(digital.map(item => item.status).sort()).toEqual([201, 409]);
+    expect(await prisma.healthDeclaration.count({ where: { personId } })).toBe(1);
+    await prisma.healthDeclaration.deleteMany({ where: { personId } });
+    const person = await prisma.person.findUniqueOrThrow({ where: { id: personId } });
+    const mixed = await Promise.allSettled([health.submit(person, payload()), health.registerPaper(personId, operationalToday(), professorId)]);
+    expect(mixed.filter(item => item.status === 'fulfilled')).toHaveLength(1);
+    expect((await prisma.healthDeclaration.count({ where: { personId } })) + (await prisma.paperHealthDeclaration.count({ where: { personId } }))).toBe(1);
+  });
+  it('serializes duplicate expired paper registrations too', async () => {
+    const result = await Promise.allSettled([health.registerPaper(personId, '2020-01-01', professorId), health.registerPaper(personId, '2020-01-01', professorId)]);
+    expect(result.filter(item => item.status === 'fulfilled')).toHaveLength(1);
+    expect(await prisma.paperHealthDeclaration.count({ where: { personId } })).toBe(1);
+  });
+  it('records optional paper evidence atomically during new and existing person enrollment', async () => {
+    const sala = app.get(SalaService);
+    const input = { firstName: 'Alta', lastName: 'Sintética', dni: `9${dni.slice(1)}`, phone: '1100000000', birthDate: '1990-01-01', planId, mainProfessorId: professorId };
+    // Failed paper validation rolls back Person, credentials and participation.
+    await expect(sala.createStudent({ ...input, paperHealthDeclarationSignedOn: '2099-01-01' }, professorId)).rejects.toMatchObject({ response: { code: 'HEALTH_PAPER_SIGNATURE_DATE_INVALID' } });
+    expect(await prisma.person.count({ where: { dni: input.dni } })).toBe(0);
+    // A later failure must roll back the successfully inserted paper evidence as well.
+    await expect(sala.createStudentAndSpontaneousOccurrence({ ...input, paperHealthDeclarationSignedOn: operationalToday(), date: operationalToday(), startTime: '09:00', scheduleSlotId: randomUUID() }, professorId)).rejects.toMatchObject({ response: { code: 'SALA_OCCURRENCE_SLOT_INVALID' } });
+    expect(await prisma.person.count({ where: { dni: input.dni } })).toBe(0);
+    expect(await prisma.paperHealthDeclaration.count({ where: { person: { dni: input.dni } } })).toBe(0);
+    const created = await sala.createStudent({ ...input, paperHealthDeclarationSignedOn: operationalToday() }, professorId);
+    try {
+      expect(await health.status(created.id)).toMatchObject({ status: 'CURRENT', latest: { origin: 'PAPER' } });
+      expect((await prisma.paperHealthDeclaration.findFirstOrThrow({ where: { personId: created.id } })).registeredBy).toBe(professorId);
+    } finally {
+      await prisma.paperHealthDeclaration.deleteMany({ where: { personId: created.id } });
+      const participations = await prisma.salaParticipation.findMany({ where: { personId: created.id } });
+      await prisma.salaPlanAssignment.deleteMany({ where: { salaParticipationId: { in: participations.map(item => item.id) } } });
+      await prisma.salaParticipation.deleteMany({ where: { personId: created.id } });
+      await prisma.portalCredential.deleteMany({ where: { personId: created.id } });
+      await prisma.person.delete({ where: { id: created.id } });
+    }
+    await prisma.salaPlanAssignment.deleteMany({ where: { salaParticipation: { personId } } });
+    await prisma.salaParticipation.deleteMany({ where: { personId } });
+    await expect(sala.join({ personId, planId, mainProfessorId: professorId, startDate: operationalToday(), paperHealthDeclarationSignedOn: '2099-01-01' }, professorId)).rejects.toMatchObject({ response: { code: 'HEALTH_PAPER_SIGNATURE_DATE_INVALID' } });
+    expect(await prisma.salaParticipation.count({ where: { personId } })).toBe(0);
+    await sala.join({ personId, planId, mainProfessorId: professorId, startDate: operationalToday(), paperHealthDeclarationSignedOn: operationalToday() }, professorId);
+    expect(await health.status(personId)).toMatchObject({ status: 'CURRENT' });
+  });
+
 });

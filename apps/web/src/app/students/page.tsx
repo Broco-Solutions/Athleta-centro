@@ -1,5 +1,6 @@
 'use client';
 
+import { PaperDeclarationFields, usePaperDeclaration } from '../../features/health-declaration/paper-declaration-fields';
 import React, { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -116,6 +117,7 @@ type EnrollmentProps = { csrf: string; onClose: () => void; onSaved: (pin?: stri
 type StudentCreationMode = 'existing' | 'new';
 
 function NewStudentDialog({ csrf, onClose, onSaved }: EnrollmentProps): React.JSX.Element {
+  const paper = usePaperDeclaration();
   const [mode, setMode] = useState<StudentCreationMode>('existing');
   const [search, setSearch] = useState('');
   const [personId, setPersonId] = useState('');
@@ -139,10 +141,10 @@ function NewStudentDialog({ csrf, onClose, onSaved }: EnrollmentProps): React.JS
   const mutation = useMutation({ mutationFn: async () => {
     if (!selectedPerson || !needsJoin || !planId || !mainProfessorId) throw new Error('Seleccioná Persona, Plan y Profesor principal.');
     if (!csrf) throw new Error('Sesión inválida. Volvé a iniciar sesión.');
-    const response = await joinSala({ personId: selectedPerson.id, planId, mainProfessorId, startDate: todayOperational() }, { credentials: 'include', headers: { 'x-csrf-token': csrf } });
+    const response = await joinSala({ personId: selectedPerson.id, planId, mainProfessorId, startDate: todayOperational(), ...paper.input() }, { credentials: 'include', headers: { 'x-csrf-token': csrf } });
     if (response.status < 200 || response.status >= 300) throw new Error('No se pudo incorporar la Persona a Sala. Revisá si ya es alumno activo e intentá nuevamente.');
   }, onSuccess: () => onSaved() });
-  const resetSelection = () => { setPersonId(''); setPlanId(''); setMainProfessorId(''); mutation.reset(); };
+  const resetSelection = () => { paper.setConfirmed(false); paper.setSignedOn(''); setPersonId(''); setPlanId(''); setMainProfessorId(''); mutation.reset(); };
   const selectablePlans = plans.data?.filter(plan => plan.isSelectable !== false) ?? [];
   if (mode === 'new') return <NewPersonEnrollmentForm csrf={csrf} onClose={onClose} onSaved={onSaved} onExisting={() => setMode('existing')} plans={selectablePlans} professors={professors.data ?? []} catalogsReady={plans.isSuccess && professors.isSuccess} catalogsError={plans.isError || professors.isError} />;
   return <ParticipationDialog title="Nuevo alumno" onClose={onClose} busy={mutation.isPending}>
@@ -162,6 +164,7 @@ function NewStudentDialog({ csrf, onClose, onSaved }: EnrollmentProps): React.JS
         <label className="grid gap-1 text-sm">Profesor principal *<select aria-label="Profesor principal" required className={inputClass} value={mainProfessorId} disabled={mutation.isPending} onChange={event => setMainProfessorId(event.target.value)}><option value="">Seleccionar Profesor</option>{professors.data?.map(professor => <option key={professor.id} value={professor.id}>{professor.firstName} {professor.lastName}</option>)}</select></label>
         {plans.isError || professors.isError ? <p role="alert">No se pudieron cargar los Planes o Profesores. Cerrá el alta e intentá nuevamente.</p> : !plans.isSuccess || !professors.isSuccess ? <p role="status">Cargando Planes y Profesores…</p> : null}
       </> : null}
+      {needsJoin ? <PaperDeclarationFields value={paper} disabled={mutation.isPending} /> : null}
       {mutation.isError ? <p role="alert">{mutation.error.message}</p> : null}
       <div className="flex justify-end gap-2"><Button type="button" variant="secondary" disabled={mutation.isPending} onClick={onClose}>Cancelar</Button>{needsJoin ? <Button type="submit" disabled={mutation.isPending || !plans.isSuccess || !professors.isSuccess || !planId || !mainProfessorId}>{mutation.isPending ? 'Incorporando…' : 'Incorporar a Sala'}</Button> : null}</div>
     </form>
@@ -169,13 +172,14 @@ function NewStudentDialog({ csrf, onClose, onSaved }: EnrollmentProps): React.JS
 }
 
 function NewPersonEnrollmentForm({ csrf, onClose, onSaved, onExisting, plans, professors, catalogsReady, catalogsError }: EnrollmentProps & { onExisting: () => void; plans: Array<{ id: string; name: string }>; professors: Array<{ id: string; firstName: string; lastName: string }>; catalogsReady: boolean; catalogsError: boolean }): React.JSX.Element {
+  const paper = usePaperDeclaration();
   const schema = personSchema.extend({ planId: z.string().min(1, 'Seleccioná un Plan.'), mainProfessorId: z.string().min(1, 'Seleccioná un profesor.') });
   const form = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema), defaultValues: { ...personDefaults(), planId: '', mainProfessorId: '' } });
   const generalForm: import('react-hook-form').UseFormReturn<PersonValues> = form as unknown as import('react-hook-form').UseFormReturn<PersonValues>;
   const mutation = useMutation({ gcTime: 0, mutationFn: async (values: z.infer<typeof schema>) => {
     if (!csrf) throw new Error('Sesión inválida. Volvé a iniciar sesión.');
     const { planId, mainProfessorId, ...general } = values;
-    const response = await createSalaStudent({ ...personInput(general), planId, mainProfessorId }, { credentials: 'include', headers: { 'x-csrf-token': csrf } });
+    const response = await createSalaStudent({ ...personInput(general), planId, mainProfessorId, ...paper.input() }, { credentials: 'include', headers: { 'x-csrf-token': csrf } });
     if (Number(response.status) === 409) throw new Error('Ya existe una Persona con ese DNI. Volvé a Persona existente y buscala.');
     if (response.status < 200 || response.status >= 300) throw new Error('No se pudo crear el Alumno. Intentá nuevamente.');
     await onSaved(response.data.data.initialPin);
@@ -184,6 +188,7 @@ function NewPersonEnrollmentForm({ csrf, onClose, onSaved, onExisting, plans, pr
     <div className="mb-2"><Button variant="secondary" disabled={mutation.isPending} onClick={onExisting}>Persona existente</Button></div>
     <form className="grid gap-4 sm:grid-cols-2" onSubmit={form.handleSubmit(values => mutation.mutate(values))}>
       <GeneralPersonFields form={generalForm} />
+      <PaperDeclarationFields value={paper} disabled={mutation.isPending} />
       <section className="border-t border-border pt-4 sm:col-span-2">
         <h3 className="mb-3 text-sm font-semibold">Entrenamiento</h3>
         <div className="grid gap-4 sm:grid-cols-2">

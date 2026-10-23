@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsObject, IsString, MaxLength, ValidateNested, IsOptional } from 'class-validator';
+import { IsBoolean, IsObject, IsString, MaxLength, ValidateNested, IsOptional, Matches, IsDateString } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class HealthPersonalDto {
@@ -48,11 +48,19 @@ export class SubmitHealthDeclarationDto {
   @ApiProperty({ type: HealthConsentsDto }) @ValidateNested() @Type(() => HealthConsentsDto) consents!: HealthConsentsDto;
   @ApiProperty({ type: Boolean }) @IsBoolean() confirmed!: boolean;
 }
+export class RegisterPaperHealthDeclarationDto {
+  @ApiProperty({ type: String, format: 'date' }) @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) signedOn!: string;
+}
 export class HealthDeclarationSummaryDto {
+  @ApiProperty({ enum: ['DIGITAL', 'PAPER'] }) origin!: 'DIGITAL' | 'PAPER';
+  @ApiPropertyOptional({ type: String, format: 'date' }) signedOn?: string;
+  @ApiPropertyOptional({ type: String, format: 'date-time' }) registeredAt?: string;
+  @ApiPropertyOptional({ type: String, format: 'uuid' }) registeredBy?: string;
+  @ApiPropertyOptional({ type: String }) registeredByName?: string;
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
-  @ApiProperty({ type: String, format: 'date-time' }) submittedAt!: string;
-  @ApiProperty({ type: String, format: 'date-time' }) validUntil!: string;
-  @ApiProperty({ type: String }) documentVersion!: string;
+  @ApiProperty({ type: String, description: 'ISO timestamp for DIGITAL; signature date YYYY-MM-DD for PAPER.' }) submittedAt!: string;
+  @ApiProperty({ type: String, description: 'ISO timestamp for DIGITAL; inclusive expiry date YYYY-MM-DD for PAPER (Argentina).' }) validUntil!: string;
+  @ApiPropertyOptional({ type: String }) documentVersion?: string;
 }
 export class HealthDeclarationStatusDto {
   @ApiProperty({ enum: ['MISSING', 'CURRENT', 'EXPIRED'] }) status!: 'MISSING' | 'CURRENT' | 'EXPIRED';

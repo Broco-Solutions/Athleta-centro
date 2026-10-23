@@ -430,3 +430,25 @@ it('does not report zero records on loading or query failure', async () => {
   await waitFor(() => expect(client.getQueryCache().getAll().some(query => query.state.status === 'error')).toBe(true));
   expect(screen.queryByText('0 alumnos')).not.toBeInTheDocument();
 });
+
+it.each(['new', 'existing'])('includes the real paper signature date for %s enrollment', async mode => {
+  enrollmentHandlers([existingPerson]); let body: Record<string, unknown> | undefined;
+  server.use(http.post(`http://localhost:3000/api/sala/${mode === 'new' ? 'students' : 'participations'}`, async ({ request }) => { body = await request.json() as Record<string, unknown>; return HttpResponse.json({ data: {} }, { status: mode === 'new' ? 201 : 200 }); }));
+  await startAdministrativeEnrollment();
+  if (mode === 'new') {
+    fireEvent.click(screen.getByRole('button', { name: 'Nueva Persona' }));
+    fillNewPerson(); fireEvent.change(screen.getByLabelText('DNI'), { target: { value: '88123457' } });
+  } else await selectExistingPerson();
+  await selectEnrollmentOptions();
+  const checkbox = screen.getByRole('checkbox', { name: 'El alumno ya presentó la declaración de salud firmada en papel.' });
+  expect(checkbox).not.toBeChecked();
+  expect(screen.queryByLabelText('Fecha de firma')).not.toBeInTheDocument();
+  fireEvent.click(checkbox);
+  expect(screen.getByLabelText('Fecha de firma')).toHaveValue('');
+  expect(screen.getByLabelText('Fecha de firma')).toBeRequired();
+  fireEvent.change(screen.getByLabelText('Fecha de firma'), { target: { value: '2020-01-01' } });
+  expect(screen.getByText(/La declaración ya se encuentra vencida/)).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: mode === 'new' ? 'Crear alumno' : 'Incorporar a Sala' }));
+  await waitFor(() => expect(body).toMatchObject({ paperHealthDeclarationSignedOn: '2020-01-01', planId: 'plan-new' }));
+  expect(body).not.toHaveProperty('registeredBy');
+});

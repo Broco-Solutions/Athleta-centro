@@ -1,5 +1,6 @@
 'use client';
 
+import { PaperDeclarationFields, usePaperDeclaration } from '../health-declaration/paper-declaration-fields';
 import React, { useState } from 'react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -61,6 +62,7 @@ export function SpontaneousModal({ date, groups, initialSlotId, csrfToken, canMa
   const [confirmation, setConfirmation] = useState<Submission | null>(null);
   const client = useQueryClient();
   const options = { credentials: 'include', headers: { 'x-csrf-token': csrfToken } } satisfies RequestInit;
+  const paper = usePaperDeclaration();
   const form = useForm<StudentValues>({ resolver: zodResolver(studentSchema), defaultValues: { ...personDefaults(), planId: '', mainProfessorId: '' } });
   const eligibility = useQuery({ queryKey: ['sala', 'spontaneous-options', personId, date], enabled: !future && mode === 'existing' && Boolean(personId), queryFn: async () => checked(await getPersonSalaSpontaneousOptions(personId, { date }, options)).data });
   const needsJoin = mode === 'existing' && eligibility.data?.eligible === false;
@@ -82,10 +84,10 @@ export function SpontaneousModal({ date, groups, initialSlotId, csrfToken, canMa
     if (mode === 'new') {
       if (!values) throw new Error('Completá los datos de la Persona.');
       const { planId, mainProfessorId, ...generalPerson } = values;
-      const result = checked(await createSalaStudentAndSpontaneousOccurrence({ ...personInput(generalPerson as PersonValues), planId, mainProfessorId, ...occurrence }, options)).data.person;
+      const result = checked(await createSalaStudentAndSpontaneousOccurrence({ ...personInput(generalPerson as PersonValues), planId, mainProfessorId, ...occurrence, ...paper.input() }, options)).data.person;
       return result.initialPin ? { pin: result.initialPin, firstName: result.firstName, lastName: result.lastName } : undefined;
     }
-    if (needsJoin) checked(await joinSalaAndCreateSpontaneousOccurrence({ ...occurrence, personId, planId, mainProfessorId: professorId }, options));
+    if (needsJoin) checked(await joinSalaAndCreateSpontaneousOccurrence({ ...occurrence, personId, planId, mainProfessorId: professorId, ...paper.input() }, options));
     else checked(await createSpontaneousSalaOccurrence({ ...occurrence, personId }, options));
     return undefined;
   }, onSuccess: async (notice) => {
@@ -138,6 +140,7 @@ export function SpontaneousModal({ date, groups, initialSlotId, csrfToken, canMa
             {eligibility.data?.eligible && !services.length && <p className="text-sm sm:col-span-2">Podés registrar Sala sin seleccionar un Servicio.</p>}
           </>}
         </>}
+        {inline ? <PaperDeclarationFields value={paper} disabled={mutation.isPending} /> : null}
         {date === today && visibleGroups.length === 0 && <p className="text-sm sm:col-span-2">No quedan horarios disponibles para hoy.</p>}
         {mutation.isError && (mutation.error as { code?: string }).code !== 'SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED' && <p role="alert" className="text-sm text-red-700 sm:col-span-2">{mutation.error.message}</p>}
         <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="secondary" disabled={mutation.isPending} onClick={onClose}>Cancelar</Button><Button type="submit" disabled={!ready || mutation.isPending}>{mutation.isPending ? 'Incorporando…' : 'Incorporar'}</Button></div>
