@@ -49,7 +49,7 @@ it('reuses spontaneous incorporation for an existing person and refreshes operat
   server.use(http.post('http://localhost:3000/api/sala/occurrences/spontaneous', async ({ request }) => { submitted = await request.json(); return HttpResponse.json({ data: {} }, { status: 201 }); }));
   server.use(http.get('http://localhost:3000/api/people', ({ request }) => { peopleReads++; peopleSearches.push(new URL(request.url)); return HttpResponse.json({ data: [{ ...person, firstName: 'Homer', lastName: 'Simpson' }] }); }));
   const { invalidate } = renderPage();
-  expect(await screen.findByRole('link', { name: 'Reservas' })).toHaveAttribute('aria-current', 'page');
+  expect(screen.queryByRole('link', { name: 'Reservas' })).not.toBeInTheDocument();
   expect(await screen.findByRole('heading', { name: 'Reservas' })).toBeVisible();
   await screen.findByRole('button', { name: 'Incorporación espontánea' });
   expect(agendaReads).toBe(0); expect(peopleReads).toBe(0);

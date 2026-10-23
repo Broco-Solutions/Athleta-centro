@@ -37,6 +37,13 @@ for (const [width, role] of [[1440, 'PROFESSOR'], [768, 'ADMINISTRATIVE'], [390,
       } else throw new Error(`Unexpected API request: ${url.pathname}`);
     });
     await page.goto('/sala');
+    if (role === 'PROFESSOR') {
+      const mainNavigation = page.getByRole('navigation', { name: 'Navegación principal' });
+      await expect(mainNavigation.getByRole('link', { name: 'Agenda' })).toHaveAttribute('href', '/sala');
+      await expect(mainNavigation.getByRole('link', { name: 'Reservas' })).toHaveCount(0);
+      await expect(page.getByRole('navigation', { name: 'Secciones de Sala' })).toHaveCount(0);
+      await expect(page.getByRole('link', { name: 'Ver Personas' })).toHaveCount(0);
+    }
     await page.getByRole('button', { name: /^lunes 09:00:/ }).click();
     const panel = page.getByRole('complementary', { name: 'Turno seleccionado' });
     await panel.getByRole('button', { name: 'Ver alumnos asignados' }).click();
@@ -47,20 +54,37 @@ for (const [width, role] of [[1440, 'PROFESSOR'], [768, 'ADMINISTRATIVE'], [390,
       scrollWidth: document.documentElement.scrollWidth,
       calendar: document.querySelector('[aria-label="Calendario semanal"]')!.getBoundingClientRect().toJSON() as { x: number; y: number },
       panel: document.querySelector('aside[aria-label="Turno seleccionado"]')!.getBoundingClientRect().toJSON() as { x: number; y: number },
-      morning: document.querySelector('[aria-label="Franjas horarias"] button[aria-pressed="true"]')!.getBoundingClientRect().toJSON() as { width: number },
-      afternoon: document.querySelector('[aria-label="Franjas horarias"] button[aria-pressed="false"]')!.getBoundingClientRect().toJSON() as { width: number },
     }));
     expect(geometry.scrollWidth).toBeLessThanOrEqual(width);
-    expect(Math.abs(geometry.morning.width - geometry.afternoon.width)).toBeLessThanOrEqual(2);
     if (width === 1440) {
       expect(Math.abs(geometry.calendar.y - geometry.panel.y)).toBeLessThanOrEqual(2);
       expect(geometry.panel.x).toBeGreaterThan(geometry.calendar.x);
+      const toolbar = page.getByRole('toolbar', { name: 'Navegación semanal' });
+      const controls = [
+        toolbar.getByRole('button', { name: 'Semana anterior' }),
+        toolbar.getByRole('button', { name: 'Hoy' }),
+        toolbar.getByRole('button', { name: 'Semana siguiente' }),
+        toolbar.getByText('Semana del 19 al 25 de octubre de 2026'),
+        toolbar.getByRole('button', { name: 'Actualizar' }),
+        toolbar.getByRole('button', { name: /Mañana/ }),
+        toolbar.getByRole('button', { name: /Tarde/ }),
+      ];
+      const centers = await Promise.all(controls.map(control => control.evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        return rect.top + rect.height / 2;
+      })));
+      expect(Math.max(...centers) - Math.min(...centers)).toBeLessThanOrEqual(4);
+      await expect(toolbar.getByRole('button', { name: /Mañana/ })).toHaveCSS('background-color', 'rgb(252, 204, 5)');
     }
     else expect(geometry.panel.y).toBeGreaterThan(geometry.calendar.y);
     await expect(page.getByRole('button', { name: /^lunes 09:00:/ })).toHaveCSS('border-color', 'rgb(252, 204, 5)');
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: testInfo.outputPath('calendar.png'), fullPage: true });
     await page.getByRole('button', { name: /Tarde/ }).click();
+    if (width === 1440) {
+      await expect(page.getByRole('button', { name: /Tarde/ })).toHaveCSS('background-color', 'rgb(252, 204, 5)');
+      await expect(page.getByRole('button', { name: /Mañana/ })).not.toHaveCSS('background-color', 'rgb(252, 204, 5)');
+    }
     await expect(page.getByRole('button', { name: /^lunes 16:00:/ })).toBeVisible();
     await page.getByRole('button', { name: /Mañana/ }).click();
     await panel.getByRole('button', { name: 'Asignar alumno', exact: true }).click();

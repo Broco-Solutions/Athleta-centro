@@ -50,7 +50,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); server.resetHandlers(); vi.useRealTimers(); focusManager.setFocused(undefined); });
 afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 
-it.each(['PROFESSOR', 'ADMINISTRATIVE', 'GENERAL_ADMIN'])('%s enters the weekly calendar at /sala and retains /reservations links', async (role) => {
+it.each(['PROFESSOR', 'ADMINISTRATIVE', 'GENERAL_ADMIN'])('%s enters the weekly calendar at /sala', async (role) => {
   server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: [role] } })));
   renderPage();
   expect(await screen.findByTestId('fixed-bookings-calendar')).toBeVisible();
@@ -59,7 +59,13 @@ it.each(['PROFESSOR', 'ADMINISTRATIVE', 'GENERAL_ADMIN'])('%s enters the weekly 
   expect(router.replace).not.toHaveBeenCalled();
   const navigation = within(screen.getByRole('navigation', { name: 'Navegación principal' }));
   expect(navigation.getByRole('link', { name: 'Agenda' })).toHaveAttribute('href', '/sala');
-  if (role === 'PROFESSOR') expect(navigation.getByRole('link', { name: 'Reservas' })).toHaveAttribute('href', '/reservations');
+  if (role === 'PROFESSOR') {
+    expect(navigation.getByRole('link', { name: 'Alumnos' })).toHaveAttribute('href', '/students');
+    expect(navigation.getByRole('link', { name: 'Rutinas' })).toHaveAttribute('href', '/routines');
+    expect(navigation.queryByRole('link', { name: 'Reservas' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Secciones de Sala' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Ver Personas' })).not.toBeInTheDocument();
+  }
 });
 
 it('changes bands without excluding late configured hours, includes Saturday and navigates weeks', async () => {
@@ -86,6 +92,35 @@ it('changes bands without excluding late configured hours, includes Saturday and
   expect(new Set(dates)).toEqual(new Set(Array.from({ length: 21 }, (_, i) => addCalendarDays('2026-10-12', i))));
 });
 
+it('splits twelve configured hours into six morning and six afternoon hours with primary selection', async () => {
+  const hours = Array.from({ length: 12 }, (_, index) => index + 8);
+  server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: hours.flatMap(hour => hourGroups(hour)) })));
+  renderPage();
+  await screen.findByTestId('fixed-bookings-calendar');
+  const morning = await screen.findByRole('button', { name: 'Mañana · 08–14' });
+  const afternoon = await screen.findByRole('button', { name: 'Tarde · 14–20' });
+  expect(morning).toHaveAttribute('aria-pressed', 'true');
+  expect(morning).toHaveClass('bg-primary', 'text-primary-foreground');
+  expect(afternoon).toHaveAttribute('aria-pressed', 'false');
+  expect(afternoon).not.toHaveClass('bg-primary');
+  for (const hour of ['08', '13']) expect(await screen.findByRole('button', { name: new RegExp(`^lunes ${hour}:00:`) })).toBeVisible();
+  for (const hour of ['14', '19']) expect(screen.queryByRole('button', { name: new RegExp(`^lunes ${hour}:00:`) })).not.toBeInTheDocument();
+  fireEvent.click(afternoon);
+  expect(afternoon).toHaveClass('bg-primary', 'text-primary-foreground');
+  expect(morning).not.toHaveClass('bg-primary');
+  for (const hour of ['14', '19']) expect(await screen.findByRole('button', { name: new RegExp(`^lunes ${hour}:00:`) })).toBeVisible();
+  for (const hour of ['08', '13']) expect(screen.queryByRole('button', { name: new RegExp(`^lunes ${hour}:00:`) })).not.toBeInTheDocument();
+});
+
+it('keeps all nine configured hours across the two bands', async () => {
+  const hours = Array.from({ length: 9 }, (_, index) => index + 9);
+  server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: hours.flatMap(hour => hourGroups(hour)) })));
+  renderPage();
+  for (const hour of hours.slice(0, 5)) expect(await screen.findByRole('button', { name: new RegExp(`^lunes ${String(hour).padStart(2, '0')}:00:`) })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: /Tarde/ }));
+  for (const hour of hours.slice(5)) expect(await screen.findByRole('button', { name: new RegExp(`^lunes ${String(hour).padStart(2, '0')}:00:`) })).toBeVisible();
+});
+
 it('separates assigned and cancelled fixed students and hides every list until requested', async () => {
   const groups = hourGroups(9, [
     { ...fixedStudent, status: 'CANCELLED' },
@@ -95,7 +130,7 @@ it('separates assigned and cancelled fixed students and hides every list until r
   groups[2] = { ...groups[2]!, reserved: 4, available: 2 };
   const overlap = hourGroups(8, [{ ...fixedStudent, personId: 'overlap', sourceId: 'overlap-fixed', startTime: '08:45', durationMinutes: 90, person: { ...fixedStudent.person, id: 'overlap', firstName: 'Solapada' } }]);
   server.use(http.get('http://localhost:3000/api/sala/agenda', () => HttpResponse.json({ data: [...overlap, ...groups] })));
-  renderPage(); const panel = within(await selectMonday());
+  renderPage(); await screen.findByTestId('fixed-bookings-calendar'); fireEvent.click(screen.getByRole('button', { name: /Tarde/ })); const panel = within(await selectMonday());
   expect(panel.getByText('4 / 6')).toBeVisible();
   expect(panel.getByText('Quedan 2 lugares disponibles')).toBeVisible();
   const assigned = panel.getByRole('button', { name: 'Ver alumnos asignados (1)' });
@@ -372,14 +407,17 @@ it('starts directly with Agenda, identifies the week and orders the calendar bef
   for (const text of ['Módulo global', 'Operación diaria y personas con participación activa.']) expect(screen.queryByText(text)).not.toBeInTheDocument();
   expect(screen.queryByRole('heading', { name: 'Sala', level: 1 })).not.toBeInTheDocument();
   const toolbar = within(calendar).getByRole('toolbar', { name: 'Navegación semanal' });
+  for (const name of ['Semana anterior', 'Hoy', 'Semana siguiente', 'Actualizar']) expect(within(toolbar).getByRole('button', { name })).toBeVisible();
   expect(within(toolbar).getByText('Semana del 19 al 25 de octubre de 2026')).toBeVisible();
+  const bands = within(toolbar).getByRole('group', { name: 'Franjas horarias' });
+  expect(bands).toContainElement(within(toolbar).getByRole('button', { name: /Mañana/ }));
+  expect(bands).toContainElement(within(toolbar).getByRole('button', { name: /Tarde/ }));
   expect(within(calendar).queryByText('Lunes 19/10/2026 — Domingo 25/10/2026')).not.toBeInTheDocument();
   expect(within(calendar).queryByText('Semana actual')).not.toBeInTheDocument();
   const panel = within(calendar).getByRole('complementary');
   const grid = panel.parentElement!;
   expect(grid).toHaveClass('lg:grid-cols-[minmax(0,7fr)_minmax(280px,3fr)]');
   expect(grid.firstElementChild).toContainElement(within(calendar).getByLabelText('Calendario semanal'));
-  expect(within(calendar).getByLabelText('Franjas horarias')).toHaveClass('grid', 'grid-cols-2', 'w-full');
   expect(within(calendar).getByRole('button', { name: /Mañana/ })).toBeVisible();
   expect(within(calendar).getByRole('button', { name: /Tarde/ })).toBeVisible();
   expect(within(calendar).getByLabelText('Calendario semanal')).toHaveClass('overflow-x-auto');

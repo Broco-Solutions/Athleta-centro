@@ -35,7 +35,6 @@ const navigation: NavigationItem[] = [
 const professorNavigation: NavigationItem[] = [
   { key: 'home', href: '/', label: 'Inicio', icon: Activity, canAccess: () => true },
   { key: 'sala-agenda', href: '/sala', label: 'Agenda', icon: CalendarDays, canAccess: (permissions) => permissions.includes('SALA_RELATION_READ') },
-  { key: 'reservations', href: '/reservations', label: 'Reservas', icon: CalendarDays, canAccess: () => true },
   { key: 'sala-students', href: '/students', label: 'Alumnos', icon: Users, canAccess: () => true },
   { key: 'routines', href: '/routines', label: 'Rutinas', icon: ClipboardList, canAccess: () => true },
 ];
