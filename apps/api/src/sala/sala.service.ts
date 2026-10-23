@@ -588,10 +588,17 @@ export class SalaService {
       }
       if (this.operationalStart(input.targetDate, this.time(input.startTime)) <= now) throw new ConflictException({ code: 'SALA_FIXED_OCCURRENCE_STARTED', message: 'El nuevo horario ya comenzó y no se puede reservar.' });
       const existing = await tx.salaOccurrence.findUnique({ where: { fixedSalaBookingId_date: { fixedSalaBookingId: id, date: day } } });
-      if (existing && (existing.status !== SalaOccurrenceStatus.RESERVED || existing.cancelledForNonPaymentAt)) throw new ConflictException({ code: 'SALA_FIXED_OCCURRENCE_NOT_REASSIGNABLE', message: 'Esta fecha del turno fijo ya no puede reprogramarse.' });
-      const cancellation = { status: SalaOccurrenceStatus.CANCELLED, lastModifiedBy: actorId, cancelledForNonPaymentAt: null };
-      if (existing) await tx.salaOccurrence.update({ where: { id: existing.id }, data: cancellation });
-      else await tx.salaOccurrence.create({ data: { ...cancellation, personId: booking.personId, scheduleSlotId: booking.scheduleSlotId, date: day, startTime, serviceTypeId: booking.serviceTypeId, serviceDurationMinutes: booking.serviceDurationMinutes, origin: SalaOccurrenceOrigin.FIXED, fixedSalaBookingId: id, createdBy: actorId } });
+      if (existing?.cancelledForNonPaymentAt) throw new ConflictException({ code: 'SALA_FIXED_OCCURRENCE_NON_PAYMENT_CANCELLED', message: 'Esta fecha fue cancelada por falta de pago y no puede reprogramarse.' });
+      const portalCancellation = existing?.status === SalaOccurrenceStatus.CANCELLED && existing.origin === SalaOccurrenceOrigin.FIXED && existing.fixedSalaBookingId !== null && existing.lastModifiedBy === null;
+      if (portalCancellation) {
+        if (await this.portalReplacementAllowanceForWeek(tx, booking.personId, day) < 1) throw new ConflictException({ code: 'SALA_FIXED_OCCURRENCE_REPLACEMENT_ALREADY_USED', message: 'Esta fecha ya fue cancelada y su reemplazo ya fue utilizado.' });
+        // Preserve the student's original cancellation; the new reservation consumes its weekly credit.
+      } else {
+        if (existing && existing.status !== SalaOccurrenceStatus.RESERVED) throw new ConflictException({ code: 'SALA_FIXED_OCCURRENCE_NOT_REASSIGNABLE', message: 'Esta fecha del turno fijo ya no puede reprogramarse.' });
+        const cancellation = { status: SalaOccurrenceStatus.CANCELLED, lastModifiedBy: actorId, cancelledForNonPaymentAt: null };
+        if (existing) await tx.salaOccurrence.update({ where: { id: existing.id }, data: cancellation });
+        else await tx.salaOccurrence.create({ data: { ...cancellation, personId: booking.personId, scheduleSlotId: booking.scheduleSlotId, date: day, startTime, serviceTypeId: booking.serviceTypeId, serviceDurationMinutes: booking.serviceDurationMinutes, origin: SalaOccurrenceOrigin.FIXED, fixedSalaBookingId: id, createdBy: actorId } });
+      }
       return this.createReservationWithinTransaction(tx, { personId: booking.personId, salaParticipationId: booking.salaParticipationId, scheduleSlotId: input.scheduleSlotId, date: input.targetDate, startTime: input.startTime });
     });
   }
@@ -599,7 +606,19 @@ export class SalaService {
   async listFixed(personId: string) { return this.prisma.fixedSalaBooking.findMany({ where: { personId }, include: { scheduleSlot: true, serviceType: true }, orderBy: { startDate: 'desc' } }); }
   async changeFixed(input: ChangeFixedBookingDto) { if (input.endDate && input.endDate < input.startDate) throw new BadRequestException({ code: 'SALA_BOOKING_DATE_INVALID', message: 'End date must be on or after start date' }); return this.prisma.$transaction(async (tx) => { const current = await tx.fixedSalaBooking.findUnique({ where: { id: input.id } }); if (!current) throw new NotFoundException({ code: 'SALA_FIXED_BOOKING_NOT_FOUND', message: 'Fixed booking not found' }); const resolved = await this.validateBooking(tx, input, input.startDate, current); const effective = this.date(input.startDate); if (current.startDate.getTime() === effective.getTime()) { return tx.fixedSalaBooking.update({ where: { id: input.id }, data: { scheduleSlotId: input.scheduleSlotId, serviceTypeId: input.serviceTypeId ?? null, serviceDurationMinutes: resolved.durationMinutes, startTime: resolved.startTime, ...(input.endDate !== undefined ? { endDate: input.endDate ? this.date(input.endDate) : null } : {}) }, include: { scheduleSlot: true, serviceType: true } }); } await tx.fixedSalaBooking.update({ where: { id: input.id }, data: { endDate: new Date(effective.getTime() - 86400000) } }); try { return await tx.fixedSalaBooking.create({ data: { personId: input.personId, salaParticipationId: input.salaParticipationId, scheduleSlotId: input.scheduleSlotId, serviceTypeId: input.serviceTypeId ?? null, serviceDurationMinutes: resolved.durationMinutes, startTime: resolved.startTime, startDate: effective, endDate: input.endDate ? this.date(input.endDate) : null }, include: { scheduleSlot: true, serviceType: true } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_FIXED_BOOKING_DUPLICATE', message: 'Equivalent fixed booking already exists' }); throw error; } }); }
   async listReservations(personId: string) { return this.prisma.oneOffReservation.findMany({ where: { personId }, include: { scheduleSlot: true, serviceType: true }, orderBy: { date: 'desc' } }); }
-  async endFixed(id: string, endDate: string) { try { return await this.prisma.fixedSalaBooking.update({ where: { id }, data: { endDate: this.date(endDate) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_FIXED_BOOKING_NOT_FOUND', message: 'Fixed booking not found' }); throw error; } }
+  async endFixed(id: string, endDate: string) {
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM fixed_sala_bookings WHERE id = ${id}::uuid FOR UPDATE`;
+      const booking = await tx.fixedSalaBooking.findUnique({ where: { id } });
+      if (!booking) throw new NotFoundException({ code: 'SALA_FIXED_BOOKING_NOT_FOUND', message: 'Fixed booking not found' });
+      const effectiveEnd = this.date(endDate);
+      if (effectiveEnd < booking.startDate) {
+        await tx.salaOccurrence.deleteMany({ where: { fixedSalaBookingId: id, date: { gte: booking.startDate } } });
+        return tx.fixedSalaBooking.delete({ where: { id } });
+      }
+      return tx.fixedSalaBooking.update({ where: { id }, data: { endDate: effectiveEnd } });
+    });
+  }
   async cancelReservation(id: string) { try { return await this.prisma.oneOffReservation.update({ where: { id }, data: { cancelledAt: new Date() } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_RESERVATION_NOT_FOUND', message: 'Reservation not found' }); throw error; } }
   async listExerciseDefinitions(includeInactive = false) { return this.prisma.exerciseDefinition.findMany({ where: includeInactive ? {} : { isActive: true }, orderBy: { name: 'asc' } }); }
   async createExerciseDefinition(input: ExerciseDefinitionDto) { try { return await this.prisma.exerciseDefinition.create({ data: { name: input.name.trim(), primaryMuscle: this.optionalText(input.primaryMuscle), description: this.optionalText(input.description) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_EXERCISE_DUPLICATE', message: 'Exercise already exists' }); throw error; } }

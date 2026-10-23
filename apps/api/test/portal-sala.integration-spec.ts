@@ -249,6 +249,66 @@ describe('Portal Sala services from the current plan', () => {
     const reserveAt = (startTime: string, date = f.body.date) => request(app.getHttpServer()).post('/api/portal/sala/reservations').set('Cookie', f.cookie).set('x-csrf-token', f.csrf).send({ scheduleSlotId: windowId, date, startTime });
     return { ...f, first, second, cancel, reserveAt };
   }
+  async function internalReplacementFixture(role: Role) {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    jest.setSystemTime(new Date('2026-10-16T11:00:00Z'));
+    const f = await replacementFixture();
+    const destination = await sala.createSlot({ weekday: 'WEDNESDAY', startTime: '09:00', durationMinutes: 180, specificCapacity: 5 });
+    await prisma.salaOccurrence.create({ data: { personId, scheduleSlotId: windowId, fixedSalaBookingId: f.first.id, date: new Date(f.body.date), origin: 'FIXED', status: 'RESERVED', createdBy: professorId, lastModifiedBy: professorId } });
+    await f.cancel(f.first.id).expect(200);
+    const source = await prisma.salaOccurrence.findUniqueOrThrow({ where: { fixedSalaBookingId_date: { fixedSalaBookingId: f.first.id, date: new Date(f.body.date) } } });
+    expect(source).toMatchObject({ status: 'CANCELLED', origin: 'FIXED', createdBy: professorId, lastModifiedBy: null, cancelledForNonPaymentAt: null });
+    await prisma.internalUserRole.deleteMany({ where: { internalUserId: professorId } });
+    await prisma.internalUserRole.create({ data: { internalUserId: professorId, role } });
+    await app.get(AuthService).provisionCredential(professorId, 'ValidPass1!');
+    await prisma.internalCredential.update({ where: { internalUserId: professorId }, data: { mustChangePassword: false } });
+    const user = await prisma.internalUser.findUniqueOrThrow({ where: { id: professorId } });
+    const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200);
+    const reassign = (startTime = '09:00') => request(app.getHttpServer()).post(`/api/sala/fixed-bookings/${f.first.id}/occurrences/${f.body.date}/reassign`)
+      .set('Cookie', login.headers['set-cookie'][0] as string).set('x-csrf-token', login.body.data.csrfToken as string)
+      .send({ targetDate: '2026-10-21', scheduleSlotId: destination.id, startTime });
+    const weeks = () => sala.listPortalReplacementWeeks(personId, '2026-10-16');
+    const cleanupDestination = async () => {
+      await prisma.oneOffReservation.deleteMany({ where: { scheduleSlotId: destination.id } });
+      await prisma.salaScheduleSlot.delete({ where: { id: destination.id } });
+    };
+    return { ...f, source, reassign, weeks, cleanupDestination };
+  }
+  it.each([Role.PROFESSOR, Role.ADMINISTRATIVE, Role.GENERAL_ADMIN])('allows %s to reassign a Portal cancellation exactly once without changing its provenance', async role => {
+    const f = await internalReplacementFixture(role);
+    try {
+      const recurrence = await prisma.fixedSalaBooking.findMany({ where: { personId }, orderBy: { id: 'asc' } });
+      expect(await f.weeks()).toEqual([{ weekStart: '2026-10-19', weekEnd: '2026-10-25', available: 1 }]);
+      const result = await f.reassign().expect(201);
+      expect(await prisma.oneOffReservation.findUnique({ where: { id: result.body.data.id } })).toMatchObject({ personId, date: new Date('2026-10-21'), serviceTypeId: null });
+      expect(await prisma.salaOccurrence.findUnique({ where: { id: f.source.id } })).toEqual(f.source);
+      expect(await f.weeks()).toEqual([]);
+      expect((await f.reassign('10:00').expect(409)).body).toMatchObject({ code: 'SALA_FIXED_OCCURRENCE_REPLACEMENT_ALREADY_USED', message: 'Esta fecha ya fue cancelada y su reemplazo ya fue utilizado.' });
+      expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);
+      expect(await prisma.fixedSalaBooking.findMany({ where: { personId }, orderBy: { id: 'asc' } })).toEqual(recurrence);
+    } finally { await f.cleanupDestination(); }
+  });
+  it('rejects internal reassignment after the Portal has already spent its replacement credit', async () => {
+    const f = await internalReplacementFixture(Role.PROFESSOR);
+    try {
+      await f.reserveAt('11:00').expect(201);
+      expect(await f.weeks()).toEqual([]);
+      expect((await f.reassign().expect(409)).body.code).toBe('SALA_FIXED_OCCURRENCE_REPLACEMENT_ALREADY_USED');
+      expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);
+      expect(await prisma.salaOccurrence.findUnique({ where: { id: f.source.id } })).toEqual(f.source);
+    } finally { await f.cleanupDestination(); }
+  });
+  it('serializes competing internal replacements of a Portal cancellation and spends only one credit', async () => {
+    const f = await internalReplacementFixture(Role.PROFESSOR);
+    try {
+      const results = await Promise.all([f.reassign(), f.reassign('10:00')]);
+      expect(results.map(result => result.status).sort()).toEqual([201, 409]);
+      expect(results.find(result => result.status === 409)?.body.code).toBe('SALA_FIXED_OCCURRENCE_REPLACEMENT_ALREADY_USED');
+      expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(1);
+      expect(await f.weeks()).toEqual([]);
+      expect(await prisma.salaOccurrence.findUnique({ where: { id: f.source.id } })).toEqual(f.source);
+    } finally { await f.cleanupDestination(); }
+  });
   it('denies free Portal reservations even when a Plan 3 has only two configured fixed bookings', async () => {
     const f = await replacementFixture(3);
     expect((await f.reserveAt('11:00').expect(403)).body.code).toBe('PORTAL_SALA_REPLACEMENT_REQUIRED');

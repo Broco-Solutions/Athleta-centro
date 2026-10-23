@@ -742,6 +742,60 @@ it('ends a booking today, exits its editor and frees the Plan slot immediately',
     expect(screen.getByRole('button', { name: 'Crear turno fijo' })).toBeEnabled();
   } finally { vi.useRealTimers(); }
 });
+it('ends a future booking using today and refetches its deletion to free the Plan slot', async () => {
+  await freezeBookingDate();
+  try {
+    navigation.tab = 'fixed';
+    let rows = fixedFixtureRows().map((row, index) => ({ ...row, startDate: index === 0 ? '2026-10-26' : row.startDate, scheduleSlot: { ...row.scheduleSlot, weekday: index === 0 ? 'MONDAY' : row.scheduleSlot.weekday } }));
+    server.use(
+      http.get(`http://localhost:3000/api/sala/people/${personId}/fixed-bookings`, () => HttpResponse.json({ data: rows })),
+      http.post('http://localhost:3000/api/sala/fixed-bookings/fixed-a/end', async ({ request }) => {
+        expect(await request.json()).toEqual({ endDate: '2026-10-23' });
+        rows = rows.filter(row => row.id !== 'fixed-a');
+        return HttpResponse.json({ data: {} }, { status: 201 });
+      }),
+    );
+    renderWorkspace(); await screen.findByText('Turnos fijos: 2 de 2');
+    expect(screen.getByText(/Lunes · 10:00 · Desde 26\/10\/2026/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Crear turno fijo' })).toBeDisabled();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Finalizar' })[0]!);
+    await screen.findByText('Turnos fijos: 1 de 2');
+    expect(screen.queryByText(/Lunes · 10:00 · Desde 26\/10\/2026/)).not.toBeInTheDocument();
+    await findBookingOption({ name: '09:00' });
+    fireEvent.change(booking().getByLabelText('Horario'), { target: { value: 'window:09:00' } });
+    expect(screen.getByRole('button', { name: 'Crear turno fijo' })).toBeEnabled();
+  } finally { vi.useRealTimers(); }
+});
+
+it.each([
+  [201, null, 'Fecha reprogramada correctamente.'],
+  [409, 'SALA_FIXED_OCCURRENCE_REPLACEMENT_ALREADY_USED', 'Esta fecha ya fue cancelada y su reemplazo ya fue utilizado.'],
+  [409, 'SALA_FIXED_OCCURRENCE_NON_PAYMENT_CANCELLED', 'Esta fecha fue cancelada por falta de pago y no puede reprogramarse.'],
+] as const)('handles a previously cancelled occurrence through the atomic endpoint (%s, %s)', async (status, code, message) => {
+  await freezeBookingDate();
+  try {
+    navigation.tab = 'fixed'; let reassignRequests = 0;
+    server.use(
+      http.get('http://localhost:3000/api/sala/availability', () => HttpResponse.json({ data: [0, 15, 30, 45].map(minute => ({ slotId: `window:09:${minute}`, scheduleSlotId: 'window', startTime: `09:${String(minute).padStart(2, '0')}`, available: 5, isClosed: false })) })),
+      http.get(`http://localhost:3000/api/sala/people/${personId}/fixed-bookings`, () => HttpResponse.json({ data: [fixedFixtureRows()[0]] })),
+      http.post('http://localhost:3000/api/sala/fixed-bookings/fixed-a/occurrences/2026-10-24/reassign', async ({ request }) => {
+        reassignRequests++;
+        expect(await request.json()).toEqual({ targetDate: '2026-10-25', scheduleSlotId: 'window', startTime: '09:00' });
+        return HttpResponse.json(code ? { code, message } : { data: {} }, { status });
+      }),
+    );
+    renderWorkspace(); fireEvent.click(await screen.findByRole('button', { name: 'Reprogramar fecha' }));
+    const form = within(screen.getByRole('form', { name: 'Reprogramar una fecha' }));
+    fireEvent.change(form.getByLabelText('Nuevo día'), { target: { value: '2026-10-25' } });
+    await waitFor(() => expect(form.getByRole('option', { name: '09:00' })).toBeInTheDocument());
+    fireEvent.change(form.getByLabelText('Nuevo horario'), { target: { value: 'window:09:00' } });
+    fireEvent.click(form.getByRole('button', { name: 'Confirmar reprogramación' }));
+    expect(await screen.findByText(message)).toBeVisible();
+    expect(reassignRequests).toBe(1);
+    expect(screen.queryByRole('form', { name: 'Reprogramar una fecha' }) !== null).toBe(status === 409);
+  } finally { vi.useRealTimers(); }
+});
+
 it('submits a recurrence change while at 2 of 2 with its new Day and Time', async () => {
   await freezeBookingDate();
   try {
