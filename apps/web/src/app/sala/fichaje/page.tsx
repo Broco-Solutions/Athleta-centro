@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@athleta/ui';
 import { checkInSalaByDni, type CheckInByDniDto, type CheckInResultDto } from '@athleta/api-client';
@@ -32,7 +32,13 @@ export default function CheckInPage(): React.JSX.Element {
     onError: () => { setTechnicalError(true); setResult({ status: 'ERROR', message: 'No pudimos verificar tu asistencia. Intentá nuevamente.' }); },
   });
   const submit = (event: React.FormEvent) => { event.preventDefault(); if (!/^\d{7,8}$/.test(dni) || checkIn.isPending || result) return; setTechnicalError(false); checkIn.mutate({ dni }); };
-  const reset = () => { setDni(''); setResult(null); setTechnicalError(false); checkIn.reset(); requestAnimationFrame(() => inputRef.current?.focus()); };
+  const reset = useCallback(() => { setDni(''); setResult(null); setTechnicalError(false); checkIn.reset(); requestAnimationFrame(() => inputRef.current?.focus()); }, [checkIn.reset]);
+
+  useEffect(() => {
+    if (!result) return;
+    const timeout = window.setTimeout(reset, 10_000);
+    return () => window.clearTimeout(timeout);
+  }, [result, reset]);
 
   if (session.isPending) return <main className="p-6" role="status">Cargando…</main>;
   return <WorkspaceShell active="sala-check-in"><main className="mx-auto flex min-h-[70vh] max-w-2xl items-center justify-center p-4 sm:p-8">

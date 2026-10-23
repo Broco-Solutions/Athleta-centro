@@ -129,9 +129,21 @@ describe('SalaOccurrence persistence and API', () => {
 
   it('returns no-booking and inactive-participation results without creating occurrences', async () => {
     const f = await setup();
-    expect(await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, new Date('2026-08-27T12:00:00Z'))).toMatchObject({ status: 'NO_BOOKING', message: 'No tenés un turno reservado para este horario. Consultá con un profesor.' });
+    const checkInDate = new Date('2026-08-27T12:00:00Z');
+    expect(await prisma.fixedSalaBooking.count()).toBe(0);
+    expect(await prisma.oneOffReservation.count()).toBe(0);
+    expect(await prisma.salaOccurrence.count()).toBe(0);
+    expect(await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, checkInDate)).toMatchObject({
+      status: 'NO_BOOKING',
+      message: 'No tenés un turno reservado para este horario. Consultá con un profesor.',
+    });
     await sala.leave(f.participation.id);
-    expect(await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id)).toMatchObject({ status: 'NOT_FOUND', message: 'No encontramos un alumno activo con ese DNI. Revisalo o consultá en recepción.' });
+    await prisma.salaParticipation.update({ where: { id: f.participation.id }, data: { endDate: new Date('2026-08-27T00:00:00.000Z') } });
+    expect(await prisma.salaParticipation.findUniqueOrThrow({ where: { id: f.participation.id } })).toMatchObject({ endDate: new Date('2026-08-27T00:00:00.000Z') });
+    expect(await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, checkInDate)).toMatchObject({
+      status: 'NOT_FOUND',
+      message: 'No encontramos un alumno activo con ese DNI. Revisalo o consultá en recepción.',
+    });
     expect(await prisma.salaOccurrence.count()).toBe(0);
   });
 

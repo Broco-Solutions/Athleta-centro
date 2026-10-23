@@ -21,6 +21,13 @@ type NavigationGroup = { key: 'home' | 'sala' | 'clinic' | 'finance' | 'team'; l
 
 const hasAny = (permissions: string[], values: string[]) => values.some((value) => permissions.includes(value));
 const hasDomainPermission = (permissions: string[], prefix: string) => permissions.some((permission) => permission.startsWith(prefix));
+const checkInNavigationItem: NavigationItem = {
+  key: 'sala-check-in',
+  href: '/sala/fichaje',
+  label: 'Fichaje',
+  icon: ClipboardList,
+  canAccess: (permissions) => permissions.includes('SALA_AGENDA_MANAGE'),
+};
 
 const navigation: NavigationItem[] = [
   { key: 'home', href: '/', label: 'Inicio', icon: Activity, canAccess: () => true },
@@ -35,7 +42,6 @@ const navigation: NavigationItem[] = [
 const professorNavigation: NavigationItem[] = [
   { key: 'home', href: '/', label: 'Inicio', icon: Activity, canAccess: () => true },
   { key: 'sala-agenda', href: '/sala', label: 'Agenda', icon: CalendarDays, canAccess: (permissions) => permissions.includes('SALA_RELATION_READ') },
-  { key: 'sala-check-in', href: '/sala/fichaje', label: 'Fichaje', icon: ClipboardList, canAccess: (permissions) => permissions.includes('SALA_AGENDA_MANAGE') },
   { key: 'sala-students', href: '/students', label: 'Alumnos', icon: Users, canAccess: () => true },
   { key: 'routines', href: '/routines', label: 'Rutinas', icon: ClipboardList, canAccess: () => true },
 ];
@@ -48,7 +54,6 @@ function groupedNavigation(permissions: string[]): NavigationGroup[] {
     ] },
     { key: 'sala', label: 'Sala', items: [
       { key: 'sala-agenda', href: '/sala', label: 'Agenda', icon: CalendarDays, canAccess: (values) => values.includes('SALA_AGENDA_MANAGE') },
-      { key: 'sala-check-in', href: '/sala/fichaje', label: 'Fichaje', icon: ClipboardList, canAccess: (values) => values.includes('SALA_AGENDA_MANAGE') },
       { key: 'sala-students', href: '/students', label: 'Alumnos', icon: Users, canAccess: (values) => values.includes('SALA_PARTICIPATION_MANAGE') },
       { key: 'routines', href: '/routines', label: 'Rutinas', icon: ClipboardList, canAccess: (values) => values.includes('SALA_ROUTINE_MANAGE') },
       { key: 'sala-configuration', href: '/sala/configuration', label: 'Configuración', icon: Dumbbell, canAccess: (values) => hasAny(values, ['SALA_SCHEDULE_MANAGE', 'SALA_PLAN_CATALOG_MANAGE', 'SALA_SERVICE_DURATION_MANAGE']) },
@@ -140,6 +145,10 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
       </section>;
     })
     : visibleNavigation.map((item) => <React.Fragment key={item.key}>{itemLink(item, onNavigate)}</React.Fragment>);
+  const navigationWithCheckIn = (idSuffix: string, onNavigate?: () => void) => <>
+    {navigationContent(idSuffix, onNavigate)}
+    {checkInNavigationItem.canAccess(permissions) ? <div className="mt-3 space-y-1">{itemLink(checkInNavigationItem, onNavigate)}</div> : null}
+  </>;
 
   return <AuthShell desktopSidebarOpen={desktopSidebarOpen} onToggleDesktopSidebar={() => setDesktopSidebarOpen((open) => !open)} mobileNavigationTrigger={<Button variant="ghost" aria-label="Abrir menú" aria-expanded={mobileMenuOpen} aria-controls="internal-mobile-navigation" className="h-11 gap-2 px-3 md:hidden" onClick={() => setMobileMenuOpen(true)}><Menu aria-hidden="true" size={20} />Menú</Button>}>
     <main className={`flex min-h-screen min-w-0 flex-col bg-background pt-14 transition-[margin] duration-200 ${desktopSidebarOpen ? 'md:ml-60 md:pt-0' : 'md:ml-0 md:pt-14'}`}>
@@ -150,7 +159,7 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
           </Link>
           <Button variant="ghost" aria-label="Ocultar menú lateral" className="h-10 w-10 shrink-0 px-0 text-zinc-300 hover:bg-zinc-800 hover:text-white" onClick={() => setDesktopSidebarOpen(false)}><PanelLeftClose aria-hidden="true" size={18} /></Button>
         </div>
-        <nav aria-label="Navegación principal" className="min-w-0 flex-1 space-y-1">{navigationContent('desktop')}</nav>
+        <nav aria-label="Navegación principal" className="min-w-0 flex-1 space-y-1">{navigationWithCheckIn('desktop')}</nav>
         {accountContent()}
       </aside> : null}
       {mobileMenuOpen ? <>
@@ -162,7 +171,7 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
             </Link>
             <button ref={closeMenuRef} type="button" aria-label="Cerrar menú" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setMobileMenuOpen(false)}><X aria-hidden="true" size={20} /></button>
           </div>
-          <nav aria-label="Navegación móvil" className="min-w-0 flex-1 space-y-1">{navigationContent('mobile', () => setMobileMenuOpen(false))}</nav>
+          <nav aria-label="Navegación móvil" className="min-w-0 flex-1 space-y-1">{navigationWithCheckIn('mobile', () => setMobileMenuOpen(false))}</nav>
           {accountContent(() => setMobileMenuOpen(false))}
         </div>
       </> : null}

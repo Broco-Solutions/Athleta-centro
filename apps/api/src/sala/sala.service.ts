@@ -822,7 +822,10 @@ export class SalaService {
       notFound: 'No encontramos un alumno activo con ese DNI. Revisalo o consultá en recepción.',
       manual: 'No pudimos registrar automáticamente tu asistencia. Consultá con un profesor.',
     };
-    if (!person || !(await this.prisma.salaParticipation.findFirst({ where: { personId: person.id, startDate: { lte: this.date(date) }, OR: [{ endDate: null }, { endDate: { gte: this.date(date) } }] }, select: { id: true } }))) return denied('NOT_FOUND', messages.notFound);
+    const activeParticipation = person
+      ? await this.prisma.salaParticipation.findFirst({ where: { personId: person.id, endDate: null }, select: { id: true } })
+      : null;
+    if (!person || !activeParticipation) return denied('NOT_FOUND', messages.notFound);
     const groups = await this.agenda(date);
     const entries = groups.flatMap((group) => group.people).filter((entry) => entry.personId === person.id);
     const unique = [...new Map(entries.map((entry) => [`${entry.origin}:${entry.sourceId}`, entry])).values()];
