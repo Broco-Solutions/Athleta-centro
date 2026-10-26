@@ -17,4 +17,6 @@ const environmentSchema = z.object({
 
 export type Environment = z.infer<typeof environmentSchema>;
 export const validateEnvironment = (values: Record<string, unknown>): Environment => environmentSchema.parse(values);
+// Origin headers never include a trailing slash. Compare origins, not URL spellings.
+export const configuredWebOrigin = (): string => new URL(process.env.WEB_ORIGIN!).origin;
 export const isClinicEnabled = (values: Record<string, string | undefined> = process.env): boolean => values.ATHLETA_CLINIC_ENABLED === 'true';

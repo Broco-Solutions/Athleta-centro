@@ -47,6 +47,6 @@ export class PersonResponseDto {
 }
 
 export class PersonEnvelopeDto { @ApiProperty({ type: () => PersonResponseDto }) data!: PersonResponseDto; }
-export class PortalPinEnvelopeDto { @ApiProperty({ type: String, pattern: '^\\d{4}$' }) data!: { pin: string }; }
+export class PortalPinEnvelopeDto { @ApiProperty({ type: String, pattern: '^\\d{4}$' }) data!: string; }
 export class PeopleMetaDto { @ApiProperty({ type: Number }) page!: number; @ApiProperty({ type: Number }) pageSize!: number; @ApiProperty({ type: Number }) total!: number; @ApiProperty({ type: Number }) totalPages!: number; }
 export class PeopleListEnvelopeDto { @ApiProperty({ type: () => [PersonResponseDto] }) data!: PersonResponseDto[]; @ApiProperty({ type: () => PeopleMetaDto }) meta!: PeopleMetaDto; }

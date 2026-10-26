@@ -83,6 +83,22 @@ describe('internal auth API', () => {
     await auth.logout(token);
     expect((await prisma.session.findUniqueOrThrow({ where: { id: session.id } })).revokedAt).toBeNull();
   });
+  it.each(['valid', 'expired'] as const)('clears and revokes a %s session with a canonical browser Origin', async state => {
+    const { cookie, session, response } = await loginSession();
+    if (state === 'expired') await prisma.session.update({ where: { id: session.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    const previousOrigin = process.env.WEB_ORIGIN;
+    const origin = new URL(previousOrigin!).origin;
+    try {
+      process.env.WEB_ORIGIN = `${origin}/`;
+      const result = await request(app.getHttpServer()).post('/api/auth/logout').set('Origin', origin).set('Cookie', cookie).set('x-csrf-token', response.body.data.csrfToken).expect(200);
+      expect(result.headers['set-cookie'][0]).toMatch(/athleta_session=;/);
+      expect(result.headers['set-cookie'][0]).toContain('Path=/');
+      expect(result.headers['set-cookie'][0]).toContain('Expires=Thu, 01 Jan 1970');
+      expect(result.headers['set-cookie'].join('')).not.toContain('athleta_portal_session');
+      expect((await prisma.session.findUniqueOrThrow({ where: { id: session.id } })).revokedAt).not.toBeNull();
+      await request(app.getHttpServer()).get('/api/auth/session').set('Cookie', cookie).expect(401);
+    } finally { process.env.WEB_ORIGIN = previousOrigin; }
+  });
   it('preserves the current session and revokes other sessions on password change', async () => {
     const { user, cookie, response, session } = await loginSession();
     const other = await auth.login(user.email, 'ValidPass1!', 'synthetic-ip');

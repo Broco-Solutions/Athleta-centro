@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthRateLimitService } from './auth-rate-limit.service';
-import { isClinicEnabled } from '../config/env';
+import { configuredWebOrigin, isClinicEnabled } from '../config/env';
 
 @Injectable()
 export class AuthSecurityMiddleware {
@@ -25,7 +25,7 @@ export class AuthSecurityMiddleware {
       }
       if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
         const origin = request.header('origin');
-        if (origin && origin !== process.env.WEB_ORIGIN) {
+        if (origin && origin !== configuredWebOrigin()) {
           throw new UnauthorizedException({ code: 'CSRF_INVALID', message: 'Invalid CSRF token' });
         }
         if (request.header('x-csrf-token') !== current.csrfToken) {
@@ -33,6 +33,17 @@ export class AuthSecurityMiddleware {
         }
       }
       next();
-    } catch (error) { next(error); }
+    } catch (error) {
+      // An expired/revoked cookie must still reach logout so it can be cleared.
+      // Active sessions continue through the normal Origin + CSRF checks above.
+      const response = error instanceof UnauthorizedException ? error.getResponse() : null;
+      const unauthenticated = response && typeof response === 'object' && 'code' in response && response.code === 'UNAUTHENTICATED';
+      if (path === '/api/auth/logout' && request.method === 'POST' && unauthenticated) {
+        const origin = request.header('origin');
+        if (origin && origin !== configuredWebOrigin()) return next(new UnauthorizedException({ code: 'CSRF_INVALID', message: 'Invalid CSRF token' }));
+        return next();
+      }
+      next(error);
+    }
   }
 }
