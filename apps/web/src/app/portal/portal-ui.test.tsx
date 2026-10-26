@@ -1,7 +1,7 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { PortalFrame } from './portal-ui';
+import { PortalFrame, PortalLogoutButton } from './portal-ui';
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/portal' }));
 afterEach(() => vi.restoreAllMocks());
@@ -25,4 +25,16 @@ it('does not retry failed session renewal', async () => {
   render(<QueryClientProvider client={client}><PortalFrame title="Inicio">Contenido</PortalFrame></QueryClientProvider>);
   await waitFor(() => expect(client.getQueryState(['portal', 'session'])?.status).toBe('error'));
   expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it('keeps one logout label, prevents duplicate submissions and reports a recoverable failure', async () => {
+  const request = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false } as Response);
+  const client = new QueryClient(); client.setQueryData(['portal', 'private'], 'synthetic');
+  render(<QueryClientProvider client={client}><PortalLogoutButton /></QueryClientProvider>);
+  const button = screen.getByRole('button', { name: 'Cerrar sesión' });
+  expect(button).toHaveTextContent('Cerrar sesión');
+  fireEvent.click(button); fireEvent.click(button);
+  expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos cerrar la sesión. Intentá nuevamente.');
+  expect(request).toHaveBeenCalledTimes(1); expect(button).toBeEnabled();
+  expect(client.getQueryData(['portal', 'private'])).toBe('synthetic');
 });

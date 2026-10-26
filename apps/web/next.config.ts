@@ -1,5 +1,7 @@
 import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
+  // The development badge otherwise covers the compact rail's logout control.
+  devIndicators: false,
   transpilePackages: ['@athleta/ui'],
   env: { ATHLETA_CLINIC_ENABLED: process.env.ATHLETA_CLINIC_ENABLED === 'true' ? 'true' : 'false' },
   async redirects() {

@@ -5,10 +5,12 @@ import Link from 'next/link';
 import { DeveloperFooter } from '../branding/developer-footer';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
-import { Activity, CalendarDays, ChevronDown, ChevronRight, ClipboardList, Dumbbell, LogOut, Menu, PanelLeftClose, UserCog, UserRound, Users, Wallet, X } from 'lucide-react';
+import { Activity, ArrowDownLeft, ArrowUpRight, ScanLine, Settings2, CalendarDays, ChevronDown, ChevronRight, ClipboardList, Dumbbell, LogOut, Menu, PanelLeftClose, PanelLeftOpen, UserCog, UserRound, Users, Wallet, X } from 'lucide-react';
 import { Button } from '@athleta/ui';
 import { currentSession, logout } from './auth';
 import { AuthShell } from './auth-shell';
+import { NavigationTooltip } from './navigation-tooltip';
+import { useDesktopSidebar } from './workspace-navigation-state';
 
 type NavigationItem = {
   key: string;
@@ -24,8 +26,8 @@ const hasDomainPermission = (permissions: string[], prefix: string) => permissio
 const checkInNavigationItem: NavigationItem = {
   key: 'sala-check-in',
   href: '/sala/fichaje',
-  label: 'Fichaje',
-  icon: ClipboardList,
+  label: 'Ingreso',
+  icon: ScanLine,
   canAccess: (permissions) => permissions.includes('SALA_AGENDA_MANAGE'),
 };
 
@@ -56,12 +58,12 @@ function groupedNavigation(permissions: string[]): NavigationGroup[] {
       { key: 'sala-agenda', href: '/sala', label: 'Agenda', icon: CalendarDays, canAccess: (values) => values.includes('SALA_AGENDA_MANAGE') },
       { key: 'sala-students', href: '/students', label: 'Alumnos', icon: Users, canAccess: (values) => values.includes('SALA_PARTICIPATION_MANAGE') },
       { key: 'routines', href: '/routines', label: 'Rutinas', icon: ClipboardList, canAccess: (values) => values.includes('SALA_ROUTINE_MANAGE') },
-      { key: 'sala-configuration', href: '/sala/configuration', label: 'Configuración', icon: Dumbbell, canAccess: (values) => hasAny(values, ['SALA_SCHEDULE_MANAGE', 'SALA_PLAN_CATALOG_MANAGE', 'SALA_SERVICE_DURATION_MANAGE']) },
+      { key: 'sala-configuration', href: '/sala/configuration', label: 'Configuración', icon: Settings2, canAccess: (values) => hasAny(values, ['SALA_SCHEDULE_MANAGE', 'SALA_PLAN_CATALOG_MANAGE', 'SALA_SERVICE_DURATION_MANAGE']) },
     ] },
     { key: 'finance', label: 'Finanzas', items: [
       { key: 'finance-summary', href: '/finance', label: 'Resumen', icon: Wallet, canAccess: (values) => values.includes('FINANCE_OPERATIONAL_READ') || values.includes('FINANCE_EXECUTIVE_READ') || values.includes('PAYMENT_METHOD_CATALOG_MANAGE') },
-      { key: 'finance-income', href: '/finance?view=income', label: 'Ingresos', icon: Wallet, canAccess: (values) => values.includes('FINANCE_OPERATIONAL_READ') },
-      { key: 'finance-expenses', href: '/finance?view=expenses', label: 'Gastos', icon: Wallet, canAccess: (values) => values.includes('FINANCE_OPERATIONAL_READ') || values.includes('EXPENSE_HISTORY_READ') },
+      { key: 'finance-income', href: '/finance?view=income', label: 'Ingresos', icon: ArrowDownLeft, canAccess: (values) => values.includes('FINANCE_OPERATIONAL_READ') },
+      { key: 'finance-expenses', href: '/finance?view=expenses', label: 'Gastos', icon: ArrowUpRight, canAccess: (values) => values.includes('FINANCE_OPERATIONAL_READ') || values.includes('EXPENSE_HISTORY_READ') },
     ] },
     { key: 'team', label: 'Equipo', items: [
       { key: 'team', href: '/team', label: 'Equipo', icon: UserCog, canAccess: (values) => hasDomainPermission(values, 'TEAM_') },
@@ -73,11 +75,15 @@ function groupedNavigation(permissions: string[]): NavigationGroup[] {
 export function WorkspaceShell({ children, active }: { children: React.ReactNode; active: string }): React.JSX.Element {
   const activeKey = active;
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
-  const [desktopSidebarOpen, setDesktopSidebarOpen] = React.useState(true);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useDesktopSidebar();
+  const desktopNavRef = React.useRef<HTMLElement>(null);
+  const drawerRef = React.useRef<HTMLDivElement>(null);
+  const signingOut = React.useRef(false);
   const closeMenuRef = React.useRef<HTMLButtonElement>(null);
   const queryClient = useQueryClient();
   const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false });
-  const signOut = useMutation({ mutationFn: (csrfToken: string) => logout(csrfToken), onSuccess: () => { queryClient.removeQueries({ queryKey: ['auth', 'session'] }); window.location.assign('/login'); } });
+  const signOut = useMutation({ mutationFn: (csrfToken: string) => logout(csrfToken), retry: false, onSuccess: async () => { await queryClient.cancelQueries(); queryClient.clear(); window.location.replace('/login'); }, onSettled: () => { signingOut.current = false; } });
+  const requestSignOut = () => { if (signingOut.current || !session.data) return; signingOut.current = true; signOut.mutate(session.data.csrfToken); };
   const permissions = session.data?.permissions ?? [];
   const roles = session.data?.roles ?? [];
   const roleLabels: Record<string, string> = {
@@ -90,14 +96,15 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
   };
   const fullName = `${session.data?.user.firstName ?? ''} ${session.data?.user.lastName ?? ''}`.trim();
   const rolesLabel = roles.map((role) => roleLabels[role] ?? role).join(' · ');
-  const accountContent = (onNavigate?: () => void) => <footer className="mt-auto min-w-0 border-t border-zinc-700 pt-4">
-    <div className="min-w-0 px-3" title={[fullName, rolesLabel].filter(Boolean).join(' · ')}>
+  const accountContent = (onNavigate?: () => void, compact = false) => <footer className="mt-auto min-w-0 border-t border-zinc-700 pt-4">
+    <div className={compact ? 'sr-only' : 'min-w-0 px-3'} title={[fullName, rolesLabel].filter(Boolean).join(' · ')}>
       <div className="truncate text-sm font-medium text-white">{fullName}</div>
       <div className="truncate text-xs text-zinc-400">{rolesLabel}</div>
     </div>
     <div className="mt-3 space-y-1">
-      {!roles.includes('BROCO_SUPPORT') ? <Link href="/profile" aria-label="Mi perfil" title="Mi perfil" onClick={() => onNavigate?.()} className="flex min-h-11 items-center gap-3 rounded-md px-3 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><UserRound aria-hidden="true" size={18} />Mi perfil</Link> : null}
-      <Button aria-label="Cerrar sesión" title="Cerrar sesión" variant="ghost" className="h-11 w-full justify-start gap-3 px-3 text-zinc-300 hover:bg-zinc-800 hover:text-white" disabled={signOut.isPending} onClick={() => signOut.mutate(session.data!.csrfToken)}><LogOut aria-hidden="true" size={18} />Cerrar sesión</Button>
+      {!roles.includes('BROCO_SUPPORT') ? compact ? <NavigationTooltip label="Mi perfil"><Link href="/profile" aria-label="Mi perfil" className="flex h-11 items-center justify-center rounded-md text-zinc-300 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><UserRound aria-hidden="true" size={18} /></Link></NavigationTooltip> : <Link href="/profile" aria-label="Mi perfil" onClick={() => onNavigate?.()} className="flex min-h-11 items-center gap-3 rounded-md px-3 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><UserRound aria-hidden="true" size={18} />Mi perfil</Link> : null}
+      <NavigationTooltip label={signOut.isPending ? 'Cerrando sesión…' : 'Cerrar sesión'}><Button aria-label={signOut.isPending ? 'Cerrando sesión…' : 'Cerrar sesión'} variant="ghost" className={`h-11 w-full gap-3 text-zinc-300 hover:bg-zinc-800 hover:text-white ${compact ? 'px-0' : 'justify-start px-3'}`} disabled={signOut.isPending || !session.data} onClick={requestSignOut}><LogOut aria-hidden="true" size={18} /><span className={compact ? 'sr-only' : undefined}>{signOut.isPending ? 'Cerrando sesión…' : 'Cerrar sesión'}</span></Button></NavigationTooltip>
+      {signOut.isError ? <div role="alert" className="mt-2 rounded-md bg-red-950 p-2 text-sm text-red-100"><p>{compact ? 'No se pudo salir.' : 'No pudimos cerrar la sesión. Intentá nuevamente.'}</p><button type="button" onClick={requestSignOut} className="mt-1 min-h-11 w-full break-words text-xs underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Reintentar</button></div> : null}
     </div>
   </footer>;
   const isProfessorOnly = roles.length === 1 && roles.includes('PROFESSOR');
@@ -114,18 +121,33 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
   React.useEffect(() => {
     if (!mobileMenuOpen) return;
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     closeMenuRef.current?.focus();
+    const desktop = window.matchMedia?.('(min-width: 768px)');
+    const closeOnDesktop = () => { if (desktop?.matches) setMobileMenuOpen(false); };
+    desktop?.addEventListener('change', closeOnDesktop);
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setMobileMenuOpen(false);
+      if (event.key === 'Tab') {
+        const controls = Array.from(drawerRef.current?.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), [tabindex="0"]') ?? []).filter(element => !element.closest('[hidden]'));
+        const first = controls[0]; const last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => {
+      document.body.style.overflow = previousOverflow;
+      desktop?.removeEventListener('change', closeOnDesktop);
       document.removeEventListener('keydown', handleKeyDown);
       trigger?.focus();
     };
   }, [mobileMenuOpen]);
 
-  const itemLink = ({ key, href, label, icon: Icon }: NavigationItem, onNavigate?: () => void) => <Link key={key} aria-current={activeKey === key ? 'page' : undefined} className={`flex min-h-11 items-center gap-3 rounded-md px-3 py-2.5 text-sm md:min-h-0 ${activeKey === key ? 'bg-primary font-semibold text-primary-foreground' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'}`} href={href} onClick={() => onNavigate?.()}>
+  React.useEffect(() => { desktopNavRef.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView?.({ block: 'nearest' }); }, [activeKey, desktopSidebarOpen, session.data]);
+
+  const itemLink = ({ key, href, label, icon: Icon }: NavigationItem, onNavigate?: () => void) => <Link key={key} aria-current={activeKey === key ? 'page' : undefined} className={`flex min-h-11 items-center gap-3 rounded-md px-3 py-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${activeKey === key ? 'border-l-2 border-primary! bg-zinc-800 font-semibold text-white' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'}`} href={href} onClick={() => onNavigate?.()}>
     <Icon aria-hidden="true" size={18} />
     <span>{label}</span>
   </Link>;
@@ -150,21 +172,26 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
     {checkInNavigationItem.canAccess(permissions) ? <div className="mt-3 space-y-1">{itemLink(checkInNavigationItem, onNavigate)}</div> : null}
   </>;
 
-  return <AuthShell desktopSidebarOpen={desktopSidebarOpen} onToggleDesktopSidebar={() => setDesktopSidebarOpen((open) => !open)} mobileNavigationTrigger={<Button variant="ghost" aria-label="Abrir menú" aria-expanded={mobileMenuOpen} aria-controls="internal-mobile-navigation" className="h-11 gap-2 px-3 md:hidden" onClick={() => setMobileMenuOpen(true)}><Menu aria-hidden="true" size={20} />Menú</Button>}>
-    <main className={`flex min-h-screen min-w-0 flex-col bg-background pt-14 transition-[margin] duration-200 ${desktopSidebarOpen ? 'md:ml-60 md:pt-0' : 'md:ml-0 md:pt-14'}`}>
-      {desktopSidebarOpen ? <aside className="fixed inset-y-0 left-0 z-50 hidden w-60 min-w-0 flex-col overflow-y-auto bg-sidebar px-4 py-6 text-sidebar-foreground md:flex">
-        <div className="mb-8 flex min-w-0 items-center gap-2">
-          <Link href="/" aria-label="Athleta · Inicio" className="min-w-0 flex-1 text-center">
-            <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-full" />
-          </Link>
-          <Button variant="ghost" aria-label="Ocultar menú lateral" className="h-10 w-10 shrink-0 px-0 text-zinc-300 hover:bg-zinc-800 hover:text-white" onClick={() => setDesktopSidebarOpen(false)}><PanelLeftClose aria-hidden="true" size={18} /></Button>
+  return <AuthShell mobileNavigationOpen={mobileMenuOpen} desktopSidebarOpen={desktopSidebarOpen} onToggleDesktopSidebar={() => setDesktopSidebarOpen((open) => !open)} mobileNavigationTrigger={<Button variant="ghost" aria-label="Abrir menú" aria-expanded={mobileMenuOpen} aria-controls="internal-mobile-navigation" className="h-11 gap-2 px-3 md:hidden" onClick={() => setMobileMenuOpen(true)}><Menu aria-hidden="true" size={20} />Menú</Button>}>
+    <main className={`flex min-h-screen min-w-0 flex-col bg-background pt-14 motion-safe:transition-[margin] motion-safe:duration-200 ${desktopSidebarOpen ? 'md:ml-60 md:pt-0' : 'md:ml-20 md:pt-0'}`}>
+      <aside inert={mobileMenuOpen} className={`fixed inset-y-0 left-0 z-50 hidden min-w-0 flex-col bg-sidebar py-5 text-sidebar-foreground md:flex ${desktopSidebarOpen ? 'w-60 px-4' : 'w-20 px-3'}`}>
+        <div className={`mb-5 flex min-w-0 items-center ${desktopSidebarOpen ? 'gap-2' : 'justify-center'}`}>
+          {desktopSidebarOpen ? <Link href="/" aria-label="Athleta · Inicio" className="min-w-0 flex-1 text-center"><Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-full" /></Link> : null}
+          <NavigationTooltip label={desktopSidebarOpen ? 'Compactar menú lateral' : 'Expandir menú lateral'}><Button variant="ghost" aria-label={desktopSidebarOpen ? 'Ocultar menú lateral' : 'Mostrar menú lateral'} className="h-11 w-11 shrink-0 px-0 text-zinc-300 hover:bg-zinc-800 hover:text-white" onClick={() => setDesktopSidebarOpen(open => !open)}>{desktopSidebarOpen ? <PanelLeftClose aria-hidden="true" size={18} /> : <PanelLeftOpen aria-hidden="true" size={18} />}</Button></NavigationTooltip>
         </div>
-        <nav aria-label="Navegación principal" className="min-w-0 flex-1 space-y-1">{navigationWithCheckIn('desktop')}</nav>
-        {accountContent()}
-      </aside> : null}
+        <nav ref={desktopNavRef} aria-label="Navegación principal" className="min-h-0 min-w-0 flex-1 space-y-1 overflow-y-auto pb-4">
+          {desktopSidebarOpen ? navigationWithCheckIn('desktop') : <>{visibleNavigation.map(item => {
+            const Icon = item.icon;
+            const group = groups?.find(value => value.items.some(child => child.key === item.key));
+            const label = group ? `${group.label}: ${item.label}` : item.label;
+            return <NavigationTooltip key={item.key} label={label}><Link href={item.href} aria-label={label} aria-current={activeKey === item.key ? 'page' : undefined} className={`flex h-11 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${activeKey === item.key ? 'border-l-2 border-primary! bg-zinc-800 text-primary' : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'}`}><Icon aria-hidden="true" size={20} /></Link></NavigationTooltip>;
+          })}{checkInNavigationItem.canAccess(permissions) ? <NavigationTooltip label="Ingreso"><Link href={checkInNavigationItem.href} aria-label={checkInNavigationItem.label} aria-current={activeKey === 'sala-check-in' ? 'page' : undefined} className={`flex h-11 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${activeKey === 'sala-check-in' ? 'border-l-2 border-primary! bg-zinc-800 text-primary' : 'text-zinc-300 hover:bg-zinc-800'}`}><ScanLine aria-hidden="true" size={20} /></Link></NavigationTooltip> : null}</>}
+        </nav>
+        {accountContent(undefined, !desktopSidebarOpen)}
+      </aside>
       {mobileMenuOpen ? <>
         <button type="button" aria-label="Cerrar menú desde el fondo" className="fixed inset-0 z-50 bg-black/40 md:hidden" onClick={() => setMobileMenuOpen(false)} />
-        <div id="internal-mobile-navigation" role="dialog" aria-label="Menú principal" className="fixed inset-y-0 left-0 z-[60] flex w-72 max-w-[85vw] min-w-0 flex-col overflow-y-auto bg-sidebar px-4 py-6 text-sidebar-foreground md:hidden">
+        <div ref={drawerRef} id="internal-mobile-navigation" role="dialog" aria-modal="true" aria-label="Menú principal" className="fixed inset-y-0 left-0 z-[60] flex w-72 max-w-[85vw] min-w-0 flex-col overflow-y-auto bg-sidebar px-4 py-6 text-sidebar-foreground md:hidden">
           <div className="mb-8 flex min-w-0 items-start justify-between gap-3">
             <Link href="/" aria-label="Athleta · Inicio" className="min-w-0 flex-1" onClick={() => setMobileMenuOpen(false)}>
               <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" className="h-auto w-full max-w-44" />
@@ -175,8 +202,8 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
           {accountContent(() => setMobileMenuOpen(false))}
         </div>
       </> : null}
-      <section className="min-w-0 flex-1 p-4 sm:p-5 md:p-8">{children}</section>
-      <footer className="border-t border-border px-4 py-5 text-center sm:px-5 md:px-8"><DeveloperFooter /></footer>
+      <section inert={mobileMenuOpen} className="min-w-0 flex-1 p-4 sm:p-5 md:p-8">{children}</section>
+      <footer inert={mobileMenuOpen} className="border-t border-border px-4 py-5 text-center sm:px-5 md:px-8"><DeveloperFooter /></footer>
     </main>
   </AuthShell>;
 }

@@ -1,6 +1,7 @@
 'use client';
 import React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { AthletaContact } from '../../features/branding/athleta-contact';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DeveloperFooter } from '../../features/branding/developer-footer';
 
 import Link from 'next/link';
@@ -42,16 +43,17 @@ export const today = (): string => new Intl.DateTimeFormat('en-CA', { timeZone: 
 export async function portalLogout(): Promise<void> {
   const response = await fetch('/api/portal/auth/logout', { method: 'POST', credentials: 'include' });
   if (!response.ok) throw new Error('No pudimos cerrar la sesión. Intentá nuevamente.');
-  window.location.href = '/portal/login';
 }
 
 export function PortalLogoutButton({ compactOnMobile = false }: { compactOnMobile?: boolean }): React.JSX.Element {
+  const queryClient = useQueryClient();
+  const submitting = React.useRef(false);
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState('');
-  return <span><button type="button" disabled={pending} className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm disabled:opacity-50" onClick={async () => {
-    setPending(true); setError('');
-    try { await portalLogout(); } catch { setError('No pudimos cerrar la sesión. Intentá nuevamente.'); setPending(false); }
-  }} aria-label={pending ? 'Cerrando sesión…' : 'Cerrar sesión'}><LogOut size={16} aria-hidden="true" /><span className={compactOnMobile ? 'md:hidden' : undefined}>{pending ? 'Saliendo…' : 'Salir'}</span><span className={compactOnMobile ? 'hidden md:inline' : undefined}>{pending ? 'Cerrando sesión…' : 'Cerrar sesión'}</span></button>{error ? <span role="alert" className="block text-sm">{error}</span> : null}</span>;
+  return <span className="relative inline-flex min-w-0 flex-col"><button type="button" disabled={pending} className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm disabled:opacity-50" onClick={async () => {
+    if (submitting.current) return; submitting.current = true; setPending(true); setError('');
+    try { await portalLogout(); await queryClient.cancelQueries(); queryClient.clear(); window.location.replace('/portal/login'); } catch { setError('No pudimos cerrar la sesión. Intentá nuevamente.'); setPending(false); submitting.current = false; }
+  }} aria-label={pending ? 'Cerrando sesión…' : 'Cerrar sesión'}><LogOut size={16} aria-hidden="true" /><span className={compactOnMobile ? 'md:hidden' : 'hidden'}>{pending ? 'Saliendo…' : 'Salir'}</span><span className={compactOnMobile ? 'hidden md:inline' : undefined}>{pending ? 'Cerrando sesión…' : 'Cerrar sesión'}</span></button>{error ? <span role="alert" className="absolute right-0 top-full z-20 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-md border border-red-200! bg-red-50 p-3 text-sm text-red-800 shadow-sm">{error}</span> : null}</span>;
 }
 
 export function PortalNav(): React.JSX.Element {
@@ -97,7 +99,7 @@ export function PortalFrame({ title, subtitle, action, backToHome = false, child
       </header>
       {gated ? <p role="status">Completá los requisitos de ingreso para continuar.</p> : children}
     </main>
-    <footer className="border-t"><div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-5 text-xs text-muted-foreground sm:flex-row sm:justify-between sm:px-6 lg:px-8"><span>Athleta · Portal personal</span><DeveloperFooter /></div></footer>
+    <footer className="border-t"><div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-5 text-xs text-muted-foreground sm:flex-row sm:justify-between sm:px-6 lg:px-8"><div><span>Athleta · Portal personal</span><div><AthletaContact /></div></div><DeveloperFooter /></div></footer>
   </div>;
 }
 

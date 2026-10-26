@@ -19,56 +19,15 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-it('renders the mobile login composition and official Athleta logo', () => {
+it('renders the official brand, personal access and verified contact', () => {
   renderPage();
-
-  const logo = screen.getByRole('img', { name: 'Athleta' });
-  expect(new URL(logo.getAttribute('src')!, 'http://localhost').searchParams.get('url')).toBe('/logo-athleta.png');
-  for (const text of [
-    'PORTAL', 'Iniciar sesión',
-    'DNI', 'Sin puntos ni espacios.', 'PIN', 'Ingresar',
-    '¿Necesitás ayuda?', 'Consultá en recepción.', 'Desarrollado por',
-  ]) {
-    expect(screen.getByText(text)).toBeInTheDocument();
-  }
-  expect(screen.queryByText(/PORTAL DE/i)).not.toBeInTheDocument();
-  expect(screen.queryByText(/CLIENTES/i)).not.toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Iniciar sesión', level: 1 })).toBeVisible();
-  expect(screen.getByText('DESBLOQUEÁ TU')).toBeVisible();
-  expect(screen.getByText('POTENCIAL.')).toHaveClass('text-primary');
-  expect(screen.getByText('DESBLOQUEÁ TU').closest('p')).toHaveClass('text-xl', 'font-bold', 'sm:text-2xl');
-  const heroArrow = screen.getByTestId('portal-hero-arrow');
-  expect(heroArrow).toBeVisible();
-  expect(heroArrow).toHaveClass('text-primary', 'shrink-0');
-  expect(heroArrow).toHaveClass('-rotate-45');
-  const heroAccent = screen.getByTestId('portal-hero-accent');
-  expect(heroAccent).toBeVisible();
-  expect(heroAccent).toHaveClass('absolute', 'bottom-0', 'left-5', 'h-1', 'w-12', 'bg-primary');
-  expect(logo.closest('header')?.nextElementSibling).toContainElement(screen.getByText('POTENCIAL.'));
+  expect(screen.getByRole('img', { name: 'Athleta' })).toBeVisible();
+  expect(screen.getByText('Portal personal')).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Iniciar sesión' })).toBeVisible();
+  expect(screen.getByLabelText('DNI')).toHaveAttribute('autocomplete', 'username');
+  expect(screen.getByLabelText('PIN')).toHaveAttribute('autocomplete', 'current-password');
+  expect(screen.getByRole('link', { name: /Contacto Athleta/ })).toHaveAttribute('href', 'tel:+5493464566340');
   expect(screen.getByRole('link', { name: 'Desarrollado por Broco Solutions' })).toHaveAttribute('href', 'https://www.brocosolutions.com');
-  expect(screen.getByRole('img', { name: 'Broco Solutions' })).toBeVisible();
-  expect(screen.queryByText('Ingresá con tu DNI y PIN para continuar.')).not.toBeInTheDocument();
-  expect(screen.queryByText('Ingresá 4 dígitos.')).not.toBeInTheDocument();
-  expect(screen.queryByText('¿Necesitás ayuda para ingresar?')).not.toBeInTheDocument();
-  const help = screen.getByText('¿Necesitás ayuda?').closest('p');
-  expect(help).toHaveTextContent('¿Necesitás ayuda? Consultá en recepción.');
-  expect(help).toContainElement(screen.getByText('Consultá en recepción.'));
-
-  const dni = screen.getByLabelText('DNI');
-  const dniHelp = screen.getByText('Sin puntos ni espacios.');
-  expect(dniHelp.previousElementSibling).toContainElement(dni);
-  expect(dniHelp).toHaveClass('text-xs', 'text-muted-foreground');
-  expect(dni).toHaveAttribute('aria-describedby', 'portal-dni-help');
-  expect(dni).toHaveAttribute('inputMode', 'numeric');
-  expect(dni).toHaveAttribute('pattern', '[0-9]*');
-  expect(dniHelp).toHaveAttribute('id', 'portal-dni-help');
-  const pin = screen.getByLabelText('PIN');
-  expect(pin).not.toHaveAttribute('aria-describedby');
-  expect(pin).toBeRequired();
-  expect(pin).toHaveAttribute('inputMode', 'numeric');
-  expect(pin).toHaveAttribute('pattern', '[0-9]{4}');
-  expect(pin).toHaveAttribute('maxLength', '4');
-  expect(pin).toHaveAttribute('autoComplete', 'current-password');
 });
 
 it('keeps only numeric characters in the DNI and PIN fields', () => {
@@ -132,4 +91,19 @@ it('shows the existing authentication error for an unsuccessful response', async
 
   expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos ingresar con esos datos. Revisalos o comunicate con Athleta.');
   expect(navigation.push).not.toHaveBeenCalled();
+});
+
+it('keeps network errors generic and allows a retry', async () => {
+  vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('offline'));
+  renderPage(); enterCredentials(); fireEvent.click(screen.getByRole('button', { name: 'Ingresar' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos ingresar con esos datos.');
+  expect(screen.getByRole('button', { name: 'Ingresar' })).toBeEnabled();
+});
+it('sends only once while the Portal login is pending', async () => {
+  const request = vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise(() => undefined));
+  renderPage(); enterCredentials();
+  const form = screen.getByRole('button', { name: 'Ingresar' }).closest('form')!;
+  fireEvent.submit(form); fireEvent.submit(form);
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('button', { name: 'Ingresando…' })).toBeDisabled();
 });

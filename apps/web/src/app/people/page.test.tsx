@@ -7,7 +7,7 @@ import PeoplePage from './page';
 import { PersonIdentity } from './[id]/clinic-actions';
 
 const server = setupServer(); const nativeFetch = globalThis.fetch;
-const session = { user: { id: 'u1', firstName: 'Test', lastName: 'User', email: 'user@test.local' }, roles: ['ADMINISTRATIVE'], permissions: ['PEOPLE_READ', 'PEOPLE_CREATE', 'PEOPLE_UPDATE_GENERAL'], mustChangePassword: false, csrfToken: 'csrf-test' };
+const session = { user: { id: 'u1', firstName: 'Test', lastName: 'User', email: 'user@test.local' }, roles: ['ADMINISTRATIVE'], permissions: ['PEOPLE_READ', 'PEOPLE_CREATE', 'PEOPLE_UPDATE_GENERAL', 'PORTAL_PIN_RESET'], mustChangePassword: false, csrfToken: 'csrf-test' };
 const person = { id: '10000000-0000-4000-8000-000000000001', firstName: 'Ana', lastName: 'Sintética', dni: '20.123.456', phone: '3515550101', birthDate: '1992-03-10', email: null, emergencyContactName: null, emergencyContactPhone: null, socialWorkId: null, affiliateNumber: null, status: 'INACTIVE', contexts: [], hasSalaParticipation: false, isClinicalPatient: false };
 function renderPage(): void { const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }); render(<QueryClientProvider client={client}><PeoplePage /></QueryClientProvider>); }
 beforeAll(() => { globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch; server.listen({ onUnhandledRequest: 'error' }); });
@@ -181,10 +181,10 @@ it('keeps the reset PIN dialog within the existing edit flow', async () => {
   );
   renderPage();
   fireEvent.click(await screen.findByText('Sintética, Ana'));
-  fireEvent.click(screen.getByRole('button', { name: 'Resetear PIN del Portal' }));
-  expect(screen.getByRole('dialog', { name: 'Resetear PIN del Portal' })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Restablecer PIN del Portal' }));
+  expect(screen.getByRole('dialog', { name: 'Restablecer PIN del Portal' })).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: 'Generar nuevo PIN' }));
-  expect(await screen.findByRole('dialog', { name: 'Nuevo PIN del Portal' })).toHaveTextContent('5678');
+  expect(await screen.findByRole('dialog', { name: 'Nuevo PIN temporal' })).toHaveTextContent('5678');
   expect(screen.getByRole('heading', { name: 'Editar Persona' })).toBeInTheDocument();
   expect(screen.queryByText('Persona guardada correctamente')).not.toBeInTheDocument();
   expect(screen.queryByRole('dialog', { name: 'Persona guardada correctamente' })).not.toBeInTheDocument();
