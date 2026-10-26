@@ -867,3 +867,59 @@ it.each(['KINESIOLOGIST', 'OSTEOPATH'])('shows fixed configuration without manag
   for (const name of ['Modificar', 'Finalizar', 'Reprogramar fecha']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Crear turno fijo' })).toBeDisabled();
 });
+
+function profileSession(permissions: string[], roles = ['ADMINISTRATIVE']) {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'staff', firstName: 'Admin', lastName: 'Sintético' }, roles, permissions, csrfToken: 'csrf-session', mustChangePassword: false } })));
+}
+const editPermissions = ['PEOPLE_UPDATE_GENERAL'];
+const pinPermissions = ['PORTAL_PIN_RESET'];
+
+it('shows profile actions only with their matching permissions and retains the person link', async () => {
+  profileSession([...editPermissions, ...pinPermissions]); renderWorkspace();
+  expect(await screen.findByRole('button', { name: 'Editar datos' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Restablecer PIN del Portal' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Ver ficha de Persona' })).toHaveAttribute('href', `/people/${personId}`);
+});
+it('shows the permitted actions in the Professor header variant', async () => {
+  profileSession([...editPermissions, ...pinPermissions], ['PROFESSOR']); renderWorkspace();
+  expect(await screen.findByRole('button', { name: 'Editar datos' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Restablecer PIN del Portal' })).toBeInTheDocument();
+});
+it('hides profile actions when the permissions are absent', async () => {
+  profileSession([]); renderWorkspace(); await screen.findByText('Participación activa');
+  expect(screen.queryByRole('button', { name: 'Editar datos' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Restablecer PIN del Portal' })).not.toBeInTheDocument();
+});
+it('preloads general person fields and updates the Sala heading in place after saving', async () => {
+  profileSession(editPermissions);
+  let savedBody: unknown;
+  server.use(
+    http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: [] })),
+    http.get(`http://localhost:3000/api/people/${personId}`, () => HttpResponse.json({ data: { id: personId, firstName: 'Alumno', lastName: 'Sintético', dni: '12345678', phone: '3415551234', birthDate: '2000-01-01' } })),
+    http.patch(`http://localhost:3000/api/people/${personId}`, async ({ request }) => { savedBody = await request.json(); return HttpResponse.json({ data: { id: personId, firstName: 'Nombre Nuevo', lastName: 'Apellido Nuevo', dni: '87654321', phone: '3415551234', birthDate: '2000-01-01' } }); }),
+  );
+  renderWorkspace(); await screen.findByRole('button', { name: 'Editar datos' }); fireEvent.click(screen.getByRole('button', { name: 'Editar datos' }));
+  expect(screen.getByLabelText('Nombre')).toHaveValue('Alumno'); expect(screen.getByLabelText('DNI')).toHaveValue('12345678');
+  fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Nombre Nuevo' } }); fireEvent.change(screen.getByLabelText('Apellido'), { target: { value: 'Apellido Nuevo' } }); fireEvent.change(screen.getByLabelText('DNI'), { target: { value: '87654321' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByText('Datos guardados correctamente')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Nombre Nuevo Apellido Nuevo' })).toBeInTheDocument(); expect(screen.getByText(/DNI 87654321/)).toBeInTheDocument();
+  expect(screen.queryByRole('dialog', { name: 'Editar datos' })).not.toBeInTheDocument();
+  expect(savedBody).toMatchObject({ firstName: 'Nombre Nuevo', lastName: 'Apellido Nuevo', dni: '87654321' });
+});
+it('keeps the edit form open and displays the API error on failure', async () => {
+  profileSession(editPermissions);
+  server.use(http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: [] })), http.get(`http://localhost:3000/api/people/${personId}`, () => HttpResponse.json({ data: { id: personId, firstName: 'Alumno', lastName: 'Sintético', dni: '12345678', phone: '3415551234', birthDate: '2000-01-01' } })), http.patch(`http://localhost:3000/api/people/${personId}`, () => HttpResponse.json({ message: 'conflict' }, { status: 409 })));
+  renderWorkspace(); await screen.findByRole('button', { name: 'Editar datos' }); fireEvent.click(screen.getByRole('button', { name: 'Editar datos' })); fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Ya existe una Persona con ese DNI.'); expect(screen.getByLabelText('Nombre')).toBeInTheDocument();
+});
+it('confirms before resetting the PIN and only shows it once after confirmation', async () => {
+  profileSession(pinPermissions); let resets = 0;
+  server.use(http.post(`http://localhost:3000/api/people/${personId}/reset-portal-pin`, ({ request }) => { resets++; expect(request.headers.get('x-csrf-token')).toBe('csrf-session'); return HttpResponse.json({ data: '4821' }); }));
+  renderWorkspace(); await screen.findByRole('button', { name: 'Restablecer PIN del Portal' }); fireEvent.click(screen.getByRole('button', { name: 'Restablecer PIN del Portal' }));
+  const confirm = screen.getByRole('alertdialog'); expect(confirm).toHaveTextContent('Se generará un nuevo PIN temporal para este alumno. El PIN actual dejará de funcionar.'); expect(resets).toBe(0);
+  fireEvent.click(within(confirm).getByRole('button', { name: 'Cancelar' })); expect(resets).toBe(0); expect(screen.queryByRole('dialog', { name: 'Nuevo PIN temporal' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Restablecer PIN del Portal' })); fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Confirmar restablecimiento' }));
+  const result = await screen.findByRole('dialog', { name: 'Nuevo PIN temporal' }); expect(result).toHaveTextContent('Alumno Sintético'); expect(within(result).getByLabelText('PIN temporal')).toHaveTextContent('4821'); expect(resets).toBe(1);
+  fireEvent.click(within(result).getByRole('button', { name: 'Entendido' })); expect(screen.queryByText('4821')).not.toBeInTheDocument();
+});

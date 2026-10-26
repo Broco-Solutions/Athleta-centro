@@ -1,7 +1,9 @@
 import { currentHealthDocument, declarationValidUntil } from '../src/sala/health-declaration/health-document';
 import * as argon2 from 'argon2';
 import { PrismaClient, Role, type SalaWeekday } from '@prisma/client';
+import { assertIsolatedTestDatabase } from './test-database-safety';
 
+assertIsolatedTestDatabase();
 const prisma = new PrismaClient();
 const kind = process.argv[2];
 const email = `e2e.${kind}@athleta.test`;

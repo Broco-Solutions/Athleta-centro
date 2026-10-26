@@ -1013,3 +1013,14 @@ Estado: **CONFIRMADO / RESUELTO**. Definición aprobada 2026-10-22. Aplicable a 
 | Agenda y Finanzas | Con Clínica deshabilitada, la agenda combina únicamente Sala y requiere `SALA_RELATION_READ`. Finanzas excluye ingresos y gastos de Clínica de listados y totales, no permite crear gastos clínicos nuevos y conserva almacenados los movimientos históricos clínicos. Si Clínica se habilita, el comportamiento backend existente se mantiene. | `ReservationsService.list(...)`, `ReservationsController.list(...)` y `FinanceCatalogService`. |
 | Permisos de Sala y pagos | Se conservan los permisos vigentes por rol. Profesor registra y consulta pagos desde el contexto del Alumno, sin gestión/reversión administrativa ni acceso a Finanzas generales. No se agregan permisos. | Distribución existente en `effectivePermissions(...)`; `SalaPaymentPanel` contextual. |
 | Alta y credenciales | Al crear una cuenta interna, el DNI sin puntos es la credencial inicial protegida por hash y el primer acceso exige establecer contraseña personal conforme a la política vigente. Un restablecimiento genera una contraseña temporal aleatoria, revoca sesiones anteriores y exige cambiarla; no usa el DNI. | Flujos existentes de `TeamService`, `AuthService` y middleware de autenticación. |
+
+## Finanzas — Áreas configurables para Gastos — 2026-10-26
+
+Estado: **CONFIRMADO / RESUELTO**. Esta decisión sustituye la restricción previa de usar únicamente Sala y General como áreas de Gastos; las decisiones anteriores se conservan como antecedente.
+
+- Las áreas de Gastos se administran desde Finanzas → Gastos. Sala y General son áreas base: conservan sus nombres y no pueden desactivarse.
+- Usuarios con `EXPENSE_CATEGORY_CATALOG_MANAGE` pueden crear áreas personalizadas, renombrarlas, desactivarlas y reactivarlas. El estado determina si un área está disponible para nuevos Gastos, no si conserva su historial.
+- Los Gastos históricos mantienen su vínculo estable con el área. Renombrar, desactivar o reactivar un área no modifica los Gastos asociados ni sus importes.
+- Categorías y áreas son catálogos independientes. Descripción se muestra en una columna propia del historial de Gastos.
+- Las áreas personalizadas son clasificadores de Gastos y no se aplican a Ingresos ni habilitan capacidades clínicas.
+- El área base Clínica conserva las restricciones existentes de `isClinicEnabled()`. Deshabilitar Clínica oculta sus movimientos de las consultas operativas y totales restringidos y prohíbe nuevos Gastos clínicos, manteniendo íntegros los registros históricos.

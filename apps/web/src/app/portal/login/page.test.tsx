@@ -27,7 +27,7 @@ it('renders the mobile login composition and official Athleta logo', () => {
   for (const text of [
     'PORTAL', 'Iniciar sesión',
     'DNI', 'Sin puntos ni espacios.', 'PIN', 'Ingresar',
-    '¿Necesitás ayuda?', 'Consultá en recepción.', 'Desarrollado por', 'Broco Solutions',
+    '¿Necesitás ayuda?', 'Consultá en recepción.', 'Desarrollado por',
   ]) {
     expect(screen.getByText(text)).toBeInTheDocument();
   }
@@ -46,6 +46,7 @@ it('renders the mobile login composition and official Athleta logo', () => {
   expect(heroAccent).toHaveClass('absolute', 'bottom-0', 'left-5', 'h-1', 'w-12', 'bg-primary');
   expect(logo.closest('header')?.nextElementSibling).toContainElement(screen.getByText('POTENCIAL.'));
   expect(screen.getByRole('link', { name: 'Desarrollado por Broco Solutions' })).toHaveAttribute('href', 'https://www.brocosolutions.com');
+  expect(screen.getByRole('img', { name: 'Broco Solutions' })).toBeVisible();
   expect(screen.queryByText('Ingresá con tu DNI y PIN para continuar.')).not.toBeInTheDocument();
   expect(screen.queryByText('Ingresá 4 dígitos.')).not.toBeInTheDocument();
   expect(screen.queryByText('¿Necesitás ayuda para ingresar?')).not.toBeInTheDocument();

@@ -5,6 +5,8 @@ test('preserves administrative Finance and lets Professor renew from student pay
   test.setTimeout(60000);
   execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', '-e', `
     import { PrismaClient } from '@prisma/client';
+    import { assertIsolatedTestDatabase } from './scripts/test-database-safety';
+    assertIsolatedTestDatabase();
     const prisma = new PrismaClient();
     async function clean() {
       const people = await prisma.person.findMany({ where: { normalizedDni: { in: ['40880000', '40880001', '40880002'] } }, select: { id: true } });

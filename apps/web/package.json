@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "pnpm --filter @athleta/api exec tsx scripts/run-isolated-tests.ts e2e"
   },
   "dependencies": {
     "@athleta/api-client": "workspace:*",

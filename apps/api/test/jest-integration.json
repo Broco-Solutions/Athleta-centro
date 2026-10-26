@@ -1,1 +1,1 @@
-{ "moduleFileExtensions": ["js", "json", "ts"], "rootDir": "..", "testRegex": ".integration-spec.ts$", "maxWorkers": 1, "transform": { "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": "tsconfig.json" }] }, "setupFiles": ["<rootDir>/test/setup-env.ts"] }
+{ "moduleFileExtensions": ["js", "json", "ts"], "rootDir": "..", "testRegex": ".integration-spec.ts$", "maxWorkers": 1, "transform": { "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": "tsconfig.json" }] }, "setupFiles": ["<rootDir>/test/setup-env.ts"], "setupFilesAfterEnv": ["<rootDir>/test/assert-integration-database.ts"] }

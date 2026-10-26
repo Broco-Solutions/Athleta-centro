@@ -1,6 +1,8 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
+import { assertIsolatedTestDatabase } from './test-database-safety';
+assertIsolatedTestDatabase();
 const prisma = new PrismaClient();
 async function main(): Promise<void> {
   if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging') throw new Error('Local test fixture only');

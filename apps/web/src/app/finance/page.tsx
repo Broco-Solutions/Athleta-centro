@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { ListPagination, LIST_PAGE_SIZE } from '../../lib/list-pagination';
 import { formatArs } from '../../lib/money';
 import { useSearchParams } from 'next/navigation';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@athleta/ui';
 import { WorkspaceShell } from '../../features/auth/workspace-shell';
 import { getPerson, listPersonSalaParticipations, listSalaStudents } from '@athleta/api-client';
@@ -15,6 +15,7 @@ import { todayOperational } from '../../features/sala/student-onboarding';
 import { currentSession } from '../../features/auth/auth';
 
 type Method = { id: string; name: string; isSelectable: boolean };
+type ExpenseAreaCatalogItem = { id: string; name: string; isSelectable: boolean; systemCode: string | null };
 type IncomeStatusTab = 'pending' | 'paid';
 type FinanceView = 'summary' | 'income' | 'expenses';
 type Period = 'current-month' | 'previous-month' | 'current-year' | 'all' | 'custom';
@@ -68,6 +69,7 @@ function FinancePageContent(): React.JSX.Element {
   const [expenseConfirmation, setExpenseConfirmation] = useState('');
   const canCreateExpense = permissions.includes('EXPENSE_CREATE');
   const canReadExpenses = read || permissions.includes('EXPENSE_HISTORY_READ');
+  const canManageExpenseAreas = permissions.includes('EXPENSE_CATEGORY_CATALOG_MANAGE');
   const canPay = permissions.includes('SALA_PAYMENT_MANAGE');
   const students = useQuery({ queryKey: ['sala', 'students'], enabled: canPay && view === 'income' && !personId && paymentRegistrationOpen, queryFn: async () => {
     const response = await listSalaStudents({ credentials: 'include' });
@@ -92,13 +94,14 @@ function FinancePageContent(): React.JSX.Element {
   const summaryExpenses = useQuery<Movement[]>({ queryKey: ['finance', 'expenses', 'summary', summaryPeriod, summaryRange.from ?? null, summaryRange.to ?? null], queryFn: () => get(financialQuery('expenses', summaryRange)), enabled: view === 'summary' && read });
   const income = useQuery<Movement[]>({ queryKey: ['finance', 'income', 'history', incomePeriod.period, incomePeriod.range.from ?? null, incomePeriod.range.to ?? null], queryFn: () => get(financialQuery('income', incomePeriod.range)), enabled: view === 'income' && !personId && read });
   const expenses = useQuery<Movement[]>({ queryKey: ['finance', 'expenses', 'history', expensePeriod.period, expensePeriod.range.from ?? null, expensePeriod.range.to ?? null], queryFn: () => get(financialQuery('expenses', expensePeriod.range)), enabled: view === 'expenses' && canReadExpenses });
+  const expenseAreas = useQuery<ExpenseAreaCatalogItem[]>({ queryKey: ['finance', 'expense-areas'], queryFn: () => get('expense-areas'), enabled: view === 'expenses' && (canReadExpenses || canManageExpenseAreas) });
   const incomePeople = uniqueOptions((income.data ?? []).flatMap(row => row.person ? [row.person] : []));
   const personResults = incomePersonSearch.trim() ? incomePeople.filter(person => matchesStudentSearch(person, incomePersonSearch)).slice(0, 10) : [];
   const incomeMethods = uniqueOptions((income.data ?? []).flatMap(row => row.paymentMethod ? [row.paymentMethod] : [])).sort(byName);
   const expenseCategories = uniqueOptions((expenses.data ?? []).flatMap(row => row.category ? [row.category] : [])).sort(byName);
   const expenseMethods = uniqueOptions((expenses.data ?? []).flatMap(row => row.paymentMethod ? [row.paymentMethod] : [])).sort(byName);
   const filteredIncome = (income.data ?? []).filter(row => (!selectedIncomePerson || row.person?.id === selectedIncomePerson.id) && (!incomeSource || row.source === incomeSource) && (!incomeMethod || row.paymentMethod?.id === incomeMethod));
-  const filteredExpenses = (expenses.data ?? []).filter(row => (!expenseArea || row.area === expenseArea) && (!expenseCategory || row.category?.id === expenseCategory) && (!expenseMethod || row.paymentMethod?.id === expenseMethod));
+  const filteredExpenses = (expenses.data ?? []).filter(row => (!expenseArea || row.areaId === expenseArea) && (!expenseCategory || row.category?.id === expenseCategory) && (!expenseMethod || row.paymentMethod?.id === expenseMethod));
   const incomeFilteredTotal = filteredIncome.reduce((total, row) => total + BigInt(row.amount), 0n);
   const expenseFilteredTotal = filteredExpenses.reduce((total, row) => total + BigInt(row.amount), 0n);
   const effectiveIncomePage = Math.min(incomePage, Math.max(1, Math.ceil(filteredIncome.length / LIST_PAGE_SIZE)));
@@ -262,12 +265,13 @@ function FinancePageContent(): React.JSX.Element {
         <h2 className="text-xl font-semibold">Gastos</h2>
         {canCreateExpense ? <Button type="button" variant={expenseFormOpen ? 'secondary' : 'primary'} aria-expanded={expenseFormOpen} aria-controls="expense-registration-form" onClick={() => { setExpenseFormOpen(!expenseFormOpen); setExpenseConfirmation(''); }}>{expenseFormOpen ? 'Cerrar formulario' : '+ Registrar gasto'}</Button> : null}
       </div>
+      {canManageExpenseAreas ? <ExpenseAreaManager csrfToken={session.data?.csrfToken ?? ''} /> : null}
       {expenseFormOpen && canCreateExpense ? <div id="expense-registration-form"><ExpenseRegistration csrfToken={session.data?.csrfToken ?? ''} canManageCategories={permissions.includes('EXPENSE_CATEGORY_CATALOG_MANAGE')} onRegistered={() => { setExpenseFormOpen(false); setExpenseConfirmation('Gasto registrado correctamente.'); }} /></div> : null}
       {expenseConfirmation ? <p role="status" className="text-sm text-emerald-700">{expenseConfirmation}</p> : null}
       {canReadExpenses ? <section aria-label="Filtros de gastos" className="space-y-3">
         <HistoryPeriodControls state={expensePeriod} filtersOpen={expenseFiltersOpen} onToggleFilters={() => setExpenseFiltersOpen(!expenseFiltersOpen)} filterCount={expenseFilterCount} panelId="expense-history-filters" />
         {expenseFiltersOpen ? <div id="expense-history-filters" className="grid gap-3 rounded border bg-white p-3 md:grid-cols-3">
-          <HistorySelect label="Área" allLabel="Todas" value={expenseArea} onChange={setExpenseArea} options={[{ id: 'SALA', name: 'Sala' }, { id: 'GENERAL', name: 'General' }]} />
+          <HistorySelect label="Área" allLabel="Todas" value={expenseArea} onChange={setExpenseArea} options={(expenseAreas.data ?? []).map(area => ({ id: area.id, name: area.name }))} />
           <HistorySelect label="Categoría" allLabel="Todas" value={expenseCategory} onChange={setExpenseCategory} options={expenseCategories} />
           <HistorySelect label="Medio de pago" value={expenseMethod} onChange={setExpenseMethod} options={expenseMethods} />
           {expensePeriod.changed || expenseFilterCount ? <div className="md:col-span-3 md:text-right"><Button type="button" variant="secondary" onClick={() => { expensePeriod.reset(); setExpenseArea(''); setExpenseCategory(''); setExpenseMethod(''); }}>Limpiar filtros</Button></div> : null}
@@ -275,7 +279,8 @@ function FinancePageContent(): React.JSX.Element {
         {expenses.isSuccess ? <p className="text-sm text-muted-foreground">{filteredExpenses.length} {filteredExpenses.length === 1 ? 'gasto' : 'gastos'}</p> : null}
       </section> : null}
       {canReadExpenses && expenses.isError ? <p role="alert">No se pudieron cargar los gastos.</p> : null}
-      {canReadExpenses ? <Data title="Registros de gastos" value={filteredExpenses} total={expenseFilteredTotal} page={effectiveExpensePage} onPage={setExpensePage} /> : null}
+      {permissions.includes('FINANCE_EXPORT') ? <a className="inline-flex h-10 items-center rounded-md border border-border bg-white px-4 text-sm font-semibold hover:bg-surface-muted" href={`/api/finance/${financialQuery('expenses/export', expensePeriod.range, { ...(expenseArea ? { areaId: expenseArea } : {}), ...(expenseCategory ? { categoryId: expenseCategory } : {}), ...(expenseMethod ? { paymentMethodId: expenseMethod } : {}) })}`}>Exportar gastos</a> : null}
+      {canReadExpenses ? <Data title="Registros de gastos" value={filteredExpenses} total={expenseFilteredTotal} page={effectiveExpensePage} onPage={setExpensePage} showExpenseDescription /> : null}
     </> : null}
   </main></WorkspaceShell>;
 }
@@ -388,29 +393,66 @@ function PaymentMethods({ methods, canCatalog, name, editing, message, onName, o
   return <section className="rounded border bg-white p-5"><h2 className="font-semibold">Medios de pago</h2>{methods.map((method) => <div className="flex items-center justify-between border-b py-2 text-sm" key={method.id}><span>{method.name}</span><span className="flex items-center gap-3"><span>{method.isSelectable ? 'Disponible' : 'Retirado'}</span>{canCatalog && <>{method.isSelectable && <button className="underline" onClick={() => onEdit(method)}>Editar</button>}{method.isSelectable && <button className="underline" onClick={() => onRetire(method)}>Retirar</button>}</>}</span></div>)}{canCatalog && <form className="mt-4 flex gap-2" onSubmit={onSave}><input aria-label="Nombre del medio de pago" required value={name} onChange={(event) => onName(event.target.value)} className="h-10 flex-1 rounded border px-3" placeholder={editing ? 'Editar medio de pago' : 'Nuevo medio de pago'} /><button className="rounded bg-[#FCCC05] px-3 py-2 text-sm text-black">{editing ? 'Guardar' : 'Crear'}</button>{editing && <button type="button" className="rounded border px-3" onClick={onCancelEdit}>Cancelar</button>}</form>}{message && <p role="status" className="mt-2 text-sm">{message}</p>}</section>;
 }
 
-type Movement = { id: string; cashDate: string; source?: string; area?: string; amount: string; person?: { id: string; firstName: string; lastName: string; dni?: string }; category?: { id: string; name: string }; paymentMethod?: { id: string; name: string }; description?: string | null; registeredBy?: { id: string; firstName: string; lastName: string } };
+function ExpenseAreaManager({ csrfToken }: { csrfToken: string }): React.JSX.Element {
+  const client = useQueryClient();
+  const areas = useQuery<ExpenseAreaCatalogItem[]>({ queryKey: ['finance', 'expense-areas'], queryFn: () => get('expense-areas') });
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [message, setMessage] = useState('');
+  const save = useMutation({ mutationFn: async (input: { id?: string; name: string; isSelectable?: boolean }) => {
+    const url = input.id ? `/api/finance/expense-areas/${input.id}` : '/api/finance/expense-areas';
+    const response = await fetch(url, { method: input.id ? 'PATCH' : 'POST', credentials: 'include', headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken }, body: JSON.stringify({ name: input.name, ...(input.isSelectable === undefined ? {} : { isSelectable: input.isSelectable }) }) });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.message ?? 'No se pudo guardar el área.');
+    return body.data as ExpenseAreaCatalogItem;
+  }, onSuccess: async (_area, input) => {
+    setCreating(false); setEditing(null); setName(''); setEditName(''); setMessage(input.id ? 'Área actualizada correctamente.' : 'Área creada correctamente.');
+    await Promise.all([client.invalidateQueries({ queryKey: ['finance', 'expense-areas'] }), client.invalidateQueries({ queryKey: ['finance', 'expenses'] })]);
+  } });
+  const setSelectable = useMutation({ mutationFn: async (area: ExpenseAreaCatalogItem) => {
+    const response = await fetch(`/api/finance/expense-areas/${area.id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken }, body: JSON.stringify({ isSelectable: !area.isSelectable }) });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.message ?? 'No se pudo actualizar el área.');
+    return area.isSelectable;
+  }, onSuccess: async wasSelectable => {
+    setMessage(wasSelectable ? 'Área desactivada.' : 'Área reactivada.');
+    await Promise.all([client.invalidateQueries({ queryKey: ['finance', 'expense-areas'] }), client.invalidateQueries({ queryKey: ['finance', 'expenses'] })]);
+  } });
+  return <details className="rounded border bg-white p-4"><summary className="cursor-pointer font-semibold">Administrar áreas</summary>
+    {areas.isPending ? <p role="status" className="mt-3 text-sm">Cargando áreas…</p> : null}
+    {areas.isError ? <p role="alert" className="mt-3 text-sm">{areas.error.message}</p> : null}
+    {areas.isSuccess ? <div className="mt-3 overflow-x-auto"><table aria-label="Áreas de gastos" className="w-full text-left text-sm"><thead className="bg-surface-muted"><tr><th className="p-2">Área</th><th className="p-2">Estado</th><th className="p-2">Acciones</th></tr></thead><tbody>{areas.data.map(area => <tr key={area.id} className="border-t">{editing === area.id ? <td className="p-2"><input aria-label={`Editar área ${area.name}`} value={editName} onChange={event => setEditName(event.target.value)} className="h-9 rounded border px-2" /></td> : <th scope="row" className="p-2 font-medium">{area.name}</th>}<td className="p-2">{area.isSelectable ? 'Activa' : 'Inactiva'}</td><td className="p-2">{area.systemCode ? <span>Área base</span> : editing === area.id ? <span className="flex flex-wrap gap-3"><button type="button" className="underline" disabled={!editName.trim() || save.isPending} onClick={() => save.mutate({ id: area.id, name: editName, isSelectable: area.isSelectable })}>Guardar</button><button type="button" className="underline" onClick={() => { setEditing(null); setEditName(''); }}>Cancelar</button></span> : <span className="flex flex-wrap gap-3"><button type="button" className="underline" onClick={() => { setEditing(area.id); setEditName(area.name); setMessage(''); }}>Editar</button><button type="button" className="underline" disabled={setSelectable.isPending} onClick={() => setSelectable.mutate(area)}>{area.isSelectable ? 'Desactivar' : 'Reactivar'}</button></span>}</td></tr>)}</tbody></table></div> : null}
+    <div className="mt-4">{!creating ? <Button type="button" variant="secondary" onClick={() => { setName(''); setMessage(''); save.reset(); setCreating(true); }}>+ Agregar área</Button> : <div className="max-w-xl space-y-2 text-sm"><label>Nombre del área<input aria-label="Nombre del área" className="mt-1 h-10 w-full rounded border px-3" value={name} onChange={event => setName(event.target.value)} disabled={save.isPending} /></label><div className="flex gap-2"><Button type="button" disabled={!name.trim() || save.isPending} onClick={() => save.mutate({ name })}>{save.isPending ? 'Creando…' : 'Crear'}</Button><Button type="button" variant="secondary" disabled={save.isPending} onClick={() => { setCreating(false); setName(''); save.reset(); }}>Cancelar</Button></div></div>}</div>
+    {save.isError ? <p role="alert" className="mt-2 text-sm">{save.error.message}</p> : null}{setSelectable.isError ? <p role="alert" className="mt-2 text-sm">{setSelectable.error.message}</p> : null}{message ? <p role="status" className="mt-2 text-sm">{message}</p> : null}
+  </details>;
+}
+
+type Movement = { id: string; cashDate: string; source?: string; area?: string; areaId?: string; areaName?: string; areaSystemCode?: string | null; amount: string; person?: { id: string; firstName: string; lastName: string; dni?: string }; category?: { id: string; name: string }; paymentMethod?: { id: string; name: string }; description?: string | null; registeredBy?: { id: string; firstName: string; lastName: string } };
 const areaLabel = (area?: string) => ({ SALA: 'Sala', GENERAL: 'General', CLINIC: 'Clínica' })[area ?? ''] ?? area;
 const formatDate = (value: string) => value.slice(0, 10).split('-').reverse().join('/');
 
-function Data({ title, value, total, page, onPage, showRegisteredBy = false }: {
-  title: string; value: Movement[]; total: bigint; page: number; onPage: (page: number) => void; showRegisteredBy?: boolean;
+function Data({ title, value, total, page, onPage, showRegisteredBy = false, showExpenseDescription = false }: {
+  title: string; value: Movement[]; total: bigint; page: number; onPage: (page: number) => void; showRegisteredBy?: boolean; showExpenseDescription?: boolean;
 }): React.JSX.Element {
   const rows = value.slice((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE);
-  const columns = showRegisteredBy ? 'lg:grid-cols-[1fr_2fr_1fr_1fr_2fr_1fr]' : 'lg:grid-cols-[1fr_2fr_1fr_1fr_1fr]';
-  const headers = showRegisteredBy ? ['Fecha', 'Persona', 'Origen', 'Medio de pago', 'Registrado por', 'Importe'] : ['Fecha', 'Categoría', 'Área', 'Medio de pago', 'Importe'];
+  const columns = showRegisteredBy ? 'lg:grid-cols-[1fr_2fr_1fr_1fr_2fr_1fr]' : showExpenseDescription ? 'lg:grid-cols-[1fr_1.4fr_2fr_1fr_1fr_1fr]' : 'lg:grid-cols-[1fr_2fr_1fr_1fr_1fr]';
+  const headers = showRegisteredBy ? ['Fecha', 'Persona', 'Origen', 'Medio de pago', 'Registrado por', 'Importe'] : showExpenseDescription ? ['Fecha', 'Categoría', 'Descripción', 'Área', 'Medio de pago', 'Importe'] : ['Fecha', 'Categoría', 'Área', 'Medio de pago', 'Importe'];
   return <section aria-label={title} className="rounded border bg-white p-5">
     <h2 className="font-semibold">{title}</h2>
     <div role="table" aria-label={title} className="mt-3">
       <div role="row" className={`hidden gap-2 bg-surface-muted py-3 text-sm font-semibold text-foreground lg:grid ${columns}`}>
         {headers.map((label, index) => <span role="columnheader" key={label} className={index === headers.length - 1 ? 'text-right' : ''}>{label}</span>)}
       </div>
-      {rows.map(row => <div role="row" className={`grid gap-2 border-b py-3 text-sm sm:grid-cols-2 ${columns}`} key={`${row.source ?? row.area}-${row.id}`}>
-        <span role="cell"><time dateTime={row.cashDate.slice(0, 10)}>{formatDate(row.cashDate)}</time></span>
-        <span role="cell" className="min-w-0 break-words font-medium">{showRegisteredBy && row.source === 'SALA' && row.person?.id ? <Link href={`/finance?view=income&personId=${row.person.id}`} className="underline">{row.person.firstName} {row.person.lastName}</Link> : row.person ? `${row.person.firstName} ${row.person.lastName}` : row.category?.name}</span>
-        <span role="cell">{areaLabel(row.source ?? row.area)}</span><span role="cell">{row.paymentMethod?.name}</span>
+      {rows.map(row => <div role="row" className={`grid min-w-0 gap-2 border-b py-3 text-sm sm:grid-cols-2 ${columns}`} key={`${row.source ?? row.areaId ?? row.area}-${row.id}`}>
+        <span role="cell" className="min-w-0 break-words">{showExpenseDescription ? <span className="lg:hidden font-medium">Fecha: </span> : null}<time dateTime={row.cashDate.slice(0, 10)}>{formatDate(row.cashDate)}</time></span>
+        <span role="cell" className="min-w-0 break-words font-medium">{showExpenseDescription ? <span className="lg:hidden">Categoría: </span> : null}{showRegisteredBy && row.source === 'SALA' && row.person?.id ? <Link href={`/finance?view=income&personId=${row.person.id}`} className="underline">{row.person.firstName} {row.person.lastName}</Link> : row.person ? `${row.person.firstName} ${row.person.lastName}` : row.category?.name}</span>
+        {showExpenseDescription ? <span role="cell" className="min-w-0 break-words"><span className="lg:hidden font-medium">Descripción: </span>{row.description?.trim() || '—'}</span> : null}
+        <span role="cell" className="min-w-0 break-words">{showExpenseDescription ? <span className="lg:hidden font-medium">{`Área: `}</span> : null}{row.areaName ?? areaLabel(row.source ?? row.area)}</span><span role="cell" className="min-w-0 break-words">{showExpenseDescription ? <span className="lg:hidden font-medium">Medio de pago: </span> : null}{row.paymentMethod?.name}</span>
         {showRegisteredBy ? <span role="cell" className="min-w-0 break-words"><span className="lg:hidden">Registrado por: </span>{row.registeredBy ? `${row.registeredBy.firstName} ${row.registeredBy.lastName}` : '—'}</span> : null}
-        <strong role="cell" className="tabular-nums lg:text-right">{formatArs(row.amount)}</strong>
-        {row.description ? <p role="cell" className={`text-muted-foreground sm:col-span-2 ${showRegisteredBy ? 'lg:col-span-6' : 'lg:col-span-5'}`}>{row.description}</p> : null}
+        <strong role="cell" className={`tabular-nums ${showExpenseDescription ? 'text-left lg:text-right' : 'lg:text-right'}`}>{showExpenseDescription ? <span className="mr-2 font-normal lg:hidden">Importe:</span> : null}{formatArs(row.amount)}</strong>
+        {!showExpenseDescription && row.description ? <p role="cell" className={`text-muted-foreground sm:col-span-2 ${showRegisteredBy ? 'lg:col-span-6' : 'lg:col-span-5'}`}>{row.description}</p> : null}
       </div>)}
     </div>
     {!value.length ? <p className="mt-3 text-sm text-muted-foreground">No hay registros.</p> : <>

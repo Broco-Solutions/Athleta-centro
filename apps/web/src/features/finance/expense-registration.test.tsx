@@ -7,15 +7,26 @@ import { todayOperational } from '../sala/student-onboarding';
 
 const rent = { id: 'rent', name: 'Alquiler', isSelectable: true };
 const supplies = { id: 'supplies', name: 'Materiales', isSelectable: true };
+const sala = { id: 'area-sala', name: 'Sala', isSelectable: true, systemCode: 'SALA' };
+const general = { id: 'area-general', name: 'General', isSelectable: true, systemCode: 'GENERAL' };
+const custom = { id: 'area-custom', name: 'Kinesiología', isSelectable: true, systemCode: null };
 let categories = [rent];
+let areas: Array<{ id: string; name: string; isSelectable: boolean; systemCode: string | null }> = [sala, general];
 let failCreation = false;
+let failAreaCreation = false;
 let categoryReads = 0;
 const fetchMock = vi.fn();
 beforeEach(() => {
-  categories = [rent]; failCreation = false; categoryReads = 0;
+  categories = [rent]; areas = [sala, general]; failCreation = false; failAreaCreation = false; categoryReads = 0;
   fetchMock.mockReset().mockImplementation(async (url: string, options?: RequestInit) => {
     let data: unknown;
-    if (url.endsWith('expense-categories')) {
+    if (url.endsWith('expense-areas')) {
+      if (options?.method === 'POST') {
+        if (failAreaCreation) return { ok: false, json: async () => ({ message: 'Ya existe un área con ese nombre.' }) };
+        const area = { ...custom, id: 'area-custom', name: JSON.parse(String(options.body)).name as string };
+        areas = [...areas, area]; data = area;
+      } else data = areas;
+    } else if (url.endsWith('expense-categories')) {
       if (options?.method === 'POST') {
         if (failCreation) return { ok: false, json: async () => ({ message: 'La categoría ya existe.' }) };
         const category = { ...supplies, id: categories.some(item => item.id === supplies.id) ? 'other' : supplies.id, name: JSON.parse(String(options.body)).name as string };
@@ -36,19 +47,20 @@ function renderForm(canManageCategories = true, onRegistered?: () => void) {
 async function fillExpense() {
   await screen.findByRole('option', { name: 'Alquiler' });
   await screen.findByRole('option', { name: 'Efectivo' });
+  await screen.findByRole('option', { name: 'Sala' });
   fireEvent.change(screen.getByLabelText('Importe ($ ARS)'), { target: { value: '35000' } });
   fireEvent.change(screen.getByLabelText('Fecha'), { target: { value: '2026-10-01' } });
   fireEvent.change(screen.getByLabelText('Categoría'), { target: { value: 'rent' } });
   fireEvent.change(screen.getByLabelText('Medio de pago'), { target: { value: 'cash' } });
-  fireEvent.change(screen.getByLabelText('Área'), { target: { value: 'GENERAL' } });
+  fireEvent.change(screen.getByLabelText('Área'), { target: { value: 'area-general' } });
   fireEvent.change(screen.getByLabelText('Descripción (opcional)'), { target: { value: 'Compra sintética' } });
   await waitFor(() => expect(screen.getByRole('button', { name: 'Registrar gasto' })).toBeEnabled());
 }
-function expectExpensePreserved() {
+function expectExpensePreserved(areaId = 'area-general') {
   expect(screen.getByLabelText('Importe ($ ARS)')).toHaveValue('35000');
   expect(screen.getByLabelText('Fecha')).toHaveValue('2026-10-01');
   expect(screen.getByLabelText('Medio de pago')).toHaveValue('cash');
-  expect(screen.getByLabelText('Área')).toHaveValue('GENERAL');
+  expect(screen.getByLabelText('Área')).toHaveValue(areaId);
   expect(screen.getByLabelText('Descripción (opcional)')).toHaveValue('Compra sintética');
 }
 it('keeps category required and excludes Clínica from areas', async () => {
@@ -140,7 +152,7 @@ it.each([true, false])('resets successful expenses and calls the optional callba
   expect(screen.getByLabelText('Importe ($ ARS)')).toHaveValue('');
   expect(screen.getByLabelText('Descripción (opcional)')).toHaveValue('');
   expect(screen.getByLabelText('Fecha')).toHaveValue(todayOperational());
-  expect(screen.getByLabelText('Área')).toHaveValue('SALA');
+  expect(screen.getByLabelText('Área')).toHaveValue('area-sala');
   expect(screen.getByLabelText('Categoría')).toHaveValue('rent');
   expect(screen.getByLabelText('Medio de pago')).toHaveValue('cash');
 });
@@ -158,4 +170,36 @@ it('does not call onRegistered or invalidate expenses after a backend error', as
   expect(onRegistered).not.toHaveBeenCalled();
   expect(invalidate).not.toHaveBeenCalled();
   expectExpensePreserved();
+});
+
+it('loads area catalog, defaults to the registered Sala ID, and sends areaId when saving', async () => {
+  const originalFetch = fetchMock.getMockImplementation()!; let expenseBody: unknown;
+  fetchMock.mockImplementation(async (url: string, options?: RequestInit) => {
+    if (url.endsWith('/expenses')) { expenseBody = JSON.parse(String(options?.body)); return { ok: true, json: async () => ({ data: { id: 'expense' } }) }; }
+    return originalFetch(url, options);
+  });
+  renderForm(); await fillExpense(); fireEvent.click(screen.getByRole('button', { name: 'Registrar gasto' }));
+  await waitFor(() => expect(expenseBody).toMatchObject({ areaId: 'area-general' }));
+  expect(fetchMock).toHaveBeenCalledWith('/api/finance/expense-areas', expect.objectContaining({ credentials: 'include' }));
+});
+it('creates and selects an area inline without clearing entered expense data', async () => {
+  const invalidate = renderForm(); await fillExpense();
+  fireEvent.change(screen.getByLabelText('Área'), { target: { value: 'area-general' } });
+  fireEvent.click(screen.getByRole('button', { name: '+ Nueva área' }));
+  fireEvent.change(screen.getByLabelText('Nombre del área'), { target: { value: 'Kinesiología' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Crear' }));
+  await screen.findByRole('option', { name: 'Kinesiología' });
+  await waitFor(() => expect(screen.getByLabelText('Área')).toHaveValue('area-custom'));
+  expect(fetchMock).toHaveBeenCalledWith('/api/finance/expense-areas', expect.objectContaining({ method: 'POST', credentials: 'include', body: JSON.stringify({ name: 'Kinesiología' }), headers: expect.objectContaining({ 'x-csrf-token': 'synthetic-csrf' }) }));
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['finance', 'expense-areas'] });
+  expectExpensePreserved('area-custom');
+});
+it('hides area administration without catalog permission and retains the entered gasto on creation error', async () => {
+  renderForm(false); await fillExpense(); expect(screen.queryByRole('button', { name: '+ Nueva área' })).not.toBeInTheDocument();
+  cleanup(); failAreaCreation = true; renderForm(true); await fillExpense();
+  fireEvent.click(screen.getByRole('button', { name: '+ Nueva área' }));
+  fireEvent.change(screen.getByLabelText('Nombre del área'), { target: { value: 'Kinesiología' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Crear' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Ya existe un área con ese nombre.');
+  expectExpensePreserved(); expect(screen.getByLabelText('Nombre del área')).toHaveValue('Kinesiología');
 });

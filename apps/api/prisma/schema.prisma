@@ -1038,23 +1038,37 @@ model ExpenseCategory {
   @@map("expense_categories")
 }
 
+model ExpenseAreaCatalog {
+  id             String       @id @default(uuid()) @db.Uuid
+  name           String
+  normalizedName String       @unique @map("normalized_name")
+  isSelectable   Boolean      @default(true) @map("is_selectable")
+  systemCode     ExpenseArea? @unique @map("system_code")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  expenses       Expense[]
+
+  @@map("expense_area_catalog")
+}
+
 model Expense {
   id              String          @id @default(uuid()) @db.Uuid
   cashDate        DateTime        @map("cash_date") @db.Date
   amount          Decimal         @db.Decimal(14, 0)
   categoryId      String          @map("category_id") @db.Uuid
   paymentMethodId String          @map("payment_method_id") @db.Uuid
-  area            ExpenseArea
+  areaId          String             @map("area_id") @db.Uuid
   description     String?
   registeredById  String          @map("registered_by_id") @db.Uuid
   operationId     String          @unique @map("operation_id") @db.Uuid
   createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
   category        ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  areaCatalog     ExpenseAreaCatalog @relation(fields: [areaId], references: [id], onDelete: Restrict)
   paymentMethod   PaymentMethod   @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
   registeredBy    InternalUser    @relation(fields: [registeredById], references: [id], onDelete: Restrict)
 
-  @@index([cashDate, area])
+  @@index([cashDate, areaId])
   @@map("expenses")
 }
 

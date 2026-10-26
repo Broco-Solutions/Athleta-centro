@@ -12,7 +12,8 @@ vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(n
 
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
-const session = { user: { id: 'admin', firstName: 'Admin', lastName: 'Test' }, roles: ['GENERAL_ADMIN'], permissions: ['FINANCE_OPERATIONAL_READ', 'FINANCE_EXECUTIVE_READ', 'PAYMENT_METHOD_CATALOG_MANAGE', 'SALA_PAYMENT_MANAGE', 'SALA_PAYMENT_REGISTER', 'EXPENSE_CREATE', 'EXPENSE_HISTORY_READ', 'EXPENSE_CATEGORY_CATALOG_MANAGE'], csrfToken: 'csrf', mustChangePassword: false };
+const financeAreas = [{ id: 'area-sala', name: 'Sala', isSelectable: true, systemCode: 'SALA' }, { id: 'area-general', name: 'General', isSelectable: true, systemCode: 'GENERAL' }, { id: 'area-custom', name: 'Kinesiología', isSelectable: false, systemCode: null }];
+const session = { user: { id: 'admin', firstName: 'Admin', lastName: 'Test' }, roles: ['GENERAL_ADMIN'], permissions: ['FINANCE_OPERATIONAL_READ', 'FINANCE_EXECUTIVE_READ', 'FINANCE_EXPORT', 'PAYMENT_METHOD_CATALOG_MANAGE', 'SALA_PAYMENT_MANAGE', 'SALA_PAYMENT_REGISTER', 'EXPENSE_CREATE', 'EXPENSE_HISTORY_READ', 'EXPENSE_CATEGORY_CATALOG_MANAGE'], csrfToken: 'csrf', mustChangePassword: false };
 
 beforeAll(() => {
   globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch;
@@ -24,11 +25,12 @@ beforeEach(() => {
   server.use(
     http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: session })),
     http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/finance/expense-areas', () => HttpResponse.json({ data: financeAreas })),
     http.get('http://localhost:3000/api/finance/expense-categories', () => HttpResponse.json({ data: [{ id: 'rent', name: 'Alquiler', isSelectable: true }, { id: 'retired', name: 'Retirada', isSelectable: false }] })),
     http.get('http://localhost:3000/api/finance/executive-totals', () => HttpResponse.json({ data: { totalIncome: '100', salaIncome: '60', clinicalIncome: '40', expenses: '20', net: '80' } })),
     http.get('http://localhost:3000/api/finance/payment-methods', () => HttpResponse.json({ data: [{ id: 'cash', name: 'Efectivo', isSelectable: true }] })),
     http.get('http://localhost:3000/api/finance/income', () => HttpResponse.json({ data: [{ id: 'income', cashDate: '2026-10-14', source: 'SALA', amount: '60', registeredBy: { id: 'collector', firstName: 'Admin', lastName: 'Test' }, person: { id: 'person-1', firstName: 'Juan', lastName: 'Pérez' }, paymentMethod: { id: 'transfer', name: 'Transferencia' } }] })),
-    http.get('http://localhost:3000/api/finance/expenses', () => HttpResponse.json({ data: [{ id: 'expense', cashDate: '2026-10-14', area: 'GENERAL', amount: '250000', category: { name: 'Alquiler' }, paymentMethod: { id: 'transfer', name: 'Transferencia' }, description: 'Local de Sala' }] })),
+    http.get('http://localhost:3000/api/finance/expenses', () => HttpResponse.json({ data: [{ id: 'expense', cashDate: '2026-10-14', areaId: 'area-general', areaName: 'General', areaSystemCode: 'GENERAL', amount: '250000', category: { name: 'Alquiler' }, paymentMethod: { id: 'transfer', name: 'Transferencia' }, description: 'Local de Sala' }] })),
   );
 });
 afterEach(() => { cleanup(); server.resetHandlers(); vi.useRealTimers(); });
@@ -202,6 +204,7 @@ async function fillExpense(description = '') {
   if (!screen.queryByRole('heading', { name: 'Registrar gasto' })) await openExpenseForm();
   await screen.findByRole('option', { name: 'Alquiler' });
   await screen.findByRole('option', { name: 'Efectivo' });
+  await screen.findByRole('option', { name: 'Sala' });
   fireEvent.change(screen.getByLabelText('Importe ($ ARS)'), { target: { value: '35000' } });
   fireEvent.change(screen.getByLabelText('Categoría'), { target: { value: 'rent' } });
   fireEvent.change(screen.getByLabelText('Medio de pago'), { target: { value: 'cash' } });
@@ -228,8 +231,8 @@ it('defaults expenses to the operational day and Sala, limits areas and validate
   expect(await screen.findByRole('heading', { name: 'Registrar gasto' })).toBeVisible();
   expect(screen.getByLabelText('Fecha')).toHaveValue('2026-10-14');
   expect(screen.getByLabelText('Fecha')).toHaveAttribute('max', todayOperational());
-  expect(screen.getByLabelText('Área')).toHaveValue('SALA');
-  expect(within(screen.getByLabelText('Área')).getAllByRole('option').map(option => option.textContent)).toEqual(['Sala', 'General']);
+  expect(screen.getByLabelText('Área')).toHaveValue('area-sala');
+  expect(within(screen.getByLabelText('Área')).getAllByRole('option').map(option => option.textContent)).toEqual(['Seleccionar', 'Sala', 'General']);
   expect(screen.queryByRole('option', { name: 'Clínica' })).not.toBeInTheDocument();
   await fillExpense();
   const button = expenseSubmit();
@@ -255,14 +258,14 @@ it.each(['', 'Compra de materiales'])('registers an expense with optional descri
   let contentType: string | null = null;
   let reads = 0;
   server.use(
-    http.get('http://localhost:3000/api/finance/expenses', () => { reads++; return HttpResponse.json({ data: submitted ? [{ ...submitted, id: 'new-expense', category: { name: 'Alquiler' }, paymentMethod: { name: 'Efectivo' } }] : [] }); }),
+    http.get('http://localhost:3000/api/finance/expenses', () => { reads++; return HttpResponse.json({ data: submitted ? [{ ...submitted, id: 'new-expense', areaName: 'Sala', areaSystemCode: 'SALA', category: { name: 'Alquiler' }, paymentMethod: { name: 'Efectivo' } }] : [] }); }),
     http.post('http://localhost:3000/api/finance/expenses', async ({ request }) => { submitted = await request.json() as Record<string, unknown>; csrf = request.headers.get('x-csrf-token'); contentType = request.headers.get('content-type'); return HttpResponse.json({ data: submitted }, { status: 201 }); }),
   );
   const client = renderPage(); const invalidate = vi.spyOn(client, 'invalidateQueries');
   await fillExpense(description);
   fireEvent.click(expenseSubmit());
   expect(await screen.findByText('Gasto registrado correctamente.')).toBeVisible();
-  expect(submitted).toEqual({ cashDate: '2026-10-14', amount: '35000', categoryId: 'rent', paymentMethodId: 'cash', area: 'SALA', ...(description ? { description } : {}), operationId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i) });
+  expect(submitted).toEqual({ cashDate: '2026-10-14', amount: '35000', categoryId: 'rent', paymentMethodId: 'cash', areaId: 'area-sala', ...(description ? { description } : {}), operationId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i) });
   expect(csrf).toBe('csrf'); expect(contentType).toBe('application/json');
   expect(screen.getByRole('button', { name: '+ Registrar gasto' })).toHaveAttribute('aria-expanded', 'false');
   expect(screen.queryByRole('heading', { name: 'Registrar gasto' })).not.toBeInTheDocument();
@@ -276,7 +279,7 @@ it.each(['', 'Compra de materiales'])('registers an expense with optional descri
   expect(screen.getByLabelText('Importe ($ ARS)')).toHaveValue('');
   expect(screen.getByLabelText('Descripción (opcional)')).toHaveValue('');
   expect(screen.getByLabelText('Fecha')).toHaveValue('2026-10-14');
-  expect(screen.getByLabelText('Área')).toHaveValue('SALA');
+  expect(screen.getByLabelText('Área')).toHaveValue('area-sala');
 });
 
 it('retains the expense operationId on retry, changes it after edits and after success', async () => {
@@ -304,6 +307,7 @@ it('creates the first selectable category in context and allows expense entry to
   navigation.search = 'view=expenses';
   let created = false; let reads = 0; let categoryCsrf: string | null = null;
   server.use(
+    http.get('http://localhost:3000/api/finance/expense-areas', () => HttpResponse.json({ data: financeAreas })),
     http.get('http://localhost:3000/api/finance/expense-categories', () => { reads++; return HttpResponse.json({ data: created ? [{ id: 'rent', name: 'Alquiler', isSelectable: true }] : [] }); }),
     http.post('http://localhost:3000/api/finance/expense-categories', async ({ request }) => { expect(await request.json()).toEqual({ name: 'Alquiler' }); categoryCsrf = request.headers.get('x-csrf-token'); created = true; return HttpResponse.json({ data: { id: 'rent', name: 'Alquiler', isSelectable: true } }, { status: 201 }); }),
   );
@@ -330,15 +334,15 @@ it('guides users to payment method configuration and excludes retired methods', 
   expect(expenseSubmit()).toBeDisabled();
 });
 
-it('preserves expense history without creation permissions and translates clinical historical areas', async () => {
+it('preserves accessible expense history without creation permissions while excluding disabled Clinical expenses', async () => {
   navigation.search = 'view=expenses';
   server.use(
     http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: ['EXPENSE_HISTORY_READ'] } })),
-    http.get('http://localhost:3000/api/finance/expenses', () => HttpResponse.json({ data: [{ id: 'clinical', cashDate: '2026-10-01T00:00:00.000Z', area: 'CLINIC', amount: '2000', category: { name: 'Materiales' }, paymentMethod: { name: 'Efectivo' } }] })),
+    http.get('http://localhost:3000/api/finance/expenses', () => HttpResponse.json({ data: [{ id: 'general-history', cashDate: '2026-10-01T00:00:00.000Z', areaId: 'area-general', areaName: 'General', areaSystemCode: 'GENERAL', amount: '2000', category: { name: 'Materiales' }, paymentMethod: { name: 'Efectivo' } }] })),
   );
   renderPage();
   expect(await screen.findByText('Materiales')).toBeVisible();
-  expect(screen.getByText('Clínica')).toBeVisible();
+  expect(screen.getByText('General')).toBeVisible(); expect(screen.queryByText('Clínica')).not.toBeInTheDocument();
   expect(screen.getByText('01/10/2026')).toBeVisible();
   expect(screen.queryByRole('heading', { name: 'Registrar gasto' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: '+ Registrar gasto' })).not.toBeInTheDocument();
@@ -360,6 +364,7 @@ it('does not offer category creation without catalog permission', async () => {
   navigation.search = 'view=expenses';
   server.use(
     http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: ['EXPENSE_CREATE', 'EXPENSE_HISTORY_READ'] } })),
+    http.get('http://localhost:3000/api/finance/expense-areas', () => HttpResponse.json({ data: financeAreas })),
     http.get('http://localhost:3000/api/finance/expense-categories', () => HttpResponse.json({ data: [{ id: 'old', name: 'Retirada', isSelectable: false }] })),
   );
   renderPage();
@@ -613,8 +618,8 @@ const historyIncome = [
   { id: 'sala-ana', cashDate: '2026-10-12', source: 'SALA', amount: '300', person: { id: 'person-2', firstName: 'Ana', lastName: 'Prueba', dni: '88000002' }, paymentMethod: { id: 'transfer', name: 'Transferencia' } },
 ];
 const historyExpenses = [
-  { id: 'rent', cashDate: '2026-10-14', area: 'SALA', amount: '400', category: { id: 'rent', name: 'Alquiler' }, paymentMethod: { id: 'transfer', name: 'Transferencia' } },
-  { id: 'supplies', cashDate: '2026-10-13', area: 'GENERAL', amount: '500', category: { id: 'supplies', name: 'Insumos' }, paymentMethod: { id: 'cash', name: 'Efectivo' } },
+  { id: 'rent', cashDate: '2026-10-14', areaId: 'area-sala', areaName: 'Sala', amount: '400', category: { id: 'rent', name: 'Alquiler' }, paymentMethod: { id: 'transfer', name: 'Transferencia' } },
+  { id: 'supplies', cashDate: '2026-10-13', areaId: 'area-general', areaName: 'General', amount: '500', category: { id: 'supplies', name: 'Insumos' }, paymentMethod: { id: 'cash', name: 'Efectivo' } },
 ];
 
 // Each history uses the backend for its period, without additional catalog reads.
@@ -751,33 +756,33 @@ it('caps the income person search at ten unique results', async () => {
   expect(within(screen.getByRole('region', { name: 'Filtros de ingresos' })).getAllByRole('button', { name: /Persona Prueba/ })).toHaveLength(10);
 });
 
-it('filters expenses locally using only history-derived categories and methods with read-only permissions', async () => {
+it('filters expenses locally using catalog areas and history-derived categories and methods with read-only permissions', async () => {
   navigation.search = 'view=expenses';
   const reads = vi.fn(); const catalogReads = vi.fn();
   server.use(
     http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: ['EXPENSE_HISTORY_READ'] } })),
     http.get('http://localhost:3000/api/finance/expenses', () => { reads(); return HttpResponse.json({ data: historyExpenses }); }),
-    http.get('http://localhost:3000/api/finance/:catalog', () => { catalogReads(); return HttpResponse.json({ data: [] }); }),
+    http.get('http://localhost:3000/api/finance/expense-areas', () => { catalogReads(); return HttpResponse.json({ data: financeAreas }); }),
   );
   renderPage(); await screen.findByText('$ 500,00', { selector: 'strong' });
   fireEvent.click(screen.getByRole('button', { name: 'Filtros' }));
   expect(screen.queryByLabelText('Persona')).not.toBeInTheDocument();
-  expect(within(screen.getByLabelText('Área')).getAllByRole('option').map(option => option.textContent)).toEqual(['Todas', 'Sala', 'General']);
+  expect(within(screen.getByLabelText('Área')).getAllByRole('option').map(option => option.textContent)).toEqual(['Todas', 'Sala', 'General', 'Kinesiología']);
   expect(within(screen.getByLabelText('Categoría')).getAllByRole('option').map(option => option.textContent)).toEqual(['Todas', 'Alquiler', 'Insumos']);
   expect(within(screen.getByLabelText('Medio de pago')).getAllByRole('option').map(option => option.textContent)).toEqual(['Todos', 'Efectivo', 'Transferencia']);
-  for (const [label, value] of [['Área', 'SALA'], ['Categoría', 'rent'], ['Medio de pago', 'transfer']]) {
+  for (const [label, value] of [['Área', 'area-sala'], ['Categoría', 'rent'], ['Medio de pago', 'transfer']]) {
     fireEvent.change(screen.getByLabelText(label!), { target: { value } });
     expect(screen.getByText('$ 400,00', { selector: 'strong' })).toBeVisible();
     expect(screen.queryByText('$ 500,00', { selector: 'strong' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(label!), { target: { value: '' } });
     expect(screen.getByText('$ 500,00', { selector: 'strong' })).toBeVisible();
   }
-  fireEvent.change(screen.getByLabelText('Área'), { target: { value: 'SALA' } });
+  fireEvent.change(screen.getByLabelText('Área'), { target: { value: 'area-sala' } });
   fireEvent.change(screen.getByLabelText('Categoría'), { target: { value: 'rent' } });
   fireEvent.change(screen.getByLabelText('Medio de pago'), { target: { value: 'transfer' } });
   expect(screen.getByRole('button', { name: 'Filtros (3)' })).toBeVisible();
   expect(reads).toHaveBeenCalledTimes(1);
-  expect(catalogReads).not.toHaveBeenCalled();
+  expect(catalogReads).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole('button', { name: 'Total' }));
   await waitFor(() => expect(reads).toHaveBeenCalledTimes(2));
   expect(screen.getByRole('button', { name: 'Filtros (3)' })).toBeVisible();
@@ -832,11 +837,11 @@ it.each(['income', 'expenses'])('handles the previous-year boundary for %s using
 it.each(['income', 'expenses'])('paginates %s after filters and keeps the full filtered total', async view => {
   navigation.search = `view=${view}`;
   const rows = Array.from({ length: 26 }, (_, index) => ({
-    id: `movement-${index}`, cashDate: '2026-10-14', amount: '1000', source: 'SALA', area: 'SALA',
+    id: `movement-${index}`, cashDate: '2026-10-14', amount: '1000', source: 'SALA', areaId: 'area-sala',
     person: { id: index < 13 ? 'juan' : 'pedro', firstName: index < 13 ? 'Juan' : 'Pedro', lastName: 'Sintético' },
     category: { id: index < 13 ? 'rent' : 'other', name: index < 13 ? 'Alquiler' : 'Materiales' },
     paymentMethod: { id: index < 13 ? 'cash' : 'transfer', name: index < 13 ? 'Efectivo' : 'Transferencia' },
-    description: `Movimiento sintético ${index + 1}`,
+    description: `Movimiento sintético ${index + 1}`, areaName: 'Sala',
   }));
   server.use(http.get(`http://localhost:3000/api/finance/${view}`, () => HttpResponse.json({ data: rows })));
   const client = renderPage();
@@ -846,7 +851,7 @@ it.each(['income', 'expenses'])('paginates %s after filters and keeps the full f
   expect(history.getByText('Página 1 de 2')).toBeVisible();
   expect(history.getAllByText(/Movimiento sintético/)).toHaveLength(25);
   expect(history.getByLabelText('Total filtrado')).toHaveTextContent('$ 26.000,00');
-  for (const header of view === 'income' ? ['Fecha', 'Persona', 'Origen', 'Medio de pago', 'Registrado por', 'Importe'] : ['Fecha', 'Categoría', 'Área', 'Medio de pago', 'Importe']) {
+  for (const header of view === 'income' ? ['Fecha', 'Persona', 'Origen', 'Medio de pago', 'Registrado por', 'Importe'] : ['Fecha', 'Categoría', 'Descripción', 'Área', 'Medio de pago', 'Importe']) {
     expect(history.getByRole('columnheader', { name: header, hidden: true })).toBeInTheDocument();
   }
   fireEvent.click(history.getByRole('button', { name: 'Siguiente' }));
@@ -893,7 +898,7 @@ it.each(['income', 'expenses'])('keeps the %s count under collapsed filters and 
     expect(filters.getByText('2 ingresos')).toBeVisible();
     fireEvent.change(filters.getByLabelText('Origen'), { target: { value: 'SALA' } });
   } else {
-    fireEvent.change(filters.getByLabelText('Área'), { target: { value: 'SALA' } });
+    fireEvent.change(filters.getByLabelText('Área'), { target: { value: 'area-sala' } });
     fireEvent.change(filters.getByLabelText('Categoría'), { target: { value: 'rent' } });
   }
   expect(filters.getByText(`1 ${singular}`)).toBeVisible();
@@ -924,4 +929,61 @@ it.each(['income', 'expenses'])('does not report a false zero while %s loads or 
   release();
   await screen.findByRole('alert');
   expect(filters.queryByText(/^[0-9]+ (ingresos?|gastos?)$/)).not.toBeInTheDocument();
+});
+
+it('administers custom expense areas in place while keeping base areas read-only', async () => {
+  navigation.search = 'view=expenses'; let areas = [...financeAreas]; const writes: Array<{ method?: string; url: string; body?: unknown }> = [];
+  server.use(
+    http.get('http://localhost:3000/api/finance/expense-areas', () => HttpResponse.json({ data: areas })),
+    http.post('http://localhost:3000/api/finance/expense-areas', async ({ request }) => { const body = await request.json() as { name: string }; writes.push({ method: 'POST', url: '/api/finance/expense-areas', body }); const area = { id: 'custom-new', name: body.name, isSelectable: true, systemCode: null }; areas = [...areas, area]; return HttpResponse.json({ data: area }, { status: 201 }); }),
+    http.patch('http://localhost:3000/api/finance/expense-areas/:id', async ({ params, request }) => { const body = await request.json() as { name?: string; isSelectable?: boolean }; writes.push({ method: 'PATCH', url: `/api/finance/expense-areas/${String(params.id)}`, body }); areas = areas.map(area => area.id === params.id ? { ...area, ...body } : area); return HttpResponse.json({ data: areas.find(area => area.id === params.id) }); }),
+  );
+  renderPage(); fireEvent.click(await screen.findByText('Administrar áreas'));
+  const table = await screen.findByRole('table', { name: 'Áreas de gastos' });
+  expect(within(table).getByRole('row', { name: /Sala.*Activa.*Área base/ })).toBeInTheDocument();
+  expect(within(table).queryByRole('button', { name: 'Desactivar' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar área' }));
+  fireEvent.change(screen.getByLabelText('Nombre del área'), { target: { value: 'Osteopatía' } }); fireEvent.click(screen.getByRole('button', { name: 'Crear' }));
+  expect(await screen.findByText('Área creada correctamente.')).toBeVisible(); expect(writes[0]).toEqual({ method: 'POST', url: '/api/finance/expense-areas', body: { name: 'Osteopatía' } });
+  let customRow = within(table).getByRole('row', { name: /Osteopatía.*Activa/ });
+  fireEvent.click(within(customRow).getByRole('button', { name: 'Editar' }));
+  fireEvent.change(within(customRow).getByLabelText('Editar área Osteopatía'), { target: { value: 'Osteopatía y Terapia Manual' } });
+  fireEvent.click(within(customRow).getByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(within(table).getByRole('row', { name: /Osteopatía y Terapia Manual.*Activa/ })).toBeInTheDocument());
+  customRow = within(table).getByRole('row', { name: /Osteopatía y Terapia Manual.*Activa/ });
+  await waitFor(() => expect(within(customRow).getByRole('button', { name: 'Desactivar' })).toBeEnabled());
+  fireEvent.click(within(customRow).getByRole('button', { name: 'Desactivar' }));
+  await waitFor(() => expect(within(table).getByRole('row', { name: /Osteopatía y Terapia Manual.*Inactiva/ })).toBeInTheDocument());
+  customRow = within(table).getByRole('row', { name: /Osteopatía y Terapia Manual.*Inactiva/ });
+  fireEvent.click(within(customRow).getByRole('button', { name: 'Reactivar' }));
+  await waitFor(() => expect(within(table).getByRole('row', { name: /Osteopatía y Terapia Manual.*Activa/ })).toBeInTheDocument());
+  expect(writes.slice(1).map(write => write.body)).toEqual([{ name: 'Osteopatía y Terapia Manual', isSelectable: true }, { isSelectable: false }, { isSelectable: true }]);
+});
+it('shows custom inactive areas in historical filters, exports applied area and periods, and gives expenses their own Description column', async () => {
+  navigation.search = 'view=expenses';
+  const rows = [
+    { id: 'custom-old', cashDate: '2026-10-14', areaId: 'area-custom', areaName: 'Kinesiología', amount: '500', description: 'Juan', category: { id: 'rent', name: 'Alquiler' }, paymentMethod: { id: 'cash', name: 'Efectivo' } },
+    { id: 'empty-description', cashDate: '2026-10-13', areaId: 'area-general', areaName: 'General', amount: '200', description: null, category: { id: 'supplies', name: 'Insumos' }, paymentMethod: { id: 'transfer', name: 'Transferencia' } },
+  ];
+  server.use(http.get('http://localhost:3000/api/finance/expenses', () => HttpResponse.json({ data: rows })));
+  renderPage(); const history = within(await screen.findByRole('region', { name: 'Registros de gastos' }));
+  expect(history.getByRole('columnheader', { name: 'Descripción', hidden: true })).toBeInTheDocument();
+  expect(history.getByText('Kinesiología')).toBeVisible(); expect(history.getByText('Juan')).toBeVisible(); expect(history.getByText('—')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Filtros' }));
+  expect(within(screen.getByLabelText('Área')).getAllByRole('option').map(option => option.textContent)).toContain('Kinesiología');
+  fireEvent.change(screen.getByLabelText('Área'), { target: { value: 'area-custom' } });
+  expect(history.getByLabelText('Total filtrado')).toHaveTextContent('$ 500,00');
+  expect(screen.getByRole('link', { name: 'Exportar gastos' })).toHaveAttribute('href', '/api/finance/expenses/export?from=2026-10-01&to=2026-10-31&areaId=area-custom');
+});
+it('shows export only with FINANCE_EXPORT and keeps the income history columns unchanged', async () => {
+  navigation.search = 'view=expenses';
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: ['EXPENSE_HISTORY_READ'] } })));
+  renderPage(); await screen.findByRole('region', { name: 'Registros de gastos' });
+  expect(screen.queryByRole('link', { name: 'Exportar gastos' })).not.toBeInTheDocument();
+  navigation.search = 'view=income'; cleanup();
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: session })));
+  renderPage();
+  const history = within(await screen.findByRole('region', { name: 'Historial de ingresos' }));
+  for (const header of ['Fecha', 'Persona', 'Origen', 'Medio de pago', 'Registrado por', 'Importe']) expect(history.getByRole('columnheader', { name: header, hidden: true })).toBeInTheDocument();
+  expect(history.queryByRole('columnheader', { name: 'Descripción', hidden: true })).not.toBeInTheDocument();
 });
