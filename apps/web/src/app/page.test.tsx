@@ -1,8 +1,141 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { vi } from 'vitest';
+import { getReservationsTimeline, getSalaDashboard } from '@athleta/api-client';
+import { currentSession, type SafeSession } from '../features/auth/auth';
 import HomePage from './page';
 vi.mock('../features/auth/auth-shell', () => ({ AuthShell: ({ children }: { children: React.ReactNode }) => children }));
-vi.mock('../features/auth/auth', () => ({ currentSession: vi.fn().mockResolvedValue({ permissions: ['PEOPLE_READ'] }) }));
-describe('HomePage', () => { it('renders the Athleta application shell', async () => { render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><HomePage /></QueryClientProvider>); expect(screen.getByRole('heading', { name: 'Bienvenido a Athleta' })).toBeInTheDocument(); expect(await screen.findByText('Personas')).toBeInTheDocument(); }); });
+vi.mock('../features/auth/auth', () => ({ currentSession: vi.fn() }));
+vi.mock('@athleta/api-client', () => ({ getSalaDashboard: vi.fn(), getReservationsTimeline: vi.fn() }));
+const session: SafeSession = { user: { id: 'prof', firstName: 'Federico', lastName: 'Sintético', email: 'prof@test.local' }, roles: ['PROFESSOR'], permissions: ['PEOPLE_READ', 'SALA_RELATION_READ'], csrfToken: 'csrf', mustChangePassword: false };
+const summary = { date: '2026-10-31', expected: 7, attended: 2, cancelledOrAbsent: 1, upcoming: [{ startTime: '09:00', total: 5, people: [{ id: 'student', firstName: 'Ana', lastName: 'Sintética', origin: 'FIXED' as const }] }], withoutRoutine: { count: 0, personIds: [] }, withoutValidity: { count: 3, personIds: [] } };
+function renderPage(): void { render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><HomePage /></QueryClientProvider>); }
+beforeEach(() => {
+  vi.mocked(currentSession).mockResolvedValue(session);
+  vi.mocked(getSalaDashboard).mockImplementation(async (params) => ({ status: 200, headers: new Headers(), data: { data: { ...summary, date: params.date, upcoming: [{ ...summary.upcoming[0]!, people: [{ ...summary.upcoming[0]!.people[0]!, firstName: params.date === '2026-11-01' ? 'Marta' : 'Ana' }] }] } } }));
+  vi.mocked(getReservationsTimeline).mockResolvedValue({ status: 200, headers: new Headers(), data: { data: { date: '2026-10-31', startTime: '08:00', endTime: '18:00', rows: [{ kind: 'PROFESSIONAL', bookings: [{ id: 'clinic-attended', source: 'CLINIC', status: 'ATTENDED' }, { id: 'clinic-scheduled-1', source: 'CLINIC', status: 'SCHEDULED' }, { id: 'clinic-scheduled-2', source: 'CLINIC', status: 'SCHEDULED' }, { id: 'clinic-cancelled', source: 'CLINIC', status: 'CANCELLED' }, { id: 'sala-attended', source: 'SALA', status: 'ATTENDED' }] }] } } } as never);
+  // 02:30 UTC is still October 31 in Argentina, regardless of host timezone.
+  vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-11-01T02:30:00Z'));
+});
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
+it('shows operational Sala information and changes from today to tomorrow in Argentina', async () => {
+  renderPage();
+  expect(await screen.findByText('Hola, Federico')).toBeVisible();
+  for (const text of ['Próximos horarios', 'Alumnos esperados', 'Asistencias', 'Cancelados / Ausentes', 'Sin rutina activa', 'Sin vigencia', 'Hoy', 'Mañana']) expect(await screen.findByText(text)).toBeVisible();
+  expect(await screen.findByText('Ana Sintética')).toBeVisible();
+  const studentUrl = new URL(screen.getByRole('link', { name: /Ana Sintética.*Gestionar/ }).getAttribute('href')!, 'http://localhost');
+  expect(studentUrl.pathname).toBe('/reservations');
+  expect(Object.fromEntries(studentUrl.searchParams)).toEqual({ date: '2026-10-31', personId: 'student', startTime: '09:00', origin: 'FIXED' });
+  expect(screen.getByText('+ 4 alumnos')).toBeVisible();
+  expect(screen.getByText('0')).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Ver Reservas' })).toHaveAttribute('href', '/reservations?date=2026-10-31');
+  expect(screen.getByRole('link', { name: /Sin rutina activa/ })).toHaveAttribute('href', '/students?filter=without-routine');
+  expect(screen.getByRole('link', { name: /Sin vigencia/ })).toHaveAttribute('href', '/students?filter=without-validity');
+  expect(getSalaDashboard).toHaveBeenCalledWith({ date: '2026-10-31' }, { credentials: 'include' });
+  fireEvent.click(screen.getByRole('button', { name: 'Mañana' }));
+  expect(await screen.findByText('Marta Sintética')).toBeVisible();
+  expect(getSalaDashboard).toHaveBeenCalledWith({ date: '2026-11-01' }, { credentials: 'include' });
+  expect(screen.queryByText('Ana Sintética')).not.toBeInTheDocument();
+  const tomorrowUrl = new URL(screen.getByRole('link', { name: /Marta Sintética.*Gestionar/ }).getAttribute('href')!, 'http://localhost');
+  expect(tomorrowUrl.pathname).toBe('/reservations');
+  expect(Object.fromEntries(tomorrowUrl.searchParams)).toEqual({ date: '2026-11-01', personId: 'student', startTime: '09:00', origin: 'FIXED' });
+  expect(screen.getByRole('link', { name: 'Ver Reservas' })).toHaveAttribute('href', '/reservations?date=2026-11-01');
+});
+it.each([['KINESIOLOGIST'], ['PROFESSOR', 'KINESIOLOGIST']])('preserves general Home for roles %j', async (...roles) => {
+  vi.mocked(currentSession).mockResolvedValue({ ...session, roles });
+  renderPage(); expect(await screen.findByRole('heading', { name: 'Bienvenido a Athleta' })).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Personas' })).toBeVisible(); expect(screen.queryByText('Próximos horarios')).not.toBeInTheDocument(); expect(getSalaDashboard).not.toHaveBeenCalled();
+});
+it.each<SafeSession['roles']>([['GENERAL_ADMIN'], ['GENERAL_ADMIN', 'ADMINISTRATIVE']])('shows the General Admin global overview from the real Sala and Finance sources for roles %j', async (...roles) => {
+  vi.mocked(currentSession).mockResolvedValue({ ...session, roles });
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), 'http://localhost:3000');
+    if (url.pathname === '/api/finance/executive-totals') return { ok: true, json: async () => ({ data: { salaIncome: '125000', clinicalIncome: '50000', totalIncome: '175000', expenses: '45000', net: '130000' } }) } as Response;
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  renderPage();
+  expect(await screen.findByRole('heading', { name: 'Hola, Federico' })).toBeVisible();
+  for (const text of ['Resumen general de Athleta', 'Operación de hoy', 'Seguimiento', 'Sin rutina activa', 'Sin vigencia', 'Finanzas del mes', 'Ingresos', 'Gastos', 'Resultado']) expect(await screen.findByText(text)).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Sala' })).toBeVisible();
+  expect(screen.getAllByRole('link', { name: 'Ver Agenda' })).toHaveLength(1);
+  const salaCard = screen.getByRole('heading', { name: 'Sala' }).closest('article')!;
+  expect(within(salaCard).getByRole('link', { name: 'Ver Agenda' })).toHaveAttribute('href', '/sala');
+  expect(screen.getByRole('link', { name: 'Ver alumnos de Sala' })).toHaveAttribute('href', '/students');
+  expect(screen.getByRole('link', { name: 'Ver Finanzas' })).toHaveAttribute('href', '/finance');
+  expect(getSalaDashboard).toHaveBeenCalledWith({ date: '2026-10-31' }, { credentials: 'include' });
+  expect(getReservationsTimeline).not.toHaveBeenCalled();
+  for (const label of ['Clínica', 'Turnos del día', 'Atendidos', 'Pendientes']) expect(screen.queryByText(label, { exact: true })).not.toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  const financeUrl = new URL(String(fetchMock.mock.calls[0]?.[0]), 'http://localhost:3000');
+  expect(financeUrl.pathname).toBe('/api/finance/executive-totals');
+  expect(financeUrl.searchParams.get('from')).toBe('2026-10-01');
+  expect(financeUrl.searchParams.get('to')).toBe('2026-10-31');
+  for (const amount of ['$ 175.000,00', '$ 45.000,00', '$ 130.000,00']) expect(screen.getByText(amount)).toBeVisible();
+});
+it('keeps the upcoming empty state and zero counters visible', async () => {
+  vi.mocked(getSalaDashboard).mockResolvedValue({ status: 200, headers: new Headers(), data: { data: { ...summary, upcoming: [], expected: 0, attended: 0, cancelledOrAbsent: 0, withoutValidity: { count: 0, personIds: [] } } } });
+  renderPage(); expect(await screen.findByText('No hay alumnos previstos para los próximos horarios.')).toBeVisible(); expect(screen.getAllByText('0')).toHaveLength(5);
+});
+it('keeps loading and errors localized inside the workspace', async () => {
+  vi.mocked(getSalaDashboard).mockImplementation(() => new Promise(() => {}));
+  const rendered = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><HomePage /></QueryClientProvider>);
+  expect(await screen.findByText('Cargando resumen de Sala…')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Mañana' })).toBeEnabled();
+  rendered.unmount(); vi.mocked(getSalaDashboard).mockRejectedValue(new Error('technical details'));
+  renderPage(); await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('No pudimos cargar el resumen de Sala.'));
+  expect(screen.queryByText('technical details')).not.toBeInTheDocument(); expect(screen.getByRole('link', { name: 'Alumnos' })).toBeVisible();
+});
+
+it.each<SafeSession['roles']>([['ADMINISTRATIVE'], ['ADMINISTRATIVE', 'PROFESSOR']])('shows the Administrative daily operation without executive finance for roles %j', async (...roles) => {
+  vi.mocked(currentSession).mockResolvedValue({ ...session, roles });
+  const fetchMock = vi.fn();
+  vi.stubGlobal('fetch', fetchMock);
+  renderPage();
+  expect(await screen.findByRole('heading', { name: 'Hola, Federico' })).toBeVisible();
+  for (const text of ['Operación administrativa de hoy', 'Operación de hoy', 'Seguimiento', 'Sin rutina activa', 'Sin vigencia', 'Accesos operativos']) expect(screen.getByText(text)).toBeVisible();
+  const salaCard = screen.getByRole('heading', { name: 'Sala' }).closest('article')!;
+  await waitFor(() => {
+    expect(within(salaCard).getByText('Alumnos esperados').parentElement).toHaveTextContent(String(summary.expected));
+    expect(within(salaCard).getByText('Asistencias').parentElement).toHaveTextContent(String(summary.attended));
+    expect(within(salaCard).getByText('Cancelados / Ausentes').parentElement).toHaveTextContent(String(summary.cancelledOrAbsent));
+  });
+  expect(within(salaCard).getByRole('link', { name: 'Ver Agenda' })).toHaveAttribute('href', '/sala');
+  const followUp = screen.getByRole('region', { name: 'Seguimiento' });
+  expect(within(followUp).getByRole('link', { name: /Sin rutina activa/ })).toHaveAttribute('href', '/students?filter=without-routine');
+  expect(within(followUp).getByRole('link', { name: /Sin rutina activa/ })).toHaveTextContent(String(summary.withoutRoutine.count));
+  expect(within(followUp).getByRole('link', { name: /Sin vigencia/ })).toHaveAttribute('href', '/students?filter=without-validity');
+  expect(within(followUp).getByRole('link', { name: /Sin vigencia/ })).toHaveTextContent(String(summary.withoutValidity.count));
+  const shortcuts = screen.getByRole('region', { name: 'Accesos operativos' });
+  expect(within(shortcuts).queryByRole('link', { name: /Personas/ })).not.toBeInTheDocument();
+  for (const [name, href] of [['Alumnos', '/students'], ['Ingresos / Pagos', '/finance?view=income'], ['Gastos', '/finance?view=expenses']]) {
+    expect(within(shortcuts).getByRole('link', { name: new RegExp(name!) })).toHaveAttribute('href', href);
+  }
+  expect(getSalaDashboard).toHaveBeenCalledWith({ date: '2026-10-31' }, { credentials: 'include' });
+  expect(getReservationsTimeline).not.toHaveBeenCalled();
+  for (const label of ['Clínica', 'Turnos del día', 'Atendidos', 'Pendientes']) expect(screen.queryByText(label, { exact: true })).not.toBeInTheDocument();
+  for (const text of ['Finanzas del mes', 'Ingresos', 'Resultado', 'Próximos horarios', 'Hoy', 'Mañana']) expect(screen.queryByText(text, { exact: true })).not.toBeInTheDocument();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+it('keeps Administrative Sala errors localized', async () => {
+  vi.mocked(currentSession).mockResolvedValue({ ...session, roles: ['ADMINISTRATIVE'] });
+  vi.mocked(getSalaDashboard).mockRejectedValue(new Error('technical details'));
+  renderPage();
+  expect((await screen.findAllByText('No pudimos cargar la actividad de Sala.')).length).toBeGreaterThan(0);
+  expect(screen.getByRole('region', { name: 'Accesos operativos' })).toBeVisible();
+  expect(screen.queryByText('technical details')).not.toBeInTheDocument();
+  expect(getReservationsTimeline).not.toHaveBeenCalled();
+});
+it('keeps Administrative loading localized while shortcuts remain usable', async () => {
+  vi.mocked(currentSession).mockResolvedValue({ ...session, roles: ['ADMINISTRATIVE'] });
+  vi.mocked(getSalaDashboard).mockImplementation(() => new Promise(() => {}));
+  renderPage();
+  const salaCard = (await screen.findByRole('heading', { name: 'Sala' })).closest('article')!;
+  expect(within(salaCard).getAllByText('…')).toHaveLength(3);
+  expect(salaCard.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+  const followUp = screen.getByRole('region', { name: 'Seguimiento' });
+  expect(within(followUp).getAllByText('…')).toHaveLength(2);
+  expect(within(salaCard).getByRole('link', { name: 'Ver Agenda' })).toBeVisible();
+  expect(screen.getByRole('region', { name: 'Accesos operativos' })).toBeVisible();
+});

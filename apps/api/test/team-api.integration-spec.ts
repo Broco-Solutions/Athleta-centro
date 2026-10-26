@@ -14,9 +14,58 @@ describe('Team management API', () => {
   beforeAll(async () => { app = (await Test.createTestingModule({ imports: [AppModule] }).compile()).createNestApplication(); app.use(cookieParser()); app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })); app.setGlobalPrefix('api'); await app.init(); prisma = app.get(PrismaService); users = app.get(InternalUserService); auth = app.get(AuthService); });
   afterEach(async () => { await prisma.clinicalAppointment.deleteMany({ where: { person: { normalizedDni: combinedClinicalDni } } }); await prisma.treatment.deleteMany({ where: { person: { normalizedDni: combinedClinicalDni } } }); await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.person.deleteMany({ where: { normalizedDni: combinedClinicalDni } }); await prisma.authAttemptBucket.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); }); afterAll(() => app.close());
   async function actor(role: Role, suffix = role.toLowerCase()) { const user = await users.create({ firstName: 'Actor', lastName: 'Sintético', email: `${suffix}@team.test`, roles: [role] }); await auth.provisionCredential(user.id, 'ValidPass1!'); await prisma.internalCredential.update({ where: { internalUserId: user.id }, data: { mustChangePassword: false } }); const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200); return { user, cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string }; }
-  const standard = { firstName: 'Nueva', lastName: 'Profesional', email: 'new.professional@team.test', roles: [Role.PROFESSOR] };
+  const standard = { firstName: 'Nueva', lastName: 'Profesional', email: 'new.professional@team.test', dni: '27739784', roles: [Role.PROFESSOR] };
 
-  it('creates a standard user with a one-time generated temporary credential', async () => { const admin = await actor(Role.ADMINISTRATIVE); const response = await request(app.getHttpServer()).post('/api/team/users').set('Cookie', admin.cookie).set('x-csrf-token', admin.csrf).send(standard).expect(201); expect(response.body.data).toMatchObject({ email: standard.email, roles: [Role.PROFESSOR], status: 'ACTIVE' }); expect(response.body.temporaryPassword).toMatch(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{10,}$/); const credential = await prisma.internalCredential.findUniqueOrThrow({ where: { internalUserId: response.body.data.id } }); expect(credential.passwordHash).not.toBe(response.body.temporaryPassword); expect(credential.mustChangePassword).toBe(true); const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: standard.email, password: response.body.temporaryPassword }).expect(200); expect(login.body.data.mustChangePassword).toBe(true); });
+  it('blocks new clinical roles while preserving existing clinical accounts', async () => {
+    const admin = await actor(Role.ADMINISTRATIVE);
+    const existing = await users.create({ firstName: 'Clínica', lastName: 'Histórica', email: 'clinical-existing@team.test', roles: [Role.KINESIOLOGIST] });
+    const prior = process.env.ATHLETA_CLINIC_ENABLED;
+    process.env.ATHLETA_CLINIC_ENABLED = 'false';
+    try {
+      const listed = await request(app.getHttpServer()).get('/api/team/users').set('Cookie', admin.cookie).expect(200);
+      expect(listed.body.data).toEqual(expect.arrayContaining([expect.objectContaining({ id: existing.id, roles: [Role.KINESIOLOGIST] })]));
+      const create = await request(app.getHttpServer()).post('/api/team/users').set('Cookie', admin.cookie).set('x-csrf-token', admin.csrf).send({ ...standard, email: 'new-kinesiologist@team.test', roles: [Role.KINESIOLOGIST] }).expect(400);
+      expect(create.body).toMatchObject({ code: 'CLINIC_ROLE_NOT_AVAILABLE', message: 'Los roles de Kinesiología y Osteopatía no están disponibles en esta entrega.' });
+      const add = await request(app.getHttpServer()).post(`/api/team/users/${existing.id}/roles`).set('Cookie', admin.cookie).set('x-csrf-token', admin.csrf).send({ role: Role.OSTEOPATH }).expect(400);
+      expect(add.body.code).toBe('CLINIC_ROLE_NOT_AVAILABLE');
+    } finally {
+      if (prior === undefined) delete process.env.ATHLETA_CLINIC_ENABLED;
+      else process.env.ATHLETA_CLINIC_ENABLED = prior;
+    }
+  });
+
+  it('creates a user with DNI as the initial credential and requires a personal password before access', async () => {
+    const admin = await actor(Role.ADMINISTRATIVE);
+    const response = await request(app.getHttpServer()).post('/api/team/users').set('Cookie', admin.cookie).set('x-csrf-token', admin.csrf).send(standard).expect(201);
+    expect(response.body.data).toMatchObject({ email: standard.email, dni: standard.dni, roles: [Role.PROFESSOR], status: 'ACTIVE' });
+    expect(response.body.temporaryPassword).toBe(standard.dni);
+    const credential = await prisma.internalCredential.findUniqueOrThrow({ where: { internalUserId: response.body.data.id } });
+    expect(credential.passwordHash).not.toBe(standard.dni);
+    expect(credential.passwordHash).toMatch(/^\$argon2id\$/);
+    expect(credential.mustChangePassword).toBe(true);
+    const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: standard.email, password: standard.dni }).expect(200);
+    expect(login.body.data.mustChangePassword).toBe(true);
+    const cookie = login.headers['set-cookie'][0];
+    await request(app.getHttpServer()).get('/api/team/users/me').set('Cookie', cookie).expect(403);
+    const change = () => request(app.getHttpServer()).post('/api/auth/change-password').set('Cookie', cookie).set('x-csrf-token', login.body.data.csrfToken);
+    await change().send({ currentPassword: standard.dni, nextPassword: '12345678' }).expect(401);
+    expect((await prisma.internalCredential.findUniqueOrThrow({ where: { internalUserId: response.body.data.id } })).mustChangePassword).toBe(true);
+    await change().send({ currentPassword: standard.dni, nextPassword: 'Athleta123!' }).expect(200);
+    await request(app.getHttpServer()).post('/api/auth/login').send({ email: standard.email, password: standard.dni }).expect(401);
+    const nextLogin = await request(app.getHttpServer()).post('/api/auth/login').send({ email: standard.email, password: 'Athleta123!' }).expect(200);
+    expect(nextLogin.body.data.mustChangePassword).toBe(false);
+    expect((await prisma.internalCredential.findUniqueOrThrow({ where: { internalUserId: response.body.data.id } })).mustChangePassword).toBe(false);
+  });
+  it.each([undefined, null, '', '12345', '123456789', '27.739.784', 'abcdefgh'])('rejects creation with missing or invalid DNI %p', async (dni) => {
+    const admin = await actor(Role.ADMINISTRATIVE);
+    await request(app.getHttpServer()).post('/api/team/users').set('Cookie', admin.cookie).set('x-csrf-token', admin.csrf).send({ ...standard, dni }).expect(400);
+    expect(await prisma.internalUser.count({ where: { normalizedEmail: standard.email } })).toBe(0);
+  });
+  it.each([null, '', '12345', '27.739.784'])('rejects invalid DNI %p on partial updates', async (dni) => {
+    const target = await actor(Role.PROFESSOR);
+    await request(app.getHttpServer()).patch('/api/team/users/me').set('Cookie', target.cookie).set('x-csrf-token', target.csrf).send({ dni }).expect(400);
+    expect((await prisma.internalUser.findUniqueOrThrow({ where: { id: target.user.id } })).dni).toBeNull();
+  });
   it('returns a stable conflict when the normalized email already exists', async () => { const admin = await actor(Role.ADMINISTRATIVE); await users.create(standard); const response = await request(app.getHttpServer()).post('/api/team/users').set('Cookie', admin.cookie).set('x-csrf-token', admin.csrf).send({ ...standard, email: 'NEW.PROFESSIONAL@TEAM.TEST' }).expect(409); expect(response.body.code).toBe('INTERNAL_USER_EMAIL_EXISTS'); });
   it('lists only safe team data', async () => { const admin = await actor(Role.ADMINISTRATIVE); const response = await request(app.getHttpServer()).get('/api/team/users').set('Cookie', admin.cookie).expect(200); expect(response.body.data[0]).toEqual(expect.objectContaining({ id: admin.user.id, roles: [Role.ADMINISTRATIVE] })); expect(JSON.stringify(response.body)).not.toMatch(/password|credential|session|Hash/); });
   it('enforces standard, general-admin and support privilege boundaries', async () => { const admin = await actor(Role.ADMINISTRATIVE); await request(app.getHttpServer()).post('/api/team/users').set('Cookie', admin.cookie).set('x-csrf-token', admin.csrf).send({ ...standard, roles: [Role.GENERAL_ADMIN] }).expect(403); const general = await actor(Role.GENERAL_ADMIN, 'general'); await request(app.getHttpServer()).post('/api/team/users').set('Cookie', general.cookie).set('x-csrf-token', general.csrf).send({ ...standard, email: 'general.new@team.test', roles: [Role.GENERAL_ADMIN] }).expect(201); await request(app.getHttpServer()).post('/api/team/users').set('Cookie', general.cookie).set('x-csrf-token', general.csrf).send({ ...standard, email: 'support.new@team.test', roles: [Role.BROCO_SUPPORT] }).expect(403); });

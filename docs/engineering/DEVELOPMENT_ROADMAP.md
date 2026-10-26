@@ -1099,7 +1099,7 @@ MonthYear
 cash date
 operationId
 amount exactness
-one payment Person+MonthYear under current model
+SalaPayment coverage per renewal; operationId idempotency
 ```
 
 Tests:

@@ -64,7 +64,7 @@ function DirectAttentionForm(): React.JSX.Element {
   } as Record<string, string>)[errorCode] ?? 'No pudimos registrar la Atención. Revisá los datos.';
 
   return (
-    <WorkspaceShell active="Clínica">
+    <WorkspaceShell active="clinic">
       <main className="mx-auto max-w-2xl space-y-5 p-4 md:p-6">
         <nav aria-label="Breadcrumb" className="text-sm text-muted-foreground"><Link href={`/clinic?personId=${presetPersonId}`} className="underline">Clínica</Link> / Registrar Atención</nav>
         <div>

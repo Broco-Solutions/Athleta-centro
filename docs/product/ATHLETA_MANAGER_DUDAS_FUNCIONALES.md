@@ -1,5 +1,12 @@
 # ATHLETA_MANAGER_DUDAS_FUNCIONALES.md
 
+> Actualización confirmada 2026-10-19: las definiciones históricas de acceso,
+> cuotas y seguimiento de Sala por Mes/Año o día 15 quedan sustituidas por
+> [Sala — Vigencia móvil por Pago](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md#sala--vigencia-móvil-por-pago--2026-10-19).
+> Cada Pago tiene cobertura propia; el Plan financiero elegido no cambia el operativo.
+> Las entradas anteriores se conservan como historial, sin vigencia normativa en esos puntos.
+
+
 ## 1. Objetivo y criterio de actualización
 
 Este documento actualiza las dudas funcionales originalmente relevadas para Athleta Manager tomando como base **“Athleta Manager — Descripción Integral del Sistema”** y las definiciones funcionales expresamente aprobadas. Desde el 2026-10-02 incorpora la consolidación de decisiones históricas ratificadas documentada en el [Registro de Decisiones Funcionales](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md). El código local de `ramiro`, incluidos los cambios sin commit, se utiliza como evidencia para verificar la alternativa adoptada en esas decisiones; no constituye por sí solo aprobación de decisiones nuevas. Las futuras definiciones requieren análisis y aprobación antes de incorporarse como reglas vigentes. El PDF de la Descripción Integral permanece sin modificar y su sincronización queda para una actualización posterior.
@@ -21,9 +28,6 @@ Los siguientes puntos continúan pendientes después de la consolidación histó
 
 | ID | Tema pendiente |
 |---|---|
-| SAL-TUR-08 | Si una incorporación con origen específicamente “Espontáneo” puede cargarse retrospectivamente; existe una diferencia temporal entre frontend y backend. |
-| INI-03 | Presentación exacta de Cancelados/Ausentes en Sala: total combinado o valores separados. |
-| INI-04 | Criterio exacto de “Próximos horarios” de Sala. |
 | INI-06 | Label visible exacto de la tarjeta de Atendidos/Atenciones. |
 | INI-07 | Comportamiento visual de la tarjeta Atendidos al seleccionar Mañana. |
 | CAT-04 | Si los catálogos permiten nombres duplicados; los mecanismos actuales no son uniformes y no constituyen aprobación de una regla global. |
@@ -74,6 +78,8 @@ El resto de las dudas originales figura resuelto, no aplica o queda a criterio t
 | SAL-HOR-06 | RESUELTO | La excepción por fecha definida en V1 permite **cerrar un horario** o **cambiar su capacidad** para esa ocurrencia. No se define creación excepcional de un horario inexistente. | §6.9 |
 | SAL-HOR-07 | RESUELTO | La excepción por fecha no modifica día/hora/duración: se limita a cierre o cambio de capacidad de esa ocurrencia. | §6.9 |
 | SAL-HOR-08 | RESUELTO | Toda capacidad válida es un entero mayor o igual a 1. El valor 0 no representa cierre. Los cierres se registran explícitamente como excepciones de cierre. | [Registro SAL-HOR-08](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
+| SAL-HOR-09 | RESUELTO | Reservas puntuales y Turnos fijos comienzan sólo en :00/:30; capacidad y espontáneos conservan bloques de 15 minutos. Los registros históricos se conservan; nuevas creaciones o modificaciones respetan :00/:30. | Definición aprobada 2026-10-08 |
+| SAL-HOR-10 | RESUELTO | La capacidad general inicial es 10 y puede editarse después. Una excepción de capacidad prevalece sobre la capacidad específica de la ventana; ésta prevalece sobre la general. El mínimo es 1. | Definición UAT 2026-10-08 |
 
 ---
 
@@ -88,12 +94,15 @@ El resto de las dudas originales figura resuelto, no aplica o queda a criterio t
 | SAL-TUR-05 | RESUELTO | El límite de 30 días aplica al Portal. Los usuarios internos no tienen un límite temporal futuro específico para reservas puntuales. | §6.12 |
 | SAL-TUR-06 | RESUELTO | Sí. Una Persona no puede estar registrada dos veces en la misma fecha y el mismo horario, independientemente del origen de la presencia. | §6.14 |
 | SAL-TUR-07 | RESUELTO | Sí. La incorporación espontánea se registra como presencia de origen espontáneo y se marca la asistencia; los indicadores la tratan como **Asistió**. | §6.16–§6.17 |
-| SAL-TUR-08 | PENDIENTE | No existe decisión aprobada sobre el Espontáneo retrospectivo. El frontend habilita la incorporación solo para la fecha actual (`agenda-panel.tsx` — `SpontaneousModal`), mientras el backend puede procesar una fecha histórica si se cumplen las restantes precondiciones (`sala.service.ts` — `createSpontaneousOccurrence(...)`). Esta diferencia entre capas impide consolidar una regla única y requiere discusión funcional. | §6.12, §6.17 |
+| SAL-TUR-08 | RESUELTO | Profesor, Administrativo y Administrador general pueden registrar una incorporación espontánea en el día actual y también retrospectivamente en una fecha pasada cuando la asistencia efectivamente ocurrió. Una fecha futura no admite incorporación espontánea; corresponde Reserva puntual o Turno fijo. | Definición aprobada 2026-10-07 |
 | SAL-TUR-09 | RESUELTO | Sí. Los estados de las ocurrencias pueden corregirse posteriormente sin límite de tiempo por usuarios internos habilitados. | §6.15 |
 | SAL-TUR-10 | RESUELTO | Sí. Los estados Reservado, Asistió, Cancelado y Ausente son corregibles posteriormente; no existe una matriz rígida de transición. | §6.15 |
 | SAL-TUR-11 | RESUELTO | Sí. Ausente puede corregirse a Asistió y viceversa como parte de la corrección manual. | §6.15 |
 | SAL-TUR-12 | RESUELTO | El cierre excepcional de una fecha **cancela esa ocurrencia concreta**; la recurrencia del Turno fijo continúa las semanas siguientes. | §6.9, §6.11 |
 | SAL-TUR-13 | RESUELTO | Las reservas futuras afectadas por un reemplazo de grilla se **cancelan**, no se eliminan como si nunca hubieran existido. | §6.8, §13.7–§13.9 |
+| SAL-TUR-14 | RESUELTO | La incorporación espontánea puede iniciar desde un Alumno de Sala, una Persona existente todavía no incorporada a Sala o una Persona nueva. Cuando la Persona todavía no pertenece a Sala y la operación corresponde al día actual, el mismo flujo permite asignar Plan y Profesor principal, elegir un Servicio incluido en el Plan y registrar la asistencia espontánea sin abandonar Agenda. La incorporación a Sala y la asistencia se confirman como una única operación. La falta de Pago no bloquea esta operación. Para una fecha pasada no se crea ni backdatea una nueva participación: la Persona debe haber tenido participación válida en esa fecha. El Servicio es obligatorio para nuevas incorporaciones espontáneas y su duración determina los bloques de capacidad ocupados. | Definición aprobada 2026-10-07 |
+| SAL-TUR-15 | RESUELTO | Una Persona puede tener varias Reservas puntuales y combinar Turno fijo con Reserva puntual en una misma fecha si los intervalos completos no se superponen y hay capacidad. Las actividades consecutivas son válidas. | Definición UAT 2026-10-08 |
+| SAL-TUR-16 | RESUELTO | Un Turno fijo puede crearse sin Pago. Cada ocurrencia posterior al día 15 queda Pendiente de pago y ocupa cupo hasta que se registre Pago válido de ese Mes/Año antes de su inicio o llegue su hora sin Pago. En el segundo caso se cancela sólo esa ocurrencia, persiste la cancelación y un Pago posterior no la reactiva. La recurrencia continúa. | Definición UAT 2026-10-08 |
 
 ---
 
@@ -101,6 +110,8 @@ El resto de las dudas originales figura resuelto, no aplica o queda a criterio t
 
 | ID | Estado | Definición resultante | Fuente |
 |---|---|---|---|
+| SAL-PLA-01 | RESUELTO | Un Servicio de Sala representa una actividad y su duración. Un Plan define precio mensual y uno o más Servicios incluidos. El Servicio no tiene precio propio. Un Servicio puede estar incluido en varios Planes. Un Plan nuevo requiere al menos un Servicio. Por ahora los Servicios no poseen disponibilidad horaria ni capacidad propia: utilizan la grilla y capacidad generales de Sala. | [Registro SAL-PLA-01](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), definición aprobada 2026-10-07 |
+| SAL-PLA-02 | RESUELTO | Una Persona que participa de Sala sólo puede crear nuevas Reservas y Turnos fijos para Servicios incluidos en su Plan actual. Los Servicios que se muestran en Portal y en la operación interna del Alumno se derivan de ese Plan. Un Servicio retirado no puede utilizarse para nuevas operaciones. Los registros ya existentes no se cancelan ni reescriben automáticamente cuando cambia el Plan o su composición de Servicios. La modificación de un Turno fijo también exige un Servicio permitido por el Plan actual. | [Registro SAL-PLA-02](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), definición aprobada 2026-10-07 |
 | SAL-PAG-01 | RESUELTO | Sí. El mes de incorporación queda Pago pendiente desde el momento del ingreso si aún no tiene un Pago válido, sin importar el día del mes. | §6.19, §6.33 |
 | SAL-PAG-02 | RESUELTO | Sí. El mes de incorporación ya cuenta como primer mes impago si no existe Pago válido. | §6.19 |
 | SAL-PAG-03 | RESUELTO | Sí. Los próximos Pagos proponen el **precio actual del Plan actual**; si el Plan cambió antes de registrar ese pago, se usa el nuevo Plan. | §6.31–§6.34 |
@@ -119,15 +130,16 @@ El resto de las dudas originales figura resuelto, no aplica o queda a criterio t
 
 | ID | Estado | Definición resultante | Fuente |
 |---|---|---|---|
-| SAL-RUT-01 | RESUELTO | Todo ejercicio de una Rutina proviene del catálogo. Si no existe, Profesor/Admin general puede crearlo durante la carga y continuar. | §6.23 |
+| SAL-RUT-01 | RESUELTO | Todo ejercicio de una Rutina proviene del catálogo. Si no existe, Profesor/Admin general puede crearlo desde el propio flujo de carga de la Rutina y continuar sin salir del editor. Al crearlo desde una entrada de Rutina, el nuevo Ejercicio queda seleccionado en esa entrada para continuar la carga. | §6.23 |
 | SAL-RUT-02 | RESUELTO | Editar Nombre, Músculo principal o Descripción actualiza el mismo Ejercicio y las Rutinas que lo utilizan muestran la definición actual. | §6.23 |
 | SAL-RUT-03 | RESUELTO | No. Si se retira un Ejercicio utilizado en Rutinas activas, previa advertencia se quita también de esas Rutinas. Las históricas no se modifican. | §6.23 |
-| SAL-RUT-04 | RESUELTO | Sí. Puede retirarse un Ejercicio usado en Rutinas activas; se informa cuántas serán afectadas y, al confirmar, se elimina de esas Rutinas activas. | §6.23 |
+| SAL-RUT-04 | RESUELTO | Sí. Puede retirarse un Ejercicio usado en Rutinas activas; se informa la cantidad de Rutinas activas distintas afectadas, no la cantidad de apariciones del Ejercicio. Al confirmar, se elimina de esas Rutinas activas; las históricas permanecen sin modificación. | §6.23 |
 | SAL-RUT-05 | RESUELTO | Solo el Ejercicio es obligatorio. Series, Repeticiones/Tiempo, Carga, Descanso y Observación son opcionales. | §6.21 |
 | SAL-RUT-06 | RESUELTO | Repeticiones y Tiempo son alternativas dentro de un mismo ejercicio. | §6.21 |
 | SAL-RUT-07 | RESUELTO | Tiempo, Carga y Descanso se expresan como texto breve incluyendo unidad/referencia. No existe catálogo de unidades. | §6.21 |
 | SAL-RUT-08 | RESUELTO | Sí. Duplicar precarga días, ejercicios, valores y observaciones y crea una nueva Rutina independiente. | §6.22 |
 | SAL-RUT-09 | RESUELTO | Sí. Un Alumno puede permanecer sin Rutina activa indefinidamente; se identifica para seguimiento pero no existe bloqueo ni plazo obligatorio. | §6.20 |
+| SAL-RUT-10 | RESUELTO | Profesor y Administrador general pueden crear, editar y eliminar Rutinas preestablecidas compartidas por Athleta. Al definir la Rutina de un Alumno pueden crearla desde cero o utilizar una preestablecida. Al seleccionar una preestablecida se muestra primero una vista detallada en modo lectura. Desde allí pueden asignarla tal como está o elegir Editar para personalizar una copia antes de guardarla. En ambos casos, la Rutina resultante del Alumno es independiente: modificarla no altera la preestablecida y modificar o eliminar posteriormente la preestablecida no altera Rutinas ya asignadas. Las preestablecidas no pertenecen a un Profesor específico y no utilizan estados Activo/Inactivo. | Definición aprobada 2026-10-09 |
 
 ---
 
@@ -321,8 +333,8 @@ El resto de las dudas originales figura resuelto, no aplica o queda a criterio t
 |---|---|---|---|
 | INI-01 | RESUELTO | “Alumnos esperados” cuenta únicamente presencias planificadas por **Turnos fijos y reservas puntuales**. | §6.16, §9.3 |
 | INI-02 | RESUELTO | Una incorporación espontánea marcada Asistió aumenta **Asistencias registradas**, pero no Alumnos esperados. | §6.16, §9.3 |
-| INI-03 | PENDIENTE | Se define la tarjeta “Cancelados/Ausentes”, pero no se aclara si visualmente muestra un total combinado o dos subtotales. | §9.3 |
-| INI-04 | PENDIENTE | El bloque incluye “Próximos horarios”, pero no se fija cantidad/horizonte exacto. | §9.3 |
+| INI-03 | RESUELTO | Cancelados / Ausentes se presenta como una sola tarjeta con el total combinado de CANCELLED + ABSENT, sin subtotales. | Definición aprobada 2026-10-13; [Registro INI-03](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md) |
+| INI-04 | RESUELTO | Próximos horarios muestra como máximo 3 horarios, en orden ascendente por hora. Hoy: solo horarios cuyo inicio todavía no pasó. Mañana: los primeros 3 horarios con actividad prevista del día siguiente. No incluye cancelados. | Definición aprobada 2026-10-13; [Registro INI-04](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md) |
 | INI-05 | RESUELTO | “Próximos Turnos” muestra hasta **5** Turnos Agendados de la fecha seleccionada, ordenados por hora. En Hoy solo los que aún no comenzaron; en Mañana los primeros Agendados del día siguiente. | §9.4 |
 | INI-06 | PENDIENTE | El documento usa “Turnos Atendidos” y también “Atendidos hoy”; no fija un único label final de UI. | §9.4 |
 | INI-07 | PENDIENTE | El selector permite Hoy/Mañana, pero no se especifica si la tarjeta Atendidos debe ocultarse, mostrarse en cero o adaptarse cuando se selecciona Mañana. | §9.2–§9.4 |
@@ -341,6 +353,8 @@ El resto de las dudas originales figura resuelto, no aplica o queda a criterio t
 | POR-SAL-05 | RESUELTO | La ventana de reservas del Portal incluye desde el día actual hasta el día actual + 30 días, ambos inclusive. | [Registro POR-SAL-05](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), ratificación 2026-10-02 |
 | POR-SAL-06 | RESUELTO | Si cancela una reserva y el horario continúa sin capacidad disponible, no puede volver a reservar. Solo puede hacerlo si en ese momento existe lugar. | §10.7 |
 | POR-SAL-07 | RESUELTO | Los compromisos futuros Cancelados permanecen visibles e identificados hasta que pasa su fecha/hora. Después dejan de mostrarse; no existe historial de asistencias/cancelaciones pasadas en Portal. | §10.5 |
+| POR-SAL-08 | RESUELTO | Las nuevas Reservas puntuales creadas por el Alumno desde Portal se habilitan según el Mes/Año y el día de la fecha que se desea reservar, no según el día actual. Si existe un Pago de Sala válido y no revertido para ese Mes/Año, el Alumno puede reservar cualquier fecha permitida de ese mes. Si el Pago de ese Mes/Año está pendiente, el Alumno puede reservar únicamente fechas comprendidas entre el día 1 y el día 15 inclusive. Las fechas desde el día 16 hasta fin de mes requieren que ese Mes/Año tenga un Pago válido registrado. La regla se aplica de igual manera a meses actuales y futuros: un mes futuro pendiente no habilita automáticamente fechas posteriores al día 15. El Pago continúa identificado como PENDING hasta que se registre un Pago válido. La posibilidad de reservar los días 1 al 15 no equivale a un Pago registrado. Con un Pago válido el estado es PAID. Un Pago revertido vuelve a considerarse no válido para esta regla. La reversión conserva el Pago original. La fecha real de cobro no define la vigencia. La restricción aplica únicamente a nuevas Reservas puntuales creadas por el Alumno desde Portal. No aplica a operaciones internas ni a Turnos fijos del Portal. La falta de Pago o la reversión posterior de un Pago no cancela ni modifica Reservas ya existentes. El Pago continúa siendo registrado manualmente en Athleta Manager; no existe procesamiento automático de cobros en el alcance actual. | [Registro POR-SAL-08](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md), definición aprobada 2026-10-07 |
+| POR-SAL-09 | RESUELTO | El Portal no permite crear Reservas puntuales para fechas pasadas. En el día actual exige al menos 20 minutos restantes hasta el fin real (inicio elegido + duración del Servicio); 20 minutos exactos son válidos. Con menos de 20 minutos el horario deja de ofrecerse y el backend rechaza la creación. Las opciones se actualizan con un reloj local mientras la pantalla o el flujo de Reserva permanece abierto. Las fechas futuras mantienen la ventana POR-SAL-05 de hoy a hoy+30 inclusive. Aplica únicamente a Reservas puntuales del Alumno desde Portal, sin afectar Turnos fijos ni operación interna; POR-SAL-08 continúa vigente. | Definición aprobada 2026-10-09; [Registro POR-SAL-09](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md) |
 
 ---
 
@@ -426,3 +440,53 @@ Definición funcional del producto objetivo, versión entregada para desarrollo.
 Las referencias `§x.y` de este documento corresponden a las secciones numeradas de esa Descripción Integral.
 
 La consolidación histórica ratificada del **2026-10-02** se documenta en [ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md). Sus reglas aprobadas complementan o sustituyen la respuesta anterior de los ítems allí identificados. Las referencias `§x.y` conservan su significado original y no implican que el PDF ya haya sido sincronizado.
+
+## POR-SAL-08 — Pago mensual para nuevas Reservas puntuales del Portal
+
+Estado: **RESUELTO**. Definición aprobada 2026-10-07.
+
+Las nuevas Reservas puntuales creadas por el Alumno desde Portal se habilitan según el Mes/Año y el día de la fecha que se desea reservar, no según el día actual.
+
+Si existe un Pago de Sala válido y no revertido para ese Mes/Año, el Alumno puede reservar cualquier fecha permitida de ese mes.
+
+Si el Pago de ese Mes/Año está pendiente, el Alumno puede reservar únicamente fechas comprendidas entre el día 1 y el día 15 inclusive. Las fechas desde el día 16 hasta fin de mes requieren que ese Mes/Año tenga un Pago válido registrado.
+
+La regla se aplica de igual manera a meses actuales y futuros: un mes futuro pendiente no habilita automáticamente fechas posteriores al día 15.
+
+El Pago continúa identificado como PENDING hasta que se registre un Pago válido. La posibilidad de reservar los días 1 al 15 no equivale a un Pago registrado. Con un Pago válido el estado es PAID.
+
+Un Pago revertido vuelve a considerarse no válido para esta regla. La reversión conserva el Pago original. La fecha real de cobro no define la vigencia.
+
+La restricción aplica únicamente a nuevas Reservas puntuales creadas por el Alumno desde Portal. No aplica a operaciones internas ni a Turnos fijos del Portal.
+
+La falta de Pago o la reversión posterior de un Pago no cancela ni modifica Reservas ya existentes.
+
+El Pago continúa siendo registrado manualmente en Athleta Manager; no existe procesamiento automático de cobros en el alcance actual.
+
+## SAL-HOR-09 — Inicio de Turnos planificados cada 30 minutos
+
+Estado: **RESUELTO**. Definición aprobada 2026-10-08.
+
+Las Reservas puntuales y los Turnos fijos de Sala sólo pueden comenzar cada 30 minutos, en horarios terminados en :00 o :30.
+
+La granularidad de inicio de 30 minutos no modifica la unidad interna de capacidad de Sala, que continúa siendo de 15 minutos. La duración de cada Servicio continúa siendo un múltiplo de 15 minutos y consume capacidad en todos los bloques consecutivos correspondientes.
+
+La regla de inicio cada 30 minutos se aplica tanto al Portal como a la operación interna para crear o modificar Reservas puntuales y Turnos fijos.
+
+La Incorporación espontánea no está sujeta a esta restricción y conserva la granularidad operativa de 15 minutos porque representa una llegada real.
+
+Los registros históricos existentes con inicio :15 o :45 se conservan y no se reescriben automáticamente; una nueva creación o modificación debe respetar :00/:30.
+
+## PROF-01 — Alta de Persona/Alumno por Profesor
+
+Estado: **RESUELTO — 2026-10-15**.
+
+El Profesor puede realizar altas autónomas desde Alumnos (`/students`), sin habilitar el módulo Personas al Profesor puro. Se mantiene la navegación Inicio → Reservas → Alumnos → Rutinas.
+
+El flujo comienza por DNI normalizado y busca una coincidencia exacta. Si la Persona existe, se reutiliza y se incorpora a Sala conservando su credencial/PIN actual. Si ya tiene participación activa en Sala, se informa y no se crea nada. Si no existe, se crea la Persona y se incorpora a Sala atómicamente.
+
+Plan y Profesor principal son obligatorios en ambos caminos. Para una Persona nueva se solicitan únicamente Nombre, Apellido, DNI, Teléfono y Fecha de nacimiento, además de Plan y Profesor principal. El PIN temporal solo se muestra cuando realmente se crea una Persona nueva, una sola vez, con las acciones Copiar PIN y Entendido.
+
+### Alcance de Alumnos — RESUELTO, 2026-10-13
+
+El Profesor ve todos los alumnos activos de Sala. Profesor principal es información de organización y seguimiento, no un límite de acceso. Se muestra con nombre y apellido en desktop y mobile. No existe una duda pendiente de “mis alumnos vs todos”; PROF-01 continúa siendo la única duda de alta del Profesor. Véase la [navegación aprobada](ATHLETA_MANAGER_DECISIONES_FUNCIONALES.md).

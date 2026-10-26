@@ -114,8 +114,15 @@ export class ClinicService {
   }
 
   async listPatientOverview(query: ListClinicalPatientsOverviewQueryDto, now = new Date()) {
+    const search = query.search?.trim();
+    const dni = search?.replace(/[^0-9]/g, '');
     const rows = await this.prisma.clinicalPatient.findMany({
-      orderBy: { person: { lastName: 'asc' } },
+      where: search ? { person: { OR: [
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName: { contains: search, mode: 'insensitive' } },
+        ...(dni ? [{ normalizedDni: { contains: dni } }] : []),
+      ] } } : {},
+      orderBy: [{ person: { lastName: 'asc' } }, { person: { firstName: 'asc' } }, { personId: 'asc' }],
       include: {
         person: {
           select: {
@@ -123,8 +130,10 @@ export class ClinicService {
             firstName: true,
             lastName: true,
             dni: true,
+            sport: true,
+            club: true,
             salaParticipations: { where: { endDate: null }, select: { id: true }, take: 1 },
-            clinicalAppointments: { where: { status: ClinicalAppointmentStatus.SCHEDULED, startAt: { gt: now } }, select: { id: true }, take: 1 },
+            clinicalAppointments: { where: { status: ClinicalAppointmentStatus.SCHEDULED, startAt: { gt: now } }, orderBy: { startAt: 'asc' }, select: { id: true, startAt: true }, take: 1 },
             clinicalAttentions: { orderBy: { occurredAt: 'desc' }, select: { occurredAt: true }, take: 1 },
             treatments: {
               where: { status: TreatmentStatus.IN_PROGRESS },
@@ -153,6 +162,10 @@ export class ClinicService {
         firstName: person.firstName,
         lastName: person.lastName,
         dni: person.dni,
+        sport: person.sport,
+        club: person.club,
+        hasSalaParticipation: person.salaParticipations.length > 0,
+        nextAppointmentAt: person.clinicalAppointments[0]?.startAt.toISOString() ?? null,
         status: person.salaParticipations.length > 0 || person.treatments.length > 0 || person.clinicalAppointments.length > 0 ? 'ACTIVE' as const : 'INACTIVE' as const,
         lastAttentionAt: person.clinicalAttentions[0]?.occurredAt.toISOString() ?? null,
       })),
@@ -282,6 +295,7 @@ export class ClinicService {
     const rows = await this.prisma.clinicalAppointment.findMany({
       where: {
         ...(query.personId ? { personId: query.personId } : {}),
+        ...(query.professionalId ? { professionalId: query.professionalId } : {}),
         ...(query.pendingPastScheduled === 'YES'
           ? { status: ClinicalAppointmentStatus.SCHEDULED, startAt: { lt: now } }
           : from || to

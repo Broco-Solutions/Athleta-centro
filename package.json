@@ -1,8 +1,8 @@
 {
   "name": "athleta-manager",
   "private": true,
-  "packageManager": "pnpm@11.4.0",
-  "engines": { "node": "24.13.0", "pnpm": "11.4.0" },
+  "packageManager": "pnpm@10.15.1",
+  "engines": { "node": "24.13.0", "pnpm": "10.15.1" },
   "scripts": {
     "pipeline": "node tools/pilot-runner/cli.mjs",
     "test:pipeline": "node --test tools/pilot-runner/test/*.test.mjs",

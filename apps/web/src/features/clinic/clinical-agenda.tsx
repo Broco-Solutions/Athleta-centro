@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ClinicalAppointmentOperationalDto, ClinicalProfessionalSummaryDto } from '@athleta/api-client';
 import { AlertTriangle, CalendarDays, Check, Clock3 } from 'lucide-react';
@@ -201,6 +202,10 @@ function AppointmentCard({
   csrfToken: string;
   canManage: boolean;
 }): React.JSX.Element {
+  const start = new Date(appointment.startAt).getTime();
+  const end = start + appointment.durationMinutes * 60_000;
+  const now = Date.now();
+  const temporalLabel = now < start ? 'Próximo' : now < end ? 'En curso' : 'Pasado';
   const isPending = appointment.status === 'SCHEDULED' && new Date(appointment.startAt) < new Date();
   return (
     <article className="rounded-md border bg-white p-4 shadow-sm">
@@ -211,6 +216,10 @@ function AppointmentCard({
           <p className="text-sm text-muted-foreground">DNI {appointment.person.dni} · {professionalName(appointment.professional)}</p>
         </div>
         <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClasses[appointment.status]}`}>{statusLabels[appointment.status]}</span>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+        <span className="text-muted-foreground">{temporalLabel}</span>
+        <Link className="font-medium underline" href={`/clinic?tab=Paciente&personId=${appointment.personId}`}>Abrir ficha</Link>
       </div>
       {appointment.operationalNote ? <p className="mt-3 text-sm">{appointment.operationalNote}</p> : null}
       {isPending ? <p className="mt-3 flex items-center gap-2 text-sm font-medium text-amber-800"><AlertTriangle size={16} /> Agendado pasado: requiere actualización manual.</p> : null}
@@ -233,17 +242,18 @@ export function ClinicalAgenda({
   const [date, setDate] = useState(operationalDate);
   const [view, setView] = useState<'DAY' | 'WEEK'>('DAY');
   const [showPending, setShowPending] = useState(false);
-  const range = clinicAgendaRange(date, view);
-  const appointments = useQuery({
-    queryKey: ['clinic', 'appointments', personId ?? '', date, view, showPending],
-    queryFn: () => fetchClinicalAppointments(showPending
-      ? { ...(personId ? { personId } : {}), pendingPastScheduled: 'YES' }
-      : { ...(personId ? { personId } : {}), ...range }),
-  });
+  const [professionalId, setProfessionalId] = useState('');
   const professionals = useQuery({
     queryKey: ['clinic', 'professionals'],
     queryFn: fetchClinicalProfessionals,
-    enabled: canManage,
+  });
+  const selectedProfessionalId = professionals.isError ? '' : professionalId;
+  const range = clinicAgendaRange(date, view);
+  const appointments = useQuery({
+    queryKey: ['clinic', 'appointments', personId ?? '', date, view, showPending, selectedProfessionalId],
+    queryFn: () => fetchClinicalAppointments(showPending
+      ? { ...(personId ? { personId } : {}), ...(selectedProfessionalId ? { professionalId: selectedProfessionalId } : {}), pendingPastScheduled: 'YES' }
+      : { ...(personId ? { personId } : {}), ...(selectedProfessionalId ? { professionalId: selectedProfessionalId } : {}), ...range }),
   });
   const grouped = useMemo(() => {
     const result = new Map<string, ClinicalAppointmentOperationalDto[]>();
@@ -267,6 +277,13 @@ export function ClinicalAgenda({
           <h2 id="clinical-agenda-heading" className="text-xl font-semibold">Agenda Clínica</h2>
         </div>
         <div className="flex flex-wrap items-end gap-2">
+          {canManage ? <Link className="inline-flex h-10 items-center rounded-md bg-[#FCCC05] px-4 text-sm font-semibold text-black" href={personId ? `/clinic/appointments/new?personId=${personId}` : '/clinic/appointments/new'}>Nuevo turno</Link> : null}
+          <label className="grid gap-1 text-sm font-medium">Profesional
+            <select className="h-10 max-w-full rounded-md border bg-white px-3" value={selectedProfessionalId} disabled={professionals.isPending || professionals.isError} onChange={(event) => setProfessionalId(event.target.value)}>
+              <option value="">Todos los profesionales</option>
+              {(professionals.isError ? [] : professionals.data ?? []).map((professional) => <option key={professional.id} value={professional.id}>{professionalName(professional)}</option>)}
+            </select>
+          </label>
           <label className="grid gap-1 text-sm font-medium">Fecha
             <input aria-label="Fecha de agenda" type="date" value={date} onChange={(event) => setDate(event.target.value)} className="h-10 rounded-md border px-3" disabled={showPending} />
           </label>
@@ -279,6 +296,7 @@ export function ClinicalAgenda({
           </button>
         </div>
       </div>
+      {professionals.isError ? <p aria-live="polite" className="mt-3 text-sm text-red-700">No se pudieron cargar los profesionales. La agenda sigue disponible sin filtro.</p> : null}
       {appointments.isLoading ? <p role="status" className="mt-5 text-sm text-muted-foreground">Cargando agenda…</p> : null}
       {appointments.isError ? <p role="alert" className="mt-5 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">No se pudo cargar la agenda.</p> : null}
       {!appointments.isLoading && !appointments.isError ? (

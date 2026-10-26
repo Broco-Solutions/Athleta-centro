@@ -469,55 +469,37 @@ para la misma Persona.
 
 ---
 
-## 21. SalaPayment mensual
+## 21. SalaPayment — renovación y cobertura
 
-Modelo inicial:
+SalaPayment representa una renovación con cobertura inmutable, no un Mes/Año de acceso.
 
-```text
-maximum one SalaPayment
-per Person
-per MonthYear
-```
+Cada Pago / renovación de Sala otorga un mes calendario, con extremos incluidos.
+Sin cobertura en la Fecha de cobro, comienza en `paidAt` y termina un mes después.
+Si la Fecha de cobro está cubierta, se recorre toda la cadena continua no revertida
+(coberturas contiguas o solapadas): el nuevo tramo comienza al día siguiente de su
+final y termina un mes calendario después de ese final. Se suma el mes en DateOnly/UTC,
+con clamp al último día real del mes destino (31/01/2026 → 28/02/2026;
+31/01/2028 → 29/02/2028; 28/02/2026 → 28/03/2026).
+No hay gracia ni vencimiento mensual fijo. Se permiten varios Pagos en un mismo mes.
+La reversión invalida su cobertura sin reescribir coberturas posteriores.
+`operationId` es la única clave de idempotencia; se serializa por Persona con advisory lock.
+El Plan financiero queda referenciado y su nombre se congela al cobrar; no modifica
+`SalaParticipation.planId` ni `SalaPlanAssignment`. Ingresos financieros se agrupan por `paidAt`.
 
-Conceptualmente:
-
-```text
-UNIQUE (
-  personId,
-  year,
-  month
-)
-```
+DB: `coverage_start_date` y `coverage_end_date` son DATE NOT NULL,
+con CHECK `coverage_start_date <= coverage_end_date` y FK de Plan RESTRICT.
 
 ---
 
 ## 22. Corrección de SalaPayment
 
-Si un pago mensual fue cargado incorrectamente:
-
-```text
-correct existing payment
-```
-
-No:
-
-```text
-create second payment for same month
-```
+Reversión explícita con motivo; conserva el Pago y sus fechas. No se recalcula ningún Pago posterior.
 
 ---
 
 ## 23. Regla funcional pendiente sobre pagos
 
-La restricción anterior parte del modelo funcional actualmente definido.
-
-Si posteriormente el Analista establece:
-
-- pagos parciales;
-- cuotas;
-- múltiples cobros para un mismo Mes/Año;
-
-esta constraint deberá revisarse antes de crear una migración irreversible.
+Resuelto por la decisión confirmada del 2026-10-19: se permiten múltiples Pagos válidos por Persona en un mismo mes, cada uno con su cobertura.
 
 ---
 
@@ -838,7 +820,7 @@ Los siguientes conceptos no son campos editables:
 Person.status
 isStudent
 isPatient
-currentMonthPaymentStatus
+currentSalaValidity
 SocialWorkOrder.isExpired
 availableSalaCapacity
 lastClinicalAttention
@@ -918,22 +900,7 @@ No deben representarse mediante timestamps arbitrarios a medianoche.
 
 ## 41. MonthYear
 
-Conceptos como:
-
-```text
-SalaPayment period
-```
-
-deben representar explícitamente:
-
-```text
-month
-year
-```
-
-o una estrategia equivalente que preserve esa semántica.
-
-No utilizar una fecha ficticia solo para representar Mes/Año sin documentarlo.
+Mes/Año continúa en conceptos financieros mensuales. En SalaPayment es metadata legacy derivada de paidAt; no habilita acceso.
 
 ---
 
@@ -1314,24 +1281,7 @@ Una repetición con el mismo identificador no debe crear un segundo movimiento.
 
 ## 62. Idempotencia no reemplaza invariantes naturales
 
-Ejemplo:
-
-`SalaPayment` ya posee la invariante:
-
-```text
-Person + MonthYear
-```
-
-La idempotencia protege contra retries.
-
-La constraint funcional protege contra:
-
-```text
-dos requests diferentes
-intentando registrar el mismo pago mensual
-```
-
-Son mecanismos complementarios.
+En SalaPayment se exige operationId único, con conflicto si cambia el payload. Los retries no extienden vigencia. Las renovaciones diferentes se serializan por Persona y pueden registrarse en el mismo mes.
 
 ---
 
@@ -1652,7 +1602,7 @@ ABSENT
 
 La DB debe impedir valores arbitrarios.
 
-No existe una matriz rígida: un usuario autorizado puede corregir manualmente cualquiera de estos estados. La DB protege el enum, la unicidad `Person + fecha + horario` y la coherencia entre origen y booking; Application valida la referencia operacional y registra trazabilidad.
+No existe una matriz rígida: un usuario autorizado puede corregir manualmente cualquiera de estos estados. La DB protege el enum, la unicidad de cada fuente por fecha y la de Reservas puntuales activas por Persona, ventana, fecha e inicio; Application impide intervalos superpuestos y valida la referencia operacional. Las cancelaciones automáticas por impago dejan marca propia de trazabilidad.
 
 ---
 
@@ -1807,7 +1757,7 @@ Ejemplos:
 
 ```text
 cannot create two active SalaParticipation
-cannot create duplicate SalaPayment month
+cannot create duplicate SalaPayment operationId
 cannot delete Person with Treatment
 cannot assign inactive clinical professional
 cannot mark attended without resulting Attention
@@ -1844,7 +1794,7 @@ active Sala relationship
 Treatment status
 → Treatment
 
-Sala monthly payment
+Sala payment / renewal
 → SalaPayment
 
 clinical appointment state
@@ -1943,7 +1893,7 @@ Debe mantener el modelo neutral o señalar el bloqueo.
 | DNI único | Pendiente | Pendiente |
 | Una SalaParticipation activa | ✓ | ✓ |
 | Una Routine activa | ✓ | ✓ |
-| Un SalaPayment por Persona/Mes | ✓ | ✓ |
+| Cobertura válida e idempotencia de SalaPayment por operationId | ✓ | ✓ |
 | Fixed booking exacto duplicado | ✓ cuando modelo lo permita | ✓ |
 | Capacidad Sala | — | ✓ |
 | Sobrecupo según actor | — | ✓ |

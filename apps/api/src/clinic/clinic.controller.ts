@@ -46,6 +46,7 @@ export class ClinicController {
   @Get('patients/overview')
   @RequirePermissions('CLINIC_OPERATIONAL_READ')
   @ApiOperation({ operationId: 'listClinicalPatientsOverview' })
+  @ApiQuery({ name: 'search', required: false, type: String })
   @ApiQuery({ name: 'treatmentInProgress', required: false, enum: ['YES', 'NO'] })
   @ApiQuery({ name: 'withoutRecentAttentionDays', required: false, enum: [30, 60, 90] })
   @ApiQuery({ name: 'page', required: false, type: Number })
@@ -118,6 +119,7 @@ export class ClinicController {
   @ApiQuery({ name: 'from', required: false, type: String, format: 'date-time' })
   @ApiQuery({ name: 'to', required: false, type: String, format: 'date-time' })
   @ApiQuery({ name: 'personId', required: false, type: String, format: 'uuid' })
+  @ApiQuery({ name: 'professionalId', required: false, type: String, format: 'uuid' })
   @ApiQuery({ name: 'pendingPastScheduled', required: false, enum: ['YES', 'NO'] })
   @ApiOkResponse({ type: ClinicalAppointmentListEnvelopeDto })
   async list(@Query() query: ListClinicalAppointmentsQueryDto) {

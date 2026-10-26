@@ -6,13 +6,14 @@ import { ValidationPipe, type INestApplication } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { AuthService } from '../src/auth/auth.service';
+import { PeopleService } from '../src/people/people.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { InternalUserService } from '../src/team/internal-user.service';
 
 describe('People API', () => {
   let app: INestApplication; let prisma: PrismaService; let users: InternalUserService; let auth: AuthService;
   beforeAll(async () => { app = (await Test.createTestingModule({ imports: [AppModule] }).compile()).createNestApplication(); app.use(cookieParser()); app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })); app.setGlobalPrefix('api'); await app.init(); prisma = app.get(PrismaService); users = app.get(InternalUserService); auth = app.get(AuthService); });
-  afterEach(async () => { await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.clinicalPatient.deleteMany(); await prisma.person.deleteMany(); await prisma.authAttemptBucket.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); });
+  afterEach(async () => { await prisma.salaOccurrence.deleteMany(); await prisma.salaClinicalIndication.deleteMany(); await prisma.routine.deleteMany(); await prisma.treatment.deleteMany(); await prisma.clinicalAppointment.deleteMany(); await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.salaPlan.deleteMany(); await prisma.salaScheduleSlot.deleteMany(); await prisma.clinicalPatient.deleteMany(); await prisma.person.deleteMany(); await prisma.authAttemptBucket.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); });
   afterAll(() => app.close());
   async function session(role: Role) { const user = await users.create({ firstName: 'API', lastName: 'User', email: `${role.toLowerCase()}@people.test`, roles: [role] }); await auth.provisionCredential(user.id, 'ValidPass1!'); await prisma.internalCredential.update({ where: { internalUserId: user.id }, data: { mustChangePassword: false } }); const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200); return { cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string }; }
   const payload = { firstName: 'Ana', lastName: 'Sintética', dni: '20.123.456', phone: '(341) 555-1234', birthDate: '1992-03-10' };
@@ -39,6 +40,26 @@ describe('People API', () => {
     expect(JSON.stringify(reset.body)).not.toMatch(/pinHash|passwordHash/);
     const detailAfterReset = await request(app.getHttpServer()).get(`/api/people/${id}`).set('Cookie', authn.cookie).expect(200);
     expect(detailAfterReset.body.data.initialPin).toBeUndefined();
+  });
+
+  it.each([
+    [{}, null, null],
+    [{ sport: '', club: '   ' }, null, null],
+    [{ sport: ' Tenis ' }, 'Tenis', null],
+    [{ club: ' Club sintético ' }, null, 'Club sintético'],
+  ])('stores optional sports data independently and allows clearing it: %j', async (optional, sport, club) => {
+    const authn = await session(Role.ADMINISTRATIVE);
+    const created = await request(app.getHttpServer()).post('/api/people').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ ...payload, ...optional }).expect(201);
+    const id = created.body.data.id as string;
+    expect(created.body.data).toMatchObject({ sport, club });
+    expect(await prisma.person.findUniqueOrThrow({ where: { id } })).toMatchObject({ sport, club });
+    const updated = await request(app.getHttpServer()).patch(`/api/people/${id}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ sport: ' Natación ', club: ' Club nuevo ' }).expect(200);
+    expect(updated.body.data).toMatchObject({ sport: 'Natación', club: 'Club nuevo' });
+    await request(app.getHttpServer()).patch(`/api/people/${id}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ sport: '  ', club: null }).expect(200);
+    const detail = await request(app.getHttpServer()).get(`/api/people/${id}`).set('Cookie', authn.cookie).expect(200);
+    expect(detail.body.data).toMatchObject({ sport: null, club: null });
+    expect(detail.body.data.initialPin).toBeUndefined();
+    expect(await prisma.person.findUniqueOrThrow({ where: { id } })).toMatchObject({ sport: null, club: null });
   });
 
   it('returns stable duplicate and validation errors', async () => {
@@ -182,4 +203,117 @@ describe('People API', () => {
     const professor = await session(Role.PROFESSOR);
     await request(app.getHttpServer()).get('/api/clinic/patients/overview').set('Cookie', professor.cookie).expect(403);
   });
+  it('persists optional coverage, switches it, clears it and preserves a retired current work', async () => {
+    const authn = await session(Role.PROFESSOR);
+    const a = await prisma.socialWork.create({ data: { name: 'People coverage A', normalizedName: `people-coverage-a-${Date.now()}` } });
+    const b = await prisma.socialWork.create({ data: { name: 'People coverage B', normalizedName: `people-coverage-b-${Date.now()}` } });
+    const create = async (extra: object, status = 201) => request(app.getHttpServer()).post('/api/people').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ ...payload, ...extra }).expect(status);
+    const created = await create({ socialWorkId: a.id, affiliateNumber: ' ABC-123 ' });
+    const id = created.body.data.id as string;
+    const patch = async (extra: object, status = 200) => request(app.getHttpServer()).patch(`/api/people/${id}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(extra).expect(status);
+    const persisted = async (socialWorkId: string | null, affiliateNumber: string | null) => {
+      expect(await prisma.person.findUniqueOrThrow({ where: { id } })).toMatchObject({ socialWorkId, affiliateNumber });
+    };
+    expect(created.body.data).toMatchObject({ socialWorkId: a.id, affiliateNumber: 'ABC-123' });
+    await persisted(a.id, 'ABC-123');
+    expect((await patch({ socialWorkId: b.id, affiliateNumber: 'B-456' })).body.data).toMatchObject({ socialWorkId: b.id, affiliateNumber: 'B-456' });
+    await persisted(b.id, 'B-456');
+    await prisma.socialWork.update({ where: { id: b.id }, data: { isSelectable: false } });
+    await patch({ socialWorkId: b.id, affiliateNumber: ' Corrected ' });
+    await persisted(b.id, 'Corrected');
+    await patch({ affiliateNumber: 'Only affiliate' });
+    await persisted(b.id, 'Only affiliate');
+    await patch({ socialWorkId: null, affiliateNumber: 'Discarded' });
+    await persisted(null, null);
+    expect((await patch({ affiliateNumber: 'Discarded again' })).body.data.affiliateNumber).toBeNull();
+    await persisted(null, null);
+    expect((await patch({ socialWorkId: b.id }, 400)).body.code).toBe('SOCIAL_WORK_NOT_SELECTABLE');
+    await persisted(null, null);
+    expect((await create({ dni: '20123457', socialWorkId: b.id }, 400)).body.code).toBe('SOCIAL_WORK_NOT_SELECTABLE');
+    expect((await create({ dni: '20123457', socialWorkId: '10000000-0000-4000-8000-000000000099' }, 400)).body.code).toBe('SOCIAL_WORK_NOT_SELECTABLE');
+    const uncovered = await create({ dni: '20123457', affiliateNumber: 'ABC-123' });
+    expect(uncovered.body.data).toMatchObject({ socialWorkId: null, affiliateNumber: null });
+    expect(await prisma.person.findUniqueOrThrow({ where: { id: uncovered.body.data.id } })).toMatchObject({ socialWorkId: null, affiliateNumber: null });
+    await patch({ socialWorkId: a.id, affiliateNumber: '   ' });
+    await persisted(a.id, null);
+    await patch({ socialWorkId: null });
+    await persisted(null, null);
+    await prisma.socialWork.deleteMany({ where: { id: { in: [a.id, b.id] } } });
+  });
+
+  it('inactivates globally from the real instant, preserves started Sala activities and keeps clinical lifecycle', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    jest.setSystemTime(new Date('2026-10-13T15:00:00Z')); // 12:00 Buenos Aires.
+    try {
+      const authn = await session(Role.GENERAL_ADMIN);
+      const actor = await prisma.internalUser.findFirstOrThrow({ where: { email: 'general_admin@people.test' } });
+      const created = await request(app.getHttpServer()).post('/api/people').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(payload).expect(201);
+      const personId = created.body.data.id as string;
+      const plan = await prisma.salaPlan.create({ data: { name: 'PER-07 sintético', monthlyAmount: 1000 } });
+      const participation = await prisma.salaParticipation.create({ data: { personId, planId: plan.id, mainProfessorId: actor.id, startDate: new Date('2026-10-01') } });
+      const morning = await prisma.salaScheduleSlot.create({ data: { weekday: 'TUESDAY', startTime: new Date('1970-01-01T09:00:00Z'), durationMinutes: 240 } });
+      const evening = await prisma.salaScheduleSlot.create({ data: { weekday: 'TUESDAY', startTime: new Date('1970-01-01T17:00:00Z'), durationMinutes: 120 } });
+      const base = { personId, salaParticipationId: participation.id };
+      const fixed = [];
+      for (const slot of [morning, evening]) fixed.push(await prisma.fixedSalaBooking.create({ data: { ...base, scheduleSlotId: slot.id, startDate: new Date('2026-10-01') } }));
+      const reservations = [];
+      for (const [slot, time, date] of [[morning, '09:30', '2026-10-13'], [evening, '17:30', '2026-10-13'], [morning, '09:30', '2026-10-14'], [morning, '12:00', '2026-10-13']] as const) reservations.push(await prisma.oneOffReservation.create({ data: { ...base, scheduleSlotId: slot.id, date: new Date(date), startTime: new Date(`1970-01-01T${time}:00Z`) } }));
+      const occurrences = [];
+      for (const [slot, time, date] of [[morning, '10:00', '2026-10-13'], [evening, '18:00', '2026-10-13'], [morning, '10:00', '2026-10-14'], [morning, '12:00', '2026-10-13']] as const) occurrences.push(await prisma.salaOccurrence.create({ data: { personId, scheduleSlotId: slot.id, date: new Date(date), startTime: new Date(`1970-01-01T${time}:00Z`), origin: 'SPONTANEOUS', status: 'RESERVED' } }));
+      const routine = await prisma.routine.create({ data: { ...base, status: 'ACTIVE', version: 1 } });
+      const indication = await prisma.salaClinicalIndication.create({ data: { personId, responsibleProfessionalId: actor.id, trainingCondition: 'RESTRICTED' } });
+      await prisma.clinicalPatient.create({ data: { personId, registeredById: actor.id } });
+      const treatment = await prisma.treatment.create({ data: { personId, responsibleProfessionalId: actor.id, consultationReason: 'Sintético', bodyAreaOrInjury: 'Sintético', startDate: new Date('2026-10-01') } });
+      const appointments = [];
+      for (const time of ['14:00', '16:00']) appointments.push(await prisma.clinicalAppointment.create({ data: { personId, professionalId: actor.id, startAt: new Date(`2026-10-13T${time}:00Z`) } }));
+      const portalSession = await prisma.session.create({ data: { kind: 'PORTAL', personId, secretHash: 'synthetic-per07-session', csrfToken: 'synthetic-csrf', expiresAt: new Date('2026-10-14') } });
+      await request(app.getHttpServer()).post(`/api/people/${personId}/inactivate`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).expect(201);
+      expect((await prisma.salaParticipation.findUniqueOrThrow({ where: { id: participation.id } })).endDate).toEqual(new Date('2026-10-13'));
+      for (const [index, booking] of fixed.entries()) {
+        expect((await prisma.fixedSalaBooking.findUniqueOrThrow({ where: { id: booking.id } })).endDate).toEqual(new Date('2026-10-13'));
+        const occurrence = await prisma.salaOccurrence.findUnique({ where: { fixedSalaBookingId_date: { fixedSalaBookingId: booking.id, date: new Date('2026-10-13') } } });
+        if (index === 0) expect(occurrence).toBeNull();
+        else expect(occurrence).toMatchObject({ status: 'CANCELLED', createdBy: actor.id, lastModifiedBy: actor.id, cancelledForNonPaymentAt: null });
+      }
+      for (const [index, reservation] of reservations.entries()) expect((await prisma.oneOffReservation.findUniqueOrThrow({ where: { id: reservation.id } })).cancelledAt).toEqual(index === 1 || index === 2 ? new Date('2026-10-13T15:00:00Z') : null);
+      for (const [index, occurrence] of occurrences.entries()) {
+        const stored = await prisma.salaOccurrence.findUniqueOrThrow({ where: { id: occurrence.id } });
+        if (index === 1 || index === 2) expect(stored).toMatchObject({ status: 'CANCELLED', lastModifiedBy: actor.id });
+        else expect(stored).toEqual(occurrence);
+      }
+      expect((await prisma.routine.findUniqueOrThrow({ where: { id: routine.id } })).status).toBe('HISTORICAL');
+      expect(await prisma.salaClinicalIndication.findUniqueOrThrow({ where: { id: indication.id } })).toMatchObject({ status: 'CLOSED', closedById: actor.id });
+      expect(await prisma.treatment.findUniqueOrThrow({ where: { id: treatment.id } })).toMatchObject({ status: 'FINISHED', finishReason: 'INTERRUPTION' });
+      expect((await prisma.clinicalAppointment.findUniqueOrThrow({ where: { id: appointments[0]!.id } })).status).toBe('SCHEDULED');
+      expect((await prisma.clinicalAppointment.findUniqueOrThrow({ where: { id: appointments[1]!.id } })).status).toBe('CANCELLED');
+      expect((await prisma.session.findUniqueOrThrow({ where: { id: portalSession.id } })).revokedAt).toEqual(new Date('2026-10-13T15:00:00Z'));
+    } finally { jest.useRealTimers(); }
+  });
+
+  it('rolls back global inactivation after Sala mutations fail', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    jest.setSystemTime(new Date('2026-10-13T15:00:00Z'));
+    try {
+      const authn = await session(Role.GENERAL_ADMIN);
+      const actor = await prisma.internalUser.findFirstOrThrow({ where: { email: 'general_admin@people.test' } });
+      const created = await request(app.getHttpServer()).post('/api/people').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(payload).expect(201);
+      const personId = created.body.data.id as string;
+      const plan = await prisma.salaPlan.create({ data: { name: 'PER-07 rollback', monthlyAmount: 1000 } });
+      const participation = await prisma.salaParticipation.create({ data: { personId, planId: plan.id, mainProfessorId: actor.id, startDate: new Date('2026-10-01') } });
+      const slot = await prisma.salaScheduleSlot.create({ data: { weekday: 'WEDNESDAY', startTime: new Date('1970-01-01T09:00:00Z'), durationMinutes: 60 } });
+      const base = { personId, salaParticipationId: participation.id, scheduleSlotId: slot.id };
+      const fixed = await prisma.fixedSalaBooking.create({ data: { ...base, startDate: new Date('2026-10-01') } });
+      const reservation = await prisma.oneOffReservation.create({ data: { ...base, date: new Date('2026-10-14') } });
+      const routine = await prisma.routine.create({ data: { personId, salaParticipationId: participation.id, status: 'ACTIVE', version: 1 } });
+      const occurrence = await prisma.salaOccurrence.create({ data: { personId, scheduleSlotId: slot.id, date: new Date('2026-10-14'), origin: 'FIXED', fixedSalaBookingId: fixed.id, status: 'RESERVED' } });
+      // The missing internal actor fails the occurrence FK after booking, routine and participation mutations.
+      await expect(app.get(PeopleService).inactivate(personId, crypto.randomUUID())).rejects.toMatchObject({ code: 'P2003' });
+      expect(await prisma.salaParticipation.findUniqueOrThrow({ where: { id: participation.id } })).toEqual(participation);
+      expect(await prisma.fixedSalaBooking.findUniqueOrThrow({ where: { id: fixed.id } })).toEqual(fixed);
+      expect(await prisma.oneOffReservation.findUniqueOrThrow({ where: { id: reservation.id } })).toEqual(reservation);
+      expect(await prisma.routine.findUniqueOrThrow({ where: { id: routine.id } })).toEqual(routine);
+      expect(await prisma.salaOccurrence.findUniqueOrThrow({ where: { id: occurrence.id } })).toEqual(occurrence);
+    } finally { jest.useRealTimers(); }
+  });
+
 });

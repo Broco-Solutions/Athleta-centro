@@ -21,7 +21,7 @@ afterEach(() => server.resetHandlers());
 afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 
 describe('LoginPage', () => {
-  it('renders the internal login form', () => { renderPage(); expect(screen.getByRole('heading', { name: 'Iniciar sesión' })).toBeInTheDocument(); expect(screen.getByLabelText('Email')).toBeInTheDocument(); });
+  it('renders the official Athleta logo and internal login form', () => { renderPage(); const logo = screen.getByRole('img', { name: 'Athleta' }); const logoSource = new URL(logo.getAttribute('src')!, 'http://localhost').searchParams.get('url'); expect(logoSource).toBe('/logo-athleta.png'); expect(screen.getByText('Athleta Manager')).toBeInTheDocument(); expect(screen.getByRole('heading', { name: 'Gestión con foco en las personas.' })).toBeInTheDocument(); expect(screen.getByText('Acceso interno seguro')).toBeInTheDocument(); expect(screen.getByRole('heading', { name: 'Iniciar sesión' })).toBeInTheDocument(); expect(screen.getByLabelText('Email')).toBeInTheDocument(); });
 
   it('submits once and disables the button while authentication is pending', async () => {
     let requests = 0;
@@ -33,4 +33,9 @@ describe('LoginPage', () => {
     server.use(http.post('http://localhost:3000/api/auth/login', () => HttpResponse.json({ code: 'INVALID_CREDENTIALS' }, { status: 401 })));
     renderPage(); fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'unknown@athleta.test' } }); fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'WrongPass1!' } }); fireEvent.click(screen.getByRole('button', { name: /Ingresar/ })); expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos iniciar sesión con los datos ingresados.');
   });
+});
+
+it('shows the shared developer footer', async () => {
+  renderPage();
+  expect(await screen.findByRole('link', { name: 'Desarrollado por Broco Solutions' })).toHaveAttribute('href', 'https://www.brocosolutions.com');
 });

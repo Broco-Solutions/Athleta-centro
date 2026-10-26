@@ -10,7 +10,7 @@
     "lint": "eslint src test scripts",
     "typecheck": "tsc --noEmit",
     "test": "jest --passWithNoTests",
-    "test:integration": "jest --config test/jest-integration.json --passWithNoTests",
+    "test:integration": "tsx scripts/run-isolated-tests.ts integration",
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",

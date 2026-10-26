@@ -681,7 +681,7 @@ Ejemplos:
 ```text
 future appointments
 SocialWorkOrder expiration
-Sala MonthYear payments
+Sala rolling coverage payments
 Portal cancellation windows
 Treatment recent activity
 ```
@@ -1018,7 +1018,7 @@ No es necesario probar concurrencia en cada CRUD.
 ```text
 two concurrent JoinSala requests
 two concurrent ReplaceRoutine operations
-two concurrent SalaPayments for same MonthYear
+two concurrent SalaPayment renewals: distinct operationIds extend coverage; identical operationId retries once
 two concurrent bookings for last Sala capacity slot
 two concurrent updates using same version
 ```

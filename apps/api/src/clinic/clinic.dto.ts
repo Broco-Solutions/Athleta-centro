@@ -30,6 +30,7 @@ export class PatientDto {
 }
 
 export class ListClinicalPatientsOverviewQueryDto {
+  @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() @MaxLength(100) search?: string;
   @ApiPropertyOptional({ enum: ['YES', 'NO'], description: 'Filters by the existence of at least one Treatment En curso.' })
   @IsOptional() @IsIn(['YES', 'NO']) treatmentInProgress?: 'YES' | 'NO';
   @ApiPropertyOptional({ enum: [30, 60, 90], description: 'Minimum complete days without attention for at least one Treatment En curso.' })
@@ -45,6 +46,10 @@ export class ClinicalPatientOverviewDto {
   @ApiProperty({ type: String }) firstName!: string;
   @ApiProperty({ type: String }) lastName!: string;
   @ApiProperty({ type: String }) dni!: string;
+  @ApiProperty({ type: Boolean }) hasSalaParticipation!: boolean;
+  @ApiPropertyOptional({ type: String, nullable: true }) sport!: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) club!: string | null;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) nextAppointmentAt!: string | null;
   @ApiProperty({ enum: ['ACTIVE', 'INACTIVE'] }) status!: 'ACTIVE' | 'INACTIVE';
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true, description: 'Most recent attention of the patient, regardless of Treatment association.' }) lastAttentionAt!: string | null;
 }
@@ -112,6 +117,7 @@ export class ListClinicalAppointmentsQueryDto {
   @ApiPropertyOptional({ type: String, format: 'date-time' }) @IsOptional() @IsDateString() from?: string;
   @ApiPropertyOptional({ type: String, format: 'date-time' }) @IsOptional() @IsDateString() to?: string;
   @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() personId?: string;
+  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() professionalId?: string;
   @ApiPropertyOptional({ enum: ['YES', 'NO'], description: 'When YES, returns past SCHEDULED appointments awaiting manual correction.' })
   @IsOptional() @IsIn(['YES', 'NO']) pendingPastScheduled?: 'YES' | 'NO';
 }
@@ -294,4 +300,21 @@ export class FinalizeTreatmentDto {
   @ApiProperty({ type: String, format: 'date' }) @IsDateString({ strict: true }) finishDate!: string;
   @ApiPropertyOptional({ enum: TreatmentFinishReason, type: String }) @IsOptional() @IsEnum(TreatmentFinishReason) finishReason?: TreatmentFinishReason;
   @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() conclusion?: string;
+}
+
+export class SalaSafeIndicationProfessionalDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: String }) firstName!: string;
+  @ApiProperty({ type: String }) lastName!: string;
+}
+export class SalaSafeClinicalIndicationDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ enum: TrainingCondition }) trainingCondition!: TrainingCondition;
+  @ApiProperty({ type: String, nullable: true }) affectedArea!: string | null;
+  @ApiProperty({ type: String, nullable: true }) instructions!: string | null;
+  @ApiProperty({ type: String, format: 'date-time' }) lastUpdate!: string;
+  @ApiProperty({ type: () => SalaSafeIndicationProfessionalDto }) responsibleProfessional!: SalaSafeIndicationProfessionalDto;
+}
+export class SalaSafeClinicalIndicationListEnvelopeDto {
+  @ApiProperty({ type: () => [SalaSafeClinicalIndicationDto] }) data!: SalaSafeClinicalIndicationDto[];
 }

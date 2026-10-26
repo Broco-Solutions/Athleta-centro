@@ -256,22 +256,7 @@ No representan timestamps independientes.
 
 ## 13. MonthYear
 
-Para conceptos mensuales se almacenarán columnas separadas.
-
-Ejemplo `SalaPayment`:
-
-```text
-year
-month
-```
-
-Con:
-
-```text
-CHECK (month BETWEEN 1 AND 12)
-```
-
-No utilizar una fecha ficticia para representar Mes/Año.
+Para conceptos financieros mensuales se mantienen year/month con CHECK del mes. SalaPayment conserva esas columnas únicamente como metadata legacy/compatibilidad, derivadas de paidAt; el acceso utiliza cobertura DATE.
 
 ---
 
@@ -611,6 +596,17 @@ ENDED  = endDate IS NOT NULL
 
 ---
 
+### Objetivo de Sala
+
+`SalaParticipation.objective` es nullable, `VARCHAR(500)`, breve y opcional.
+Pertenece a la participación concreta, no a `Person`, y es una referencia interna
+de entrenamiento sin contenido clínico. El texto se guarda con `trim()`; vacío o
+sólo espacios se normaliza a `NULL`. No tiene historial de modificaciones.
+
+La baja conserva el Objetivo en la participación histórica. El reingreso crea
+una participación nueva con `objective = NULL`, sin copiar el Objetivo anterior.
+La migración `20261014143000_sala_student_follow_up` agrega únicamente esta columna.
+
 ## 35. Una participación activa
 
 PostgreSQL deberá impedir más de una participación activa para la misma Persona.
@@ -730,6 +726,27 @@ La estrategia final de snapshot del ejercicio depende de la definición funciona
 
 ---
 
+### RoutineTemplate → RoutineTemplateDay → RoutineTemplateExercise (SAL-RUT-10)
+
+`RoutineTemplate` es un aggregate independiente, global y compartido por Athleta.
+No pertenece a una Persona ni a un Profesor. Contiene `id`, `name` obligatorio
+(`VarChar(120)`, sin unicidad), `createdAt`, `updatedAt` y días.
+
+`RoutineTemplateDay` contiene `routineTemplateId`, `position`, nombre opcional y
+Ejercicios; tiene unicidad `(routineTemplateId, position)`.
+`RoutineTemplateExercise` contiene `routineTemplateDayId`, `exerciseDefinitionId`,
+`position` y los mismos campos opcionales de `RoutineExercise`: Series,
+Repeticiones o Tiempo, Carga, Descanso (80 caracteres) y Observaciones (500).
+Tiene unicidad `(routineTemplateDayId, position)` y FK `RESTRICT` al catálogo de
+Ejercicios. Los hijos se eliminan en cascada junto con la preestablecida.
+
+Al asignar se copia el contenido: no queda vínculo ni FK entre `Routine` y
+`RoutineTemplate`. Las Rutinas de Alumno continúan usando
+`Routine → RoutineDay → RoutineExercise` y el lifecycle `ACTIVE/HISTORICAL`.
+Editar o eliminar la preestablecida no altera las Rutinas ya asignadas.
+
+---
+
 ## 41. FixedSalaBooking
 
 No tendrá enum de estado.
@@ -840,7 +857,7 @@ lastModifiedBy
 lastModifiedAt
 ```
 
-Se utiliza materialización lazy: los bookings proyectan `RESERVED` para la fecha consultada y solo se persiste la ocurrencia concreta cuando existe una operación explícita. La DB garantiza unicidad por `personId + scheduleSlotId + date`, FKs históricas `RESTRICT` y coherencia entre `origin` y la referencia de booking mediante `CHECK`.
+Se utiliza materialización lazy: las reservas proyectan `RESERVED` o, para Turnos fijos sin cobertura válida en su fecha, `PENDING_PAYMENT`. La cancelación por impago se persiste al llegar la hora de inicio. La DB garantiza unicidad de ocurrencia por booking de origen y fecha; una Persona puede tener varias actividades no superpuestas en la misma fecha y ventana. Las Reservas puntuales activas son únicas por Persona, ventana, fecha e inicio. Se mantienen FKs históricas `RESTRICT` y coherencia entre `origin` y la referencia de booking mediante `CHECK`.
 
 ---
 
@@ -1398,30 +1415,33 @@ No se implementará una tabla universal de idempotencia inicialmente.
 
 ## 77. SalaPayment
 
-Campos conceptuales:
+Campos: personId, paidAt DATE, amount DECIMAL(14,0), paymentMethodId,
+registeredById, operationId UNIQUE, adjustmentReason, coverageStartDate DATE NOT NULL,
+coverageEndDate DATE NOT NULL, planId UUID nullable FK RESTRICT a SalaPlan,
+planNameSnapshot VARCHAR(120) nullable. CHECK coverage_start_date <= coverage_end_date.
+Índice (personId, coverageStartDate, coverageEndDate).
 
-```text
-id
-personId
-year
-month
-amount
-paymentMethodId
-paidAt/cashDate
-registeredById
-operationId?
-adjustmentReason?
-createdAt
-updatedAt
-```
+year/month son metadata legacy, derivadas de paidAt, sin unicidad funcional.
+No se infiere Plan histórico a partir del Plan operativo actual.
 
-Constraint principal:
+Cada Pago / renovación de Sala otorga un mes calendario, con extremos incluidos.
+Sin cobertura en la Fecha de cobro, comienza en `paidAt` y termina un mes después.
+Si la Fecha de cobro está cubierta, se recorre toda la cadena continua no revertida
+(coberturas contiguas o solapadas): el nuevo tramo comienza al día siguiente de su
+final y termina un mes calendario después de ese final. Se suma el mes en DateOnly/UTC,
+con clamp al último día real del mes destino (31/01/2026 → 28/02/2026;
+31/01/2028 → 29/02/2028; 28/02/2026 → 28/03/2026).
+No hay gracia ni vencimiento mensual fijo. Se permiten varios Pagos en un mismo mes.
+La reversión invalida su cobertura sin reescribir coberturas posteriores.
+`operationId` es la única clave de idempotencia; se serializa por Persona con advisory lock.
+El Plan financiero queda referenciado y su nombre se congela al cobrar; no modifica
+`SalaParticipation.planId` ni `SalaPlanAssignment`. Ingresos financieros se agrupan por `paidAt`.
 
-```text
-UNIQUE(personId, year, month)
-```
-
-bajo el modelo funcional actual.
+La migración 20261019120000_sala_rolling_validity agrega cobertura nullable, procesa
+TODOS los pagos por Persona en orden paid_at/created_at/id (también revertidos),
+y recién después exige NOT NULL. PostgreSQL suma INTERVAL '1 month' con clamp.
+No elimina tablas de cargos, allocations, ajustes o configuración histórica.
+No existe generación automática de cargos mensuales.
 
 ---
 
@@ -1666,7 +1686,7 @@ FixedSalaBooking.personId
 SalaOccurrence.personId + date/startAt
 SalaOccurrence.date/startAt
 Routine.personId + status
-SalaPayment.personId + year + month
+SalaPayment.personId + coverageStartDate + coverageEndDate
 ```
 
 Más los partial unique indexes necesarios.
@@ -1692,7 +1712,7 @@ ClinicalIncome(personId, cashDate)
 ```text
 Expense.cashDate
 ClinicalIncome.cashDate
-SalaPayment year/month
+SalaPayment coverage dates (year/month are legacy metadata)
 ExchangeRate year/month
 ```
 
@@ -1876,7 +1896,7 @@ Deben existir pruebas para invariantes como:
 ```text
 one active SalaParticipation
 one active Routine
-one SalaPayment per Person/Month
+unique SalaPayment operationId
 normalizedEmail unique
 FK restrictions
 Appointment attended creates Attention atomically
@@ -2010,7 +2030,7 @@ Person identity → persons
 current Sala participation → sala_participations where end_date IS NULL
 Treatment status → treatments.status
 Appointment status → clinical_appointments.status
-monthly Sala payment → sala_payments
+Sala payment / renewal → sala_payments
 file location → file_assets.storage_key
 ```
 
@@ -2437,3 +2457,21 @@ Si existe una intervención de emergencia, deberá reconciliarse y documentarse 
 28. Los Read Models no son tablas de verdad.
 29. Las migraciones son versionadas y explícitas.
 30. Las definiciones funcionales pendientes deben permanecer explícitamente bloqueadas.
+
+## Evaluaciones físicas de Sala — cierre 2026-10-14
+
+`PhysicalEvaluation.observation` es texto nullable, opcional e interno de Sala. Los Results son composición de la Evaluación y puede existir más de un Result para el mismo Test, sin unicidad entre evaluación y definición. Un Test retirado continúa referenciado por los Results históricos. `PhysicalTestDefinition.isActive` es el mecanismo técnico de retiro, no un estado funcional visible. La edición modifica la definición actual, sin snapshot de Test. La corrección reemplaza directamente Results y Observación, conservando Fecha y Profesor.
+
+### Catálogos opcionales de Sala — Bloque 5 (2026-10-15)
+
+`ExerciseDefinition.primaryMuscle` es nullable (`VARCHAR(120)`).
+`PhysicalTestDefinition.type` es nullable (`VARCHAR(80)`). La aplicación
+normaliza valores de Músculo principal omitidos, nulos o vacíos a `null`.
+Tipo omitido o nulo se persiste como `null`; un valor informado solo puede ser
+`STRENGTH`, `MOBILITY` u `OTHER`.
+
+La migración `20261015120000_sala_optional_catalog_fields/migration.sql`
+únicamente elimina `NOT NULL` de `exercise_definitions.primary_muscle` y
+`physical_test_definitions.type`, sin backfill ni modificación de registros.
+Las relaciones, nombres e índices únicos existentes se conservan; CAT-04
+permanece pendiente.

@@ -1,6 +1,9 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ClinicalIncomePayer, ExpenseArea, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { isClinicEnabled } from '../config/env';
+
+const financialActorSelect = { id: true, firstName: true, lastName: true } satisfies Prisma.InternalUserSelect;
 
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
 const normalized = (s: string) => s.trim().toLocaleLowerCase('es');
@@ -8,6 +11,10 @@ const money = (s: string) => { if (!/^\d+$/.test(s) || new Prisma.Decimal(s).lte
 const exchange = (s: string) => { if (!/^\d+(\.\d{1,2})?$/.test(s) || new Prisma.Decimal(s).lte(0)) throw new BadRequestException({ code: 'EXCHANGE_RATE_INVALID', message: 'Invalid monthly exchange rate' }); return new Prisma.Decimal(s); };
 const dateOnly = (s: string) => { if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || s > today()) throw new BadRequestException({ code: 'FINANCE_DATE_INVALID', message: 'Date cannot be in the future' }); return new Date(`${s}T00:00:00.000Z`); };
 const serialize = <T extends { amount: Prisma.Decimal }>(x: T) => ({ ...x, amount: x.amount.toString() });
+const serializeExpense = <T extends { amount: Prisma.Decimal; areaCatalog: { id: string; name: string; systemCode: ExpenseArea | null } }>(x: T) => {
+  const { areaCatalog, ...expense } = x;
+  return { ...serialize(expense), areaId: areaCatalog.id, areaName: areaCatalog.name, areaSystemCode: areaCatalog.systemCode };
+};
 
 @Injectable()
 export class FinanceCatalogService {
@@ -19,13 +26,71 @@ export class FinanceCatalogService {
   listCategories() { return this.prisma.expenseCategory.findMany({ orderBy: { name: 'asc' } }); }
   async createCategory(name: string) { const value = name.trim(); if (!value) throw new BadRequestException({ code: 'EXPENSE_CATEGORY_NAME_REQUIRED', message: 'Name is required' }); try { return await this.prisma.expenseCategory.create({ data: { name: value, normalizedName: normalized(value) } }); } catch (e) { if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw new ConflictException({ code: 'EXPENSE_CATEGORY_DUPLICATE', message: 'A category with that name already exists' }); throw e; } }
   async updateCategory(id: string, name: string, isSelectable?: boolean) { try { return await this.prisma.expenseCategory.update({ where: { id }, data: { name: name.trim(), normalizedName: normalized(name), ...(isSelectable === undefined ? {} : { isSelectable }) } }); } catch (e) { if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw new ConflictException({ code: 'EXPENSE_CATEGORY_DUPLICATE', message: 'A category with that name already exists' }); throw new NotFoundException({ code: 'EXPENSE_CATEGORY_NOT_FOUND', message: 'Expense category not found' }); } }
-  async createExpense(input: { cashDate: string; amount: string; categoryId: string; paymentMethodId: string; area: ExpenseArea; description?: string; operationId: string; registeredById: string }) { const old = await this.prisma.expense.findUnique({ where: { operationId: input.operationId, registeredById: input.registeredById }, include: { category: true, paymentMethod: true } }); if (old) return serialize(old); const category = await this.prisma.expenseCategory.findFirst({ where: { id: input.categoryId, isSelectable: true } }); if (!category) throw new BadRequestException({ code: 'EXPENSE_CATEGORY_NOT_AVAILABLE', message: 'Selected category is not available' }); const method = await this.prisma.paymentMethod.findFirst({ where: { id: input.paymentMethodId, isSelectable: true } }); if (!method) throw new BadRequestException({ code: 'PAYMENT_METHOD_NOT_AVAILABLE', message: 'Selected payment method is not available' }); try { return serialize(await this.prisma.expense.create({ data: { cashDate: dateOnly(input.cashDate), amount: money(input.amount), categoryId: category.id, paymentMethodId: method.id, area: input.area, description: input.description?.trim() || null, operationId: input.operationId, registeredById: input.registeredById }, include: { category: true, paymentMethod: true } })); } catch (e) { if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') { const row = await this.prisma.expense.findUnique({ where: { operationId: input.operationId }, include: { category: true, paymentMethod: true } }); if (row) return serialize(row); } throw e; } }
-  listExpenses(f: { from?: string; to?: string; area?: ExpenseArea; categoryId?: string; paymentMethodId?: string }) { return this.prisma.expense.findMany({ where: { ...(f.from || f.to ? { cashDate: { ...(f.from ? { gte: new Date(`${f.from}T00:00:00Z`) } : {}), ...(f.to ? { lte: new Date(`${f.to}T00:00:00Z`) } : {}) } } : {}), ...(f.area ? { area: f.area } : {}), ...(f.categoryId ? { categoryId: f.categoryId } : {}), ...(f.paymentMethodId ? { paymentMethodId: f.paymentMethodId } : {}) }, include: { category: true, paymentMethod: true }, orderBy: { cashDate: 'desc' } }).then(rows => rows.map(serialize)); }
-  async deleteExpense(id: string) { try { await this.prisma.expense.delete({ where: { id } }); } catch { throw new NotFoundException({ code: 'EXPENSE_NOT_FOUND', message: 'Expense not found' }); } }
+  async listExpenseAreas() {
+    const rows = await this.prisma.expenseAreaCatalog.findMany({ where: isClinicEnabled() ? {} : { OR: [{ systemCode: { not: ExpenseArea.CLINIC } }, { systemCode: null }] }, orderBy: { name: 'asc' } });
+    return rows.map(area => ({ ...area, isSelectable: area.isSelectable && (area.systemCode !== ExpenseArea.CLINIC || isClinicEnabled()) }));
+  }
+  async createExpenseArea(name: string) {
+    const value = name.trim();
+    if (!value) throw new BadRequestException({ code: 'EXPENSE_AREA_NAME_REQUIRED', message: 'Ingresá un nombre para el área.' });
+    try { return await this.prisma.expenseAreaCatalog.create({ data: { name: value, normalizedName: normalized(value) } }); }
+    catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'EXPENSE_AREA_DUPLICATE', message: 'Ya existe un área con ese nombre.' }); throw error; }
+  }
+  async updateExpenseArea(id: string, name?: string, isSelectable?: boolean) {
+    if (name === undefined && isSelectable === undefined) throw new BadRequestException({ code: 'EXPENSE_AREA_UPDATE_REQUIRED', message: 'Indicá un nombre o un estado para actualizar el área.' });
+    const existing = await this.prisma.expenseAreaCatalog.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException({ code: 'EXPENSE_AREA_NOT_FOUND', message: 'No encontramos el área.' });
+    if (existing.systemCode) throw new BadRequestException({ code: 'EXPENSE_AREA_BASE_IMMUTABLE', message: 'Las áreas base no se pueden modificar.' });
+    if (name !== undefined && !name.trim()) throw new BadRequestException({ code: 'EXPENSE_AREA_NAME_REQUIRED', message: 'Ingresá un nombre para el área.' });
+    try {
+      return await this.prisma.expenseAreaCatalog.update({ where: { id }, data: { ...(name === undefined ? {} : { name: name.trim(), normalizedName: normalized(name) }), ...(isSelectable === undefined ? {} : { isSelectable }) } });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'EXPENSE_AREA_DUPLICATE', message: 'Ya existe un área con ese nombre.' });
+      throw error;
+    }
+  }
+  async createExpense(input: { cashDate: string; amount: string; categoryId: string; paymentMethodId: string; areaId: string; description?: string; operationId: string; registeredById: string }) {
+    const old = await this.prisma.expense.findUnique({ where: { operationId: input.operationId, registeredById: input.registeredById }, include: { category: true, paymentMethod: true, areaCatalog: true } });
+    if (old) return serializeExpense(old);
+    const area = await this.prisma.expenseAreaCatalog.findUnique({ where: { id: input.areaId } });
+    if (!area) throw new BadRequestException({ code: 'EXPENSE_AREA_NOT_FOUND', message: 'El área seleccionada no existe.' });
+    if (area.systemCode === ExpenseArea.CLINIC && !isClinicEnabled()) throw new NotFoundException({ code: 'CLINIC_UNAVAILABLE', message: 'Not found' });
+    if (!area.isSelectable) throw new BadRequestException({ code: 'EXPENSE_AREA_NOT_AVAILABLE', message: 'El área seleccionada está inactiva.' });
+    const category = await this.prisma.expenseCategory.findFirst({ where: { id: input.categoryId, isSelectable: true } });
+    if (!category) throw new BadRequestException({ code: 'EXPENSE_CATEGORY_NOT_AVAILABLE', message: 'Selected category is not available' });
+    const method = await this.prisma.paymentMethod.findFirst({ where: { id: input.paymentMethodId, isSelectable: true } });
+    if (!method) throw new BadRequestException({ code: 'PAYMENT_METHOD_NOT_AVAILABLE', message: 'Selected payment method is not available' });
+    try {
+      return serializeExpense(await this.prisma.expense.create({ data: { cashDate: dateOnly(input.cashDate), amount: money(input.amount), categoryId: category.id, paymentMethodId: method.id, areaId: area.id, description: input.description?.trim() || null, operationId: input.operationId, registeredById: input.registeredById }, include: { category: true, paymentMethod: true, areaCatalog: true } }));
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const row = await this.prisma.expense.findUnique({ where: { operationId: input.operationId }, include: { category: true, paymentMethod: true, areaCatalog: true } });
+        if (row) return serializeExpense(row);
+      }
+      throw error;
+    }
+  }
+  async listExpenses(f: { from?: string; to?: string; areaId?: string; categoryId?: string; paymentMethodId?: string }) {
+    if (!isClinicEnabled() && f.areaId) {
+      const selectedArea = await this.prisma.expenseAreaCatalog.findUnique({ where: { id: f.areaId }, select: { systemCode: true } });
+      if (selectedArea?.systemCode === ExpenseArea.CLINIC) return [];
+    }
+    const rows = await this.prisma.expense.findMany({ where: {
+      ...(f.from || f.to ? { cashDate: { ...(f.from ? { gte: new Date(`${f.from}T00:00:00Z`) } : {}), ...(f.to ? { lte: new Date(`${f.to}T00:00:00Z`) } : {}) } } : {}),
+      ...(f.areaId ? { areaId: f.areaId } : !isClinicEnabled() ? { areaCatalog: { isNot: { systemCode: ExpenseArea.CLINIC } } } : {}),
+      ...(f.categoryId ? { categoryId: f.categoryId } : {}), ...(f.paymentMethodId ? { paymentMethodId: f.paymentMethodId } : {}),
+    }, include: { category: true, paymentMethod: true, areaCatalog: true }, orderBy: { cashDate: 'desc' } });
+    return rows.map(serializeExpense);
+  }
+  async deleteExpense(id: string) {
+    const existing = await this.prisma.expense.findUnique({ where: { id }, include: { areaCatalog: true } });
+    if (!existing || (!isClinicEnabled() && existing.areaCatalog.systemCode === ExpenseArea.CLINIC)) throw new NotFoundException({ code: 'EXPENSE_NOT_FOUND', message: 'Expense not found' });
+    return this.prisma.expense.delete({ where: { id } });
+  }
   async createClinicalIncome(input: { personId: string; cashDate: string; amount: string; paymentMethodId: string; payer: ClinicalIncomePayer; socialWorkId?: string; attentionId?: string; socialWorkOrderId?: string; observation?: string; operationId: string; registeredById: string }) { const old = await this.prisma.clinicalIncome.findUnique({ where: { operationId: input.operationId } }); if (old) return serialize(old); if (!(await this.prisma.clinicalPatient.findUnique({ where: { personId: input.personId } }))) throw new BadRequestException({ code: 'CLINIC_PATIENT_REQUIRED', message: 'Patient registration required' }); const method = await this.prisma.paymentMethod.findFirst({ where: { id: input.paymentMethodId, isSelectable: true } }); if (!method) throw new BadRequestException({ code: 'PAYMENT_METHOD_NOT_AVAILABLE', message: 'Selected payment method is not available' }); if (input.payer === ClinicalIncomePayer.SOCIAL_WORK && !input.socialWorkId) throw new BadRequestException({ code: 'SOCIAL_WORK_REQUIRED', message: 'Social work payer is required' }); if (input.payer === ClinicalIncomePayer.PATIENT && input.socialWorkId) throw new BadRequestException({ code: 'SOCIAL_WORK_NOT_ALLOWED', message: 'Patient payer cannot include social work' }); if (input.socialWorkId && !(await this.prisma.socialWork.findFirst({ where: { id: input.socialWorkId, isSelectable: true } }))) throw new BadRequestException({ code: 'SOCIAL_WORK_NOT_AVAILABLE', message: 'Selected social work is not available' }); if (input.attentionId) { const a = await this.prisma.clinicalAttention.findUnique({ where: { id: input.attentionId } }); if (!a || a.personId !== input.personId) throw new BadRequestException({ code: 'INCOME_ATTENTION_PERSON_MISMATCH', message: 'Attention does not belong to patient' }); } if (input.socialWorkOrderId) { const o = await this.prisma.socialWorkOrder.findUnique({ where: { id: input.socialWorkOrderId } }); if (!o || o.personId !== input.personId) throw new BadRequestException({ code: 'INCOME_ORDER_PERSON_MISMATCH', message: 'Order does not belong to patient' }); if (input.payer !== ClinicalIncomePayer.SOCIAL_WORK || input.socialWorkId !== o.socialWorkId) throw new BadRequestException({ code: 'INCOME_ORDER_PAYER_MISMATCH', message: 'Payer must match order social work' }); } return serialize(await this.prisma.clinicalIncome.create({ data: { personId: input.personId, cashDate: dateOnly(input.cashDate), amount: money(input.amount), paymentMethodId: method.id, payer: input.payer, socialWorkId: input.socialWorkId || null, attentionId: input.attentionId || null, socialWorkOrderId: input.socialWorkOrderId || null, observation: input.observation?.trim() || null, operationId: input.operationId, registeredById: input.registeredById }, include: { paymentMethod: true, socialWork: true } })); }
   listClinicalIncomes(f: { personId?: string; from?: string; to?: string; paymentMethodId?: string }) { return this.prisma.clinicalIncome.findMany({ where: { ...(f.personId ? { personId: f.personId } : {}), ...(f.from || f.to ? { cashDate: { ...(f.from ? { gte: new Date(`${f.from}T00:00:00Z`) } : {}), ...(f.to ? { lte: new Date(`${f.to}T00:00:00Z`) } : {}) } } : {}), ...(f.paymentMethodId ? { paymentMethodId: f.paymentMethodId } : {}) }, include: { person: { select: { id: true, firstName: true, lastName: true, dni: true } }, paymentMethod: true, socialWork: true }, orderBy: { cashDate: 'desc' } }).then(rows => rows.map(serialize)); }
   async deleteClinicalIncome(id: string) { try { await this.prisma.clinicalIncome.delete({ where: { id } }); } catch { throw new NotFoundException({ code: 'CLINICAL_INCOME_NOT_FOUND', message: 'Clinical income not found' }); } }
-  async unifiedIncome(f: { from?: string; to?: string; area?: string; personId?: string; paymentMethodId?: string }) { const [sala, clinic] = await Promise.all([f.area === 'CLINIC' ? [] : this.prisma.salaPayment.findMany({ where: { ...(f.personId ? { personId: f.personId } : {}), ...(f.from || f.to ? { paidAt: { ...(f.from ? { gte: new Date(`${f.from}T00:00:00Z`) } : {}), ...(f.to ? { lte: new Date(`${f.to}T00:00:00Z`) } : {}) } } : {}), ...(f.paymentMethodId ? { paymentMethodId: f.paymentMethodId } : {}) }, include: { person: { select: { id: true, firstName: true, lastName: true, dni: true } }, paymentMethod: true } }), f.area === 'SALA' ? [] : this.prisma.clinicalIncome.findMany({ where: { ...(f.personId ? { personId: f.personId } : {}), ...(f.from || f.to ? { cashDate: { ...(f.from ? { gte: new Date(`${f.from}T00:00:00Z`) } : {}), ...(f.to ? { lte: new Date(`${f.to}T00:00:00Z`) } : {}) } } : {}), ...(f.paymentMethodId ? { paymentMethodId: f.paymentMethodId } : {}) }, include: { person: { select: { id: true, firstName: true, lastName: true, dni: true } }, paymentMethod: true } })]); return [...sala.map(x => ({ id: x.id, source: 'SALA', cashDate: x.paidAt, amount: x.amount.toString(), person: x.person, paymentMethod: x.paymentMethod })), ...clinic.map(x => ({ id: x.id, source: 'CLINIC', cashDate: x.cashDate, amount: x.amount.toString(), person: x.person, paymentMethod: x.paymentMethod }))].sort((a, b) => +new Date(b.cashDate) - +new Date(a.cashDate)); }
+  async unifiedIncome(f: { from?: string; to?: string; area?: string; personId?: string; paymentMethodId?: string }) { const [sala, clinic] = await Promise.all([f.area === 'CLINIC' && !isClinicEnabled() ? [] : f.area === 'CLINIC' ? [] : this.prisma.salaPayment.findMany({ where: { reversal: null, ...(f.personId ? { personId: f.personId } : {}), ...(f.from || f.to ? { paidAt: { ...(f.from ? { gte: new Date(`${f.from}T00:00:00Z`) } : {}), ...(f.to ? { lte: new Date(`${f.to}T00:00:00Z`) } : {}) } } : {}), ...(f.paymentMethodId ? { paymentMethodId: f.paymentMethodId } : {}) }, include: { person: { select: { id: true, firstName: true, lastName: true, dni: true } }, paymentMethod: true, registeredBy: { select: financialActorSelect } } }), !isClinicEnabled() || f.area === 'SALA' ? [] : this.prisma.clinicalIncome.findMany({ where: { ...(f.personId ? { personId: f.personId } : {}), ...(f.from || f.to ? { cashDate: { ...(f.from ? { gte: new Date(`${f.from}T00:00:00Z`) } : {}), ...(f.to ? { lte: new Date(`${f.to}T00:00:00Z`) } : {}) } } : {}), ...(f.paymentMethodId ? { paymentMethodId: f.paymentMethodId } : {}) }, include: { person: { select: { id: true, firstName: true, lastName: true, dni: true } }, paymentMethod: true, registeredBy: { select: financialActorSelect } } })]); return [...sala.map(x => ({ id: x.id, source: 'SALA', cashDate: x.paidAt, amount: x.amount.toString(), person: x.person, paymentMethod: x.paymentMethod, registeredBy: x.registeredBy })), ...clinic.map(x => ({ id: x.id, source: 'CLINIC', cashDate: x.cashDate, amount: x.amount.toString(), person: x.person, paymentMethod: x.paymentMethod, registeredBy: x.registeredBy }))].sort((a, b) => +new Date(b.cashDate) - +new Date(a.cashDate)); }
   async totals(f: { from?: string; to?: string }) { const income = await this.unifiedIncome(f); const expense = await this.listExpenses(f); const sum = (xs: Array<{ amount: string }>) => xs.reduce((n, x) => n.plus(x.amount), new Prisma.Decimal(0)); const i = sum(income); const e = sum(expense); return { salaIncome: sum(income.filter(x => x.source === 'SALA')).toString(), clinicalIncome: sum(income.filter(x => x.source === 'CLINIC')).toString(), totalIncome: i.toString(), expenses: e.toString(), net: i.minus(e).toString() }; }
   listExchangeRates() { return this.prisma.exchangeRate.findMany({ orderBy: [{ year: 'desc' }, { month: 'desc' }] }); }
   async upsertExchangeRate(year: number, month: number, rate: string) { const value = exchange(rate); if (month < 1 || month > 12 || value.decimalPlaces() > 2) throw new BadRequestException({ code: 'EXCHANGE_RATE_INVALID', message: 'Invalid monthly exchange rate' }); return this.prisma.exchangeRate.upsert({ where: { year_month: { year, month } }, create: { year, month, rate: value }, update: { rate: value } }); }

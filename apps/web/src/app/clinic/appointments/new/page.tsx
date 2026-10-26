@@ -72,9 +72,9 @@ function AppointmentForm(): React.JSX.Element {
   });
 
   return (
-    <WorkspaceShell active="Clínica">
+    <WorkspaceShell active="clinic">
       <main className="mx-auto max-w-2xl space-y-5 p-4 md:p-6">
-        <nav aria-label="Breadcrumb" className="text-sm text-muted-foreground"><Link href={`/clinic?personId=${presetPersonId}`} className="underline">Clínica</Link> / Agendar Turno</nav>
+        <nav aria-label="Breadcrumb" className="text-sm text-muted-foreground"><Link href={presetPersonId ? `/clinic?tab=Agenda&personId=${presetPersonId}` : "/clinic?tab=Agenda"} className="underline">Clínica</Link> / Agendar Turno</nav>
         <div>
           <p className="text-sm text-muted-foreground">Agenda Clínica</p>
           <h1 className="text-2xl font-semibold">Agendar Turno clínico</h1>
@@ -113,7 +113,7 @@ function AppointmentForm(): React.JSX.Element {
           </label>
           {patients.isError || professionals.isError ? <p role="alert" className="text-sm text-red-700">No pudimos cargar Pacientes o profesionales.</p> : null}
           {mutation.isError ? <p role="alert" className="text-sm text-red-700">{mutationError(mutation.error)}</p> : null}
-          {createdNotice ? <div aria-live="polite" className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p>{createdNotice.message}</p><Link className="mt-2 inline-block font-semibold underline" href={`/clinic?personId=${createdNotice.personId}`}>Volver a la agenda</Link></div> : null}
+          {createdNotice ? <div aria-live="polite" className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p>{createdNotice.message}</p><Link className="mt-2 inline-block font-semibold underline" href={`/clinic?tab=Agenda&personId=${createdNotice.personId}`}>Volver a la agenda</Link></div> : null}
           <button type="submit" disabled={mutation.isPending || patients.isLoading || professionals.isLoading} className="rounded-md bg-[#FCCC05] px-4 py-2.5 font-semibold text-black disabled:opacity-50">
             {mutation.isPending ? 'Guardando…' : 'Guardar Turno'}
           </button>

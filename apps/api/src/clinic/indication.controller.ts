@@ -1,8 +1,8 @@
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { PermissionsGuard, RequirePermissions } from '../auth/permissions.guard';
 import { IndicationService } from './indication.service';
-import { SalaClinicalIndicationDto } from './clinic.dto';
+import { SalaClinicalIndicationDto, SalaSafeClinicalIndicationListEnvelopeDto } from './clinic.dto';
 
 @ApiTags('Clinic Sala Indications')
 @Controller()
@@ -14,7 +14,7 @@ export class IndicationController {
   async create(@Body() body: SalaClinicalIndicationDto, @Req() request: { athletaUserId?: string }) { return { data: await this.indications.create(this.actor(request), body) }; }
   @Get('clinic/indications') @ApiOperation({ operationId: 'listSalaClinicalIndications' }) @ApiQuery({ name: 'personId', required: true, type: String, format: 'uuid' }) @RequirePermissions('CLINICAL_HISTORY_READ')
   async full(@Query('personId') personId: string) { return { data: await this.indications.listFull(personId) }; }
-  @Get('sala/people/:personId/clinical-indications') @ApiOperation({ operationId: 'getSalaClinicalIndicationProjection' }) @ApiParam({ name: 'personId', type: String }) @RequirePermissions('SALA_CLINICAL_INDICATION_READ')
+  @Get('sala/people/:personId/clinical-indications') @ApiOkResponse({ type: SalaSafeClinicalIndicationListEnvelopeDto }) @ApiOperation({ operationId: 'getSalaClinicalIndicationProjection' }) @ApiParam({ name: 'personId', type: String }) @RequirePermissions('SALA_CLINICAL_INDICATION_READ')
   async safe(@Param('personId') personId: string) { return { data: await this.indications.safe(personId) }; }
   @Post('clinic/indications/:id/close') @ApiOperation({ operationId: 'closeSalaClinicalIndication' }) @ApiParam({ name: 'id', type: String }) @RequirePermissions('SALA_CLINICAL_INDICATION_CLOSE')
   async close(@Param('id') id: string, @Req() request: { athletaUserId?: string }) { return { data: await this.indications.close(id, this.actor(request)) }; }

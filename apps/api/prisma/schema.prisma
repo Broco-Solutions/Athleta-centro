@@ -56,6 +56,7 @@ model InternalUser {
   clinicalIncomesRegistered      ClinicalIncome[]
   clinicalAppointments           ClinicalAppointment[]      @relation("ClinicalAppointmentProfessional")
   registeredPatients             ClinicalPatient[]
+  paperHealthDeclarations        PaperHealthDeclaration[]
   clinicalAttentions             ClinicalAttention[]
   treatments                     Treatment[]
   evolutionsAuthored             Evolution[]                @relation("EvolutionAuthor")
@@ -210,6 +211,8 @@ model Person {
   birthDate               DateTime                 @map("birth_date") @db.Date
   email                   String?
   normalizedEmail         String?                  @map("normalized_email")
+  sport                   String?
+  club                    String?
   emergencyContactName    String?                  @map("emergency_contact_name")
   emergencyContactPhone   String?                  @map("emergency_contact_phone")
   socialWorkId            String?                  @map("social_work_id") @db.Uuid
@@ -223,6 +226,8 @@ model Person {
   reservations            OneOffReservation[]
   salaOccurrences         SalaOccurrence[]
   routines                Routine[]
+  healthDeclarations      HealthDeclaration[]
+  paperHealthDeclarations PaperHealthDeclaration[]
   physicalEvaluations     PhysicalEvaluation[]
   salaPayments            SalaPayment[]
   salaCharges             SalaCharge[]
@@ -240,6 +245,8 @@ model Person {
   @@index([lastName, firstName])
   @@index([normalizedEmail])
   @@map("people")
+  trainingRecords SalaTrainingRecord[]
+
 }
 
 model ClinicalPatient {
@@ -563,6 +570,7 @@ model SalaConfiguration {
 }
 
 model SalaPlan {
+  weeklySessions Int? @map("weekly_sessions")
   id             String               @id @default(uuid()) @db.Uuid
   name           String
   monthlyAmount  Decimal              @map("monthly_amount") @db.Decimal(14, 0)
@@ -572,11 +580,25 @@ model SalaPlan {
   participations SalaParticipation[]
   assignments    SalaPlanAssignment[]
   charges        SalaCharge[]
+  payments       SalaPayment[]
+  services       SalaPlanService[]
 
   @@map("sala_plans")
 }
 
+model SalaPlanService {
+  planId        String          @map("plan_id") @db.Uuid
+  serviceTypeId String          @map("service_type_id") @db.Uuid
+  plan          SalaPlan        @relation(fields: [planId], references: [id], onDelete: Cascade)
+  serviceType   SalaServiceType @relation(fields: [serviceTypeId], references: [id], onDelete: Cascade)
+
+  @@id([planId, serviceTypeId])
+  @@index([serviceTypeId])
+  @@map("sala_plan_services")
+}
+
 model SalaParticipation {
+  objective           String?              @db.VarChar(500)
   id                  String               @id @default(uuid()) @db.Uuid
   personId            String               @map("person_id") @db.Uuid
   mainProfessorId     String               @map("main_professor_id") @db.Uuid
@@ -625,6 +647,8 @@ model SalaServiceType {
   updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
   fixedBookings   FixedSalaBooking[]
   reservations    OneOffReservation[]
+  plans           SalaPlanService[]
+  occurrences     SalaOccurrence[]
 
   @@map("sala_service_types")
 }
@@ -632,15 +656,57 @@ model SalaServiceType {
 model ExerciseDefinition {
   id               String            @id @default(uuid()) @db.Uuid
   name             String            @db.VarChar(120)
-  primaryMuscle    String            @map("primary_muscle") @db.VarChar(120)
+  primaryMuscle    String?           @map("primary_muscle") @db.VarChar(120)
   description      String?           @db.VarChar(500)
   isActive         Boolean           @default(true) @map("is_active")
   createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
   routineExercises RoutineExercise[]
+  routineTemplateExercises RoutineTemplateExercise[]
 
   @@unique([name])
   @@map("exercise_definitions")
+}
+
+model RoutineTemplate {
+  id        String               @id @default(uuid()) @db.Uuid
+  name      String               @db.VarChar(120)
+  createdAt DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  days      RoutineTemplateDay[]
+
+  @@map("routine_templates")
+}
+
+model RoutineTemplateDay {
+  id                String                    @id @default(uuid()) @db.Uuid
+  routineTemplateId String                    @map("routine_template_id") @db.Uuid
+  position          Int
+  name              String?                   @db.VarChar(120)
+  routineTemplate   RoutineTemplate           @relation(fields: [routineTemplateId], references: [id], onDelete: Cascade)
+  exercises         RoutineTemplateExercise[]
+
+  @@unique([routineTemplateId, position])
+  @@map("routine_template_days")
+}
+
+model RoutineTemplateExercise {
+  id                   String             @id @default(uuid()) @db.Uuid
+  routineTemplateDayId  String             @map("routine_template_day_id") @db.Uuid
+  exerciseDefinitionId String             @map("exercise_definition_id") @db.Uuid
+  position             Int
+  series               String?            @db.VarChar(80)
+  repetitions          String?            @db.VarChar(80)
+  duration             String?            @db.VarChar(80)
+  load                 String?            @db.VarChar(80)
+  rest                 String?            @db.VarChar(80)
+  notes                String?            @db.VarChar(500)
+  routineTemplateDay   RoutineTemplateDay @relation(fields: [routineTemplateDayId], references: [id], onDelete: Cascade)
+  exerciseDefinition   ExerciseDefinition @relation(fields: [exerciseDefinitionId], references: [id], onDelete: Restrict)
+
+  @@unique([routineTemplateDayId, position])
+  @@index([exerciseDefinitionId])
+  @@map("routine_template_exercises")
 }
 
 model Routine {
@@ -658,6 +724,8 @@ model Routine {
   @@unique([personId, version])
   @@index([salaParticipationId])
   @@map("routines")
+  trainingRecords SalaTrainingRecord[]
+
 }
 
 model RoutineDay {
@@ -694,7 +762,7 @@ model RoutineExercise {
 model PhysicalTestDefinition {
   id          String               @id @default(uuid()) @db.Uuid
   name        String               @db.VarChar(120)
-  type        String               @db.VarChar(80)
+  type        String?              @db.VarChar(80)
   description String?              @db.VarChar(500)
   isActive    Boolean              @default(true) @map("is_active")
   createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -711,6 +779,7 @@ model PhysicalEvaluation {
   salaParticipationId String               @map("sala_participation_id") @db.Uuid
   professorId         String               @map("professor_id") @db.Uuid
   evaluationDate      DateTime             @map("evaluation_date") @db.Date
+  observation         String?
   createdBy           String               @map("created_by") @db.Uuid
   createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -797,7 +866,7 @@ model OneOffReservation {
   serviceType            SalaServiceType?  @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
   occurrences            SalaOccurrence[]
 
-  @@unique([personId, scheduleSlotId, date])
+  @@index([personId, date])
   @@index([date, scheduleSlotId])
   @@index([serviceTypeId])
   @@map("one_off_reservations")
@@ -809,23 +878,29 @@ model SalaOccurrence {
   scheduleSlotId      String               @map("schedule_slot_id") @db.Uuid
   date                DateTime             @db.Date
   startTime           DateTime?            @map("start_time") @db.Time(0)
+  serviceTypeId       String?              @map("service_type_id") @db.Uuid
+  serviceDurationMinutes Int?               @map("service_duration_minutes")
+  serviceType         SalaServiceType?     @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
   origin              SalaOccurrenceOrigin
   status              SalaOccurrenceStatus
   fixedSalaBookingId  String?              @map("fixed_sala_booking_id") @db.Uuid
   oneOffReservationId String?              @map("one_off_reservation_id") @db.Uuid
-  createdBy           String               @map("created_by") @db.Uuid
+  createdBy           String?              @map("created_by") @db.Uuid
   createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   lastModifiedAt      DateTime             @updatedAt @map("last_modified_at") @db.Timestamptz(6)
-  lastModifiedBy      String               @map("last_modified_by") @db.Uuid
+  lastModifiedBy      String?              @map("last_modified_by") @db.Uuid
+  cancelledForNonPaymentAt DateTime?       @map("cancelled_for_non_payment_at") @db.Timestamptz(6)
   person              Person               @relation(fields: [personId], references: [id], onDelete: Restrict)
   scheduleSlot        SalaScheduleSlot     @relation(fields: [scheduleSlotId], references: [id], onDelete: Restrict)
   fixedSalaBooking    FixedSalaBooking?    @relation(fields: [fixedSalaBookingId], references: [id], onDelete: Restrict)
   oneOffReservation   OneOffReservation?   @relation(fields: [oneOffReservationId], references: [id], onDelete: Restrict)
-  creator             InternalUser         @relation("SalaOccurrenceCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
-  lastModifier        InternalUser         @relation("SalaOccurrenceModifiedBy", fields: [lastModifiedBy], references: [id], onDelete: Restrict)
+  creator             InternalUser?        @relation("SalaOccurrenceCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
+  lastModifier        InternalUser?        @relation("SalaOccurrenceModifiedBy", fields: [lastModifiedBy], references: [id], onDelete: Restrict)
 
-  @@unique([personId, scheduleSlotId, date])
+  @@unique([fixedSalaBookingId, date])
+  @@unique([oneOffReservationId, date])
   @@index([date, scheduleSlotId])
+  @@index([serviceTypeId])
   @@map("sala_occurrences")
 }
 
@@ -848,6 +923,11 @@ model SalaPayment {
   year             Int
   month            Int
   paidAt           DateTime                @map("paid_at") @db.Date
+  coverageStartDate DateTime @map("coverage_start_date") @db.Date
+  coverageEndDate DateTime @map("coverage_end_date") @db.Date
+  planId String? @map("plan_id") @db.Uuid
+  planNameSnapshot String? @map("plan_name_snapshot") @db.VarChar(120)
+  plan SalaPlan? @relation(fields: [planId], references: [id], onDelete: Restrict)
   amount           Decimal                 @db.Decimal(14, 0)
   paymentMethodId  String                  @map("payment_method_id") @db.Uuid
   registeredById   String                  @map("registered_by_id") @db.Uuid
@@ -866,6 +946,7 @@ model SalaPayment {
 
   @@unique([operationId])
   @@index([personId, year, month])
+  @@index([personId, coverageStartDate, coverageEndDate])
   @@map("sala_payments")
 }
 
@@ -961,23 +1042,37 @@ model ExpenseCategory {
   @@map("expense_categories")
 }
 
+model ExpenseAreaCatalog {
+  id             String       @id @default(uuid()) @db.Uuid
+  name           String
+  normalizedName String       @unique @map("normalized_name")
+  isSelectable   Boolean      @default(true) @map("is_selectable")
+  systemCode     ExpenseArea? @unique @map("system_code")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  expenses       Expense[]
+
+  @@map("expense_area_catalog")
+}
+
 model Expense {
   id              String          @id @default(uuid()) @db.Uuid
   cashDate        DateTime        @map("cash_date") @db.Date
   amount          Decimal         @db.Decimal(14, 0)
   categoryId      String          @map("category_id") @db.Uuid
   paymentMethodId String          @map("payment_method_id") @db.Uuid
-  area            ExpenseArea
+  areaId          String             @map("area_id") @db.Uuid
   description     String?
   registeredById  String          @map("registered_by_id") @db.Uuid
   operationId     String          @unique @map("operation_id") @db.Uuid
   createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
   category        ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  areaCatalog     ExpenseAreaCatalog @relation(fields: [areaId], references: [id], onDelete: Restrict)
   paymentMethod   PaymentMethod   @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
   registeredBy    InternalUser    @relation(fields: [registeredById], references: [id], onDelete: Restrict)
 
-  @@index([cashDate, area])
+  @@index([cashDate, areaId])
   @@map("expenses")
 }
 
@@ -1115,4 +1210,79 @@ model PortalCredential {
   person               Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
 
   @@map("portal_credentials")
+}
+
+// Confirmed submissions are append-only; no drafts or derived status are persisted.
+model HealthDeclaration {
+  id              String   @id @default(uuid()) @db.Uuid
+  personId        String   @map("person_id") @db.Uuid
+  submittedAt     DateTime @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  validUntil      DateTime @map("valid_until") @db.Timestamptz(6)
+  documentVersion String   @map("document_version") @db.VarChar(100)
+  identity        Json
+  answers         Json
+  consents        Json
+  document        Json
+  person          Person   @relation(fields: [personId], references: [id], onDelete: Restrict)
+
+  @@index([personId, submittedAt])
+  @@map("health_declarations")
+}
+
+// Administrative evidence only; never a digital medical questionnaire.
+model PaperHealthDeclaration {
+  id           String       @id @default(uuid()) @db.Uuid
+  personId     String       @map("person_id") @db.Uuid
+  signedOn     DateTime     @map("signed_on") @db.Date
+  validUntil   DateTime     @map("valid_until") @db.Date
+  registeredAt DateTime     @default(now()) @map("registered_at") @db.Timestamptz(6)
+  registeredBy String       @map("registered_by") @db.Uuid
+  person       Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
+  registrar    InternalUser @relation(fields: [registeredBy], references: [id], onDelete: Restrict)
+
+  @@index([personId, validUntil])
+  @@map("paper_health_declarations")
+}
+
+// Training history owns its snapshots. Source day/entry UUIDs deliberately are not FKs:
+// retiring a catalog exercise may physically remove its active routine entry.
+model SalaTrainingRecord {
+  id String @id @default(uuid()) @db.Uuid
+  personId String @map("person_id") @db.Uuid
+  routineId String @map("routine_id") @db.Uuid
+  routineDayId String @map("routine_day_id") @db.Uuid
+  date DateTime @db.Date
+  dayName String? @map("day_name") @db.VarChar(120)
+  dayPosition Int @map("day_position")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  person Person @relation(fields: [personId], references: [id], onDelete: Restrict)
+  routine Routine @relation(fields: [routineId], references: [id], onDelete: Restrict)
+  exercises SalaTrainingRecordExercise[]
+
+  @@unique([personId, date, routineDayId])
+  @@index([personId, date, id])
+  @@map("sala_training_records")
+}
+
+model SalaTrainingRecordExercise {
+  id String @id @default(uuid()) @db.Uuid
+  recordId String @map("record_id") @db.Uuid
+  routineExerciseId String @map("routine_exercise_id") @db.Uuid
+  exerciseDefinitionId String @map("exercise_definition_id") @db.Uuid
+  exerciseName String @map("exercise_name") @db.VarChar(120)
+  position Int
+  series String? @db.VarChar(80)
+  repetitions String? @db.VarChar(80)
+  duration String? @db.VarChar(80)
+  load String? @db.VarChar(80)
+  rest String? @db.VarChar(80)
+  notes String? @db.VarChar(500)
+  weightKg Decimal? @map("weight_kg") @db.Decimal(65,30)
+  record SalaTrainingRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@unique([recordId, position])
+  @@unique([recordId, routineExerciseId])
+  @@index([exerciseDefinitionId, recordId])
+  @@map("sala_training_record_exercises")
 }

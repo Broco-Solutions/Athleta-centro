@@ -31,7 +31,7 @@ export const teamProfileSchema = z.object({
   lastName: z.string().trim().min(1, 'Ingresá el apellido').max(100),
   email: z.email('Email inválido').max(254),
   phone: optionalText(50),
-  dni: optionalText(30),
+  dni: z.string().trim().regex(/^\d{6,8}$/, 'Ingresá un DNI de 6 a 8 dígitos, sin puntos'),
   address: optionalText(250),
   birthDate: z.string(),
   profession: optionalText(120),
@@ -47,7 +47,7 @@ export const profileDefaults = (user?: TeamUserDto): TeamProfileFormValues => ({
 });
 
 export const toProfileInput = (values: TeamProfileFormValues): UpdateTeamUserDto => ({
-  firstName: values.firstName.trim(), lastName: values.lastName.trim(), email: values.email.trim(), phone: values.phone.trim() || null, dni: values.dni.trim() || null, address: values.address.trim() || null, birthDate: values.birthDate || null, profession: values.profession.trim() || null, athletaStartDate: values.athletaStartDate || null,
+  firstName: values.firstName.trim(), lastName: values.lastName.trim(), email: values.email.trim(), phone: values.phone.trim() || null, dni: values.dni.trim(), address: values.address.trim() || null, birthDate: values.birthDate || null, profession: values.profession.trim() || null, athletaStartDate: values.athletaStartDate || null,
 });
 
 export const seniorityLabel = (startDate: string, today = todayInArgentina()): string | null => {
@@ -72,9 +72,9 @@ export function TeamProfileFields({ form, disabled = false }: { form: UseFormRet
     <label className="text-sm">Nombre<input className={field} disabled={disabled} {...form.register('firstName')}/><Error message={form.formState.errors.firstName?.message}/></label>
     <label className="text-sm">Apellido<input className={field} disabled={disabled} {...form.register('lastName')}/><Error message={form.formState.errors.lastName?.message}/></label>
     <label className="text-sm sm:col-span-2">Email<input className={field} type="email" disabled={disabled} {...form.register('email')}/><Error message={form.formState.errors.email?.message}/></label>
-  </fieldset><fieldset className="mt-6 grid gap-4 border-t pt-5 sm:grid-cols-2"><legend className="px-0 text-sm font-medium">Datos opcionales</legend>
+  </fieldset><fieldset className="mt-6 grid gap-4 border-t pt-5 sm:grid-cols-2"><legend className="px-0 text-sm font-medium">Datos adicionales</legend>
     <label className="text-sm">Teléfono<input className={field} type="tel" disabled={disabled} {...form.register('phone')}/><Error message={form.formState.errors.phone?.message}/></label>
-    <label className="text-sm">DNI<input className={field} inputMode="numeric" disabled={disabled} {...form.register('dni')}/><Error message={form.formState.errors.dni?.message}/></label>
+    <label className="text-sm">DNI<input className={field} inputMode="numeric" required disabled={disabled} {...form.register('dni')}/><Error message={form.formState.errors.dni?.message}/></label>
     <label className="text-sm sm:col-span-2">Domicilio<input className={field} disabled={disabled} {...form.register('address')}/><Error message={form.formState.errors.address?.message}/></label>
     <label className="text-sm">Fecha de nacimiento<input className={field} type="date" max={today} disabled={disabled} {...form.register('birthDate')}/><Error message={form.formState.errors.birthDate?.message}/></label>
     <label className="text-sm">Profesión<input className={field} disabled={disabled} {...form.register('profession')}/><Error message={form.formState.errors.profession?.message}/></label>

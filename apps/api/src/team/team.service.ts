@@ -6,6 +6,7 @@ import type { Permission } from './permissions';
 import { InternalUserService } from './internal-user.service';
 import type { CreateTeamUserDto, UpdateTeamUserDto } from './team.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { isClinicEnabled } from '../config/env';
 
 const isClinicalRole = (role: Role): boolean => role === Role.KINESIOLOGIST || role === Role.OSTEOPATH;
 
@@ -15,10 +16,11 @@ export class TeamService {
   async list() { return (await this.users.list()).map((user) => this.safe(user)); }
   async get(id: string) { return this.safe(await this.users.find(id)); }
   async create(input: CreateTeamUserDto, permissions: readonly string[]) {
+    this.assertClinicalRolesAvailable(input.roles);
     this.authorizeRoles([], input.roles, permissions);
     this.assertProfileDates(input);
-    const temporaryPassword = this.temporaryPassword();
-    const passwordHash = await this.auth.hashPassword(temporaryPassword);
+    const temporaryPassword = input.dni;
+    const passwordHash = await this.auth.hashInitialCredential(temporaryPassword);
     try {
       const user = await this.users.create({ ...input, credentialPasswordHash: passwordHash });
       return { data: this.safe(user), temporaryPassword };
@@ -32,7 +34,7 @@ export class TeamService {
   async update(id: string, input: UpdateTeamUserDto, actorId: string, permissions: readonly string[]) { const target = await this.users.find(id); if (actorId !== id) this.authorizeRoles(target.roles.map((entry) => entry.role), [], permissions); this.assertProfileDates(input); return this.safe(await this.users.updateProfile(id, input)); }
   async me(actorId: string, roles: readonly Role[]) { this.assertNotBroco(roles); return this.safe(await this.users.find(actorId)); }
   async updateMe(actorId: string, roles: readonly Role[], input: UpdateTeamUserDto) { this.assertNotBroco(roles); this.assertProfileDates(input); return this.safe(await this.users.updateProfile(actorId, input)); }
-  async addRole(id: string, role: Role, permissions: readonly string[]) { const target = await this.users.find(id); this.authorizeRoles(target.roles.map((entry) => entry.role), [role], permissions); return this.safe(await this.users.addRole(id, role)); }
+  async addRole(id: string, role: Role, permissions: readonly string[]) { this.assertClinicalRolesAvailable([role]); const target = await this.users.find(id); this.authorizeRoles(target.roles.map((entry) => entry.role), [role], permissions); return this.safe(await this.users.addRole(id, role)); }
   async removeRole(id: string, role: Role, permissions: readonly string[]) { const target = await this.users.find(id); const remainingRoles = target.roles.map((entry) => entry.role).filter((currentRole) => currentRole !== role); this.authorizeRoles(target.roles.map((entry) => entry.role), [role], permissions); await this.assertNoResponsibilities(id, role, remainingRoles); return this.safe(await this.users.removeRole(id, role)); }
   async inactivate(id: string, permissions: readonly string[]) { const target = await this.users.find(id); this.authorizeRoles(target.roles.map((entry) => entry.role), [], permissions); for (const role of target.roles.map((entry) => entry.role)) await this.assertNoResponsibilities(id, role); return this.safe(await this.users.inactivate(id)); }
   async reactivate(id: string, permissions: readonly string[]) { const target = await this.users.find(id); this.authorizeRoles(target.roles.map((entry) => entry.role), [], permissions); return this.safe(await this.users.reactivate(id)); }
@@ -51,6 +53,7 @@ export class TeamService {
     return { temporaryPassword };
   }
   private authorizeRoles(current: Role[], changed: Role[], permissions: readonly string[]): void { const involved = new Set([...current, ...changed]); if (involved.has(Role.BROCO_SUPPORT)) throw new ForbiddenException({ code: 'SUPPORT_ACCOUNT_NOT_MANAGEABLE', message: 'Support accounts cannot be managed here' }); const required: Permission = involved.has(Role.GENERAL_ADMIN) ? 'TEAM_GENERAL_ADMIN_MANAGE' : 'TEAM_STANDARD_USER_MANAGE'; if (!permissions.includes(required)) throw new ForbiddenException({ code: 'PERMISSION_DENIED', message: 'Permission denied' }); }
+  private assertClinicalRolesAvailable(roles: readonly Role[]): void { if (!isClinicEnabled() && roles.some(isClinicalRole)) throw new BadRequestException({ code: 'CLINIC_ROLE_NOT_AVAILABLE', message: 'Los roles de Kinesiología y Osteopatía no están disponibles en esta entrega.' }); }
   private assertNotBroco(roles: readonly Role[]): void { if (roles.includes(Role.BROCO_SUPPORT)) throw new ForbiddenException({ code: 'SUPPORT_ACCOUNT_NOT_MANAGEABLE', message: 'Support accounts cannot be managed here' }); }
   private assertProfileDates(input: Pick<UpdateTeamUserDto, 'birthDate' | 'athletaStartDate'>): void {
     const today = this.argentinaDate();

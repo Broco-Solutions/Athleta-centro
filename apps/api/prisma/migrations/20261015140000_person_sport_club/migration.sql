@@ -1,0 +1,2 @@
+ALTER TABLE "people" ADD COLUMN "sport" TEXT,
+ADD COLUMN "club" TEXT;

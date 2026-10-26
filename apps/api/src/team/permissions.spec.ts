@@ -1,6 +1,19 @@
 import { InternalUserStatus, Role } from '@prisma/client';
 import { effectivePermissions } from './permissions';
 describe('effectivePermissions', () => {
+  it('reserves payment management for Administration, preserving role unions', () => {
+    const professor = effectivePermissions(InternalUserStatus.ACTIVE, [Role.PROFESSOR]);
+    expect(professor.has('SALA_PAYMENT_READ')).toBe(true);
+    expect(professor.has('SALA_PAYMENT_REGISTER')).toBe(true);
+    for (const permission of ['EXPENSE_CREATE', 'FINANCE_OPERATIONAL_READ', 'FINANCE_EXECUTIVE_READ', 'FINANCE_EXPORT', 'PAYMENT_METHOD_CATALOG_MANAGE', 'EXPENSE_HISTORY_READ', 'EXPENSE_MANAGE'] as const) expect(professor.has(permission)).toBe(false);
+    expect(professor.has('SALA_PAYMENT_MANAGE')).toBe(false);
+    for (const role of [Role.ADMINISTRATIVE, Role.GENERAL_ADMIN]) {
+      for (const permission of ['SALA_PAYMENT_READ', 'SALA_PAYMENT_REGISTER', 'SALA_PAYMENT_MANAGE'] as const) expect(effectivePermissions(InternalUserStatus.ACTIVE, [role]).has(permission)).toBe(true);
+    }
+    const combined = effectivePermissions(InternalUserStatus.ACTIVE, [Role.PROFESSOR, Role.ADMINISTRATIVE]);
+    for (const permission of ['SALA_PAYMENT_REGISTER', 'SALA_PAYMENT_MANAGE', 'FINANCE_OPERATIONAL_READ'] as const) expect(combined.has(permission)).toBe(true);
+    for (const role of [Role.KINESIOLOGIST, Role.OSTEOPATH]) expect(effectivePermissions(InternalUserStatus.ACTIVE, [role]).has('EXPENSE_CREATE')).toBe(true);
+  });
   it('unions role capabilities only for active users', () => {
     const permissions = effectivePermissions(InternalUserStatus.ACTIVE, [Role.PROFESSOR, Role.ADMINISTRATIVE]);
     expect([...permissions]).toEqual(expect.arrayContaining([
@@ -13,6 +26,18 @@ describe('effectivePermissions', () => {
       'SALA_RELATION_READ',
     ]));
     expect(permissions.has('CLINICAL_HISTORY_READ')).toBe(false);
+  });
+  it('lets Professor operate agenda and routines while reserving schedule configuration for Administration', () => {
+    const professor = effectivePermissions(InternalUserStatus.ACTIVE, [Role.PROFESSOR]);
+    expect(professor.has('SALA_AGENDA_MANAGE')).toBe(true);
+    expect(professor.has('SALA_ROUTINE_MANAGE')).toBe(true);
+    expect(professor.has('SALA_SCHEDULE_MANAGE')).toBe(false);
+    expect(professor.has('SALA_SERVICE_DURATION_MANAGE')).toBe(false);
+    for (const role of [Role.ADMINISTRATIVE, Role.GENERAL_ADMIN]) {
+      expect(effectivePermissions(InternalUserStatus.ACTIVE, [role]).has('SALA_SERVICE_DURATION_MANAGE')).toBe(true);
+    }
+    expect(effectivePermissions(InternalUserStatus.ACTIVE, [Role.ADMINISTRATIVE]).has('SALA_SCHEDULE_MANAGE')).toBe(true);
+    expect(effectivePermissions(InternalUserStatus.ACTIVE, [Role.GENERAL_ADMIN]).has('SALA_SCHEDULE_MANAGE')).toBe(true);
   });
   it('returns no permissions for inactive users', () => { expect(effectivePermissions(InternalUserStatus.INACTIVE, [Role.GENERAL_ADMIN])).toEqual(new Set()); });
   it('keeps clinical history unavailable to operational-only roles', () => {

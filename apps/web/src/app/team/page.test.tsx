@@ -11,7 +11,7 @@ function renderPage(): void { render(<QueryClientProvider client={new QueryClien
 beforeAll(() => { globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch; server.listen({ onUnhandledRequest: 'error' }); });
 beforeEach(() => { server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: session })), http.get('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: [user] }))); }); afterEach(() => server.resetHandlers()); afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 it('renders safe team data and available roles', async () => { renderPage(); expect(await screen.findByText('Sintética, Ada')).toBeInTheDocument(); expect(screen.getByText('Profesor')).toBeInTheDocument(); expect(screen.queryByText('Administrador general')).not.toBeInTheDocument(); });
-it('creates an account and displays its temporary password once', async () => { server.use(http.post('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: user, temporaryPassword: 'Generated1!Pass' }, { status: 201 }))); renderPage(); await screen.findByText('Sintética, Ada'); fireEvent.click(screen.getByRole('button', { name: /Nuevo integrante/ })); fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Nueva' } }); fireEvent.change(screen.getByLabelText('Apellido'), { target: { value: 'Persona' } }); fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'new@team.test' } }); fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); expect(await screen.findByTestId('temporary-password')).toHaveTextContent('Generated1!Pass'); });
+it('creates an account with DNI and displays initial access instructions without clinical role choices', async () => { let payload: unknown; server.use(http.post('http://localhost:3000/api/team/users', async ({ request }) => { payload = await request.json(); return HttpResponse.json({ data: user, temporaryPassword: '27739784' }, { status: 201 }); })); renderPage(); await screen.findByText('Sintética, Ada'); fireEvent.click(screen.getByRole('button', { name: /Nuevo integrante/ })); expect(screen.queryByLabelText('Kinesiólogo')).not.toBeInTheDocument(); expect(screen.queryByLabelText('Osteópata')).not.toBeInTheDocument(); fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Nueva' } }); fireEvent.change(screen.getByLabelText('Apellido'), { target: { value: 'Persona' } }); fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'new@team.test' } }); fireEvent.change(screen.getByLabelText('DNI'), { target: { value: '27739784' } }); fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); expect(await screen.findByTestId('temporary-password')).toHaveTextContent('27739784'); expect(payload).toMatchObject({ dni: '27739784' }); expect(screen.getByText('Acceso inicial')).toBeInTheDocument(); expect(screen.getByText(/su email y su DNI como contraseña/)).toBeInTheDocument(); expect(screen.getByText('Contraseña inicial:')).toBeInTheDocument(); });
 it('surfaces invalid lifecycle actions without hiding the account', async () => { server.use(http.post(`http://localhost:3000/api/team/users/${user.id}/inactivate`, () => HttpResponse.json({ code: 'RESPONSIBILITIES_PENDING' }, { status: 409 }))); renderPage(); fireEvent.click(await screen.findByText('Sintética, Ada')); fireEvent.click(screen.getByRole('button', { name: 'Inactivar acceso' })); await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('La operación no es válida')); expect(screen.getByText('Editar integrante')).toBeInTheDocument(); });
 it('resets a standard credential and displays the returned password once', async () => {
   server.use(
@@ -22,6 +22,8 @@ it('resets a standard credential and displays the returned password once', async
   fireEvent.click(await screen.findByText('Sintética, Ada'));
   fireEvent.click(screen.getByRole('button', { name: 'Resetear credencial' }));
   expect(await screen.findByTestId('temporary-password')).toHaveTextContent('ResetPass1!Synthetic');
+  expect(screen.getByText('Credencial temporal')).toBeInTheDocument();
+  expect(screen.getByText('Copiala ahora. No volverá a mostrarse.')).toBeInTheDocument();
 });
 it('keeps a general administrator profile read-only for an Administrative user', async () => {
   const generalAdmin = { ...user, id: '10000000-0000-4000-8000-000000000003', roles: ['GENERAL_ADMIN'] };
@@ -32,4 +34,14 @@ it('keeps a general administrator profile read-only for an Administrative user',
   expect(screen.getByText('Esta cuenta está protegida y no puede modificarse con tus permisos.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Inactivar acceso' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Guardar' })).not.toBeInTheDocument();
+});
+it('preserves an existing clinical role in Equipo while hiding it from new assignments', async () => {
+  const clinicalUser = { ...user, roles: ['KINESIOLOGIST'] };
+  server.use(http.get('http://localhost:3000/api/team/users', () => HttpResponse.json({ data: [clinicalUser] })));
+  renderPage();
+  await screen.findByText('Kinesiólogo');
+  fireEvent.click(screen.getByText('Sintética, Ada'));
+  expect(await screen.findByRole('button', { name: 'Kinesiólogo ×' })).toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText('Agregar rol'));
+  expect(screen.queryByRole('option', { name: 'Osteópata' })).not.toBeInTheDocument();
 });

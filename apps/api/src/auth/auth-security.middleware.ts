@@ -1,17 +1,23 @@
 import type { NextFunction, Request, Response } from 'express';
-import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthRateLimitService } from './auth-rate-limit.service';
+import { isClinicEnabled } from '../config/env';
 
 @Injectable()
 export class AuthSecurityMiddleware {
   constructor(private readonly auth: AuthService, private readonly rateLimits: AuthRateLimitService) {}
   async use(request: Request, _response: Response, next: NextFunction): Promise<void> {
     const path = request.originalUrl.split('?')[0] ?? request.path;
-    const publicPath = path === '/api/auth/login' || path === '/health';
+    const bypassInternalSecurity =
+      path === '/api/auth/login' ||
+      path.startsWith('/api/portal/') ||
+      path === '/health';
     const allowedWhilePasswordChangeRequired = path === '/api/auth/session' || path === '/api/auth/change-password' || path === '/api/auth/logout';
     if (path.startsWith('/api/')) this.rateLimits.assertGeneralLimit(request.ip ?? 'unknown');
-    if (publicPath || !request.cookies?.athleta_session) return next();
+    const clinicalPath = ['/api/clinic', '/api/portal/clinic', '/api/finance/clinical-incomes'].some((base) => path === base || path.startsWith(`${base}/`));
+    if (!isClinicEnabled() && clinicalPath) return next(new NotFoundException({ code: 'CLINIC_UNAVAILABLE', message: 'Not found' }));
+    if (bypassInternalSecurity || !request.cookies?.athleta_session) return next();
     try {
       const current = await this.auth.current(request.cookies.athleta_session);
       if (current.session.mustChangePassword && !allowedWhilePasswordChangeRequired) {
