@@ -67,7 +67,11 @@ it('keeps category required and excludes Clínica from areas', async () => {
   renderForm(); await fillExpense();
   expect(screen.getByLabelText('Categoría')).toBeRequired();
   const categorySection = screen.getByRole('region', { name: 'Categorías de gastos' });
+  const areaSection = screen.getByRole('region', { name: 'Áreas de gastos' });
   expect(categorySection).toContainElement(screen.getByRole('button', { name: '+ Agregar categoría' }));
+  expect(areaSection).toContainElement(screen.getByRole('button', { name: '+ Agregar área' }));
+  expect(categorySection.compareDocumentPosition(areaSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByLabelText('Área').closest('label')).not.toContainElement(screen.getByRole('button', { name: '+ Agregar área' }));
   expect(screen.getByLabelText('Categoría').closest('form')).not.toContainElement(categorySection);
   fireEvent.change(screen.getByLabelText('Categoría'), { target: { value: '' } });
   expect(await screen.findByText('Seleccioná una categoría.')).toBeVisible();
@@ -185,7 +189,7 @@ it('loads area catalog, defaults to the registered Sala ID, and sends areaId whe
 it('creates and selects an area inline without clearing entered expense data', async () => {
   const invalidate = renderForm(); await fillExpense();
   fireEvent.change(screen.getByLabelText('Área'), { target: { value: 'area-general' } });
-  fireEvent.click(screen.getByRole('button', { name: '+ Nueva área' }));
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar área' }));
   fireEvent.change(screen.getByLabelText('Nombre del área'), { target: { value: 'Kinesiología' } });
   fireEvent.click(screen.getByRole('button', { name: 'Crear' }));
   await screen.findByRole('option', { name: 'Kinesiología' });
@@ -194,10 +198,13 @@ it('creates and selects an area inline without clearing entered expense data', a
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ['finance', 'expense-areas'] });
   expectExpensePreserved('area-custom');
 });
-it('hides area administration without catalog permission and retains the entered gasto on creation error', async () => {
-  renderForm(false); await fillExpense(); expect(screen.queryByRole('button', { name: '+ Nueva área' })).not.toBeInTheDocument();
+it('hides catalog creation without permission and retains the entered gasto on area creation error', async () => {
+  renderForm(false); await fillExpense();
+  expect(screen.queryByRole('button', { name: '+ Agregar categoría' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '+ Agregar área' })).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Categoría')).toBeVisible(); expect(screen.getByLabelText('Área')).toBeVisible();
   cleanup(); failAreaCreation = true; renderForm(true); await fillExpense();
-  fireEvent.click(screen.getByRole('button', { name: '+ Nueva área' }));
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar área' }));
   fireEvent.change(screen.getByLabelText('Nombre del área'), { target: { value: 'Kinesiología' } });
   fireEvent.click(screen.getByRole('button', { name: 'Crear' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Ya existe un área con ese nombre.');

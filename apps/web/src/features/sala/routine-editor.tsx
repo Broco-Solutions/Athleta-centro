@@ -4,6 +4,7 @@ import React, { useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { exerciseDefinitionSchema as definitionSchema, filterExerciseDefinitions } from './exercise-catalog';
 import { Button } from '@athleta/ui';
 import type { ExerciseDefinitionDto, RoutineDayDto } from '@athleta/api-client';
 
@@ -57,11 +58,6 @@ type ExerciseCatalogProps = {
   catalogError: boolean;
   onCreateExercise: (input: ExerciseDefinitionDto) => Promise<ExerciseDefinition>;
 };
-const definitionSchema = z.object({
-  name: z.string().trim().min(1, 'El Nombre es obligatorio.').max(120),
-  primaryMuscle: z.string().trim().max(120),
-  description: z.string().trim().max(500),
-});
 
 function ExerciseRow({ exercise, definitions, onChange, onRemove, disabled }: {
   exercise: ExerciseForm; definitions: ExerciseDefinition[]; onChange: (exercise: ExerciseForm) => void; onRemove: () => void; disabled: boolean;
@@ -116,8 +112,7 @@ function ExerciseCatalog({ definitions, catalogLoading, catalogError, onCreateEx
     setValidationError(null); create.mutate(parsed.data);
   });
   const active = definitions.filter((item) => item.isActive === true);
-  const term = search.trim().toLocaleLowerCase('es');
-  const results = active.filter((item) => `${item.name} ${item.primaryMuscle ?? ''}`.toLocaleLowerCase('es').includes(term));
+  const results = filterExerciseDefinitions(definitions, search);
   return <section aria-label="Agregar ejercicios" className="rounded-lg border bg-white p-4">
     <div className="flex flex-wrap items-center justify-between gap-3"><h4 className="font-semibold">Agregar ejercicio {/^Día \d+$/.test(dayName) ? 'al' : 'a'} {dayName}</h4><Button type="button" variant="secondary" disabled={disabled || create.isPending} onClick={() => setCreating(true)}>+ Crear nuevo ejercicio</Button></div>
     {creating ? <fieldset aria-label="Nuevo ejercicio del catálogo" className="mt-3 grid gap-3 rounded-md border p-3" disabled={disabled || create.isPending} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void submit(); } }}>
@@ -127,7 +122,7 @@ function ExerciseCatalog({ definitions, catalogLoading, catalogError, onCreateEx
       {validationError || create.error ? <p role="alert" className="text-sm text-red-700">{validationError ?? errorMessage(create.error)}</p> : null}
       <Button type="button" disabled={disabled || create.isPending} onClick={() => void submit()}>{create.isPending ? 'Creando…' : 'Crear y agregar'}</Button>
     </fieldset> : null}
-    <label className="mt-4 block text-sm">Buscar un ejercicio en el catálogo<input className={`${fieldClass} mt-1`} type="search" placeholder="Nombre o músculo principal" value={search} disabled={disabled || catalogLoading || catalogError} onChange={(event) => setSearch(event.target.value)}/></label>
+    <label className="mt-4 block text-sm">Buscar un ejercicio en el catálogo<input className={`${fieldClass} mt-1`} type="search" placeholder="Buscar por nombre, músculo o descripción" value={search} disabled={disabled || catalogLoading || catalogError} onChange={(event) => setSearch(event.target.value)}/></label>
     {catalogLoading ? <p role="status" className="mt-3 text-sm text-muted-foreground">Cargando catálogo de ejercicios…</p> : catalogError ? <p role="alert" className="mt-3 text-sm text-red-700">No se pudo cargar el catálogo de ejercicios.</p> : !active.length ? <p className="mt-3 text-sm text-muted-foreground">Todavía no hay ejercicios en el catálogo.</p> : <>
       {!results.length ? <p className="mt-3 text-sm text-muted-foreground">No hay ejercicios que coincidan.</p> : null}
       <ul className="mt-3 grid max-h-72 gap-x-4 overflow-y-auto sm:grid-cols-2">{results.map((item) => <li key={item.id} className="flex items-center justify-between gap-2 border-b py-2 text-sm"><div className="min-w-0"><p className="font-medium">{item.name}</p>{item.primaryMuscle ? <p className="text-xs text-muted-foreground">{item.primaryMuscle}</p> : null}</div><Button type="button" variant="ghost" aria-label={`Agregar ${item.name}`} disabled={disabled} onClick={() => onAdd(item)}>+ Agregar</Button></li>)}</ul>

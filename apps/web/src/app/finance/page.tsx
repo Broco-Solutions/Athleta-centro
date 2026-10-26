@@ -396,19 +396,16 @@ function PaymentMethods({ methods, canCatalog, name, editing, message, onName, o
 function ExpenseAreaManager({ csrfToken }: { csrfToken: string }): React.JSX.Element {
   const client = useQueryClient();
   const areas = useQuery<ExpenseAreaCatalogItem[]>({ queryKey: ['finance', 'expense-areas'], queryFn: () => get('expense-areas') });
-  const [creating, setCreating] = useState(false);
-  const [name, setName] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [message, setMessage] = useState('');
-  const save = useMutation({ mutationFn: async (input: { id?: string; name: string; isSelectable?: boolean }) => {
-    const url = input.id ? `/api/finance/expense-areas/${input.id}` : '/api/finance/expense-areas';
-    const response = await fetch(url, { method: input.id ? 'PATCH' : 'POST', credentials: 'include', headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken }, body: JSON.stringify({ name: input.name, ...(input.isSelectable === undefined ? {} : { isSelectable: input.isSelectable }) }) });
+  const save = useMutation({ mutationFn: async (input: { id: string; name: string; isSelectable: boolean }) => {
+    const response = await fetch(`/api/finance/expense-areas/${input.id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken }, body: JSON.stringify({ name: input.name, isSelectable: input.isSelectable }) });
     const body = await response.json();
     if (!response.ok) throw new Error(body.message ?? 'No se pudo guardar el área.');
     return body.data as ExpenseAreaCatalogItem;
-  }, onSuccess: async (_area, input) => {
-    setCreating(false); setEditing(null); setName(''); setEditName(''); setMessage(input.id ? 'Área actualizada correctamente.' : 'Área creada correctamente.');
+  }, onSuccess: async () => {
+    setEditing(null); setEditName(''); setMessage('Área actualizada correctamente.');
     await Promise.all([client.invalidateQueries({ queryKey: ['finance', 'expense-areas'] }), client.invalidateQueries({ queryKey: ['finance', 'expenses'] })]);
   } });
   const setSelectable = useMutation({ mutationFn: async (area: ExpenseAreaCatalogItem) => {
@@ -424,7 +421,6 @@ function ExpenseAreaManager({ csrfToken }: { csrfToken: string }): React.JSX.Ele
     {areas.isPending ? <p role="status" className="mt-3 text-sm">Cargando áreas…</p> : null}
     {areas.isError ? <p role="alert" className="mt-3 text-sm">{areas.error.message}</p> : null}
     {areas.isSuccess ? <div className="mt-3 overflow-x-auto"><table aria-label="Áreas de gastos" className="w-full text-left text-sm"><thead className="bg-surface-muted"><tr><th className="p-2">Área</th><th className="p-2">Estado</th><th className="p-2">Acciones</th></tr></thead><tbody>{areas.data.map(area => <tr key={area.id} className="border-t">{editing === area.id ? <td className="p-2"><input aria-label={`Editar área ${area.name}`} value={editName} onChange={event => setEditName(event.target.value)} className="h-9 rounded border px-2" /></td> : <th scope="row" className="p-2 font-medium">{area.name}</th>}<td className="p-2">{area.isSelectable ? 'Activa' : 'Inactiva'}</td><td className="p-2">{area.systemCode ? <span>Área base</span> : editing === area.id ? <span className="flex flex-wrap gap-3"><button type="button" className="underline" disabled={!editName.trim() || save.isPending} onClick={() => save.mutate({ id: area.id, name: editName, isSelectable: area.isSelectable })}>Guardar</button><button type="button" className="underline" onClick={() => { setEditing(null); setEditName(''); }}>Cancelar</button></span> : <span className="flex flex-wrap gap-3"><button type="button" className="underline" onClick={() => { setEditing(area.id); setEditName(area.name); setMessage(''); }}>Editar</button><button type="button" className="underline" disabled={setSelectable.isPending} onClick={() => setSelectable.mutate(area)}>{area.isSelectable ? 'Desactivar' : 'Reactivar'}</button></span>}</td></tr>)}</tbody></table></div> : null}
-    <div className="mt-4">{!creating ? <Button type="button" variant="secondary" onClick={() => { setName(''); setMessage(''); save.reset(); setCreating(true); }}>+ Agregar área</Button> : <div className="max-w-xl space-y-2 text-sm"><label>Nombre del área<input aria-label="Nombre del área" className="mt-1 h-10 w-full rounded border px-3" value={name} onChange={event => setName(event.target.value)} disabled={save.isPending} /></label><div className="flex gap-2"><Button type="button" disabled={!name.trim() || save.isPending} onClick={() => save.mutate({ name })}>{save.isPending ? 'Creando…' : 'Crear'}</Button><Button type="button" variant="secondary" disabled={save.isPending} onClick={() => { setCreating(false); setName(''); save.reset(); }}>Cancelar</Button></div></div>}</div>
     {save.isError ? <p role="alert" className="mt-2 text-sm">{save.error.message}</p> : null}{setSelectable.isError ? <p role="alert" className="mt-2 text-sm">{setSelectable.error.message}</p> : null}{message ? <p role="status" className="mt-2 text-sm">{message}</p> : null}
   </details>;
 }

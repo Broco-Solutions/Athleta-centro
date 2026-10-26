@@ -10,10 +10,10 @@ const template = { id: 'template', name: 'Modelo fuerza', days: [
   { position: 1, name: 'Fuerza', exercises: [{ exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla', description: 'Descenso controlado', isActive: true }, series: '4', repetitions: '10', load: '60 kg', rest: '90 s', notes: 'Técnica' }] },
   { position: 2, name: 'Core', exercises: [{ exerciseDefinitionId: 'plank', exerciseDefinition: { name: 'Plancha', isActive: true }, duration: '45 s' }] },
 ] };
-function renderManager(rows = [template]) {
+function renderManager(rows = [template], catalogDefinitions: Awaited<ReturnType<RoutineTemplateApi['exercises']>> = definitions) {
   const api = {
     list: vi.fn<RoutineTemplateApi['list']>().mockResolvedValue(rows), create: vi.fn<RoutineTemplateApi['create']>().mockResolvedValue({}), update: vi.fn<RoutineTemplateApi['update']>().mockResolvedValue({}), delete: vi.fn<RoutineTemplateApi['delete']>().mockResolvedValue({}),
-    exercises: vi.fn<RoutineTemplateApi['exercises']>().mockResolvedValue(definitions), createExercise: vi.fn<RoutineTemplateApi['createExercise']>().mockResolvedValue({ id: 'new', name: 'Remo', primaryMuscle: 'Espalda', isActive: true }),
+    exercises: vi.fn<RoutineTemplateApi['exercises']>().mockResolvedValue(catalogDefinitions), createExercise: vi.fn<RoutineTemplateApi['createExercise']>().mockResolvedValue({ id: 'new', name: 'Remo', primaryMuscle: 'Espalda', isActive: true }),
   };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(<QueryClientProvider client={client}><RoutineTemplateManager csrfToken="csrf" api={api}/></QueryClientProvider>);
@@ -25,6 +25,17 @@ async function add(index: number, id: string) { day(index); fireEvent.click(awai
 const catalog = () => within(screen.getByRole('region', { name: 'Agregar ejercicios' }));
 const row = (index = 0) => within(screen.getByRole('group', { name: /^Día \d+$/ }).querySelectorAll('li')[index]!);
 afterEach(cleanup);
+it('uses the shared description and accent-insensitive search while preserving template edits', async () => {
+  renderManager([template], [...definitions.map(item => ({ ...item, description: item.id === 'squat' ? 'Fuerza para fútbol' : null })), { id: 'retired', name: 'Sentadilla retirada', description: 'Fútbol', isActive: false }]);
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  change(row(), 'Series', '7');
+  change(catalog(), 'Buscar un ejercicio en el catálogo', 'SENTADILLA futbol');
+  expect(catalog().getByRole('button', { name: 'Agregar Sentadilla' })).toBeInTheDocument();
+  expect(catalog().queryByRole('button', { name: 'Agregar Plancha' })).not.toBeInTheDocument();
+  expect(catalog().queryByRole('button', { name: 'Agregar Sentadilla retirada' })).not.toBeInTheDocument();
+  fireEvent.click(catalog().getByRole('button', { name: 'Agregar Sentadilla' }));
+  expect(day(1).getAllByRole('listitem')).toHaveLength(2); expect(row().getByLabelText('Series')).toHaveValue('7');
+});
 it('lists ordered days and exercises with optional fields', async () => {
   renderManager(); await screen.findByRole('article', { name: 'Modelo fuerza' });
   expect(screen.getByText('Fuerza')).toBeInTheDocument(); expect(screen.getByText('Core')).toBeInTheDocument();

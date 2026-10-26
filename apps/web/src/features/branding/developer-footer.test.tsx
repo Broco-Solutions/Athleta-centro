@@ -14,5 +14,5 @@ it('links the complete developer credit to Broco in a new tab', () => {
   expect(screen.getAllByRole('link')).toHaveLength(1);
   expect(logo).toHaveAttribute('src', expect.stringContaining('logo-broco-solutions.png'));
   expect(screen.queryByText('Broco Solutions')).not.toBeInTheDocument();
-  expect(link).toHaveClass('inline-flex', 'items-center', 'gap-2', 'focus-visible:outline-none', 'focus-visible:ring-2');
+  expect(link).toHaveClass('inline-flex', 'items-center', 'gap-1', 'focus-visible:outline-none', 'focus-visible:ring-2');
 });

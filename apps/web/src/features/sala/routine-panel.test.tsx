@@ -253,8 +253,8 @@ function fillInline() {
   fireEvent.click(catalog().getByRole('button', { name: '+ Crear nuevo ejercicio' }));
   change(catalog(), 'Nombre del ejercicio', 'Remo'); change(catalog(), 'Músculo principal (opcional)', 'Espalda'); change(catalog(), 'Descripción del ejercicio', 'Con banda');
 }
-it('searches active definitions by name and muscle and adds directly without restricting duplicates', async () => {
-  renderPanel([], true, async () => [...definitions, { id: 'retired', name: 'Plancha retirada', isActive: false }]); await startNewRoutine();
+it('searches all catalog fields with normalized words and adds only active definitions without restricting duplicates', async () => {
+  renderPanel([], true, async () => [...definitions.map(item => ({ ...item, description: item.id === 'squat' ? 'Fuerza para fútbol' : null })), { id: 'retired', name: 'Plancha retirada', isActive: false }]); await startNewRoutine();
   await catalog().findByRole('button', { name: 'Agregar Plancha' });
   change(catalog(), 'Buscar un ejercicio en el catálogo', 'pLaNcHa');
   expect(catalog().queryByRole('button', { name: 'Agregar Sentadilla' })).not.toBeInTheDocument();
@@ -262,6 +262,12 @@ it('searches active definitions by name and muscle and adds directly without res
   await add(day(1), 'plank'); expect(row().getByLabelText('Ejercicio')).toHaveValue('plank');
   change(catalog(), 'Buscar un ejercicio en el catálogo', 'PIERNAS');
   expect(catalog().getByRole('button', { name: 'Agregar Sentadilla' })).toBeInTheDocument();
+  change(catalog(), 'Buscar un ejercicio en el catálogo', 'SENTADILLA futbol');
+  expect(catalog().getByRole('button', { name: 'Agregar Sentadilla' })).toBeInTheDocument();
+  expect(catalog().queryByRole('button', { name: 'Agregar Plancha' })).not.toBeInTheDocument();
+  expect(catalog().getByRole('searchbox')).toHaveAttribute('placeholder', 'Buscar por nombre, músculo o descripción');
+  change(catalog(), 'Buscar un ejercicio en el catálogo', 'futbol tenis');
+  expect(catalog().getByText('No hay ejercicios que coincidan.')).toBeInTheDocument();
   change(catalog(), 'Buscar un ejercicio en el catálogo', ''); await add(day(1), 'plank');
   expect(day(1).getAllByRole('listitem')).toHaveLength(2);
 });

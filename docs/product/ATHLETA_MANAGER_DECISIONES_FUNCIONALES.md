@@ -1024,3 +1024,14 @@ Estado: **CONFIRMADO / RESUELTO**. Esta decisión sustituye la restricción prev
 - Categorías y áreas son catálogos independientes. Descripción se muestra en una columna propia del historial de Gastos.
 - Las áreas personalizadas son clasificadores de Gastos y no se aplican a Ingresos ni habilitan capacidades clínicas.
 - El área base Clínica conserva las restricciones existentes de `isClinicEnabled()`. Deshabilitar Clínica oculta sus movimientos de las consultas operativas y totales restringidos y prohíbe nuevos Gastos clínicos, manteniendo íntegros los registros históricos.
+
+## Rutinas — Bloque 1: Catálogo de ejercicios y búsqueda — 2026-10-26
+
+Estado: **CONFIRMADO / RESUELTO**. Amplía la búsqueda y el acceso al catálogo definidos anteriormente, sin alterar las reglas de las Rutinas.
+
+- `/routines` incorpora las secciones Rutinas preestablecidas y Ejercicios. Ejercicios permite consultar el catálogo y crear, editar o retirar ejercicios sin abrir una Rutina. Cambiar de sección conserva los formularios y borradores en curso.
+- El catálogo mantiene Nombre obligatorio (hasta 120 caracteres), Músculo principal opcional (hasta 120) y Descripción opcional (hasta 500). No se agregan categorías, etiquetas ni filtros independientes.
+- Una búsqueda textual compartida encuentra coincidencias parciales en Nombre, Músculo principal y Descripción, sin distinguir mayúsculas ni tildes. Cada palabra ingresada debe coincidir en alguno de los tres campos, aunque las palabras estén repartidas entre campos. Solo se ofrecen ejercicios activos para agregar a una Rutina.
+- Se reutilizan las operaciones actuales del catálogo, con `SALA_ROUTINE_READ` para consultar y `SALA_ROUTINE_MANAGE` para crear, editar y retirar. Se mantienen la política de nombres duplicados y la confirmación explícita del retiro cuando afecta Rutinas activas, informando cuántas son y conservando las históricas.
+- La creación rápida desde el editor de Rutinas continúa disponible: incorpora el ejercicio al Día de origen y conserva los demás cambios locales. La administración contextual de la ficha del Alumno también se mantiene.
+- Los cambios del catálogo refrescan sus consultas y las de Rutinas de Alumnos y preestablecidas. No cambian contratos HTTP, esquema de datos, versionado, asociaciones ni presentación del Portal.

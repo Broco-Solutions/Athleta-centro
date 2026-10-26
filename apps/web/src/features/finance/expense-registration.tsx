@@ -113,13 +113,12 @@ export function ExpenseRegistration({ csrfToken, canManageCategories, onRegister
         <label className="text-sm">Fecha<input className={inputClass} type="date" max={todayOperational()} required {...form.register('cashDate')} /></label>
         <label className="text-sm">Categoría<select className={inputClass} required {...form.register('categoryId')} value={categoryId}><option value="">Seleccionar</option>{selectableCategories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label className="text-sm">Medio de pago<select className={inputClass} required {...form.register('paymentMethodId')}><option value="">Seleccionar</option>{selectableMethods.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <div className="text-sm"><label>Área<select className={inputClass} required name="areaId" value={areaId} onChange={event => form.setValue('areaId', event.target.value, { shouldValidate: true })}><option value="">Seleccionar</option>{selectableAreas.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>{canManageCategories ? <Button type="button" className="mt-2" variant="secondary" onClick={() => { createArea.reset(); setShowAreaCreator(true); }}>+ Nueva área</Button> : null}</div>
+        <label className="text-sm">Área<select className={inputClass} required name="areaId" value={areaId} onChange={event => form.setValue('areaId', event.target.value, { shouldValidate: true })}><option value="">Seleccionar</option>{selectableAreas.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label className="text-sm">Descripción (opcional)<input className={inputClass} {...form.register('description')} /></label>
         {Object.entries(form.formState.errors).map(([field, error]) => <p role="alert" className="text-sm text-red-700" key={field}>{error.message}</p>)}
         <div className="sm:col-span-2"><Button type="submit" disabled={createExpense.isPending || !form.formState.isValid || !catalogsValid}>{createExpense.isPending ? 'Registrando…' : 'Registrar gasto'}</Button></div>
       </fieldset>
     </form>
-    {showAreaCreator && canManageCategories ? <div className="space-y-2 rounded border p-3 text-sm"><label>Nombre del área<input className={inputClass} value={areaName} onChange={event => setAreaName(event.target.value)} disabled={createArea.isPending}/></label><div className="flex gap-2"><Button type="button" disabled={!areaName.trim() || createArea.isPending} onClick={() => createArea.mutate()}>{createArea.isPending ? 'Creando…' : 'Crear'}</Button><Button type="button" variant="secondary" disabled={createArea.isPending} onClick={() => { setShowAreaCreator(false); setAreaName(''); createArea.reset(); }}>Cancelar</Button></div>{createArea.isError ? <p role="alert">{createArea.error.message}</p> : null}</div> : null}
     {canManageCategories ? <section aria-labelledby="expense-categories-title" className="space-y-3 border-t border-border pt-5">
       <h3 id="expense-categories-title" className="font-semibold">Categorías de gastos</h3>
       <p className="text-sm text-muted-foreground">Agregá una categoría cuando necesites clasificar un nuevo tipo de gasto.</p>
@@ -131,6 +130,16 @@ export function ExpenseRegistration({ csrfToken, canManageCategories, onRegister
           <Button type="button" variant="secondary" disabled={createCategory.isPending} onClick={() => { setShowCategoryCreator(false); setCategoryName(''); createCategory.reset(); }}>Cancelar</Button>
         </div>
         {createCategory.isError ? <p role="alert">{createCategory.error.message}</p> : null}
+      </div> : null}
+    </section> : null}
+    {canManageCategories ? <section aria-labelledby="expense-areas-title" className="space-y-3 border-t border-border pt-5">
+      <h3 id="expense-areas-title" className="font-semibold">Áreas de gastos</h3>
+      <p className="text-sm text-muted-foreground">Agregá un área cuando necesites identificar un nuevo sector al que corresponde el gasto.</p>
+      {!showAreaCreator ? <Button type="button" variant="secondary" disabled={createArea.isPending} onClick={() => { createArea.reset(); setShowAreaCreator(true); }}>+ Agregar área</Button> : null}
+      {showAreaCreator ? <div className="space-y-2 text-sm" onChange={event => event.stopPropagation()}>
+        <label>Nombre del área<input className={inputClass} value={areaName} onChange={event => setAreaName(event.target.value)} disabled={createArea.isPending}/></label>
+        <div className="flex gap-2"><Button type="button" disabled={!areaName.trim() || createArea.isPending} onClick={() => createArea.mutate()}>{createArea.isPending ? 'Creando…' : 'Crear'}</Button><Button type="button" variant="secondary" disabled={createArea.isPending} onClick={() => { setShowAreaCreator(false); setAreaName(''); createArea.reset(); }}>Cancelar</Button></div>
+        {createArea.isError ? <p role="alert">{createArea.error.message}</p> : null}
       </div> : null}
     </section> : null}
     {createExpense.isError ? <p role="alert">{createExpense.error.message}</p> : null}

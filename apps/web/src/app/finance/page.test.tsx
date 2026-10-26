@@ -935,29 +935,29 @@ it('administers custom expense areas in place while keeping base areas read-only
   navigation.search = 'view=expenses'; let areas = [...financeAreas]; const writes: Array<{ method?: string; url: string; body?: unknown }> = [];
   server.use(
     http.get('http://localhost:3000/api/finance/expense-areas', () => HttpResponse.json({ data: areas })),
-    http.post('http://localhost:3000/api/finance/expense-areas', async ({ request }) => { const body = await request.json() as { name: string }; writes.push({ method: 'POST', url: '/api/finance/expense-areas', body }); const area = { id: 'custom-new', name: body.name, isSelectable: true, systemCode: null }; areas = [...areas, area]; return HttpResponse.json({ data: area }, { status: 201 }); }),
     http.patch('http://localhost:3000/api/finance/expense-areas/:id', async ({ params, request }) => { const body = await request.json() as { name?: string; isSelectable?: boolean }; writes.push({ method: 'PATCH', url: `/api/finance/expense-areas/${String(params.id)}`, body }); areas = areas.map(area => area.id === params.id ? { ...area, ...body } : area); return HttpResponse.json({ data: areas.find(area => area.id === params.id) }); }),
   );
   renderPage(); fireEvent.click(await screen.findByText('Administrar áreas'));
   const table = await screen.findByRole('table', { name: 'Áreas de gastos' });
   expect(within(table).getByRole('row', { name: /Sala.*Activa.*Área base/ })).toBeInTheDocument();
   expect(within(table).queryByRole('button', { name: 'Desactivar' })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: '+ Agregar área' }));
-  fireEvent.change(screen.getByLabelText('Nombre del área'), { target: { value: 'Osteopatía' } }); fireEvent.click(screen.getByRole('button', { name: 'Crear' }));
-  expect(await screen.findByText('Área creada correctamente.')).toBeVisible(); expect(writes[0]).toEqual({ method: 'POST', url: '/api/finance/expense-areas', body: { name: 'Osteopatía' } });
-  let customRow = within(table).getByRole('row', { name: /Osteopatía.*Activa/ });
+  expect(screen.queryByRole('button', { name: '+ Agregar área' })).not.toBeInTheDocument();
+  let customRow = within(table).getByRole('row', { name: /Kinesiología.*Inactiva/ });
+  fireEvent.click(within(customRow).getByRole('button', { name: 'Reactivar' }));
+  await waitFor(() => expect(within(table).getByRole('row', { name: /Kinesiología.*Activa/ })).toBeInTheDocument());
+  customRow = within(table).getByRole('row', { name: /Kinesiología.*Activa/ });
   fireEvent.click(within(customRow).getByRole('button', { name: 'Editar' }));
-  fireEvent.change(within(customRow).getByLabelText('Editar área Osteopatía'), { target: { value: 'Osteopatía y Terapia Manual' } });
+  fireEvent.change(within(customRow).getByLabelText('Editar área Kinesiología'), { target: { value: 'Kinesiología y Terapia Manual' } });
   fireEvent.click(within(customRow).getByRole('button', { name: 'Guardar' }));
-  await waitFor(() => expect(within(table).getByRole('row', { name: /Osteopatía y Terapia Manual.*Activa/ })).toBeInTheDocument());
-  customRow = within(table).getByRole('row', { name: /Osteopatía y Terapia Manual.*Activa/ });
+  await waitFor(() => expect(within(table).getByRole('row', { name: /Kinesiología y Terapia Manual.*Activa/ })).toBeInTheDocument());
+  customRow = within(table).getByRole('row', { name: /Kinesiología y Terapia Manual.*Activa/ });
   await waitFor(() => expect(within(customRow).getByRole('button', { name: 'Desactivar' })).toBeEnabled());
   fireEvent.click(within(customRow).getByRole('button', { name: 'Desactivar' }));
-  await waitFor(() => expect(within(table).getByRole('row', { name: /Osteopatía y Terapia Manual.*Inactiva/ })).toBeInTheDocument());
-  customRow = within(table).getByRole('row', { name: /Osteopatía y Terapia Manual.*Inactiva/ });
+  await waitFor(() => expect(within(table).getByRole('row', { name: /Kinesiología y Terapia Manual.*Inactiva/ })).toBeInTheDocument());
+  customRow = within(table).getByRole('row', { name: /Kinesiología y Terapia Manual.*Inactiva/ });
   fireEvent.click(within(customRow).getByRole('button', { name: 'Reactivar' }));
-  await waitFor(() => expect(within(table).getByRole('row', { name: /Osteopatía y Terapia Manual.*Activa/ })).toBeInTheDocument());
-  expect(writes.slice(1).map(write => write.body)).toEqual([{ name: 'Osteopatía y Terapia Manual', isSelectable: true }, { isSelectable: false }, { isSelectable: true }]);
+  await waitFor(() => expect(within(table).getByRole('row', { name: /Kinesiología y Terapia Manual.*Activa/ })).toBeInTheDocument());
+  expect(writes.map(write => write.body)).toEqual([{ isSelectable: true }, { name: 'Kinesiología y Terapia Manual', isSelectable: true }, { isSelectable: false }, { isSelectable: true }]);
 });
 it('shows custom inactive areas in historical filters, exports applied area and periods, and gives expenses their own Description column', async () => {
   navigation.search = 'view=expenses';
