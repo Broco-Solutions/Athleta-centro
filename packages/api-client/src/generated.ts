@@ -1090,6 +1090,69 @@ export interface RoutineTemplateDto {
   days: RoutineDayDto[];
 }
 
+export interface TrainingRecordSummaryDto {
+  id: string;
+  routineId: string;
+  routineDayId: string;
+  date: string;
+  /** @nullable */
+  dayName: string | null;
+  dayPosition: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TrainingPageMetaDto {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface TrainingRecordListEnvelopeDto {
+  data: TrainingRecordSummaryDto[];
+  meta: TrainingPageMetaDto;
+}
+
+export interface TrainingRecordExerciseDto {
+  id: string;
+  exerciseDefinitionId: string;
+  exerciseName: string;
+  position: number;
+  /** @nullable */
+  series: string | null;
+  /** @nullable */
+  repetitions: string | null;
+  /** @nullable */
+  duration: string | null;
+  /** @nullable */
+  load: string | null;
+  /** @nullable */
+  rest: string | null;
+  /** @nullable */
+  notes: string | null;
+  routineExerciseId: string;
+  /** @nullable */
+  weightKg: string | null;
+}
+
+export interface TrainingRecordDetailDto {
+  id: string;
+  routineId: string;
+  routineDayId: string;
+  date: string;
+  /** @nullable */
+  dayName: string | null;
+  dayPosition: number;
+  createdAt: string;
+  updatedAt: string;
+  exercises: TrainingRecordExerciseDto[];
+}
+
+export interface TrainingRecordEnvelopeDto {
+  data: TrainingRecordDetailDto;
+}
+
 export type SalaRoutineResponseDtoStatus = typeof SalaRoutineResponseDtoStatus[keyof typeof SalaRoutineResponseDtoStatus];
 
 
@@ -1934,6 +1997,77 @@ export interface SubmitHealthDeclarationDto {
   confirmed: boolean;
 }
 
+export interface TrainingContextExerciseDto {
+  id: string;
+  exerciseDefinitionId: string;
+  exerciseName: string;
+  position: number;
+  /** @nullable */
+  series: string | null;
+  /** @nullable */
+  repetitions: string | null;
+  /** @nullable */
+  duration: string | null;
+  /** @nullable */
+  load: string | null;
+  /** @nullable */
+  rest: string | null;
+  /** @nullable */
+  notes: string | null;
+  /** @nullable */
+  lastWeightKg: string | null;
+}
+
+export interface TrainingContextDayDto {
+  id: string;
+  /** @nullable */
+  name: string | null;
+  position: number;
+  exercises: TrainingContextExerciseDto[];
+}
+
+export interface TrainingContextRoutineDto {
+  id: string;
+  createdOn: string;
+  days: TrainingContextDayDto[];
+}
+
+/**
+ * @nullable
+ */
+export type TrainingContextDtoRoutine = TrainingContextRoutineDto | null;
+
+export interface TrainingContextDto {
+  today: string;
+  /** @nullable */
+  routine: TrainingContextDtoRoutine;
+}
+
+export interface TrainingContextEnvelopeDto {
+  data: TrainingContextDto;
+}
+
+export interface TrainingWeightDto {
+  /** Routine entry ID on creation; saved training entry ID on correction */
+  id: string;
+  /**
+   * Kilograms; null means no weight recorded. Up to 35 integer and 30 fractional digits.
+   * @nullable
+   */
+  weightKg: string | null;
+}
+
+export interface CreateTrainingRecordDto {
+  exercises: TrainingWeightDto[];
+  routineId: string;
+  routineDayId: string;
+  date: string;
+}
+
+export interface CorrectTrainingRecordDto {
+  exercises: TrainingWeightDto[];
+}
+
 export interface ReservationsProfessionalDto {
   id: string;
   firstName: string;
@@ -2092,6 +2226,11 @@ export type GetPersonSalaSpontaneousOptionsParams = {
 date: string;
 };
 
+export type ListPersonTrainingRecordsParams = {
+pageSize?: number;
+page?: number;
+};
+
 export type ListSalaPlans200DataItem = { [key: string]: unknown };
 
 export type ListSalaPlans200 = {
@@ -2187,6 +2326,15 @@ export type PortalControllerSession200Data = {
 
 export type PortalControllerSession200 = {
   data: PortalControllerSession200Data;
+};
+
+export type GetPortalTrainingContextParams = {
+date?: string;
+};
+
+export type ListPortalTrainingRecordsParams = {
+pageSize?: number;
+page?: number;
 };
 
 export type CancelPortalFixedOccurrence200DataStatus = typeof CancelPortalFixedOccurrence200DataStatus[keyof typeof CancelPortalFixedOccurrence200DataStatus];
@@ -4714,6 +4862,95 @@ export const deleteSalaRoutineTemplate = async (id: string, options?: RequestIni
 
   const data: deleteSalaRoutineTemplateResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as deleteSalaRoutineTemplateResponse
+}
+
+
+
+export type listPersonTrainingRecordsResponse200 = {
+  data: TrainingRecordListEnvelopeDto
+  status: 200
+}
+
+export type listPersonTrainingRecordsResponseSuccess = (listPersonTrainingRecordsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPersonTrainingRecordsResponse = (listPersonTrainingRecordsResponseSuccess)
+
+export const getListPersonTrainingRecordsUrl = (personId: string,
+    params?: ListPersonTrainingRecordsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/sala/people/${personId}/training-records?${stringifiedParams}` : `/api/sala/people/${personId}/training-records`
+}
+
+export const listPersonTrainingRecords = async (personId: string,
+    params?: ListPersonTrainingRecordsParams, options?: RequestInit): Promise<listPersonTrainingRecordsResponse> => {
+
+  const res = await fetch(getListPersonTrainingRecordsUrl(personId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listPersonTrainingRecordsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPersonTrainingRecordsResponse
+}
+
+
+
+export type getPersonTrainingRecordResponse200 = {
+  data: TrainingRecordEnvelopeDto
+  status: 200
+}
+
+export type getPersonTrainingRecordResponseSuccess = (getPersonTrainingRecordResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getPersonTrainingRecordResponse = (getPersonTrainingRecordResponseSuccess)
+
+export const getGetPersonTrainingRecordUrl = (personId: string,
+    id: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/training-records/${id}`
+}
+
+export const getPersonTrainingRecord = async (personId: string,
+    id: string, options?: RequestInit): Promise<getPersonTrainingRecordResponse> => {
+
+  const res = await fetch(getGetPersonTrainingRecordUrl(personId,id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getPersonTrainingRecordResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getPersonTrainingRecordResponse
 }
 
 
@@ -9759,6 +9996,218 @@ export const submitPortalHealthDeclaration = async (submitHealthDeclarationDto: 
 
   const data: submitPortalHealthDeclarationResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as submitPortalHealthDeclarationResponse
+}
+
+
+
+export type getPortalTrainingContextResponse200 = {
+  data: TrainingContextEnvelopeDto
+  status: 200
+}
+
+export type getPortalTrainingContextResponseSuccess = (getPortalTrainingContextResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getPortalTrainingContextResponse = (getPortalTrainingContextResponseSuccess)
+
+export const getGetPortalTrainingContextUrl = (params?: GetPortalTrainingContextParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/portal/sala/training-context?${stringifiedParams}` : `/api/portal/sala/training-context`
+}
+
+export const getPortalTrainingContext = async (params?: GetPortalTrainingContextParams, options?: RequestInit): Promise<getPortalTrainingContextResponse> => {
+
+  const res = await fetch(getGetPortalTrainingContextUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getPortalTrainingContextResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getPortalTrainingContextResponse
+}
+
+
+
+export type listPortalTrainingRecordsResponse200 = {
+  data: TrainingRecordListEnvelopeDto
+  status: 200
+}
+
+export type listPortalTrainingRecordsResponseSuccess = (listPortalTrainingRecordsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPortalTrainingRecordsResponse = (listPortalTrainingRecordsResponseSuccess)
+
+export const getListPortalTrainingRecordsUrl = (params?: ListPortalTrainingRecordsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/portal/sala/training-records?${stringifiedParams}` : `/api/portal/sala/training-records`
+}
+
+export const listPortalTrainingRecords = async (params?: ListPortalTrainingRecordsParams, options?: RequestInit): Promise<listPortalTrainingRecordsResponse> => {
+
+  const res = await fetch(getListPortalTrainingRecordsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listPortalTrainingRecordsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPortalTrainingRecordsResponse
+}
+
+
+
+export type createPortalTrainingRecordResponse201 = {
+  data: TrainingRecordEnvelopeDto
+  status: 201
+}
+
+export type createPortalTrainingRecordResponseSuccess = (createPortalTrainingRecordResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createPortalTrainingRecordResponse = (createPortalTrainingRecordResponseSuccess)
+
+export const getCreatePortalTrainingRecordUrl = () => {
+
+
+
+
+  return `/api/portal/sala/training-records`
+}
+
+export const createPortalTrainingRecord = async (createTrainingRecordDto: CreateTrainingRecordDto, options?: RequestInit): Promise<createPortalTrainingRecordResponse> => {
+
+  const res = await fetch(getCreatePortalTrainingRecordUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createTrainingRecordDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createPortalTrainingRecordResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createPortalTrainingRecordResponse
+}
+
+
+
+export type getPortalTrainingRecordResponse200 = {
+  data: TrainingRecordEnvelopeDto
+  status: 200
+}
+
+export type getPortalTrainingRecordResponseSuccess = (getPortalTrainingRecordResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getPortalTrainingRecordResponse = (getPortalTrainingRecordResponseSuccess)
+
+export const getGetPortalTrainingRecordUrl = (id: string,) => {
+
+
+
+
+  return `/api/portal/sala/training-records/${id}`
+}
+
+export const getPortalTrainingRecord = async (id: string, options?: RequestInit): Promise<getPortalTrainingRecordResponse> => {
+
+  const res = await fetch(getGetPortalTrainingRecordUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getPortalTrainingRecordResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getPortalTrainingRecordResponse
+}
+
+
+
+export type correctPortalTrainingRecordResponse200 = {
+  data: TrainingRecordEnvelopeDto
+  status: 200
+}
+
+export type correctPortalTrainingRecordResponseSuccess = (correctPortalTrainingRecordResponse200) & {
+  headers: Headers;
+};
+;
+
+export type correctPortalTrainingRecordResponse = (correctPortalTrainingRecordResponseSuccess)
+
+export const getCorrectPortalTrainingRecordUrl = (id: string,) => {
+
+
+
+
+  return `/api/portal/sala/training-records/${id}/correct`
+}
+
+export const correctPortalTrainingRecord = async (id: string,
+    correctTrainingRecordDto: CorrectTrainingRecordDto, options?: RequestInit): Promise<correctPortalTrainingRecordResponse> => {
+
+  const res = await fetch(getCorrectPortalTrainingRecordUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      correctTrainingRecordDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: correctPortalTrainingRecordResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as correctPortalTrainingRecordResponse
 }
 
 

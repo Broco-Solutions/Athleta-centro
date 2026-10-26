@@ -1035,3 +1035,45 @@ Estado: **CONFIRMADO / RESUELTO**. Amplía la búsqueda y el acceso al catálogo
 - Se reutilizan las operaciones actuales del catálogo, con `SALA_ROUTINE_READ` para consultar y `SALA_ROUTINE_MANAGE` para crear, editar y retirar. Se mantienen la política de nombres duplicados y la confirmación explícita del retiro cuando afecta Rutinas activas, informando cuántas son y conservando las históricas.
 - La creación rápida desde el editor de Rutinas continúa disponible: incorpora el ejercicio al Día de origen y conserva los demás cambios locales. La administración contextual de la ficha del Alumno también se mantiene.
 - Los cambios del catálogo refrescan sus consultas y las de Rutinas de Alumnos y preestablecidas. No cambian contratos HTTP, esquema de datos, versionado, asociaciones ni presentación del Portal.
+
+## Sala — Registro de entrenamientos del alumno — 2026-10-26
+
+Definición aprobada: el alumno registra desde el Portal un único peso realizado en
+kilogramos por aparición de ejercicio y entrenamiento; admite decimales con coma.
+El peso realizado es independiente de la carga de texto indicada por el profesor.
+Un campo vacío significa **sin peso registrado**, no cero ni ausencia de realización.
+Para crear un entrenamiento se exige al menos un peso informado.
+
+El alumno selecciona fecha operativa de Argentina y día de su rutina actualmente
+activa. Se propone hoy; se permiten fechas anteriores desde la fecha operativa de
+creación de esa versión de rutina, sin fechas futuras. No se puede duplicar alumno,
+fecha y día de rutina, incluso con solicitudes simultáneas. Si la rutina cambia
+mientras se completa el formulario, el backend rechaza la referencia anterior y
+solicita revisar la rutina; nunca reasigna silenciosamente el entrenamiento.
+
+Inicio ofrece **Registrar entrenamiento** y **Ver rutina** cuando existe rutina
+activa. **Registrar este día**, desde Mi rutina, abre el mismo formulario con el día
+seleccionado. Se muestra el último peso informado para la identidad del ejercicio en
+registros propios previos, hasta la fecha seleccionada inclusive, incluso de otras versiones.
+Las apariciones repetidas de un ejercicio se registran por separado.
+
+**Mis entrenamientos** muestra el historial propio por fecha descendente, paginado,
+con consulta de detalle y **Editar registro**. Las correcciones sólo actualizan
+pesos propios: conservan identidad, fecha, creación y planificación histórica, y
+actualizan la fecha de modificación. Se pueden vaciar pesos al corregir sin eliminar
+el entrenamiento. No se incorpora eliminación de registros.
+
+En Alumnos → Ficha → Rutina se conserva el orden: rutina activa, **Historial de
+entrenamientos**, rutinas históricas. Cada entrenamiento muestra fecha, día y
+**Ver detalle**; el detalle se consulta al abrirlo y compara carga indicada con peso
+realizado. El personal con `SALA_ROUTINE_READ` puede consultar todos los alumnos
+permitidos por el acceso actual a rutinas, sin editar los pesos declarados. El
+profesor sigue usando **Editar rutina**, sin actualizaciones automáticas por pesos.
+
+Cada entrenamiento conserva una copia histórica del nombre/posición del día y de
+cada aparición de ejercicio, su identidad y nombre, series, repeticiones/tiempo,
+carga indicada, descanso y observaciones. Reemplazar la rutina, modificar el catálogo
+o retirar un ejercicio de una rutina activa no cambia ni elimina estos datos.
+Los registros existentes siguen siendo consultables y corregibles aunque cambie la
+rutina. No se exige asistencia confirmada ni se alteran reservas, turnos fijos,
+asistencias, cupos, sesiones permitidas, pagos o vigencia de Sala.

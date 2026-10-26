@@ -37,6 +37,9 @@ it('renders the active routine read-only with its details and correct counts', a
   expect(screen.getByRole('heading', { name: 'Día 1' }).closest('header')).toHaveClass('bg-surface-muted');
   for (const row of screen.getAllByRole('listitem')) expect(row.querySelector('.bg-primary')).toBeNull();
   for (const row of screen.getAllByRole('listitem')) expect(row).not.toHaveClass('bg-primary');
+  expect(screen.getByRole('link', { name: 'Registrar este día: Día 1' })).toHaveAttribute('href', '/portal/sala/entrenamientos/registrar?dayId=day-1');
+  expect(screen.getByRole('link', { name: 'Registrar este día: Día 2' })).toHaveAttribute('href', '/portal/sala/entrenamientos/registrar?dayId=day-2');
+  expect(screen.getByRole('link', { name: 'Mis entrenamientos' })).toHaveAttribute('href', '/portal/sala/entrenamientos');
   expect(screen.getByText('Descenso controlado')).toBeInTheDocument();
   expect(screen.getByText('Tiempo 45 s')).toBeInTheDocument();
   expect(screen.getByText('Sentadilla')).toBeInTheDocument();

@@ -48,6 +48,7 @@ it('shows a routine summary and links to its read-only detail page', async () =>
   const routine = within(document.getElementById('rutina')!);
   expect(routine.getByRole('heading', { name: 'Mi rutina' })).toBeInTheDocument();
   expect(routine.getByText('2 días · 4 ejercicios')).toBeInTheDocument();
+  expect(routine.getByRole('link', { name: 'Registrar entrenamiento' })).toHaveAttribute('href', '/portal/sala/entrenamientos/registrar');
   expect(routine.getByRole('link', { name: 'Ver rutina' })).toHaveAttribute('href', '/portal/sala/rutina');
   expect(routine.queryByText('Sentadilla')).not.toBeInTheDocument();
   expect(routine.queryByText('Controlar técnica')).not.toBeInTheDocument();
@@ -197,4 +198,9 @@ it('shows only weekly fixed days and times with a link to upcoming turns', async
   expect(screen.getByText('Miércoles · 18:00')).toBeVisible();
   expect(screen.getByRole('link', { name: 'Ver próximos turnos' })).toHaveAttribute('href', '/portal/sala/reservas');
   for (const text of ['Sala', '60 min', 'Desde 26/10/2026', 'Desde 28/10/2026', 'Próximos turnos fijos', 'Pendiente de renovación', 'Cancelar esta fecha', 'Viernes · 10:00']) expect(screen.queryByText(text)).not.toBeInTheDocument();
+});
+
+it('hides registration on Home without an active routine', async () => {
+  renderPortalHome(); await screen.findByText('No hay una rutina activa.');
+  expect(screen.queryByRole('link', { name: 'Registrar entrenamiento' })).not.toBeInTheDocument();
 });

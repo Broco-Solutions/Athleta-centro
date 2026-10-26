@@ -1,4 +1,5 @@
 'use client';
+import { personTrainingApi } from './training-record-api';
 import React, { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -104,6 +105,7 @@ export function SalaPersonWorkspace({ personId }: { personId: string }): React.J
   const bookingBase = { personId, salaParticipationId: active?.id ?? '', scheduleSlotId: slotId, ...(serviceId ? { serviceTypeId: serviceId } : {}), startTime };
   const reserve = useMutation({ mutationFn: async () => { const payload: OneOffReservationDto = { ...bookingBase, date }; return assertBookingResponse(await createSalaReservation(payload, options(csrf))); }, onSuccess: refresh }); const createFixed = useMutation({ mutationFn: async () => { const payload: FixedBookingDto = fixedBase; return assertBookingResponse(await createFixedSalaBooking(payload, options(csrf))); }, onSuccess: refresh }); const updateFixed = useMutation({ mutationFn: async () => { if (editingFixed) { const payload: ChangeFixedBookingDto = { ...fixedBase, id: editingFixed.id }; assertBookingResponse(await changeFixedSalaBooking(editingFixed.id, payload, options(csrf))); } }, onSuccess: async () => { setEditingFixed(null); await refresh(); } }); const finishFixed = useMutation({ mutationFn: async (id: string) => assertBookingResponse(await endFixedSalaBooking(id, { endDate: today() }, options(csrf))), onSuccess: async (_, id) => { if (editingFixed?.id === id) setEditingFixed(null); if (reassigningFixed?.id === id) resetReassignment(); await refresh(); } }); const cancel = useMutation({ mutationFn: (id: string) => cancelSalaReservation(id, options(csrf)), onSuccess: refresh });
   const routineApi: RoutineApi = {
+    training: personTrainingApi(personId),
     list: async (id, requestOptions) => { const response = await listPersonSalaRoutines(id, requestOptions); assertRoutineResponse(response); return response.data.data; },
     templates: async (requestOptions) => { const response = await listSalaRoutineTemplates(requestOptions); assertRoutineResponse(response); return response.data.data; },
     exercises: async (requestOptions) => { const response = await listSalaExerciseDefinitions(requestOptions); assertRoutineResponse(response); return response.data.data; },

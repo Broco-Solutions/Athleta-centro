@@ -245,6 +245,8 @@ model Person {
   @@index([lastName, firstName])
   @@index([normalizedEmail])
   @@map("people")
+  trainingRecords SalaTrainingRecord[]
+
 }
 
 model ClinicalPatient {
@@ -722,6 +724,8 @@ model Routine {
   @@unique([personId, version])
   @@index([salaParticipationId])
   @@map("routines")
+  trainingRecords SalaTrainingRecord[]
+
 }
 
 model RoutineDay {
@@ -1238,4 +1242,47 @@ model PaperHealthDeclaration {
 
   @@index([personId, validUntil])
   @@map("paper_health_declarations")
+}
+
+// Training history owns its snapshots. Source day/entry UUIDs deliberately are not FKs:
+// retiring a catalog exercise may physically remove its active routine entry.
+model SalaTrainingRecord {
+  id String @id @default(uuid()) @db.Uuid
+  personId String @map("person_id") @db.Uuid
+  routineId String @map("routine_id") @db.Uuid
+  routineDayId String @map("routine_day_id") @db.Uuid
+  date DateTime @db.Date
+  dayName String? @map("day_name") @db.VarChar(120)
+  dayPosition Int @map("day_position")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  person Person @relation(fields: [personId], references: [id], onDelete: Restrict)
+  routine Routine @relation(fields: [routineId], references: [id], onDelete: Restrict)
+  exercises SalaTrainingRecordExercise[]
+
+  @@unique([personId, date, routineDayId])
+  @@index([personId, date, id])
+  @@map("sala_training_records")
+}
+
+model SalaTrainingRecordExercise {
+  id String @id @default(uuid()) @db.Uuid
+  recordId String @map("record_id") @db.Uuid
+  routineExerciseId String @map("routine_exercise_id") @db.Uuid
+  exerciseDefinitionId String @map("exercise_definition_id") @db.Uuid
+  exerciseName String @map("exercise_name") @db.VarChar(120)
+  position Int
+  series String? @db.VarChar(80)
+  repetitions String? @db.VarChar(80)
+  duration String? @db.VarChar(80)
+  load String? @db.VarChar(80)
+  rest String? @db.VarChar(80)
+  notes String? @db.VarChar(500)
+  weightKg Decimal? @map("weight_kg") @db.Decimal(65,30)
+  record SalaTrainingRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@unique([recordId, position])
+  @@unique([recordId, routineExerciseId])
+  @@index([exerciseDefinitionId, recordId])
+  @@map("sala_training_record_exercises")
 }

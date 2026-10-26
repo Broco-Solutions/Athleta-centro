@@ -16,6 +16,7 @@ const routine: Routine = {
 };
 function renderPanel(rows: Routine[] = [routine], canManage = true, catalog: RoutineApi['exercises'] = async () => definitions) {
   const api = {
+    training: { list: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }), detail: vi.fn() },
     list: vi.fn<RoutineApi['list']>().mockResolvedValue(rows), exercises: vi.fn<RoutineApi['exercises']>().mockImplementation(catalog),
     templates: vi.fn<RoutineApi['templates']>().mockResolvedValue([]),
     create: vi.fn<RoutineApi['create']>().mockResolvedValue({}), replace: vi.fn<RoutineApi['replace']>().mockResolvedValue({}),
@@ -456,4 +457,14 @@ it('preserves an empty time selection across tabs and keeps it out of the payloa
   expect(row().getByLabelText('Tipo')).toHaveValue('duration');
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' })); await waitFor(() => expect(api.replace).toHaveBeenCalled());
   expect(api.replace.mock.calls[0]![1].days[0]?.exercises[0]).toEqual({ exerciseDefinitionId: 'squat', series: '4', repetitions: null, duration: null, load: '40 kg', rest: '30 s', notes: 'Controlar técnica' });
+});
+
+it('places training history between the active routine and historical routines', async () => {
+  renderPanel([routine, { ...routine, id: 'old', status: 'HISTORICAL', version: 1 }], false);
+  await screen.findByText('Rutina v2');
+  const training = screen.getByRole('region', { name: 'Historial de entrenamientos' });
+  const active = screen.getByText('Rutina v2'); const historical = screen.getByText('Rutinas históricas (1)');
+  expect(active.compareDocumentPosition(training) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(training.compareDocumentPosition(historical) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Editar rutina' })).not.toBeInTheDocument();
 });

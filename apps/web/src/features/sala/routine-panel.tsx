@@ -5,6 +5,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@athleta/ui';
 import type { ExerciseDefinitionDto, ReplaceRoutineDto } from '@athleta/api-client';
 import { RoutineDaysEditor, RoutineContentSummary, copyRoutineDays, routineDaysToDraft, draftToRoutineDays, newDay, fieldClass, errorMessage, type EditingDay, type RoutineDay, type ExerciseDefinition, type RoutineTemplate } from './routine-editor';
+import { TrainingRecordHistory } from './training-record-history';
+import type { TrainingHistoryApi } from './training-record-api';
 export type { ExerciseDefinition, RoutineDay, RoutineExercise, RoutineTemplate } from './routine-editor';
 
 export type Routine = { id: string; personId: string; salaParticipationId: string; status: 'ACTIVE' | 'HISTORICAL'; version: number; createdAt?: string; days: RoutineDay[] };
@@ -12,6 +14,7 @@ export type RoutineInput = ReplaceRoutineDto;
 
 /** Operations use the generated client through the workspace adapter. */
 export type RoutineApi = {
+  training: TrainingHistoryApi;
   list: (personId: string, options: RequestInit) => Promise<Routine[]>;
   templates: (options: RequestInit) => Promise<RoutineTemplate[]>;
   exercises: (options: RequestInit) => Promise<ExerciseDefinition[]>;
@@ -99,6 +102,7 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
     {routines.isError ? <p role="alert" className="mt-3 text-sm text-red-700">{errorMessage(routines.error)}</p> : null}
     {!routines.isLoading && !routines.isError && !active ? <div className="mt-4 rounded-md border bg-white p-4"><p className="font-medium">No hay una rutina activa.</p><p className="mt-1 text-sm text-muted-foreground">Creá una rutina nueva o elegí una preestablecida para este alumno.</p></div> : null}
     {active ? <RoutineSummary routine={active} definitions={definitions.data ?? []} reusing={reuseRoutine.isPending}/> : null}
+    <TrainingRecordHistory key={personId} api={api.training} queryKey={['sala-training-records', personId]}/>
     {historical.length > 0 ? <details className="mt-4"><summary className="cursor-pointer text-sm font-medium">Rutinas históricas ({historical.length})</summary><div className="mt-2 grid gap-2">{historical.map((routine) => <RoutineSummary key={routine.id} routine={routine} definitions={definitions.data ?? []} onReuse={canManage && participationId && !editing && !selectingTemplate && !routineToReuse ? () => { setFeedback(null); reuseRoutine.reset(); setRoutineToReuse(routine); } : undefined} reusing={reuseRoutine.isPending}/>)}</div></details> : null}
     {routineToReuse ? <div role="alertdialog" aria-modal="true" aria-labelledby="reuse-routine-title" className="mt-4 rounded-md border bg-white p-4"><h4 id="reuse-routine-title" className="font-semibold">Usar nuevamente esta rutina</h4><p className="mt-2 text-sm">Esta rutina pasará a ser la rutina activa del alumno.</p>{active ? <p className="text-sm">La rutina actual quedará en el historial.</p> : null}<div className="mt-4 flex justify-end gap-2"><Button type="button" variant="secondary" disabled={reuseRoutine.isPending} onClick={() => { setRoutineToReuse(null); reuseRoutine.reset(); }}>Cancelar</Button><Button type="button" disabled={reuseRoutine.isPending} onClick={() => reuseRoutine.mutate(routineToReuse.id)}>{reuseRoutine.isPending ? 'Activando…' : 'Usar nuevamente'}</Button></div></div> : null}
     {canManage && selectingTemplate ? <div className="mt-4 rounded-md border bg-white p-4">

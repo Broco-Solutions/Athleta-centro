@@ -1,6 +1,8 @@
+import { TrainingRecordService } from './training-record.service';
+import { TrainingRecordQueryDto, TrainingRecordEnvelopeDto, TrainingRecordListEnvelopeDto } from './training-record.dto';
 import { RegisterPaperHealthDeclarationDto, HealthDeclarationStatusEnvelopeDto, HealthDeclarationListEnvelopeDto, HealthDeclarationDetailEnvelopeDto } from './health-declaration/health-declaration.dto';
 import type { Permission } from '../team/permissions';
-import { Body, HttpCode, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, HttpCode, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UseGuards, ParseUUIDPipe } from '@nestjs/common';
 import { ApiBody, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { SalaOccurrenceStatus } from '@prisma/client';
 import { PermissionsGuard, RequirePermissions } from '../auth/permissions.guard';
@@ -10,7 +12,7 @@ import { SalaService } from './sala.service';
 import type { Request } from 'express';
 @ApiTags('Sala') @Controller('sala') @UseGuards(PermissionsGuard)
 export class SalaController {
-  constructor(private readonly sala: SalaService) {}
+  constructor(private readonly sala: SalaService, private readonly training: TrainingRecordService) {}
   @Post('people/:personId/health-declarations/register-paper') @RequirePermissions('SALA_PARTICIPATION_MANAGE') @ApiOperation({ operationId: 'registerPaperHealthDeclaration' }) @ApiParam({ name: 'personId', type: String, format: 'uuid' }) @ApiBody({ type: RegisterPaperHealthDeclarationDto }) @ApiCreatedResponse({ type: HealthDeclarationStatusEnvelopeDto })
   async registerPaperHealthDeclaration(@Req() request: Request & { athletaUserId?: string }, @Param('personId') personId: string, @Body() body: RegisterPaperHealthDeclarationDto) { return { data: await this.sala.registerPaperHealthDeclaration(personId, body.signedOn, this.actor(request)) }; }
   @Get('people/:personId/health-declaration/status') @RequirePermissions('SALA_RELATION_READ') @ApiOperation({ operationId: 'getPersonHealthDeclarationStatus' }) @ApiParam({ name: 'personId', type: String, format: 'uuid' }) @ApiOkResponse({ type: HealthDeclarationStatusEnvelopeDto })
@@ -60,6 +62,10 @@ export class SalaController {
   @Post('routine-templates') @RequirePermissions('SALA_ROUTINE_MANAGE') @ApiOperation({ operationId: 'createSalaRoutineTemplate' }) @ApiBody({ type: RoutineTemplateDto }) async createRoutineTemplate(@Body() body: RoutineTemplateDto) { return { data: await this.sala.createRoutineTemplate(body) }; }
   @Put('routine-templates/:id') @RequirePermissions('SALA_ROUTINE_MANAGE') @ApiOperation({ operationId: 'updateSalaRoutineTemplate' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) @ApiBody({ type: RoutineTemplateDto }) async updateRoutineTemplate(@Param('id') id: string, @Body() body: RoutineTemplateDto) { return { data: await this.sala.updateRoutineTemplate(id, body) }; }
   @Delete('routine-templates/:id') @RequirePermissions('SALA_ROUTINE_MANAGE') @ApiOperation({ operationId: 'deleteSalaRoutineTemplate' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) async deleteRoutineTemplate(@Param('id') id: string) { return { data: await this.sala.deleteRoutineTemplate(id) }; }
+  @Get('people/:personId/training-records') @RequirePermissions('SALA_ROUTINE_READ') @ApiOperation({ operationId: 'listPersonTrainingRecords' }) @ApiQuery({ name: 'page', required: false, type: Number }) @ApiQuery({ name: 'pageSize', required: false, type: Number }) @ApiParam({ name: 'personId', type: String, format: 'uuid' }) @ApiOkResponse({ type: TrainingRecordListEnvelopeDto })
+  async trainingList(@Param('personId', ParseUUIDPipe) personId: string, @Query() query: TrainingRecordQueryDto) { return this.training.list(personId, query); }
+  @Get('people/:personId/training-records/:id') @RequirePermissions('SALA_ROUTINE_READ') @ApiOperation({ operationId: 'getPersonTrainingRecord' }) @ApiParam({ name: 'personId', type: String, format: 'uuid' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) @ApiOkResponse({ type: TrainingRecordEnvelopeDto })
+  async trainingDetail(@Param('personId', ParseUUIDPipe) personId: string, @Param('id', ParseUUIDPipe) id: string) { return { data: await this.training.detail(personId, id) }; }
   @Get('people/:personId/routines') @RequirePermissions('SALA_ROUTINE_READ') @ApiOperation({ operationId: 'listPersonSalaRoutines' }) @ApiParam({ name: 'personId', type: String, format: 'uuid' }) @ApiOkResponse({ type: SalaRoutineListEnvelopeDto }) async routines(@Param('personId') personId: string) { return { data: await this.sala.listRoutines(personId) }; }
   @Post('routines') @RequirePermissions('SALA_ROUTINE_MANAGE') @ApiOperation({ operationId: 'replaceSalaRoutine' }) @ApiBody({ type: ReplaceRoutineDto }) async replaceRoutine(@Body() body: ReplaceRoutineDto) { return { data: await this.sala.replaceRoutine(body) }; }
   @Post('routines/:id/duplicate') @RequirePermissions('SALA_ROUTINE_MANAGE') @ApiOperation({ operationId: 'duplicateSalaRoutine' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) async duplicateRoutine(@Param('id') id: string) { return { data: await this.sala.duplicateRoutine(id) }; }

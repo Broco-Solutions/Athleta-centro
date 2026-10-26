@@ -179,7 +179,7 @@ export function draftToRoutineDays(days: EditingDay[]): RoutineDayDto[] {
 export function copyRoutineDays(days: RoutineDay[]): RoutineDayDto[] {
   return days.map((day) => ({ name: day.name ?? null, exercises: day.exercises.map((exercise) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, series: exercise.series ?? null, repetitions: exercise.repetitions ?? null, duration: exercise.duration ?? null, load: exercise.load ?? null, rest: exercise.rest ?? null, notes: exercise.notes ?? null })) }));
 }
-export function RoutineContentSummary({ days, definitions = [] }: { days: RoutineDay[]; definitions?: ExerciseDefinition[] }): React.JSX.Element {
+export function RoutineContentSummary({ days, definitions = [], dayAction }: { days: RoutineDay[]; definitions?: ExerciseDefinition[]; dayAction?: (day: RoutineDay) => React.ReactNode }): React.JSX.Element {
   return <div className="mt-4 grid gap-3 sm:grid-cols-2">{days.map((day) => <section key={day.id ?? day.position} className="min-w-0 rounded-md border border-border bg-white">
     <header className="flex items-center justify-between gap-2 border-b border-border bg-surface-muted px-3 py-2"><h5 className="truncate rounded-sm bg-primary px-2.5 py-1 text-sm font-semibold text-primary-foreground">{day.name ?? `Día ${day.position}`}</h5><span className="shrink-0 text-xs text-muted-foreground">{day.exercises.length} {day.exercises.length === 1 ? 'ejercicio' : 'ejercicios'}</span></header>
     {day.exercises.length === 0 ? <p className="px-3 py-3 text-sm text-muted-foreground">Sin ejercicios.</p> : <ul className="divide-y divide-border">{day.exercises.map((exercise, index) => {
@@ -191,5 +191,6 @@ export function RoutineContentSummary({ days, definitions = [] }: { days: Routin
         {exercise.notes ? <p className="mt-1 text-xs text-muted-foreground">Observación: {exercise.notes}</p> : null}
       </li>;
     })}</ul>}
+    {dayAction ? <div className="px-3 py-3">{dayAction(day)}</div> : null}
   </section>)}</div>;
 }

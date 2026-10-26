@@ -1,6 +1,7 @@
+import { CreateTrainingRecordDto, CorrectTrainingRecordDto, TrainingRecordQueryDto, TrainingContextQueryDto, TrainingContextEnvelopeDto, TrainingRecordEnvelopeDto, TrainingRecordListEnvelopeDto } from '../sala/training-record.dto';
 import { SubmitHealthDeclarationDto, HealthDeclarationStatusEnvelopeDto, HealthDeclarationListEnvelopeDto, HealthDeclarationDetailEnvelopeDto, HealthDocumentEnvelopeDto } from '../sala/health-declaration/health-declaration.dto';
-import { Body, Controller, Get, HttpCode, Param, Post, Req, Res } from '@nestjs/common';
-import { ApiOperation, ApiOkResponse, ApiParam, ApiBody, ApiCreatedResponse, getSchemaPath, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, Param, Post, Req, Res, Query, ParseUUIDPipe } from '@nestjs/common';
+import { ApiQuery, ApiOperation, ApiOkResponse, ApiParam, ApiBody, ApiCreatedResponse, getSchemaPath, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { PORTAL_SESSION_TTL_MS } from './portal-session';
 import { PortalService } from './portal.service';
@@ -30,6 +31,16 @@ export class PortalController {
     await this.portal.submitHealthDeclaration(this.cookie(req), body);
     return { data: await this.portal.healthStatus(this.cookie(req)) };
   }
+  @Get('sala/training-context') @ApiOperation({ operationId: 'getPortalTrainingContext' }) @ApiQuery({ name: 'date', required: false, type: String, format: 'date' }) @ApiOkResponse({ type: TrainingContextEnvelopeDto })
+  async trainingContext(@Req() req: Request, @Query() query: TrainingContextQueryDto) { return { data: await this.portal.trainingContext(this.cookie(req), query.date) }; }
+  @Get('sala/training-records') @ApiOperation({ operationId: 'listPortalTrainingRecords' }) @ApiQuery({ name: 'page', required: false, type: Number }) @ApiQuery({ name: 'pageSize', required: false, type: Number }) @ApiOkResponse({ type: TrainingRecordListEnvelopeDto })
+  async trainingList(@Req() req: Request, @Query() query: TrainingRecordQueryDto) { return this.portal.trainingList(this.cookie(req), query); }
+  @Get('sala/training-records/:id') @ApiOperation({ operationId: 'getPortalTrainingRecord' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) @ApiOkResponse({ type: TrainingRecordEnvelopeDto })
+  async trainingDetail(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) { return { data: await this.portal.trainingDetail(this.cookie(req), id) }; }
+  @Post('sala/training-records') @ApiOperation({ operationId: 'createPortalTrainingRecord' }) @ApiBody({ type: CreateTrainingRecordDto }) @ApiCreatedResponse({ type: TrainingRecordEnvelopeDto })
+  async trainingCreate(@Req() req: Request, @Body() body: CreateTrainingRecordDto) { await this.portal.assertCsrf(this.cookie(req), req.header('x-csrf-token')); return { data: await this.portal.trainingCreate(this.cookie(req), body) }; }
+  @Post('sala/training-records/:id/correct') @HttpCode(200) @ApiOperation({ operationId: 'correctPortalTrainingRecord' }) @ApiParam({ name: 'id', type: String, format: 'uuid' }) @ApiBody({ type: CorrectTrainingRecordDto }) @ApiOkResponse({ type: TrainingRecordEnvelopeDto })
+  async trainingCorrect(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() body: CorrectTrainingRecordDto) { await this.portal.assertCsrf(this.cookie(req), req.header('x-csrf-token')); return { data: await this.portal.trainingCorrect(this.cookie(req), id, body) }; }
   @Get('sala') async sala(@Req() req: Request) { return { data: await this.portal.sala(this.cookie(req)) }; }
   @Get('sala/services') async salaServices(@Req() req: Request) { return { data: await this.portal.salaServices(this.cookie(req)) }; }
   @Get('sala/availability') async availability(@Req() req: Request) { const query = req.query as { date?: string; excludeFixedBookingId?: string }; return { data: await this.portal.salaAvailability(this.cookie(req), String(query.date ?? ''), query.excludeFixedBookingId) }; }
