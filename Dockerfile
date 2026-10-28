@@ -5,7 +5,10 @@ WORKDIR /app
 
 # Keep the package-manager version aligned with package.json.  The image also
 # contains Prisma because Railway runs migrations as the pre-deploy command.
-RUN npm install --global pnpm@10.15.1
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes openssl \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install --global pnpm@10.15.1
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json .nvmrc ./
 COPY apps/api/package.json apps/api/package.json
