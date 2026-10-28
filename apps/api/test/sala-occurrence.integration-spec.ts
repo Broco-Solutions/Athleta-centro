@@ -110,14 +110,14 @@ describe('SalaOccurrence persistence and API', () => {
     const duplicate = await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, new Date('2026-08-27T12:20:00Z'));
     expect(duplicate).toMatchObject({ status: 'ALREADY_REGISTERED', message: 'Ya registraste tu asistencia a este turno.' });
     expect(await prisma.salaOccurrence.count({ where: { personId: f.person.id } })).toBe(1);
-    expect(await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, new Date('2026-08-27T12:21:00Z'))).toMatchObject({ status: 'OUT_OF_WINDOW', message: 'Finalizó el horario de fichaje. Podías registrarte hasta las 09:20. Consultá con un profesor.' });
+    expect(await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, new Date('2026-08-27T12:21:00Z'))).toMatchObject({ status: 'OUT_OF_WINDOW', message: 'Finalizó el horario de ingreso. Podías registrarte hasta las 09:20. Consultá con un profesor.' });
   });
 
   it('rejects early, expired, missing, and manually absent check-ins without changing manual attendance', async () => {
     const f = await setup();
     await sala.createFixed({ personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: f.slot.id, serviceTypeId: f.service.id, startDate: '2026-01-01', confirmOverbooking: true });
     const early = await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, new Date('2026-08-27T11:39:00Z'));
-    expect(early).toMatchObject({ status: 'TOO_EARLY', message: 'Tu fichaje todavía no está habilitado. Podés registrarte desde las 08:40.' });
+    expect(early).toMatchObject({ status: 'TOO_EARLY', message: 'Tu ingreso todavía no está habilitado. Podés registrarte desde las 08:40.' });
     expect(await sala.checkInByDni({ dni: f.person.normalizedDni }, f.actor.id, new Date('2026-08-27T12:00:00Z'))).toMatchObject({ status: 'EXPIRED', message: 'Tu plan está vencido. No pudimos registrar tu asistencia. Acercate a recepción para renovar.' });
     expect(await sala.checkInByDni({ dni: '99999999' }, f.actor.id, new Date('2026-08-27T12:00:00Z'))).toMatchObject({ status: 'NOT_FOUND' });
     await sala.commandOccurrence({ personId: f.person.id, scheduleSlotId: f.slot.id, date: f.date, status: SalaOccurrenceStatus.ABSENT }, f.actor.id);

@@ -73,8 +73,17 @@ describe('Portal auth and PIN reset', () => {
 
     const internalDenied = await request(app.getHttpServer()).post(`/api/people/${person.id}/reset-portal-pin`).set('Cookie', cookie).expect(401);
     expect(internalDenied.body.code).toBe('CSRF_INVALID');
-    const reset = await request(app.getHttpServer()).post(`/api/people/${person.id}/reset-portal-pin`).set('Cookie', cookie).set('x-csrf-token', csrf).expect(201);
-    const newPin = reset.body.data as string;
+    const previousOrigin = process.env.WEB_ORIGIN;
+    const origin = new URL(previousOrigin!).origin;
+    let newPin: string;
+    try {
+      process.env.WEB_ORIGIN = `${origin}/`;
+      const reset = await request(app.getHttpServer()).post(`/api/people/${person.id}/reset-portal-pin`).set('Origin', origin).set('Cookie', cookie).set('x-csrf-token', csrf).expect(201);
+      newPin = reset.body.data as string;
+    } finally { process.env.WEB_ORIGIN = previousOrigin; }
+    await request(app.getHttpServer()).get('/api/portal/auth/session').set('Cookie', initialCookie).expect(401);
+    expect((await prisma.session.findUniqueOrThrow({ where: { id: portalSession.id } })).revokedAt).not.toBeNull();
+    await request(app.getHttpServer()).get('/api/auth/session').set('Cookie', cookie).expect(200);
     expect(newPin).toMatch(/^\d{4}$/);
     const credential = await prisma.portalCredential.findUniqueOrThrow({ where: { personId: person.id } });
     expect(await argon2.verify(credential.pinHash, newPin)).toBe(true);

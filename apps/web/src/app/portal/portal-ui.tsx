@@ -1,13 +1,15 @@
 'use client';
 import React from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { DeveloperFooter } from '../../features/branding/developer-footer';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { PortalFooter } from './portal-footer';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import Image from 'next/image';
 import { ArrowLeft, KeyRound, LogOut } from 'lucide-react';
 import { formatOperationalTime } from '../../lib/operational-time';
+
+export type PortalSession = { person?: { firstName?: string } | undefined; mustChangePin?: boolean; csrfToken?: string; healthDeclaration?: { required: boolean } };
 
 export class PortalApiError extends Error {
   constructor(public readonly code: string, message: string) {
@@ -42,23 +44,29 @@ export const today = (): string => new Intl.DateTimeFormat('en-CA', { timeZone: 
 export async function portalLogout(): Promise<void> {
   const response = await fetch('/api/portal/auth/logout', { method: 'POST', credentials: 'include' });
   if (!response.ok) throw new Error('No pudimos cerrar la sesión. Intentá nuevamente.');
-  window.location.href = '/portal/login';
 }
 
 export function PortalLogoutButton({ compactOnMobile = false }: { compactOnMobile?: boolean }): React.JSX.Element {
+  const queryClient = useQueryClient();
+  const submitting = React.useRef(false);
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState('');
-  return <span><button type="button" disabled={pending} className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm disabled:opacity-50" onClick={async () => {
-    setPending(true); setError('');
-    try { await portalLogout(); } catch { setError('No pudimos cerrar la sesión. Intentá nuevamente.'); setPending(false); }
-  }} aria-label={pending ? 'Cerrando sesión…' : 'Cerrar sesión'}><LogOut size={16} aria-hidden="true" /><span className={compactOnMobile ? 'md:hidden' : undefined}>{pending ? 'Saliendo…' : 'Salir'}</span><span className={compactOnMobile ? 'hidden md:inline' : undefined}>{pending ? 'Cerrando sesión…' : 'Cerrar sesión'}</span></button>{error ? <span role="alert" className="block text-sm">{error}</span> : null}</span>;
+  return <span className="relative inline-flex min-w-0 flex-col"><button type="button" disabled={pending} className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm disabled:opacity-50" onClick={async () => {
+    if (submitting.current) return; submitting.current = true; setPending(true); setError('');
+    await queryClient.cancelQueries({ queryKey: ['portal', 'session'], exact: true });
+    // Discard the verified identity immediately, including while logout is pending.
+    if (queryClient.getQueryState(['portal', 'session'])?.status === 'success') {
+      queryClient.setQueryData<PortalSession>(['portal', 'session'], current => current ? { ...current, person: undefined } : current);
+    }
+    try { await portalLogout(); await queryClient.cancelQueries(); queryClient.clear(); window.location.replace('/portal/login'); } catch { setError('No pudimos cerrar la sesión. Intentá nuevamente.'); setPending(false); submitting.current = false; }
+  }} aria-label={pending ? 'Cerrando sesión…' : 'Cerrar sesión'}><LogOut size={16} aria-hidden="true" /><span className={compactOnMobile ? 'md:hidden' : 'hidden'}>{pending ? 'Saliendo…' : 'Salir'}</span><span className={compactOnMobile ? 'hidden md:inline' : undefined}>{pending ? 'Cerrando sesión…' : 'Cerrar sesión'}</span></button>{error ? <span role="alert" className="absolute right-0 top-full z-20 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-md border border-red-200! bg-red-50 p-3 text-sm text-red-800 shadow-sm">{error}</span> : null}</span>;
 }
 
 export function PortalNav(): React.JSX.Element {
   const pathname = usePathname();
   const profileActive = pathname === '/portal/profile';
   const healthActive = pathname === '/portal/declaracion-salud';
-  return <nav aria-label="Navegación del Portal" className="flex gap-4 overflow-x-auto">
+  return <nav aria-label="Navegación del Portal" className="portal-nav flex gap-4 overflow-x-auto">
     {[['/portal', 'Inicio'], ['/portal/profile', 'Mis datos'], ['/portal/declaracion-salud', 'Declaración de salud']].map(([href, label]) => {
       const active = href === '/portal/profile' ? profileActive : href === '/portal/declaracion-salud' ? healthActive : !profileActive && !healthActive;
       return <Link key={href} href={href!} aria-current={active ? 'page' : undefined} className={'inline-flex min-h-12 shrink-0 items-center border-b-2 px-1 text-sm font-medium ' + (active ? 'border-primary!' : 'border-transparent!')}>{label}</Link>;
@@ -70,7 +78,7 @@ export function PortalFrame({ title, subtitle, action, backToHome = false, child
   title: string; subtitle?: string; action?: React.ReactNode; backToHome?: boolean; children: React.ReactNode;
 }): React.JSX.Element {
   const pathname = usePathname();
-  const session = useQuery({ queryKey: ['portal', 'session'], queryFn: () => portalFetch<{ mustChangePin?: boolean; healthDeclaration?: { required: boolean } }>('auth/session'), staleTime: Infinity, retry: false, refetchOnMount: 'always', refetchOnWindowFocus: false, refetchOnReconnect: false });
+  const session = useQuery({ queryKey: ['portal', 'session'], queryFn: () => portalFetch<PortalSession>('auth/session'), staleTime: Infinity, retry: false, refetchOnMount: 'always', refetchOnWindowFocus: false, refetchOnReconnect: false });
   React.useEffect(() => {
     if (session.error instanceof PortalApiError && session.error.code === 'UNAUTHENTICATED') window.location.assign('/portal/login');
     if (session.isFetching) return;
@@ -84,20 +92,19 @@ export function PortalFrame({ title, subtitle, action, backToHome = false, child
         <Link href="/portal" aria-label="Athleta · Inicio" className="shrink-0">
           <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-36 sm:w-44" />
         </Link>
-        <div className="hidden flex-1 md:block"><PortalNav /></div>
         <div className="flex shrink-0 items-center gap-1 sm:gap-3"><Link href="/portal/change-pin" aria-label="Cambiar PIN" className="inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-sm sm:gap-2 sm:px-3"><KeyRound size={16} aria-hidden="true" /><span className="md:hidden">PIN</span><span className="hidden md:inline">Cambiar PIN</span></Link><PortalLogoutButton compactOnMobile /></div>
       </div>
+      <div className="mx-auto max-w-6xl"><PortalNav /></div>
     </header>
-    <div className="border-b bg-surface px-4 md:hidden"><PortalNav /></div>
-    <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
+    <main data-portal-health={pathname === '/portal/declaracion-salud' || undefined} className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
       {backToHome ? <Link href="/portal" className="inline-flex min-h-11 items-center gap-2 text-sm text-muted-foreground"><ArrowLeft size={16} aria-hidden="true" />Volver a Inicio</Link> : null}
       <header className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-        <div><p className="text-xs font-semibold tracking-widest text-muted-foreground">PORTAL ATHLETA</p><h1 className="mt-2 text-2xl font-semibold sm:text-3xl">{title}</h1>{subtitle ? <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p> : null}</div>
+        <div><p className="portal-heading-label text-xs font-semibold tracking-widest">PORTAL ATHLETA</p><h1 tabIndex={-1} className="portal-heading-title mt-2 text-[28px] font-semibold">{title}</h1>{subtitle ? <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p> : null}</div>
         {action ? <div className="w-full md:w-auto">{action}</div> : null}
       </header>
       {gated ? <p role="status">Completá los requisitos de ingreso para continuar.</p> : children}
     </main>
-    <footer className="border-t"><div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-5 text-xs text-muted-foreground sm:flex-row sm:justify-between sm:px-6 lg:px-8"><span>Athleta · Portal personal</span><DeveloperFooter /></div></footer>
+    <PortalFooter surface="dark" firstName={session.isSuccess && !session.isFetching ? session.data.person?.firstName : undefined} />
   </div>;
 }
 

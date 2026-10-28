@@ -322,7 +322,7 @@ function HistoryPeriodControls({ state, filtersOpen, onToggleFilters, filterCoun
   return <>
     <div className="flex flex-wrap items-center gap-2">
       {periods.map(([period, label]) => <Button key={period} type="button" variant={state.period === period ? 'primary' : 'secondary'} aria-pressed={state.period === period} onClick={() => state.select(period)}>{label}</Button>)}
-      <Button type="button" variant="secondary" aria-expanded={filtersOpen} aria-controls={panelId} onClick={onToggleFilters}>Filtros{filterCount ? ` (${filterCount})` : ''}<span aria-hidden="true" className="ml-2">{filtersOpen ? '▴' : '▾'}</span></Button>
+      <Button type="button" variant="secondary" aria-expanded={filtersOpen} aria-controls={panelId} onClick={onToggleFilters}>Filtros{filterCount ? ` (${filterCount})` : ''}<span aria-hidden="true">{filtersOpen ? '▴' : '▾'}</span></Button>
     </div>
     {state.period === 'custom' ? <div className="flex flex-wrap items-end gap-2">
       <label className="block text-sm">Desde<input type="date" value={state.draftFrom} max={state.draftTo || state.today} onChange={event => state.setDraftFrom(event.target.value)} className="mt-1 block h-10 rounded border px-3" /></label>

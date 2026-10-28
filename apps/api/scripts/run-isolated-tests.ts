@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { PostgreSqlContainer } from '@testcontainers/postgresql';
-import { assertE2ePortAvailable, ISOLATED_TEST_DATABASE_ENV, createIsolatedTestDatabaseMarker } from './test-database-safety';
+import { assertE2ePortAvailable, assertIsolatedTestDatabase, ISOLATED_TEST_DATABASE_ENV, createIsolatedTestDatabaseMarker } from './test-database-safety';
 
 const mode = process.argv[2];
 const args = process.argv.slice(3).filter((argument, index, all) => !(argument === '--' && index === 0 && all.length > 1));
@@ -27,23 +27,32 @@ async function main(): Promise<void> {
       throw new Error(`Could not start isolated PostgreSQL with Testcontainers. Ensure Docker is available; refusing to use any existing database. ${error instanceof Error ? error.message : String(error)}`);
     }
     const databaseUrl = postgres.getConnectionUri();
-    const testEnv = { ...process.env, NODE_ENV: 'test', DATABASE_URL: databaseUrl, [ISOLATED_TEST_DATABASE_ENV]: createIsolatedTestDatabaseMarker(databaseUrl, postgres.getId()), ATHLETA_REQUIRE_ISOLATED_TEST_DATABASE: '1' };
+    const testEnv = { ...process.env, NODE_ENV: 'test', DATABASE_URL: databaseUrl, SESSION_SECRET: randomUUID(), LOG_LEVEL: 'error', [ISOLATED_TEST_DATABASE_ENV]: createIsolatedTestDatabaseMarker(databaseUrl, postgres.getId()), ATHLETA_REQUIRE_ISOLATED_TEST_DATABASE: '1' };
+    assertIsolatedTestDatabase(testEnv);
+    const target = new URL(databaseUrl);
+    process.stdout.write(`Verified isolated PostgreSQL: ${target.hostname}:${target.port}${target.pathname}\n`);
     await run('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], { cwd: apiDirectory, env: testEnv });
 
     if (mode === 'integration') {
       const result = await run('pnpm', ['exec', 'jest', '--config', 'test/jest-integration.json', '--passWithNoTests', ...args], { cwd: apiDirectory, env: testEnv, allowFailure: true });
       if (result !== 0) process.exitCode = result;
     } else {
-      await run('pnpm', ['run', 'prisma:seed:demo'], { cwd: apiDirectory, env: { ...testEnv, ALLOW_DUMMY_SEED: 'true' } });
+      await run('pnpm', ['run', 'prisma:seed:demo'], { cwd: apiDirectory, env: { ...testEnv, ALLOW_DUMMY_SEED: 'true' }, quiet: true });
+      process.stdout.write('Synthetic fixtures initialized; credential output omitted.\n');
       await assertE2ePortAvailable(3001);
       await assertE2ePortAvailable(3000);
-      const apiEnv = { ...testEnv, PORT: '3001', WEB_ORIGIN: 'http://localhost:3000' };
-      const webEnv = { ...testEnv, PORT: '3000', NEXT_PUBLIC_API_URL: 'http://localhost:3001' };
-      services.push(spawn('pnpm', ['dev'], { cwd: apiDirectory, env: apiEnv, stdio: 'inherit', detached: true }));
-      services.push(spawn('pnpm', ['dev', '--port', '3000'], { cwd: `${apiDirectory}/../web`, env: webEnv, stdio: 'inherit', detached: true }));
+      // Exercise the trailing-slash configuration seen in production.
+      const apiEnv = { ...testEnv, PORT: '3001', WEB_ORIGIN: 'http://localhost:3000/' };
+      const webEnv = { ...testEnv, NODE_ENV: 'production', PORT: '3000', NEXT_PUBLIC_API_URL: 'http://localhost:3001' };
+      const webDirectory = `${apiDirectory}/../web`;
+      // Compilation must finish before the readiness deadline starts. E2E does
+      // not need watchers or cold route compilation during browser assertions.
+      await run('pnpm', ['build'], { cwd: apiDirectory, env: apiEnv });
+      await run('pnpm', ['build'], { cwd: webDirectory, env: webEnv });
+      services.push(spawn('pnpm', ['start'], { cwd: apiDirectory, env: apiEnv, stdio: 'inherit', detached: true }));
+      services.push(spawn('pnpm', ['start', '--port', '3000'], { cwd: webDirectory, env: webEnv, stdio: 'inherit', detached: true }));
       await waitForHttp('http://127.0.0.1:3001/health', services);
       await waitForHttp('http://127.0.0.1:3000/login', services);
-      const webDirectory = `${apiDirectory}/../web`;
       const result = await run('pnpm', ['exec', 'playwright', 'test', ...args], { cwd: webDirectory, env: testEnv, allowFailure: true });
       if (result !== 0) process.exitCode = result;
     }
@@ -53,9 +62,9 @@ async function main(): Promise<void> {
   }
 }
 
-function run(command: string, commandArgs: string[], options: { cwd: string; env: NodeJS.ProcessEnv; allowFailure?: boolean }): Promise<number> {
+function run(command: string, commandArgs: string[], options: { cwd: string; env: NodeJS.ProcessEnv; allowFailure?: boolean; quiet?: boolean }): Promise<number> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, commandArgs, { cwd: options.cwd, env: options.env, stdio: 'inherit' });
+    const child = spawn(command, commandArgs, { cwd: options.cwd, env: options.env, stdio: options.quiet ? ['ignore', 'ignore', 'inherit'] : 'inherit' });
     child.once('error', reject);
     child.once('exit', (code, signal) => {
       const result = code ?? (signal === 'SIGINT' ? 130 : 1);

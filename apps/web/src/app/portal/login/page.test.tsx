@@ -1,12 +1,13 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import PortalLogin from './page';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => navigation }));
 
-function renderPage(): void {
-  render(<PortalLogin />);
+function renderPage(client = new QueryClient()): void {
+  render(<QueryClientProvider client={client}><PortalLogin /></QueryClientProvider>);
 }
 
 function enterCredentials(): void {
@@ -19,56 +20,17 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-it('renders the mobile login composition and official Athleta logo', () => {
+it('renders the official brand, personal access and verified contact', () => {
   renderPage();
-
-  const logo = screen.getByRole('img', { name: 'Athleta' });
-  expect(new URL(logo.getAttribute('src')!, 'http://localhost').searchParams.get('url')).toBe('/logo-athleta.png');
-  for (const text of [
-    'PORTAL', 'Iniciar sesión',
-    'DNI', 'Sin puntos ni espacios.', 'PIN', 'Ingresar',
-    '¿Necesitás ayuda?', 'Consultá en recepción.', 'Desarrollado por',
-  ]) {
-    expect(screen.getByText(text)).toBeInTheDocument();
-  }
-  expect(screen.queryByText(/PORTAL DE/i)).not.toBeInTheDocument();
-  expect(screen.queryByText(/CLIENTES/i)).not.toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Iniciar sesión', level: 1 })).toBeVisible();
-  expect(screen.getByText('DESBLOQUEÁ TU')).toBeVisible();
-  expect(screen.getByText('POTENCIAL.')).toHaveClass('text-primary');
-  expect(screen.getByText('DESBLOQUEÁ TU').closest('p')).toHaveClass('text-xl', 'font-bold', 'sm:text-2xl');
-  const heroArrow = screen.getByTestId('portal-hero-arrow');
-  expect(heroArrow).toBeVisible();
-  expect(heroArrow).toHaveClass('text-primary', 'shrink-0');
-  expect(heroArrow).toHaveClass('-rotate-45');
-  const heroAccent = screen.getByTestId('portal-hero-accent');
-  expect(heroAccent).toBeVisible();
-  expect(heroAccent).toHaveClass('absolute', 'bottom-0', 'left-5', 'h-1', 'w-12', 'bg-primary');
-  expect(logo.closest('header')?.nextElementSibling).toContainElement(screen.getByText('POTENCIAL.'));
+  expect(screen.getByRole('img', { name: 'Athleta' })).toBeVisible();
+  expect(screen.getByLabelText('Portal personal')).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Iniciar sesión' })).toBeVisible();
+  expect(screen.getByLabelText('DNI')).toHaveAttribute('autocomplete', 'username');
+  expect(screen.getByLabelText('PIN')).toHaveAttribute('autocomplete', 'current-password');
+  expect(screen.getAllByRole('link', { name: 'Instagram de Athleta' })).toHaveLength(1);
+  expect(screen.getAllByRole('link', { name: 'Yrigoyen 2333, Casilda' })).toHaveLength(1);
+  expect(screen.getByRole('link', { name: /WhatsApp Athleta/ })).toHaveAttribute('href', 'https://wa.me/5493464540825?text=%C2%A1Hola!%20Me%20contacto%20por%20');
   expect(screen.getByRole('link', { name: 'Desarrollado por Broco Solutions' })).toHaveAttribute('href', 'https://www.brocosolutions.com');
-  expect(screen.getByRole('img', { name: 'Broco Solutions' })).toBeVisible();
-  expect(screen.queryByText('Ingresá con tu DNI y PIN para continuar.')).not.toBeInTheDocument();
-  expect(screen.queryByText('Ingresá 4 dígitos.')).not.toBeInTheDocument();
-  expect(screen.queryByText('¿Necesitás ayuda para ingresar?')).not.toBeInTheDocument();
-  const help = screen.getByText('¿Necesitás ayuda?').closest('p');
-  expect(help).toHaveTextContent('¿Necesitás ayuda? Consultá en recepción.');
-  expect(help).toContainElement(screen.getByText('Consultá en recepción.'));
-
-  const dni = screen.getByLabelText('DNI');
-  const dniHelp = screen.getByText('Sin puntos ni espacios.');
-  expect(dniHelp.previousElementSibling).toContainElement(dni);
-  expect(dniHelp).toHaveClass('text-xs', 'text-muted-foreground');
-  expect(dni).toHaveAttribute('aria-describedby', 'portal-dni-help');
-  expect(dni).toHaveAttribute('inputMode', 'numeric');
-  expect(dni).toHaveAttribute('pattern', '[0-9]*');
-  expect(dniHelp).toHaveAttribute('id', 'portal-dni-help');
-  const pin = screen.getByLabelText('PIN');
-  expect(pin).not.toHaveAttribute('aria-describedby');
-  expect(pin).toBeRequired();
-  expect(pin).toHaveAttribute('inputMode', 'numeric');
-  expect(pin).toHaveAttribute('pattern', '[0-9]{4}');
-  expect(pin).toHaveAttribute('maxLength', '4');
-  expect(pin).toHaveAttribute('autoComplete', 'current-password');
 });
 
 it('keeps only numeric characters in the DNI and PIN fields', () => {
@@ -132,4 +94,46 @@ it('shows the existing authentication error for an unsuccessful response', async
 
   expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos ingresar con esos datos. Revisalos o comunicate con Athleta.');
   expect(navigation.push).not.toHaveBeenCalled();
+});
+
+it('keeps network errors generic and allows a retry', async () => {
+  vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('offline'));
+  renderPage(); enterCredentials(); fireEvent.click(screen.getByRole('button', { name: 'Ingresar' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos ingresar con esos datos.');
+  expect(screen.getByRole('button', { name: 'Ingresar' })).toBeEnabled();
+});
+it('sends only once while the Portal login is pending', async () => {
+  const request = vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise(() => undefined));
+  renderPage(); enterCredentials();
+  const form = screen.getByRole('button', { name: 'Ingresar' }).closest('form')!;
+  fireEvent.submit(form); fireEvent.submit(form);
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole('button', { name: 'Ingresando…' })).toBeDisabled();
+});
+
+
+it('always offers a generic WhatsApp message without fetching an identity', () => {
+  const fetch = vi.spyOn(globalThis, 'fetch');
+  renderPage();
+  const contact = screen.getByRole('link', { name: /WhatsApp Athleta:/ });
+  expect(new URL(contact.getAttribute('href')!).searchParams.get('text')).toBe('¡Hola! Me contacto por ');
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+
+it('hands the authenticated first name to the existing session cache before a required PIN change', async () => {
+  const client = new QueryClient();
+  client.setQueryData(['portal', 'session'], { person: { firstName: 'Previous identity' } });
+  const request = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ data: { person: { firstName: 'María José' }, mustChangePin: true } }) } as Response);
+  renderPage(client); enterCredentials(); fireEvent.submit(screen.getByRole('button', { name: 'Ingresar' }).closest('form')!);
+  await waitFor(() => expect(navigation.push).toHaveBeenCalledWith('/portal/change-pin'));
+  expect(client.getQueryData(['portal', 'session'])).toEqual({ person: { firstName: 'María José' }, mustChangePin: true });
+  expect(new URL(screen.getByRole('link', { name: /WhatsApp Athleta:/ }).getAttribute('href')!).searchParams.get('text')).toBe('¡Hola! Me contacto por ');
+  expect(request).toHaveBeenCalledTimes(1);
+});
+it('discards an earlier cached identity when a new login fails', async () => {
+  const client = new QueryClient(); client.setQueryData(['portal', 'session'], { person: { firstName: 'Previous identity' } });
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false } as Response);
+  renderPage(client); enterCredentials(); fireEvent.submit(screen.getByRole('button', { name: 'Ingresar' }).closest('form')!);
+  await screen.findByRole('alert'); expect(client.getQueryData(['portal', 'session'])).toBeUndefined();
 });

@@ -21,7 +21,7 @@ afterEach(() => server.resetHandlers());
 afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 
 describe('LoginPage', () => {
-  it('renders the official Athleta logo and internal login form', () => { renderPage(); const logo = screen.getByRole('img', { name: 'Athleta' }); const logoSource = new URL(logo.getAttribute('src')!, 'http://localhost').searchParams.get('url'); expect(logoSource).toBe('/logo-athleta.png'); expect(screen.getByText('Athleta Manager')).toBeInTheDocument(); expect(screen.getByRole('heading', { name: 'Gestión con foco en las personas.' })).toBeInTheDocument(); expect(screen.getByText('Acceso interno seguro')).toBeInTheDocument(); expect(screen.getByRole('heading', { name: 'Iniciar sesión' })).toBeInTheDocument(); expect(screen.getByLabelText('Email')).toBeInTheDocument(); });
+  it('renders the official Athleta logo and internal login form', () => { renderPage(); const logo = screen.getByRole('img', { name: 'Athleta' }); const logoSource = new URL(logo.getAttribute('src')!, 'http://localhost').searchParams.get('url'); expect(logoSource).toBe('/logo-athleta.png'); expect(screen.getByText('Athleta Manager')).toBeInTheDocument(); expect(screen.getByText('Acceso interno seguro')).toBeInTheDocument(); expect(screen.getByRole('heading', { name: 'Iniciar sesión' })).toBeInTheDocument(); expect(screen.getByLabelText('Email')).toBeInTheDocument(); });
 
   it('submits once and disables the button while authentication is pending', async () => {
     let requests = 0;
@@ -38,4 +38,16 @@ describe('LoginPage', () => {
 it('shows the shared developer footer', async () => {
   renderPage();
   expect(await screen.findByRole('link', { name: 'Desarrollado por Broco Solutions' })).toHaveAttribute('href', 'https://www.brocosolutions.com');
+});
+
+it('toggles the password without submitting or changing its value or autocomplete', () => {
+  renderPage(); const input = screen.getByLabelText('Contraseña');
+  fireEvent.change(input, { target: { value: 'synthetic-secret' } });
+  expect(input).toHaveAttribute('type', 'password');
+  const toggle = screen.getByRole('button', { name: 'Mostrar contraseña' });
+  expect(toggle).toHaveAttribute('type', 'button'); fireEvent.click(toggle);
+  expect(input).toHaveAttribute('type', 'text'); expect(input).toHaveValue('synthetic-secret');
+  expect(input).toHaveAttribute('autocomplete', 'current-password');
+  fireEvent.click(screen.getByRole('button', { name: 'Ocultar contraseña' }));
+  expect(input).toHaveAttribute('type', 'password');
 });

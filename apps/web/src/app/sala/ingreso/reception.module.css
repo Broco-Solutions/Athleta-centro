@@ -1,0 +1,36 @@
+.reception { position:relative; isolation:isolate; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); grid-template-rows:auto 1fr; gap:clamp(32px,6vh,80px) clamp(32px,5vw,96px); min-height:100dvh; width:100%; padding:clamp(24px,4vw,72px); background:var(--reception-background); color:var(--sidebar-foreground); overflow:hidden; }
+.brand { grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:24px; }
+.logo { width:clamp(160px,18vw,280px); height:auto; }
+.brand :global(.reception-clock) { display:flex; flex-direction:column; gap:4px; text-align:right; font-variant-numeric:tabular-nums; }
+.brand :global(.reception-clock time) { font-size:clamp(28px,3vw,44px); font-weight:600; line-height:1.1; }
+.brand :global(.reception-clock span) { color:var(--border-control); font-size:14px; }
+.track { position:absolute; inset:0; z-index:-1; width:100%; height:100%; color:color-mix(in srgb,var(--sidebar-foreground) 6%,transparent); pointer-events:none; }
+.welcome { align-self:center; justify-self:end; width:100%; max-width:620px; }
+.greeting h1 { margin:0; font-size:clamp(40px,4.8vw,80px); line-height:1.06; font-weight:650; letter-spacing:-.045em; text-wrap:balance; }
+.greeting h1 span { color:var(--primary); }
+.greeting p { max-width:400px; margin:28px 0 0; color:var(--border-control); font-size:clamp(18px,1.6vw,24px); line-height:1.5; }
+.panel { align-self:center; width:100%; max-width:640px; padding:clamp(24px,3vw,48px); border:1px solid var(--border-dark); border-radius:14px; background:var(--surface-dark); }
+.panelTitle { display:flex; align-items:center; gap:12px; color:var(--border-control); }
+.panelTitle h2 { margin:0; font-size:18px; font-weight:500; }
+.form { margin-top:32px; }
+.form label { display:block; margin-bottom:14px; font-size:18px; font-weight:600; }
+.dni { width:100%; height:clamp(80px,8vw,112px); padding:12px; border:2px solid var(--border-control); border-radius:10px; background:var(--reception-background); color:var(--sidebar-foreground); font-size:clamp(32px,3.6vw,58px); text-align:center; letter-spacing:.06em; font-variant-numeric:tabular-nums; outline:none; }
+.dni:focus-visible { border-color:var(--primary); box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 30%,transparent); }
+.dni[aria-invalid='true'] { border-color:var(--error-border); }
+.dni[aria-invalid='true']:focus-visible { outline:3px solid var(--primary); outline-offset:3px; }
+.feedback { min-height:104px; padding:20px 0; font-size:16px; line-height:1.5; }
+.feedback p { display:flex; align-items:flex-start; gap:8px; margin:0; color:var(--border-control); }
+.feedback svg { flex-shrink:0; margin-top:2px; }
+.feedback p:global(.text-amber-900), .result p:global(.text-amber-800) { color:var(--warning-border); }
+.feedback p:global(.text-red-800) { color:var(--error-border); }
+.action { width:100%; min-height:60px; height:auto; padding:16px; font-size:18px; justify-content:space-between; line-height:1.4; }
+.action kbd { border:1px solid currentColor; border-radius:4px; padding:2px 6px; font-size:12px; font-family:inherit; }
+.result { display:flex; flex-direction:column; align-items:flex-start; gap:20px; min-height:360px; padding-top:28px; }
+.result > svg { width:72px; height:72px; color:var(--primary); }
+.result[data-kind='warning'] > svg { color:var(--warning-border); }
+.result[data-kind='info'] > svg { color:var(--sidebar-foreground); }
+.result h3 { margin:0; font-size:clamp(28px,3vw,40px); font-weight:600; }
+.result p { margin:0; font-size:20px; line-height:1.5; overflow-wrap:anywhere; }
+.result .action { margin-top:auto; }
+@media (max-width:900px) { .reception { grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto 1fr; gap:32px; } .welcome,.panel { justify-self:center; max-width:600px; } .brand { grid-column:1; } .greeting h1 { font-size:44px; } .greeting p { margin-top:16px; } }
+@media (max-width:480px) { .reception { padding:24px 20px; gap:28px; } .logo { width:150px; } .brand { gap:12px; align-items:flex-start; } .brand :global(.reception-clock span) { max-width:130px; font-size:12px; } .greeting h1 { font-size:38px; } .panel { padding:24px 20px; } .form { margin-top:24px; } .feedback { font-size:14px; } .action { font-size:16px; } .result p { font-size:18px; } }

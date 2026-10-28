@@ -883,8 +883,8 @@ export class SalaService {
     const messages = {
       registered: '¡Asistencia registrada! Que tengas un buen entrenamiento.',
       already: 'Ya registraste tu asistencia a este turno.',
-      early: (time: string) => `Tu fichaje todavía no está habilitado. Podés registrarte desde las ${time}.`,
-      late: (time: string) => `Finalizó el horario de fichaje. Podías registrarte hasta las ${time}. Consultá con un profesor.`,
+      early: (time: string) => `Tu ingreso todavía no está habilitado. Podés registrarte desde las ${time}.`,
+      late: (time: string) => `Finalizó el horario de ingreso. Podías registrarte hasta las ${time}. Consultá con un profesor.`,
       expired: 'Tu plan está vencido. No pudimos registrar tu asistencia. Acercate a recepción para renovar.',
       noBooking: 'No tenés un turno reservado para este horario. Consultá con un profesor.',
       cancelled: 'Este turno fue cancelado. Consultá con un profesor.',

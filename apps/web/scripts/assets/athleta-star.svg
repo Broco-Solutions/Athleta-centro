@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <rect width="48" height="48" rx="7" fill="#242424"/>
+  <!-- Contour traced from the middle star of public/logo-athleta.png. -->
+  <path d="M24 5 28.5 18.3 42.7 18.3 31.2 26.8 35.5 40.2 24 31.9 12.4 40.2 16.8 26.8 5.3 18.3 19.4 18.3Z" fill="#fccc05"/>
+</svg>
