@@ -9,6 +9,8 @@ import Image from 'next/image';
 import { ArrowLeft, KeyRound, LogOut } from 'lucide-react';
 import { formatOperationalTime } from '../../lib/operational-time';
 
+export type PortalSession = { person?: { firstName?: string } | undefined; mustChangePin?: boolean; csrfToken?: string; healthDeclaration?: { required: boolean } };
+
 export class PortalApiError extends Error {
   constructor(public readonly code: string, message: string) {
     super(message);
@@ -51,6 +53,10 @@ export function PortalLogoutButton({ compactOnMobile = false }: { compactOnMobil
   const [error, setError] = React.useState('');
   return <span className="relative inline-flex min-w-0 flex-col"><button type="button" disabled={pending} className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm disabled:opacity-50" onClick={async () => {
     if (submitting.current) return; submitting.current = true; setPending(true); setError('');
+    // Discard the verified identity immediately, including while logout is pending.
+    if (queryClient.getQueryState(['portal', 'session'])?.status === 'success') {
+      queryClient.setQueryData<PortalSession>(['portal', 'session'], current => current ? { ...current, person: undefined } : current);
+    }
     try { await portalLogout(); await queryClient.cancelQueries(); queryClient.clear(); window.location.replace('/portal/login'); } catch { setError('No pudimos cerrar la sesión. Intentá nuevamente.'); setPending(false); submitting.current = false; }
   }} aria-label={pending ? 'Cerrando sesión…' : 'Cerrar sesión'}><LogOut size={16} aria-hidden="true" /><span className={compactOnMobile ? 'md:hidden' : 'hidden'}>{pending ? 'Saliendo…' : 'Salir'}</span><span className={compactOnMobile ? 'hidden md:inline' : undefined}>{pending ? 'Cerrando sesión…' : 'Cerrar sesión'}</span></button>{error ? <span role="alert" className="absolute right-0 top-full z-20 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-md border border-red-200! bg-red-50 p-3 text-sm text-red-800 shadow-sm">{error}</span> : null}</span>;
 }
@@ -71,7 +77,7 @@ export function PortalFrame({ title, subtitle, action, backToHome = false, child
   title: string; subtitle?: string; action?: React.ReactNode; backToHome?: boolean; children: React.ReactNode;
 }): React.JSX.Element {
   const pathname = usePathname();
-  const session = useQuery({ queryKey: ['portal', 'session'], queryFn: () => portalFetch<{ mustChangePin?: boolean; healthDeclaration?: { required: boolean } }>('auth/session'), staleTime: Infinity, retry: false, refetchOnMount: 'always', refetchOnWindowFocus: false, refetchOnReconnect: false });
+  const session = useQuery({ queryKey: ['portal', 'session'], queryFn: () => portalFetch<PortalSession>('auth/session'), staleTime: Infinity, retry: false, refetchOnMount: 'always', refetchOnWindowFocus: false, refetchOnReconnect: false });
   React.useEffect(() => {
     if (session.error instanceof PortalApiError && session.error.code === 'UNAUTHENTICATED') window.location.assign('/portal/login');
     if (session.isFetching) return;
@@ -97,7 +103,7 @@ export function PortalFrame({ title, subtitle, action, backToHome = false, child
       </header>
       {gated ? <p role="status">Completá los requisitos de ingreso para continuar.</p> : children}
     </main>
-    <PortalFooter surface="dark" />
+    <PortalFooter surface="dark" firstName={session.isSuccess && !session.isFetching ? session.data.person?.firstName : undefined} />
   </div>;
 }
 

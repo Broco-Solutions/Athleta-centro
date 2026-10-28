@@ -1,6 +1,8 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ChangePin from './page';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+function renderPage(client = new QueryClient()) { return render(<QueryClientProvider client={client}><ChangePin /></QueryClientProvider>); }
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => navigation }));
 afterEach(() => { vi.restoreAllMocks(); navigation.push.mockReset(); });
@@ -9,7 +11,7 @@ it('keeps the PIN change flow and shared developer footer', async () => {
   const fetch = vi.spyOn(globalThis, 'fetch')
     .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { csrfToken: 'synthetic-csrf' } }) } as Response)
     .mockResolvedValueOnce({ ok: true } as Response);
-  render(<ChangePin />);
+  renderPage();
   expect(screen.getAllByRole('link', { name: 'Instagram de Athleta' })).toHaveLength(1);
   expect(screen.getAllByRole('link', { name: 'Yrigoyen 2333, Casilda' })).toHaveLength(1);
   expect(screen.getByRole('link', { name: 'Desarrollado por Broco Solutions' })).toHaveAttribute('href', 'https://www.brocosolutions.com');
@@ -25,7 +27,7 @@ it('preserves leading zeros, requires explicit submit and prevents a duplicated 
   const fetch = vi.spyOn(globalThis, 'fetch')
     .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { csrfToken: 'synthetic-csrf' } }) } as Response)
     .mockImplementationOnce(() => new Promise<Response>(resolve => { finish = resolve; }));
-  render(<ChangePin />);
+  renderPage();
   fireEvent.change(screen.getByLabelText('PIN actual'), { target: { value: '0001' } });
   fireEvent.change(screen.getByLabelText('Nuevo PIN'), { target: { value: '0012' } });
   expect(fetch).not.toHaveBeenCalled();
@@ -39,4 +41,17 @@ it('preserves leading zeros, requires explicit submit and prevents a duplicated 
   expect(await screen.findByRole('alert')).toHaveTextContent('El PIN no es válido.');
   expect(screen.getByLabelText('Nuevo PIN')).toHaveValue('0012');
   expect(navigation.push).not.toHaveBeenCalled();
+});
+
+
+it('uses only a verified cached first name without requesting a session for its footer', async () => {
+  const fetch = vi.spyOn(globalThis, 'fetch');
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(['portal', 'session'], { person: { firstName: '  María   José  ', lastName: 'Not for WhatsApp' } });
+  renderPage(client);
+  const link = screen.getByRole('link', { name: /WhatsApp Athleta:/ });
+  expect(new URL(link.getAttribute('href')!).searchParams.get('text')).toBe('¡Hola! Soy María José. Me contacto por ');
+  expect(fetch).not.toHaveBeenCalled();
+  await expect(client.fetchQuery({ queryKey: ['portal', 'session'], queryFn: async () => { throw new Error('Synthetic expired session'); } })).rejects.toThrow();
+  await waitFor(() => expect(new URL(link.getAttribute('href')!).searchParams.get('text')).toBe('¡Hola! Me contacto por '));
 });

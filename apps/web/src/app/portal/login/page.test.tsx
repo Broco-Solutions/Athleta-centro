@@ -28,7 +28,7 @@ it('renders the official brand, personal access and verified contact', () => {
   expect(screen.getByLabelText('PIN')).toHaveAttribute('autocomplete', 'current-password');
   expect(screen.getAllByRole('link', { name: 'Instagram de Athleta' })).toHaveLength(1);
   expect(screen.getAllByRole('link', { name: 'Yrigoyen 2333, Casilda' })).toHaveLength(1);
-  expect(screen.getByRole('link', { name: /Contacto Athleta/ })).toHaveAttribute('href', 'tel:+5493464566340');
+  expect(screen.getByRole('link', { name: /WhatsApp Athleta/ })).toHaveAttribute('href', 'https://wa.me/5493464540825?text=%C2%A1Hola!%20Me%20contacto%20por%20');
   expect(screen.getByRole('link', { name: 'Desarrollado por Broco Solutions' })).toHaveAttribute('href', 'https://www.brocosolutions.com');
 });
 
@@ -108,4 +108,13 @@ it('sends only once while the Portal login is pending', async () => {
   fireEvent.submit(form); fireEvent.submit(form);
   expect(request).toHaveBeenCalledTimes(1);
   expect(screen.getByRole('button', { name: 'Ingresando…' })).toBeDisabled();
+});
+
+
+it('always offers a generic WhatsApp message without fetching an identity', () => {
+  const fetch = vi.spyOn(globalThis, 'fetch');
+  renderPage();
+  const contact = screen.getByRole('link', { name: /WhatsApp Athleta:/ });
+  expect(new URL(contact.getAttribute('href')!).searchParams.get('text')).toBe('¡Hola! Me contacto por ');
+  expect(fetch).not.toHaveBeenCalled();
 });

@@ -1,6 +1,8 @@
 'use client';
 import React, { useRef, useState } from 'react';
 import Image from 'next/image';
+import { skipToken, useQuery } from '@tanstack/react-query';
+import type { PortalSession } from '../portal-ui';
 import { useRouter } from 'next/navigation';
 import { PortalFooter } from '../portal-footer';
 import { PinInput } from '../../../features/auth/pin-input';
@@ -8,6 +10,8 @@ import { PortalMessage } from '../portal-message';
 
 export default function ChangePin(): React.JSX.Element {
   const router = useRouter();
+  // Observe only the already verified Portal cache; this footer never fetches.
+  const portalSession = useQuery<PortalSession>({ queryKey: ['portal', 'session'], queryFn: skipToken, enabled: false });
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [error, setError] = useState('');
@@ -34,6 +38,6 @@ export default function ChangePin(): React.JSX.Element {
       {error && <PortalMessage>{error}</PortalMessage>}
       <button type="submit" className="portal-primary w-full disabled:opacity-60" disabled={pending}>{pending ? 'Guardando…' : 'Guardar PIN'}</button>
     </form></section>
-    <PortalFooter />
+    <PortalFooter firstName={portalSession.isSuccess && !portalSession.isFetching ? portalSession.data.person?.firstName : undefined} />
   </main>;
 }

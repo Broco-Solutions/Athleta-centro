@@ -40,3 +40,21 @@ it('keeps one logout label, prevents duplicate submissions and reports a recover
   expect(request).toHaveBeenCalledTimes(1); expect(button).toBeEnabled();
   expect(client.getQueryData(['portal', 'private'])).toBe('synthetic');
 });
+
+
+it('uses the current Portal first name and discards it as soon as logout starts', async () => {
+  let finish: ((response: Response) => void) | undefined;
+  const fetch = vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { person: { firstName: 'María José', lastName: 'Never included' }, mustChangePin: false } }) } as Response)
+    .mockImplementationOnce(() => new Promise<Response>(resolve => { finish = resolve; }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><PortalFrame title="Inicio">Contenido</PortalFrame></QueryClientProvider>);
+  const contact = screen.getByRole('link', { name: /WhatsApp Athleta:/ });
+  await waitFor(() => expect(new URL(contact.getAttribute('href')!).searchParams.get('text')).toBe('¡Hola! Soy María José. Me contacto por '));
+  expect(fetch).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+  await waitFor(() => expect(new URL(contact.getAttribute('href')!).searchParams.get('text')).toBe('¡Hola! Me contacto por '));
+  finish!({ ok: false } as Response);
+  await screen.findByRole('alert');
+  expect(new URL(contact.getAttribute('href')!).searchParams.get('text')).toBe('¡Hola! Me contacto por ');
+});

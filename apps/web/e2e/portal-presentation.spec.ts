@@ -115,11 +115,11 @@ test('confirmed contact and Broco contrast on light and dark footers', async ({ 
       const footer = page.locator('footer'); await expect(footer).toHaveCount(1);
       const instagram = page.getByRole('link', { name: 'Instagram de Athleta' });
       const address = page.getByRole('link', { name: 'Yrigoyen 2333, Casilda' });
-      const phone = page.getByRole('link', { name: /Contacto Athleta:/ });
+      const phone = page.getByRole('link', { name: /WhatsApp Athleta:/ });
       await expect(instagram).toHaveCount(1); await expect(address).toHaveCount(1); await expect(phone).toHaveCount(1);
       await expect(instagram).toHaveAttribute('href', 'https://www.instagram.com/athleta.centro/');
       await expect(address).toHaveAttribute('href', 'https://maps.app.goo.gl/N9UrkAdpigCSzqW77');
-      await expect(phone).toHaveAttribute('href', 'tel:+5493464566340');
+      await expect(phone).toHaveAttribute('href', 'https://wa.me/5493464540825?text=%C2%A1Hola!%20Me%20contacto%20por%20');
       for (const link of [instagram, address, phone]) { expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44); await expect(footer).toContainText(await link.innerText()); }
       const credit = page.getByRole('link', { name: 'Desarrollado por Broco Solutions' });
       await expect(credit).toHaveCount(1); await expect(credit).toHaveAttribute('href', 'https://www.brocosolutions.com');
