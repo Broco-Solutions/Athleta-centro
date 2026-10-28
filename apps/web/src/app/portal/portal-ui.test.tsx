@@ -16,6 +16,8 @@ it('validates and renews the session once on mount without polling or render loo
   view.rerender(<QueryClientProvider client={client}><PortalFrame title="Mis datos">Otro contenido</PortalFrame></QueryClientProvider>);
   expect(fetch).toHaveBeenCalledTimes(1);
   expect(screen.getByText('Athleta · Portal personal')).toBeVisible();
+  expect(screen.getAllByRole('link', { name: 'Instagram de Athleta' })).toHaveLength(1);
+  expect(screen.getAllByRole('link', { name: 'Yrigoyen 2333, Casilda' })).toHaveLength(1);
   expect(screen.getByRole('link', { name: 'Desarrollado por Broco Solutions' })).toHaveAttribute('href', 'https://www.brocosolutions.com');
 });
 

@@ -1,8 +1,7 @@
 'use client';
 import React from 'react';
-import { AthletaContact } from '../../features/branding/athleta-contact';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { DeveloperFooter } from '../../features/branding/developer-footer';
+import { PortalFooter } from './portal-footer';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -98,7 +97,7 @@ export function PortalFrame({ title, subtitle, action, backToHome = false, child
       </header>
       {gated ? <p role="status">Completá los requisitos de ingreso para continuar.</p> : children}
     </main>
-    <footer className="portal-footer"><div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-5 text-xs sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8"><div><span>Athleta · Portal personal</span><div><AthletaContact /></div></div><DeveloperFooter /></div></footer>
+    <PortalFooter surface="dark" />
   </div>;
 }
 

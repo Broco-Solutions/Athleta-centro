@@ -10,6 +10,8 @@ it('keeps the PIN change flow and shared developer footer', async () => {
     .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { csrfToken: 'synthetic-csrf' } }) } as Response)
     .mockResolvedValueOnce({ ok: true } as Response);
   render(<ChangePin />);
+  expect(screen.getAllByRole('link', { name: 'Instagram de Athleta' })).toHaveLength(1);
+  expect(screen.getAllByRole('link', { name: 'Yrigoyen 2333, Casilda' })).toHaveLength(1);
   expect(screen.getByRole('link', { name: 'Desarrollado por Broco Solutions' })).toHaveAttribute('href', 'https://www.brocosolutions.com');
   fireEvent.change(screen.getByLabelText('PIN actual'), { target: { value: '1234' } });
   fireEvent.change(screen.getByLabelText('Nuevo PIN'), { target: { value: '4321' } });

@@ -26,6 +26,8 @@ it('renders the official brand, personal access and verified contact', () => {
   expect(screen.getByRole('heading', { name: 'Iniciar sesión' })).toBeVisible();
   expect(screen.getByLabelText('DNI')).toHaveAttribute('autocomplete', 'username');
   expect(screen.getByLabelText('PIN')).toHaveAttribute('autocomplete', 'current-password');
+  expect(screen.getAllByRole('link', { name: 'Instagram de Athleta' })).toHaveLength(1);
+  expect(screen.getAllByRole('link', { name: 'Yrigoyen 2333, Casilda' })).toHaveLength(1);
   expect(screen.getByRole('link', { name: /Contacto Athleta/ })).toHaveAttribute('href', 'tel:+5493464566340');
   expect(screen.getByRole('link', { name: 'Desarrollado por Broco Solutions' })).toHaveAttribute('href', 'https://www.brocosolutions.com');
 });

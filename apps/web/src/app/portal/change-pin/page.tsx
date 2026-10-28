@@ -2,8 +2,7 @@
 import React, { useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { DeveloperFooter } from '../../../features/branding/developer-footer';
-import { AthletaContact } from '../../../features/branding/athleta-contact';
+import { PortalFooter } from '../portal-footer';
 import { PinInput } from '../../../features/auth/pin-input';
 import { PortalMessage } from '../portal-message';
 
@@ -34,7 +33,7 @@ export default function ChangePin(): React.JSX.Element {
       <div className="space-y-2"><label htmlFor="next-pin" className="block text-sm font-medium">Nuevo PIN</label><PinInput id="next-pin" secretLabel="nuevo PIN" required autoComplete="new-password" value={next} onChange={event => setNext(event.target.value.replace(/\D/g, '').slice(0,4))} aria-describedby="pin-help"/><p id="pin-help" className="text-sm text-muted-foreground">4 números.</p></div>
       {error && <PortalMessage>{error}</PortalMessage>}
       <button type="submit" className="portal-primary w-full disabled:opacity-60" disabled={pending}>{pending ? 'Guardando…' : 'Guardar PIN'}</button>
-    </form><div className="mt-4 text-center"><AthletaContact /></div></section>
-    <footer className="portal-access-footer"><DeveloperFooter /></footer>
+    </form></section>
+    <PortalFooter />
   </main>;
 }

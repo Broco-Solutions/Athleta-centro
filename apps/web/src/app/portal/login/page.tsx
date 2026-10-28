@@ -1,12 +1,11 @@
 'use client';
 
 import Image from 'next/image';
-import { DeveloperFooter } from '../../../features/branding/developer-footer';
+import { PortalFooter } from '../portal-footer';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Contact } from 'lucide-react';
 import React from 'react';
 import { PinInput } from '../../../features/auth/pin-input';
-import { AthletaContact } from '../../../features/branding/athleta-contact';
 import { useState } from 'react';
 import { PortalMessage } from '../portal-message';
 
@@ -81,10 +80,9 @@ export default function PortalLogin(): React.JSX.Element {
             <span className="text-muted-foreground">¿Necesitás ayuda? </span>
             <span className="font-medium">Consultá en recepción.</span>
           </p>
-          <div className="text-center"><AthletaContact /></div>
         </form>
       </section>
-      <footer className="portal-access-footer"><DeveloperFooter /></footer>
+      <PortalFooter />
     </main>
   );
 }

@@ -1,5 +1,69 @@
 # Correcciones y pulido de UX en `ramiro`
 
+## PIN, contacto y firma — 2026-10-28
+
+Corrección acotada posterior a `6443fde`; se conserva el diseño general, favicon,
+dominio estable, protección de Vercel y todos los contratos de autenticación.
+
+- **Causa reproducida:** el paso de `letter-spacing` no coincidía con la grilla
+  de cuatro columnas y sus gaps. Al cuarto carácter, el input hacía scroll:
+  12 px oculto / 17 px visible a 390 px; 15 / 20 px en escritorio. El carácter
+  enmascarado tampoco comparte las métricas del número. Por eso desaparecía el
+  primer carácter y los restantes caían sobre bordes.
+- **Corrección compartida:** un único input nativo mantiene edición, selección,
+  validación y autocompletado. Una grilla `aria-hidden` centra dígitos o círculos
+  de tamaño fijo; el input pinta transparente, sin letter-spacing ni padding
+  dependientes de fuente. La selección y el cursor se representan en esa capa;
+  el ojo conserva selección/foco y su ancho de 44 px. Se sincroniza la selección
+  tras el layout del cambio de tipo, evitando una carrera con la escritura siguiente. No hay cuatro inputs,
+  nuevos payloads, autoenvío ni valores del PIN en atributos `data-*`.
+- **Contacto:** se extiende `athletaContact`, la configuración pública existente,
+  con Instagram y dirección/Maps confirmados. `PortalFooter` lo reutiliza una
+  sola vez en login, cambio de PIN y `PortalFrame`, conservando el teléfono.
+  Los destinos externos usan `noopener noreferrer`; no hay embeds ni WhatsApp.
+- **Broco:** el PNG oficial ya tiene transparencia (979355 píxeles totalmente
+  transparentes, incluidas las esquinas). `DeveloperFooter` usa un filtro blanco
+  limitado al logo sólo con `surface="dark"`; en claro mantiene el azul oficial.
+  Se conserva la geometría, el enlace único y su nombre accesible. Recepción no
+  recibe una firma ni cambios de composición.
+- **Pruebas:** 20 tests de componente aprobados; la prueba de selección se volvió
+  a ejecutar tras envolver su foco nativo en `act`. Lint, typecheck y build web
+  aprobados en ejecución directa, sin recurrir a caché de Turbo. No se repitió
+  backend ni se usaron bases, seeds o credenciales para esta tarea visual.
+- **Navegador:** 5 pruebas de presentación en Chromium aprobadas. Login y ambos
+  campos de cambio de PIN se verificaron a 360, 390, 430 y 1366 px, carácter a
+  carácter, oculto/visible, con borrado, sustitución intermedia, ceros iniciales,
+  máximo de cuatro, selección por teclado y arrastre del mouse, ojo, Tab/foco,
+  pegado real y evento de autofill.
+  Cada glifo queda centrado con diferencia menor de 0.6 px; scroll interno 0.
+  Se revisaron las capturas del primer y cuarto carácter en los tres campos.
+  También se verificaron destinos exactos, controles de al menos 44 px, ausencia
+  de desbordamiento y ambas variantes de Broco. El footer autenticado usa sólo
+  fixtures GET de presentación; no representa una validación de sesión real.
+- **Límite de plataforma:** se intentó WebKit, pero faltan bibliotecas como
+  `libgtk-4.so.1`; `playwright install-deps webkit` requiere una contraseña sudo
+  no disponible. WebKit no se ejecutó, y no se dispuso de un iPhone/iOS físico.
+  Los tamaños móviles de Chromium no se presentan como prueba de ese teléfono.
+
+Comando enfocado, sin PostgreSQL ni runner de integración:
+
+```bash
+pnpm --filter @athleta/web exec playwright test --config playwright.presentation.config.ts --project chromium
+```
+
+La configuración admite `--project webkit` cuando el host tenga sus bibliotecas,
+y `ATHLETA_PRESENTATION_URL` para el preview. El OIDC se adjunta únicamente al
+origen probado; la suite bloquea POST y no transmite credenciales de Athleta.
+
+Capturas con datos ficticios: [antes oculto](../design/pin-contact-review/before-hidden-4.png),
+[antes visible](../design/pin-contact-review/before-visible-4.png),
+[primer punto](../design/pin-contact-review/pin-hidden-1.png),
+[cuatro puntos](../design/pin-contact-review/pin-hidden-4.png),
+[primer dígito](../design/pin-contact-review/pin-visible-1.png),
+[cuatro dígitos](../design/pin-contact-review/pin-visible-4.png),
+[firma en claro](../design/pin-contact-review/footer-light.png) y
+[firma en oscuro](../design/pin-contact-review/footer-dark.png).
+
 ## Validación para publicación — 2026-10-28
 
 Esta sección reemplaza los bloqueos de ejecutor del registro anterior. El criterio
