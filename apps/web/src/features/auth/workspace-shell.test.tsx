@@ -185,10 +185,10 @@ it('gives pure Professor Inicio, Agenda, Alumnos, Rutinas and independent Ingres
   for (const name of ['Navegación principal', 'Navegación móvil']) {
     const navigation = within(screen.getByRole('navigation', { name }));
     expect(navigation.getAllByRole('link').map((link) => link.textContent)).toEqual(['Inicio', 'Agenda', 'Alumnos', 'Rutinas', 'Ingreso']);
-    expect(navigation.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual(['/', '/sala', '/students', '/routines', '/sala/fichaje']);
+    expect(navigation.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual(['/', '/sala', '/students', '/routines', '/sala/ingreso']);
     expect(navigation.queryByRole('link', { name: 'Reservas' })).not.toBeInTheDocument();
     expect(navigation.getByRole('link', { name: 'Alumnos' })).toHaveAttribute('aria-current', 'page');
-    expect(navigation.getByRole('link', { name: 'Ingreso' })).toHaveAttribute('href', '/sala/fichaje');
+    expect(navigation.getByRole('link', { name: 'Ingreso' })).toHaveAttribute('href', '/sala/ingreso');
     for (const label of ['Personas', 'Sala', 'Equipo', 'Clínica', 'Finanzas']) expect(navigation.queryByRole('link', { name: label })).not.toBeInTheDocument();
   }
 });
@@ -205,17 +205,16 @@ it.each([{ roles: ['GENERAL_ADMIN'] }, { roles: ['GENERAL_ADMIN', 'PROFESSOR'] }
   fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
   for (const name of ['Navegación principal', 'Navegación móvil']) {
     const nav = within(screen.getByRole('navigation', { name }));
-    expect(nav.getByRole('link', { name: 'Resumen' })).toHaveAttribute('href', '/');
-    for (const [label, href] of [['Inicio', '/'], ['Sala', '/sala'], ['Finanzas', '/finance'], ['Equipo', '/team']]) expect(nav.getByRole('link', { name: label! })).toHaveAttribute('href', href);
+    expect(nav.getByRole('link', { name: 'Resumen' })).toHaveAttribute('href', '/finance');
+    for (const [label, href] of [['Inicio', '/'], ['Agenda', '/sala'], ['Resumen', '/finance'], ['Equipo', '/team']]) expect(nav.getByRole('link', { name: label! })).toHaveAttribute('href', href);
     for (const label of ['Clínica', 'Pacientes', 'Turnos', 'Personas']) expect(nav.queryByText(label)).not.toBeInTheDocument();
-    expect(nav.getByRole('link', { name: 'Inicio' })).toHaveAttribute('aria-expanded', 'true');
-    expect(nav.queryByRole('link', { name: 'Agenda' })).not.toBeInTheDocument();
+    expect(nav.getByRole('link', { name: 'Inicio' })).not.toHaveAttribute('aria-expanded');
+    expect(nav.getByRole('link', { name: 'Agenda' })).toBeVisible();
     expect(nav.queryByRole('link', { name: 'Reservas' })).not.toBeInTheDocument();
   }
   const desktop = within(screen.getByRole('navigation', { name: 'Navegación principal' }));
   expect(desktop.getAllByRole('link', { name: 'Ingreso' })).toHaveLength(1);
-  expect(desktop.getByRole('link', { name: 'Ingreso' })).toHaveAttribute('href', '/sala/fichaje');
-  fireEvent.click(desktop.getByRole('link', { name: 'Sala' }));
+  expect(desktop.getByRole('link', { name: 'Ingreso' })).toHaveAttribute('href', '/sala/ingreso');
   expect(desktop.getByRole('link', { name: 'Agenda' })).toHaveAttribute('href', '/sala');
   expect(desktop.getByRole('link', { name: 'Alumnos' })).toBeVisible();
   expect(desktop.getByRole('link', { name: 'Rutinas' })).toBeVisible();
@@ -224,9 +223,9 @@ it.each([{ roles: ['GENERAL_ADMIN'] }, { roles: ['GENERAL_ADMIN', 'PROFESSOR'] }
   expect(desktop.getByRole('link', { name: 'Ingreso' })).toBeVisible();
   const mobile = within(screen.getByRole('navigation', { name: 'Navegación móvil' }));
   expect(mobile.getAllByRole('link', { name: 'Ingreso' })).toHaveLength(1);
-  expect(mobile.getByRole('link', { name: 'Ingreso' })).toHaveAttribute('href', '/sala/fichaje');
+  expect(mobile.getByRole('link', { name: 'Ingreso' })).toHaveAttribute('href', '/sala/ingreso');
   expect(mobile.getByRole('link', { name: 'Agenda' })).toBeVisible();
-  fireEvent.click(mobile.getByRole('link', { name: 'Finanzas' }));
+  fireEvent.click(mobile.getByRole('link', { name: 'Resumen' }));
   expect(screen.queryByRole('dialog', { name: 'Menú principal' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
   expect(within(screen.getByRole('navigation', { name: 'Navegación móvil' })).getByRole('link', { name: 'Ingresos' })).toBeVisible();
@@ -235,7 +234,7 @@ it.each([{ roles: ['GENERAL_ADMIN'] }, { roles: ['GENERAL_ADMIN', 'PROFESSOR'] }
 it('keeps Ingreso visible outside the open group for administrative users', async () => {
   renderShell({ roles: ['ADMINISTRATIVE'], permissions: ['SALA_AGENDA_MANAGE', 'FINANCE_OPERATIONAL_READ', 'TEAM_READ'] });
   const nav = within(await screen.findByRole('navigation', { name: 'Navegación principal' }));
-  fireEvent.click(nav.getByRole('link', { name: 'Finanzas' }));
+  fireEvent.click(nav.getByRole('link', { name: 'Resumen' }));
   expect(nav.getByRole('link', { name: 'Ingreso' })).toBeVisible();
   fireEvent.click(nav.getByRole('link', { name: 'Equipo' }));
   expect(nav.getByRole('link', { name: 'Ingreso' })).toBeVisible();
@@ -247,7 +246,7 @@ it('highlights independent Ingreso with the active yellow state on desktop and m
   const desktopCheckIn = desktop.getByRole('link', { name: 'Ingreso' });
   expect(desktopCheckIn).toHaveAttribute('aria-current', 'page');
   expect(desktopCheckIn).toHaveClass('bg-zinc-800', 'font-semibold', 'text-white');
-  expect(desktop.getByRole('link', { name: 'Sala' })).toHaveAttribute('aria-expanded', 'false');
+  expect(desktop.getByRole('heading', { name: 'Sala' })).toBeVisible();
 
   fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
   const mobile = within(screen.getByRole('navigation', { name: 'Navegación móvil' }));
@@ -267,8 +266,7 @@ it('hides Ingreso when the session lacks SALA_AGENDA_MANAGE', async () => {
 it('shows Administrative grouped navigation without Rutinas when it only has routine read permission', async () => {
   renderShell({ roles: ['ADMINISTRATIVE'], permissions: ['PEOPLE_READ', 'SALA_AGENDA_MANAGE', 'SALA_PARTICIPATION_MANAGE', 'SALA_SCHEDULE_MANAGE', 'SALA_ROUTINE_READ', 'CLINIC_OPERATIONAL_READ', 'FINANCE_OPERATIONAL_READ', 'TEAM_READ'] });
   const nav = await screen.findByRole('navigation', { name: 'Navegación principal' });
-  const sala = within(nav).getByRole('link', { name: 'Sala' });
-  fireEvent.click(sala);
+  expect(within(nav).getByRole('heading', { name: 'Sala' })).toBeVisible();
   expect(within(nav).getByRole('link', { name: 'Agenda' })).toBeVisible();
   expect(within(nav).getByRole('link', { name: 'Alumnos' })).toBeVisible();
   expect(within(nav).getByRole('link', { name: 'Configuración' })).toBeVisible();
@@ -278,7 +276,7 @@ it('shows Administrative grouped navigation without Rutinas when it only has rou
 it('shows Rutinas for Administrative combined with Professor through the effective permission union', async () => {
   renderShell({ roles: ['ADMINISTRATIVE', 'PROFESSOR'], permissions: ['SALA_AGENDA_MANAGE', 'SALA_PARTICIPATION_MANAGE', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE'] });
   const nav = await screen.findByRole('navigation', { name: 'Navegación principal' });
-  fireEvent.click(within(nav).getByRole('link', { name: 'Sala' }));
+  expect(within(nav).getByRole('heading', { name: 'Sala' })).toBeVisible();
   expect(within(nav).getByRole('link', { name: 'Rutinas' })).toHaveAttribute('href', '/routines');
 });
 
@@ -288,7 +286,7 @@ it('keeps every permitted destination and session action in the compact sidebar'
   fireEvent.click(screen.getByRole('button', { name: 'Ocultar menú lateral' }));
   const nav = within(screen.getByRole('navigation', { name: 'Navegación principal' }));
   expect(nav.getByRole('link', { name: 'Personas' })).toHaveAttribute('aria-current', 'page');
-  expect(nav.getByRole('link', { name: 'Ingreso' })).toHaveAttribute('href', '/sala/fichaje');
+  expect(nav.getByRole('link', { name: 'Ingreso' })).toHaveAttribute('href', '/sala/ingreso');
   expect(screen.getByRole('link', { name: 'Mi perfil' })).toBeVisible();
   expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeVisible();
   fireEvent.focus(nav.getByRole('link', { name: 'Personas' }));
@@ -297,40 +295,34 @@ it('keeps every permitted destination and session action in the compact sidebar'
   expect(screen.getByRole('link', { name: 'Athleta · Inicio' })).toBeVisible();
 });
 
-it('keeps the active group open when its heading is selected', async () => {
-  renderShell({ roles: ['GENERAL_ADMIN'], permissions: ['PEOPLE_READ'], active: 'home' });
+it('keeps a single direct Inicio and a simple Equipo tooltip', async () => {
+  renderShell({ roles: ['GENERAL_ADMIN'], permissions: ['TEAM_READ'], active: 'home' });
   const nav = within(await screen.findByRole('navigation', { name: 'Navegación principal' }));
-  const home = nav.getByRole('link', { name: 'Inicio' });
-  expect(home).toHaveAttribute('aria-expanded', 'true');
-  fireEvent.click(home);
-  expect(home).toHaveAttribute('aria-expanded', 'true');
-  expect(nav.getByRole('link', { name: 'Resumen' })).toBeVisible();
-  expect(nav.queryByRole('link', { name: 'Personas' })).not.toBeInTheDocument();
+  expect(nav.getAllByRole('link', { name: 'Inicio' })).toHaveLength(1);
+  expect(nav.getByRole('link', { name: 'Inicio' })).toHaveAttribute('aria-current', 'page');
+  expect(nav.queryByRole('heading', { name: 'Equipo' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Ocultar menú lateral' }));
+  const team = nav.getByRole('link', { name: /^Equipo$/ });
+  fireEvent.focus(team);
+  expect(screen.getByRole('tooltip')).toHaveTextContent(/^Equipo$/);
 });
 
-it('opens the active General Admin group and only one group at a time, with active updates', async () => {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  vi.mocked(currentSession).mockResolvedValue(makeSession(['PEOPLE_READ', 'SALA_AGENDA_MANAGE', 'SALA_PARTICIPATION_MANAGE', 'SALA_ROUTINE_MANAGE', 'FINANCE_OPERATIONAL_READ'], ['GENERAL_ADMIN']) as never);
-  const view = render(<QueryClientProvider client={queryClient}><WorkspaceShell active="finance-income"><h1>Contenido sintético</h1></WorkspaceShell></QueryClientProvider>);
-  const nav = within(await screen.findByRole('navigation', { name: 'Navegación principal' }));
-  expect(nav.getByRole('link', { name: 'Finanzas' })).toHaveAttribute('aria-expanded', 'true');
-  expect(nav.getByRole('link', { name: 'Ingresos' })).toHaveAttribute('aria-current', 'page');
-  expect(nav.queryByRole('link', { name: 'Agenda' })).not.toBeInTheDocument();
-
-  fireEvent.click(nav.getByRole('link', { name: 'Sala' }));
-  fireEvent.click(nav.getByRole('link', { name: 'Finanzas' }));
-  expect(nav.getByRole('link', { name: 'Sala' })).toHaveAttribute('aria-expanded', 'false');
-  expect(nav.getByRole('link', { name: 'Finanzas' })).toHaveAttribute('aria-expanded', 'true');
-  expect(nav.queryByRole('link', { name: 'Agenda' })).not.toBeInTheDocument();
-  expect(nav.getByRole('link', { name: 'Ingresos' })).toBeVisible();
-
-  fireEvent.click(nav.getByRole('link', { name: 'Finanzas' }));
-  expect(nav.getByRole('link', { name: 'Finanzas' })).toHaveAttribute('aria-expanded', 'true');
-  expect(nav.getByRole('link', { name: 'Ingresos' })).toBeVisible();
-
-  view.rerender(<QueryClientProvider client={queryClient}><WorkspaceShell active="sala-agenda"><h1>Contenido sintético</h1></WorkspaceShell></QueryClientProvider>);
-  expect(nav.getByRole('link', { name: 'Sala' })).toHaveAttribute('aria-expanded', 'true');
-  expect(nav.getByRole('link', { name: 'Agenda' })).toHaveAttribute('aria-current', 'page');
+it('keeps authorized groups visible and stable while selection and session data change', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const data = makeSession(['SALA_AGENDA_MANAGE', 'FINANCE_OPERATIONAL_READ'], ['GENERAL_ADMIN']);
+  vi.mocked(currentSession).mockResolvedValue(data);
+  const view = render(<QueryClientProvider client={client}><WorkspaceShell active="finance-income">Contenido</WorkspaceShell></QueryClientProvider>);
+  const nav = await screen.findByRole('navigation', { name: 'Navegación principal' });
+  const links = within(nav).getAllByRole('link');
+  expect(within(nav).getByRole('link', { name: 'Agenda' })).toBeVisible();
+  expect(within(nav).getByRole('link', { name: 'Ingresos' })).toHaveAttribute('aria-current', 'page');
+  expect(nav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+  expect(nav.querySelectorAll('[aria-expanded]')).toHaveLength(0);
+  view.rerender(<QueryClientProvider client={client}><WorkspaceShell active="sala-agenda">Contenido</WorkspaceShell></QueryClientProvider>);
+  expect(within(nav).getAllByRole('link')).toEqual(links);
+  expect(within(nav).getByRole('link', { name: 'Agenda' })).toHaveAttribute('aria-current', 'page');
+  expect(within(nav).getByRole('link', { name: 'Ingresos' })).not.toHaveAttribute('aria-current');
+  expect(nav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
 });
 
 it.each(['KINESIOLOGIST', 'OSTEOPATH'])('keeps %s accounts but hides clinical navigation during this delivery', async (role) => {
@@ -340,35 +332,36 @@ it.each(['KINESIOLOGIST', 'OSTEOPATH'])('keeps %s accounts but hides clinical na
   for (const name of ['Clínica', 'Pacientes', 'Turnos']) expect(nav.queryByRole('link', { name })).not.toBeInTheDocument();
 });
 
-it('links group headings to the first permitted item', async () => {
+it('uses noninteractive group headings and preserves permitted destinations', async () => {
   renderShell({ roles: ['ADMINISTRATIVE'], permissions: ['SALA_PARTICIPATION_MANAGE', 'EXPENSE_HISTORY_READ'] });
   const nav = within(await screen.findByRole('navigation', { name: 'Navegación principal' }));
-  expect(nav.getByRole('link', { name: 'Sala' })).toHaveAttribute('href', '/students');
-  expect(nav.getByRole('link', { name: 'Finanzas' })).toHaveAttribute('href', '/finance?view=expenses');
+  expect(nav.getByRole('heading', { name: 'Sala' })).toBeVisible();
+  expect(nav.getByRole('link', { name: 'Alumnos' })).toHaveAttribute('href', '/students');
+  expect(nav.getByRole('heading', { name: 'Finanzas' })).toBeVisible();
+  expect(nav.getByRole('link', { name: 'Gastos' })).toHaveAttribute('href', '/finance?view=expenses');
   expect(nav.queryByRole('link', { name: 'Equipo' })).not.toBeInTheDocument();
 });
 
 it.each([
-  ['Inicio', '/', 'home', 'Resumen'],
-  ['Sala', '/sala', 'sala-agenda', 'Agenda'],
-  ['Finanzas', '/finance', 'finance-summary', 'Ingresos'],
+  ['Inicio', '/', 'home', 'Inicio'],
+  ['Agenda', '/sala', 'sala-agenda', 'Agenda'],
+  ['Resumen', '/finance', 'finance-summary', 'Ingresos'],
   ['Equipo', '/team', 'team', 'Equipo'],
-])('closes the mobile drawer after selecting %s and reopens the active group', async (label, href, active, child) => {
+])('closes the mobile drawer after selecting %s and preserves all destinations', async (label, href, active, child) => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.mocked(currentSession).mockResolvedValue(makeSession(['PEOPLE_READ', 'SALA_AGENDA_MANAGE', 'FINANCE_OPERATIONAL_READ', 'TEAM_READ'], ['ADMINISTRATIVE']) as never);
   const view = render(<QueryClientProvider client={client}><WorkspaceShell active="home">Contenido</WorkspaceShell></QueryClientProvider>);
-  await screen.findByRole('link', { name: 'Sala' });
+  await screen.findByRole('link', { name: 'Agenda' });
   fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
   const drawer = within(screen.getByRole('dialog', { name: 'Menú principal' }));
-  const heading = drawer.getByRole('heading', { name: label });
-  const link = within(heading).getByRole('link', { name: label });
+  const link = drawer.getByRole('link', { name: label });
   expect(link).toHaveAttribute('href', href);
   fireEvent.click(link);
   expect(screen.queryByRole('dialog', { name: 'Menú principal' })).not.toBeInTheDocument();
   view.rerender(<QueryClientProvider client={client}><WorkspaceShell active={active}>Contenido</WorkspaceShell></QueryClientProvider>);
   fireEvent.click(screen.getByRole('button', { name: 'Abrir menú' }));
   const reopened = within(screen.getByRole('dialog', { name: 'Menú principal' }));
-  expect(within(reopened.getByRole('heading', { name: label })).getByRole('link')).toHaveAttribute('aria-expanded', 'true');
+  expect(reopened.getByRole('link', { name: label })).toHaveAttribute('aria-current', 'page');
   expect(reopened.getAllByRole('link', { name: child }).length).toBeGreaterThan(0);
 });
 

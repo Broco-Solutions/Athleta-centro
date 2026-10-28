@@ -10,6 +10,10 @@ const email = `e2e.${kind}@athleta.test`;
 const password = 'ValidPass1!';
 
 async function main(): Promise<void> {
+  if (kind === 'expire-internal') {
+    await prisma.session.updateMany({ where: { kind: 'INTERNAL', internalUser: { normalizedEmail: 'e2e.normal@athleta.test' } }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    return;
+  }
 if (!['normal', 'temporary', 'inactive', 'people', 'team', 'sala', 'occurrence', 'multislot', 'clinic', 'service', 'portal-reset', 'portal-fixed-edit', 'physical-evaluation', 'student-follow-up'].includes(kind ?? '')) throw new Error('Unknown e2e fixture');
   if (kind === 'student-follow-up') {
     const people = await prisma.person.findMany({ where: { normalizedDni: { in: ['40880000', '40880001', '40880002'] } }, select: { id: true } });

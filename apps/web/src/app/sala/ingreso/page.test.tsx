@@ -151,3 +151,27 @@ it('dismisses only the incorrect-DNI message after exactly 3 seconds', async () 
     expect(input).toHaveValue('30123456');
   } finally { vi.useRealTimers(); }
 });
+
+it('does not register while typing and announces verification before showing an already registered arrival', async () => {
+  let writes = 0;
+  let release: (() => void) | undefined;
+  server.use(http.post('http://localhost:3000/api/sala/check-in', async () => {
+    writes++;
+    await new Promise<void>(resolve => { release = resolve; });
+    return HttpResponse.json({ data: { status: 'ALREADY_REGISTERED', message: 'Tu ingreso ya estaba registrado.' } });
+  }));
+  renderPage();
+  const input = await screen.findByLabelText('DNI del alumno');
+  expect(screen.getByText(/Esperando DNI/)).toBeVisible();
+  fireEvent.change(input, { target: { value: '30123456' } });
+  expect(writes).toBe(0);
+  fireEvent.submit(input.closest('form')!);
+  await waitFor(() => expect(release).toBeDefined());
+  expect(screen.getByText('Verificando DNI…')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Verificando…' })).toBeDisabled();
+  release!();
+  expect(await screen.findByRole('heading', { name: 'Ingreso ya registrado' })).toBeVisible();
+  expect(screen.getByText('Tu ingreso ya estaba registrado.')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Registrar otro alumno' }));
+  expect(screen.getByLabelText('DNI del alumno')).toHaveValue('');
+});

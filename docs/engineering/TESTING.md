@@ -2244,6 +2244,16 @@ La cache no debe ocultar tests que dependen de infraestructura o estado externo.
 
 # 125. E2E data setup
 
+El runner `pnpm test:e2e -- auth-ux.spec.ts --workers=1` crea PostgreSQL mediante
+Testcontainers, valida el marcador de aislamiento, aplica migraciones y carga
+datos ficticios. No acepta una base existente como alternativa. Compila API y
+web antes de iniciar sus comprobaciones de disponibilidad y ejecuta `node
+dist/main.js` y `next start`, respectivamente. Así los límites de disponibilidad
+y de las assertions de navegador no incluyen compilación en watch ni compilación
+inicial de rutas. El backend conserva `NODE_ENV=test` para la base aislada y las
+cookies locales; Next.js compila y sirve en modo producción. No ejecutar otro
+build ni otra suite pesada en paralelo con este runner.
+
 Playwright no debe depender de crear todo mediante clicks si eso vuelve los tests lentos y frágiles.
 
 Se permite preparar precondiciones mediante:

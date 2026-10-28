@@ -18,8 +18,15 @@ describe('Next.js first-delivery redirects', () => {
     ]));
   });
 
+  it.each(['true', 'false'])('redirects legacy Ingreso without reversing direction (Clinic=%s)', async enabled => {
+    process.env.ATHLETA_CLINIC_ENABLED = enabled;
+    const redirects = await nextConfig.redirects?.();
+    expect(redirects).toContainEqual({ source: '/sala/fichaje', destination: '/sala/ingreso', permanent: true });
+    expect(redirects?.some(route => route.source === '/sala/ingreso')).toBe(false);
+  });
+
   it('keeps clinical pages available when Clinic is explicitly enabled', async () => {
     process.env.ATHLETA_CLINIC_ENABLED = 'true';
-    expect(await nextConfig.redirects?.()).toEqual([]);
+    expect(await nextConfig.redirects?.()).toEqual([{ source: '/sala/fichaje', destination: '/sala/ingreso', permanent: true }]);
   });
 });

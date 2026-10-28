@@ -99,7 +99,7 @@ test('resets from the general Person dialog and closes the one-time notice', asy
 
 test('keeps compact navigation during route changes and lets an incorrect DNI retry immediately', async ({ page }) => {
   fixture('occurrence'); await login(page, 'occurrence');
-  await page.goto('/sala/fichaje');
+  await page.goto('/sala/ingreso');
   await page.getByRole('button', { name: 'Ocultar menú lateral' }).click();
   await page.getByRole('link', { name: 'Sala: Alumnos', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Mostrar menú lateral' })).toBeVisible();
@@ -135,5 +135,106 @@ test('loads both login pages and the Athleta favicon at narrow, tablet and deskt
       await expect(submit).toBeInViewport();
       await page.screenshot({ path: test.info().outputPath(`${path.replaceAll('/', '-')}-${width}.png`), fullPage: true });
     }
+  }
+});
+
+test('keeps a foreign localhost spelling and an invalid CSRF token rejected through the web proxy', async ({ page }) => {
+  fixture('normal'); await login(page, 'normal');
+  const { data } = await (await page.request.get('/api/auth/session')).json();
+  const rejected = await page.request.post('/api/auth/logout', { headers: { origin: 'http://127.0.0.1:3000', 'x-csrf-token': data.csrfToken } });
+  expect(rejected.status()).toBe(401);
+  expect((await rejected.json()).code).toBe('CSRF_INVALID');
+  expect((await page.request.post('/api/auth/logout', { headers: { origin: 'http://localhost:3000', 'x-csrf-token': 'incorrect' } })).status()).toBe(401);
+  expect((await page.request.get('/api/auth/session')).status()).toBe(200);
+  await page.getByRole('button', { name: 'Cerrar sesión' }).click();
+  await expect(page).toHaveURL('/login');
+});
+
+test('finishes logout after the internal session expires without reviving protected access', async ({ page }) => {
+  fixture('normal'); await login(page, 'normal');
+  fixture('expire-internal');
+  const response = page.waitForResponse(value => value.url().endsWith('/api/auth/logout'));
+  await page.getByRole('button', { name: 'Cerrar sesión' }).click();
+  expect((await response).status()).toBe(200);
+  await expect(page).toHaveURL('/login');
+  expect((await page.request.get('/api/auth/session')).status()).toBe(401);
+  expect((await page.context().cookies()).some(value => value.name === 'athleta_session')).toBe(false);
+});
+
+test('internal logout preserves a separate Portal session', async ({ page }) => {
+  fixture('portal-reset');
+  expect((await page.request.post('/api/portal/auth/login', { data: { dni: '40999444', pin: '1234' } })).status()).toBe(200);
+  await login(page, 'portal-reset');
+  await page.getByRole('button', { name: 'Cerrar sesión' }).click();
+  await expect(page).toHaveURL('/login');
+  expect((await page.request.get('/api/auth/session')).status()).toBe(401);
+  expect((await page.request.get('/api/portal/auth/session')).status()).toBe(200);
+});
+
+test('keeps navigation destinations stable, selects finance views once and redirects old Ingreso bookmarks', async ({ page }) => {
+  fixture('team'); await login(page, 'team');
+  await page.goto('/sala/fichaje?source=bookmark');
+  await expect(page).toHaveURL('/sala/ingreso?source=bookmark');
+  const nav = page.getByRole('navigation', { name: 'Navegación principal' });
+  const destinations = await nav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href')));
+  expect(await nav.locator('[aria-expanded]').count()).toBe(0);
+  for (const [label, href] of [['Ingresos', '/finance?view=income'], ['Gastos', '/finance?view=expenses'], ['Resumen', '/finance']] as const) {
+    await nav.getByRole('link', { name: label, exact: true }).click();
+    await expect(page).toHaveURL(href);
+    await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
+    await expect(nav.locator('[aria-current="page"]')).toHaveText(label);
+    expect(await nav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href')))).toEqual(destinations);
+  }
+  await page.getByRole('button', { name: 'Ocultar menú lateral' }).click();
+  await nav.getByRole('link', { name: 'Equipo', exact: true }).focus();
+  await expect(page.getByRole('tooltip')).toHaveText('Equipo');
+  await nav.getByRole('link', { name: 'Equipo', exact: true }).click();
+  const create = page.getByRole('button', { name: 'Nuevo integrante' });
+  await expect(create).toBeVisible();
+  expect(await create.evaluate(element => ({ gap: getComputedStyle(element).gap, shrink: getComputedStyle(element.querySelector('svg')!).flexShrink }))).toEqual({ gap: '8px', shrink: '0' });
+});
+
+test('logs out from Ingreso and protects the previous page on return', async ({ page }) => {
+  fixture('occurrence'); await login(page, 'occurrence');
+  await page.goto('/sala/ingreso');
+  await expect(page.getByLabel('DNI del alumno')).toBeVisible();
+  const response = page.waitForResponse(value => value.url().endsWith('/api/auth/logout'));
+  await page.getByRole('button', { name: 'Cerrar sesión', exact: true }).click();
+  expect((await response).status()).toBe(200);
+  await expect(page).toHaveURL('/login');
+  await page.goBack();
+  await expect(page).toHaveURL('/login');
+  await expect(page.getByLabel('DNI del alumno')).toHaveCount(0);
+});
+
+test('closes the current session when another tab has replaced its cookie', async ({ page }) => {
+  fixture('normal'); await login(page, 'normal');
+  const initial = await (await page.request.get('/api/auth/session')).json();
+  // Browser contexts share cookies across tabs, but each tab has its own query cache.
+  const replacement = await page.request.post('/api/auth/login', { data: { email: 'e2e.normal@athleta.test', password: 'ValidPass1!' } });
+  expect(replacement.status()).toBe(200);
+  const current = await page.request.get('/api/auth/session');
+  expect(current.status()).toBe(200);
+  expect((await current.json()).data.csrfToken !== initial.data.csrfToken).toBe(true);
+  const cookie = (await page.context().cookies()).find(value => value.name === 'athleta_session')!;
+  const attempts: number[] = [];
+  page.on('response', response => { if (response.url().endsWith('/api/auth/logout')) attempts.push(response.status()); });
+  const firstAttempt = page.waitForResponse(response => response.url().endsWith('/api/auth/logout'));
+  await page.getByRole('button', { name: 'Cerrar sesión', exact: true }).click();
+  const rejected = await firstAttempt;
+  expect(rejected.status()).toBe(401);
+  expect((await rejected.json()).code).toBe('CSRF_INVALID');
+  expect(rejected.request().headers()['x-csrf-token'] === initial.data.csrfToken).toBe(true);
+  await expect(page).toHaveURL('/login');
+  expect(attempts).toEqual([401, 200]);
+  expect((await page.context().cookies()).some(value => value.name === 'athleta_session')).toBe(false);
+  expect((await page.request.get('/api/auth/session', { headers: { cookie: `athleta_session=${cookie.value}` } })).status()).toBe(401);
+});
+
+test('protects both canonical and legacy Ingreso entries without a session', async ({ page }) => {
+  for (const path of ['/sala/ingreso', '/sala/fichaje?source=bookmark']) {
+    await page.goto(path);
+    await expect(page).toHaveURL('/login');
+    await expect(page.getByLabel('DNI del alumno')).toHaveCount(0);
   }
 });

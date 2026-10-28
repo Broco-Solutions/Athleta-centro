@@ -43,12 +43,16 @@ async function main(): Promise<void> {
       await assertE2ePortAvailable(3000);
       // Exercise the trailing-slash configuration seen in production.
       const apiEnv = { ...testEnv, PORT: '3001', WEB_ORIGIN: 'http://localhost:3000/' };
-      const webEnv = { ...testEnv, PORT: '3000', NEXT_PUBLIC_API_URL: 'http://localhost:3001' };
-      services.push(spawn('pnpm', ['dev'], { cwd: apiDirectory, env: apiEnv, stdio: 'inherit', detached: true }));
-      services.push(spawn('pnpm', ['dev', '--port', '3000'], { cwd: `${apiDirectory}/../web`, env: webEnv, stdio: 'inherit', detached: true }));
+      const webEnv = { ...testEnv, NODE_ENV: 'production', PORT: '3000', NEXT_PUBLIC_API_URL: 'http://localhost:3001' };
+      const webDirectory = `${apiDirectory}/../web`;
+      // Compilation must finish before the readiness deadline starts. E2E does
+      // not need watchers or cold route compilation during browser assertions.
+      await run('pnpm', ['build'], { cwd: apiDirectory, env: apiEnv });
+      await run('pnpm', ['build'], { cwd: webDirectory, env: webEnv });
+      services.push(spawn('pnpm', ['start'], { cwd: apiDirectory, env: apiEnv, stdio: 'inherit', detached: true }));
+      services.push(spawn('pnpm', ['start', '--port', '3000'], { cwd: webDirectory, env: webEnv, stdio: 'inherit', detached: true }));
       await waitForHttp('http://127.0.0.1:3001/health', services);
       await waitForHttp('http://127.0.0.1:3000/login', services);
-      const webDirectory = `${apiDirectory}/../web`;
       const result = await run('pnpm', ['exec', 'playwright', 'test', ...args], { cwd: webDirectory, env: testEnv, allowFailure: true });
       if (result !== 0) process.exitCode = result;
     }

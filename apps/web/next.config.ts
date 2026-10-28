@@ -5,8 +5,10 @@ const nextConfig: NextConfig = {
   transpilePackages: ['@athleta/ui'],
   env: { ATHLETA_CLINIC_ENABLED: process.env.ATHLETA_CLINIC_ENABLED === 'true' ? 'true' : 'false' },
   async redirects() {
-    if (process.env.ATHLETA_CLINIC_ENABLED === 'true') return [];
+    const checkInRedirect = { source: '/sala/fichaje', destination: '/sala/ingreso', permanent: true };
+    if (process.env.ATHLETA_CLINIC_ENABLED === 'true') return [checkInRedirect];
     return [
+      checkInRedirect,
       { source: '/clinic', destination: '/', permanent: false },
       { source: '/clinic/:path*', destination: '/', permanent: false },
       { source: '/portal/clinic', destination: '/portal', permanent: false },
