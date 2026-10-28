@@ -8,9 +8,12 @@ import React from 'react';
 import { PinInput } from '../../../features/auth/pin-input';
 import { useState } from 'react';
 import { PortalMessage } from '../portal-message';
+import { useQueryClient } from '@tanstack/react-query';
+import type { PortalSession } from '../portal-ui';
 
 export default function PortalLogin(): React.JSX.Element {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [dni, setDni] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
@@ -35,6 +38,8 @@ export default function PortalLogin(): React.JSX.Element {
             if (submitting.current) return;
             submitting.current = true; setPending(true); setError('');
             try {
+            await queryClient.cancelQueries({ queryKey: ['portal', 'session'], exact: true });
+            queryClient.removeQueries({ queryKey: ['portal', 'session'], exact: true });
             const response = await fetch('/api/portal/auth/login', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
@@ -45,7 +50,8 @@ export default function PortalLogin(): React.JSX.Element {
               setError('No pudimos ingresar con esos datos. Revisalos o comunicate con Athleta.');
               return;
             }
-            const body = await response.json();
+            const body = await response.json() as { data: PortalSession };
+            queryClient.setQueryData(['portal', 'session'], body.data);
             router.push(body.data.mustChangePin ? '/portal/change-pin' : '/portal');
             } catch { setError('No pudimos ingresar con esos datos. Revisalos o comunicate con Athleta.'); }
             finally { submitting.current = false; setPending(false); }

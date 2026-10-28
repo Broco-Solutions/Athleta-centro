@@ -1,12 +1,13 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import PortalLogin from './page';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => navigation }));
 
-function renderPage(): void {
-  render(<PortalLogin />);
+function renderPage(client = new QueryClient()): void {
+  render(<QueryClientProvider client={client}><PortalLogin /></QueryClientProvider>);
 }
 
 function enterCredentials(): void {
@@ -106,7 +107,7 @@ it('sends only once while the Portal login is pending', async () => {
   renderPage(); enterCredentials();
   const form = screen.getByRole('button', { name: 'Ingresar' }).closest('form')!;
   fireEvent.submit(form); fireEvent.submit(form);
-  expect(request).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
   expect(screen.getByRole('button', { name: 'Ingresando…' })).toBeDisabled();
 });
 
@@ -117,4 +118,22 @@ it('always offers a generic WhatsApp message without fetching an identity', () =
   const contact = screen.getByRole('link', { name: /WhatsApp Athleta:/ });
   expect(new URL(contact.getAttribute('href')!).searchParams.get('text')).toBe('¡Hola! Me contacto por ');
   expect(fetch).not.toHaveBeenCalled();
+});
+
+
+it('hands the authenticated first name to the existing session cache before a required PIN change', async () => {
+  const client = new QueryClient();
+  client.setQueryData(['portal', 'session'], { person: { firstName: 'Previous identity' } });
+  const request = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ data: { person: { firstName: 'María José' }, mustChangePin: true } }) } as Response);
+  renderPage(client); enterCredentials(); fireEvent.submit(screen.getByRole('button', { name: 'Ingresar' }).closest('form')!);
+  await waitFor(() => expect(navigation.push).toHaveBeenCalledWith('/portal/change-pin'));
+  expect(client.getQueryData(['portal', 'session'])).toEqual({ person: { firstName: 'María José' }, mustChangePin: true });
+  expect(new URL(screen.getByRole('link', { name: /WhatsApp Athleta:/ }).getAttribute('href')!).searchParams.get('text')).toBe('¡Hola! Me contacto por ');
+  expect(request).toHaveBeenCalledTimes(1);
+});
+it('discards an earlier cached identity when a new login fails', async () => {
+  const client = new QueryClient(); client.setQueryData(['portal', 'session'], { person: { firstName: 'Previous identity' } });
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false } as Response);
+  renderPage(client); enterCredentials(); fireEvent.submit(screen.getByRole('button', { name: 'Ingresar' }).closest('form')!);
+  await screen.findByRole('alert'); expect(client.getQueryData(['portal', 'session'])).toBeUndefined();
 });

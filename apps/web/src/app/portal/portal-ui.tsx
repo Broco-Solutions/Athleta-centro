@@ -53,6 +53,7 @@ export function PortalLogoutButton({ compactOnMobile = false }: { compactOnMobil
   const [error, setError] = React.useState('');
   return <span className="relative inline-flex min-w-0 flex-col"><button type="button" disabled={pending} className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm disabled:opacity-50" onClick={async () => {
     if (submitting.current) return; submitting.current = true; setPending(true); setError('');
+    await queryClient.cancelQueries({ queryKey: ['portal', 'session'], exact: true });
     // Discard the verified identity immediately, including while logout is pending.
     if (queryClient.getQueryState(['portal', 'session'])?.status === 'success') {
       queryClient.setQueryData<PortalSession>(['portal', 'session'], current => current ? { ...current, person: undefined } : current);

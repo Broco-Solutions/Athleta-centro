@@ -58,3 +58,20 @@ it('uses the current Portal first name and discards it as soon as logout starts'
   await screen.findByRole('alert');
   expect(new URL(contact.getAttribute('href')!).searchParams.get('text')).toBe('¡Hola! Me contacto por ');
 });
+
+it('does not restore a name from an in-flight session response after logout starts', async () => {
+  let finishSession: ((response: Response) => void) | undefined;
+  let finishLogout: ((response: Response) => void) | undefined;
+  const request = vi.spyOn(globalThis, 'fetch')
+    .mockImplementationOnce(() => new Promise<Response>(resolve => { finishSession = resolve; }))
+    .mockImplementationOnce(() => new Promise<Response>(resolve => { finishLogout = resolve; }));
+  const client = new QueryClient();
+  render(<QueryClientProvider client={client}><PortalFrame title="Inicio">Contenido</PortalFrame></QueryClientProvider>);
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+  finishSession!({ ok: true, json: async () => ({ data: { person: { firstName: 'Earlier identity' } } }) } as Response);
+  finishLogout!({ ok: false } as Response);
+  await screen.findByRole('alert');
+  expect(new URL(screen.getByRole('link', { name: /WhatsApp Athleta:/ }).getAttribute('href')!).searchParams.get('text')).toBe('¡Hola! Me contacto por ');
+});

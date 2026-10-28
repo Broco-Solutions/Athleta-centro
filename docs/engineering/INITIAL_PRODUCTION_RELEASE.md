@@ -60,7 +60,9 @@ El enlace principal usa WhatsApp, con mensaje abierto genérico en login y sin
 identidad comprobada. Sólo usa `person.firstName` de la consulta de sesión existente;
 normaliza espacios y codifica `text`. No añade consultas, almacenamiento, precarga
 externa ni información personal adicional. Al iniciar logout descarta el nombre
-del caché; los estados de error o revalidación muestran el mensaje genérico.
+del caché y cancela su verificación pendiente; los estados de error o revalidación
+muestran el mensaje genérico. El login válido alimenta esa misma caché antes de
+ir al cambio obligatorio de PIN; el footer del login permanece siempre genérico.
 Instagram, Maps y firma Broco conservan sus destinos y tratamiento de contraste.
 
 Prueba aislada del procedimiento:

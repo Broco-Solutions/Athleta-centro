@@ -1,7 +1,7 @@
 'use client';
 import React, { useRef, useState } from 'react';
 import Image from 'next/image';
-import { skipToken, useQuery } from '@tanstack/react-query';
+import { skipToken, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PortalSession } from '../portal-ui';
 import { useRouter } from 'next/navigation';
 import { PortalFooter } from '../portal-footer';
@@ -10,6 +10,7 @@ import { PortalMessage } from '../portal-message';
 
 export default function ChangePin(): React.JSX.Element {
   const router = useRouter();
+  const queryClient = useQueryClient();
   // Observe only the already verified Portal cache; this footer never fetches.
   const portalSession = useQuery<PortalSession>({ queryKey: ['portal', 'session'], queryFn: skipToken, enabled: false });
   const [current, setCurrent] = useState('');
@@ -26,11 +27,12 @@ export default function ChangePin(): React.JSX.Element {
       try {
         const sessionResponse = await fetch('/api/portal/auth/session', { credentials: 'include' });
         if (!sessionResponse.ok) throw new Error('SESSION_FAILED');
-        const session = await sessionResponse.json();
-        const response = await fetch('/api/portal/auth/change-pin', { method: 'POST', headers: { 'content-type': 'application/json', 'x-csrf-token': session.data.csrfToken }, credentials: 'include', body: JSON.stringify({ currentPin: current, nextPin: next }) });
+        const session = await sessionResponse.json() as { data: PortalSession };
+        queryClient.setQueryData(['portal', 'session'], session.data);
+        const response = await fetch('/api/portal/auth/change-pin', { method: 'POST', headers: { 'content-type': 'application/json', 'x-csrf-token': session.data.csrfToken ?? '' }, credentials: 'include', body: JSON.stringify({ currentPin: current, nextPin: next }) });
         if (!response.ok) { setError('El PIN no es válido.'); return; }
         router.push('/portal');
-      } catch { setError('El PIN no es válido.'); }
+      } catch { queryClient.setQueryData<PortalSession>(['portal', 'session'], previous => previous ? { ...previous, person: undefined } : previous); setError('El PIN no es válido.'); }
       finally { submitting.current = false; setPending(false); }
     }}>
       <div className="space-y-2"><label htmlFor="current-pin" className="block text-sm font-medium">PIN actual</label><PinInput id="current-pin" secretLabel="PIN actual" required autoComplete="current-password" value={current} onChange={event => setCurrent(event.target.value.replace(/\D/g, '').slice(0,4))}/></div>

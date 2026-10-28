@@ -55,3 +55,15 @@ it('uses only a verified cached first name without requesting a session for its 
   await expect(client.fetchQuery({ queryKey: ['portal', 'session'], queryFn: async () => { throw new Error('Synthetic expired session'); } })).rejects.toThrow();
   await waitFor(() => expect(new URL(link.getAttribute('href')!).searchParams.get('text')).toBe('¡Hola! Me contacto por '));
 });
+
+it('discards the cached name when the existing submit-time session check expires', async () => {
+  const client = new QueryClient(); client.setQueryData(['portal', 'session'], { person: { firstName: 'Earlier identity' } });
+  const request = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false } as Response);
+  renderPage(client);
+  fireEvent.change(screen.getByLabelText('PIN actual'), { target: { value: '0012' } });
+  fireEvent.change(screen.getByLabelText('Nuevo PIN'), { target: { value: '0034' } });
+  fireEvent.submit(screen.getByRole('button', { name: 'Guardar PIN' }).closest('form')!);
+  await screen.findByRole('alert');
+  await waitFor(() => expect(new URL(screen.getByRole('link', { name: /WhatsApp Athleta:/ }).getAttribute('href')!).searchParams.get('text')).toBe('¡Hola! Me contacto por '));
+  expect(request).toHaveBeenCalledTimes(1);
+});
