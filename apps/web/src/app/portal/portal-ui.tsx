@@ -60,7 +60,7 @@ export function PortalNav(): React.JSX.Element {
   const pathname = usePathname();
   const profileActive = pathname === '/portal/profile';
   const healthActive = pathname === '/portal/declaracion-salud';
-  return <nav aria-label="Navegación del Portal" className="flex gap-4 overflow-x-auto">
+  return <nav aria-label="Navegación del Portal" className="portal-nav flex gap-4 overflow-x-auto">
     {[['/portal', 'Inicio'], ['/portal/profile', 'Mis datos'], ['/portal/declaracion-salud', 'Declaración de salud']].map(([href, label]) => {
       const active = href === '/portal/profile' ? profileActive : href === '/portal/declaracion-salud' ? healthActive : !profileActive && !healthActive;
       return <Link key={href} href={href!} aria-current={active ? 'page' : undefined} className={'inline-flex min-h-12 shrink-0 items-center border-b-2 px-1 text-sm font-medium ' + (active ? 'border-primary!' : 'border-transparent!')}>{label}</Link>;
@@ -86,20 +86,19 @@ export function PortalFrame({ title, subtitle, action, backToHome = false, child
         <Link href="/portal" aria-label="Athleta · Inicio" className="shrink-0">
           <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-36 sm:w-44" />
         </Link>
-        <div className="hidden flex-1 md:block"><PortalNav /></div>
         <div className="flex shrink-0 items-center gap-1 sm:gap-3"><Link href="/portal/change-pin" aria-label="Cambiar PIN" className="inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-sm sm:gap-2 sm:px-3"><KeyRound size={16} aria-hidden="true" /><span className="md:hidden">PIN</span><span className="hidden md:inline">Cambiar PIN</span></Link><PortalLogoutButton compactOnMobile /></div>
       </div>
+      <div className="mx-auto max-w-6xl"><PortalNav /></div>
     </header>
-    <div className="border-b bg-surface px-4 md:hidden"><PortalNav /></div>
-    <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
+    <main data-portal-health={pathname === '/portal/declaracion-salud' || undefined} className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
       {backToHome ? <Link href="/portal" className="inline-flex min-h-11 items-center gap-2 text-sm text-muted-foreground"><ArrowLeft size={16} aria-hidden="true" />Volver a Inicio</Link> : null}
       <header className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-        <div><p className="text-xs font-semibold tracking-widest text-muted-foreground">PORTAL ATHLETA</p><h1 className="mt-2 text-2xl font-semibold sm:text-3xl">{title}</h1>{subtitle ? <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p> : null}</div>
+        <div><p className="portal-heading-label text-xs font-semibold tracking-widest">PORTAL ATHLETA</p><h1 tabIndex={-1} className="portal-heading-title mt-2 text-[28px] font-semibold">{title}</h1>{subtitle ? <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p> : null}</div>
         {action ? <div className="w-full md:w-auto">{action}</div> : null}
       </header>
       {gated ? <p role="status">Completá los requisitos de ingreso para continuar.</p> : children}
     </main>
-    <footer className="border-t"><div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-5 text-xs text-muted-foreground sm:flex-row sm:justify-between sm:px-6 lg:px-8"><div><span>Athleta · Portal personal</span><div><AthletaContact /></div></div><DeveloperFooter /></div></footer>
+    <footer className="portal-footer"><div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-5 text-xs sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8"><div><span>Athleta · Portal personal</span><div><AthletaContact /></div></div><DeveloperFooter /></div></footer>
   </div>;
 }
 

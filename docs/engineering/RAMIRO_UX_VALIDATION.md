@@ -1,5 +1,163 @@
 # Correcciones y pulido de UX en `ramiro`
 
+## Validación para publicación — 2026-10-28
+
+Esta sección reemplaza los bloqueos de ejecutor del registro anterior. El criterio
+aprobado es **preview publicado para revisión**, sin entrega al cliente ni paso a
+producción. Se conserva el diseño aprobado y el alcance funcional de Ingreso y Portal.
+
+- Rama `ramiro` actualizada por fast-forward a `8990f2e`, preservando sus cuatro
+  commits remotos. Los 38 archivos locales se compararon por SHA-256 antes y
+  después de recuperar el trabajo: ninguna diferencia de contenido. Se conserva
+  un stash de respaldo; no se incorporó `main` ni se reescribió historia.
+- Escritura en Git comprobada desde este ejecutor. Docker Desktop iniciado con
+  su cliente instalado; Docker 29.6.1 y Testcontainers accesibles por el socket
+  normal, sin cambios de permisos ni sustitución por una base compartida.
+- Integración real: 154 tests de auth, PIN, persistencia de sesiones, Sala y
+  asistencias aprobados entre corridas aisladas. La primera corrida concurrente
+  agotó timeouts y provocó fallos de limpieza en cascada; se repitió sin carga
+  paralela sobre otra base. El caso largo de PIN requirió una repetición solo y
+  pasó conservando su límite de 5 segundos. No se cambiaron assertions/timeouts.
+- `pnpm test:e2e -- auth-ux.spec.ts --workers=1`: **16 aprobados, exit 0**, con
+  builds de producción, navegador, API y PostgreSQL efímero reales. Los mensajes
+  `ELIFECYCLE` de los procesos `pnpm start` al detenerlos corresponden al cleanup;
+  no al resultado de Playwright ni al código de salida del runner.
+- Se corrigió un selector E2E ambiguo: `PIN actual` también encontraba el nuevo
+  botón `Mostrar PIN actual`; la selección ahora exige etiqueta exacta.
+- Se añadieron dos escenarios al E2E enfocado: cancelación móvil con Escape y
+  Volver sin POST, confirmación real, persistencia y conservación de recurrencia;
+  registro con DNI pegado y Enter, recarga y detección de asistencia ya registrada.
+  Sus pagos/precondiciones son sintéticos y están detrás del guard de aislamiento.
+- Vitest enfocado: 34 tests de Ingreso, login, cambio de PIN, casilleros y
+  cancelación aprobados en ejecución real; sus respuestas HTTP son simuladas.
+- `CI=true TURBO_FORCE=true pnpm check`: **aprobado, exit 0**. Lint, typecheck,
+  52 archivos / 850 tests web, 59 unitarios de API y builds ejecutados; Turbo
+  informa 0 resultados de caché en cada etapa. Las advertencias del cliente
+  generado y de outputs de Turbo no se silenciaron ni requieren cambios de UI.
+- Vercel CLI autenticada y proyecto `broco-solutions/athleta-001-web` confirmado.
+  El OIDC de desarrollo se renovó en un archivo temporal privado: el navegador
+  accede al dominio protegido. No se cambió Deployment Protection ni el alias.
+- La configuración Preview de `ramiro` apunta a
+  `https://athleta-001-ramiro.up.railway.app`; `/health` responde 200 y CORS conserva
+  exactamente el dominio estable. No hay contratos, permisos ni migraciones nuevos.
+- Configuración de destino comparada sin imprimir secretos ni conectarse a las
+  bases: `DATABASE_URL` de la API de Ramiro coincide con su Postgres y no con el
+  de producción. Los metadatos de Railway confirman instancias de volumen y
+  almacenamiento distintas para ambos ambientes; no se infirió aislamiento por
+  el nombre de la rama ni por el ID lógico de volumen compartido entre ambientes.
+- Las credenciales por defecto del seed recibieron 401 en ambos logins del
+  preview. Las comprobaciones publicadas que requieren sesión quedan pendientes
+  y no bloquean la publicación visual. No se solicitan cuentas o datos nuevos; no
+  se crearon usuarios ni se cambiaron PIN, declaraciones, reservas o asistencias
+  de Railway. Los resultados de publicación y su SHA se informan en
+  la entrega, sin registrar credenciales o trazas sensibles en el repositorio.
+
+## Registro previo — recepción y Portal, 2026-10-28
+
+**No entregar todavía.** Esta iteración está implementada en el árbol local de
+`ramiro`, pero no está publicada ni aceptada end-to-end. Las secciones inferiores
+son el historial de ejecuciones anteriores, no resultados de esta iteración.
+
+### Base y límites comprobados
+
+- Repositorio `Broco-Solutions/Athleta-centro`; HEAD local `5641126`.
+  Rama remota consultada: `8990f2e44d23c483ec700abf029ab36969abede9`.
+  Se preservaron los cambios locales previos de Dockerfile, login interno,
+  canonicalización y sidebar. No se mezcló `main`.
+- Git no puede crear `.git/index.lock`: `Read-only file system`.
+  No se cambiaron montajes ni se usaron repositorios alternativos o escrituras
+  remotas para eludir la restricción. Commit/push nuevos: **no realizados**.
+- Docker informa que no está disponible en esta distribución WSL.
+  El E2E aislado falla antes de ejecutar escenarios con
+  `Could not find a working container runtime strategy`; no se usó otra base.
+- `vercel curl` al dominio estable devuelve 302 hacia la protección de Vercel.
+  No hubo acceso autenticado al contenido publicado ni se desactivó protección.
+- GitHub confirma estado exitoso de Vercel y Railway para `8990f2e…`, que es
+  la versión **anterior**. Eso no verifica las nuevas pantallas ni los flujos.
+- Las dos imágenes mencionadas en el encargo no estuvieron disponibles en el
+  mensaje recibido. La composición sigue la dirección escrita del encargo.
+
+### Auditoría priorizada y decisiones
+
+| Pantalla | Evidencia e impacto | Resolución y comprobación |
+| --- | --- | --- |
+| Ingreso | `WorkspaceShell` montaba sidebar, cuenta y cabecera; no era un lienzo de recepción. | Usa `AuthShell`, la misma protección, sin montar navegación. Logo y reloj de Buenos Aires, grafito y panel oscuro, DNI/Enter grandes. Sin sesiones o permisos nuevos. Revisión a cinco tamaños y regresiones de componente. |
+| Ingreso, estados | Nombre dependía de que también existiera hora; foco y resultados pequeños para monitor. | Se muestra el nombre ya devuelto aunque no haya hora; iconos/texto ampliados. Se conservan avisos, 3/10 segundos, corrección inmediata, error persistente y reset. Foco inicial/reset solo con puntero fino; sin forzar teclado móvil. |
+| Acceso del Portal | Composición dispersa; cambio de PIN con inputs sin ocultamiento. | Banda de marca y tarjeta; PIN de un solo input nativo, cuatro casilleros, oculto por defecto, ojo que conserva selección, envío explícito. Pruebas de ceros, edición, doble envío y error. |
+| Marco del Portal | Navegación móvil clara fuera del bloque negro; jerarquía distinta de escritorio. | Una navegación en el bloque negro, activo amarillo y subrayado; footer compacto y contacto confirmado. Sin destinos nuevos ni eliminación de acciones. |
+| Inicio del Portal | Turnos precedían a rutina; dos acciones amarillas competían con la reprogramación. | Aviso condicional, rutina oscura, turnos, vigencia/evaluaciones. Reprogramación domina cuando existe; entrenamiento conserva disponibilidad con variante secundaria. Evaluaciones completas y textos intactos. |
+| Próximos turnos | `window.confirm()` impedía consistencia visual y comprobación de foco. | Dialog nativo modal: hoja móvil, diálogo escritorio, consecuencias idénticas, Volver/Escape sin POST, fondo inerte, foco devuelto. Fallo permanece abierto y solo cierra tras éxito; bloqueo de doble solicitud. Fechas conservan año y hora. |
+| Portal, estilos compartidos | Radios/controles/mensajes dispares. | Estilos limitados a `portal-scope`, tarjetas 14, campos/botones 10; errores coral, foco perceptible y selección adicional. No se cambian controles checkbox/radio ni se convierten formularios largos en pasos nuevos. |
+| Tipografía | `getComputedStyle(body)` devuelve Inter/Inter Fallback pese a la declaración Arial. | No se afirmó que Arial pisaba Inter. Se consolidó el fallback de body sin descargar otra fuente; se revisaron capturas de navegación y Finanzas. |
+| App interna | Recorrido de presentación de Agenda, Alumnos, Rutinas, Finanzas y Equipo con respuestas sintéticas; Inicio requiere una fixture más completa. | Se conservaron los módulos; no se inventaron correcciones. La ficha con datos y los estados autenticados reales requieren ampliar la auditoría cuando se restituya el entorno aislado. |
+
+### Pendientes de producto y seguridad
+
+- El PDF, §10.5, mantiene visibles compromisos futuros cancelados; la lista
+  actual del Portal filtra cancelados. No se alteró esa condición: resolver la
+  contradicción con la definición funcional vigente antes de una corrección.
+- El PDF §10.8 describe rutina solo lectura, mientras la implementación y el
+  encargo actual incluyen entrenamiento. Se preserva el flujo existente; esta
+  revisión visual no toma una nueva decisión de negocio.
+- La recepción **no es un kiosco seguro**. La sesión del profesor mantiene sus
+  permisos y vencimiento. Antes de dejar el equipo al alcance de alumnos sin
+  supervisión falta definir la protección del puesto; ocultar navegación no la
+  implementa. No hay PIN de salida, atajos secretos ni renovación artificial.
+- Solo se conserva el teléfono institucional de `AthletaContact`, confirmado en
+  `HEALTH_DECLARATION_IMPLEMENTATION.md`. No hay URLs oficiales verificadas en
+  las fuentes revisadas para Instagram, WhatsApp o Maps: se omiten esos botones.
+
+### Verificación de esta iteración
+
+- 109 tests enfocados de Portal/Ingreso/PIN aprobados en ejecución real de Vitest
+  (HTTP simulado). Después se agregó y aprobó la regresión de doble envío y
+  ceros iniciales al cambiar PIN; los 24 tests de Inicio se repitieron al compactar
+  vigencia/evaluaciones y aprobaron. Ninguno verifica persistencia real.
+- Chromium/Playwright local: 360×640, 390×844, 768×1024, 1366×768 y 1920×1080.
+  Sin scroll horizontal; `reduced-motion`, aumento de texto al 125 %, DNI pegado
+  con puntos/ceros, Enter, reset, corrección NOT_FOUND, Escape/foco y recuperación
+  de cancelación fallida, edición nativa del PIN: aprobados con HTTP simulado.
+  No se probó el teclado virtual de un dispositivo físico.
+- Contraste calculado: muted/white 4.83:1, accent-text/white 4.92:1,
+  coral/error-bg 6.05:1, amarillo/grafito 11.42:1.
+- El inspector de la skill no pudo iniciar su Chrome/CDP (crashpad); se utilizó
+  el Chromium existente de Playwright para capturar y revisar manualmente.
+- E2E real: bloqueado antes de fixtures por Docker/Testcontainers. Login,
+  cambio de PIN, logout, cancelación y registro con backend/DB reales siguen
+  **sin validación en esta iteración**. No confundir capturas con aceptación.
+- `pnpm check`: **aprobado, exit 0**. Lint/typecheck web y build web ejecutados;
+  52 archivos / 850 tests web ejecutados y aprobados. API (59 unitarios),
+  paquetes compartidos y build API recuperados de caché de Turbo. No son
+  pruebas nuevas de integración. La suite detectó el supuesto anterior de foco
+  en cualquier dispositivo: se conserva la assertion de escritorio y se añade
+  el caso móvil sin foco forzado; ambos pasan con `matchMedia` explícito.
+- Verificaciones finales adicionales: 12 tests de Ingreso, 24 de Inicio,
+  13 de cancelación/marco, 8 de declaración/marco y 3 de PIN aprobados.
+  `git diff --check`: aprobado; sin skips/only nuevos.
+- No se cambiaron contratos, clientes generados, migraciones, permisos ni datos.
+
+### Evidencia visual revisada
+
+Todas las capturas usan respuestas ficticias para presentación; no contienen
+credenciales ni datos reales. Las capturas de base del Portal muestran la
+composición inicial; las finales muestran tamaños y estados, no persistencia.
+
+- [Acceso antes, móvil](../design/reception-portal-review/before-portal-login-390.png)
+  / [acceso después](../design/reception-portal-review/portal-login-390.png).
+- [Inicio antes](../design/reception-portal-review/before-portal-home-390.png)
+  / [jerarquía después](../design/reception-portal-review/portal-home-390.png).
+- [Recepción escritorio](../design/reception-portal-review/reception-1366.png),
+  [recepción estrecha](../design/reception-portal-review/reception-360.png),
+  [PIN escritorio](../design/reception-portal-review/change-pin-1366.png),
+  [cancelación móvil](../design/reception-portal-review/cancellation-390.png).
+
+URL estable de prueba, todavía con la versión anterior:
+https://athleta-001-web-git-ramiro-broco-solutions.vercel.app.
+No hay SHA nuevo ni despliegue de esta iteración. Para continuar la entrega se
+necesitan Git escribible, Docker accesible desde Testcontainers y acceso
+autenticado al preview. No se necesita una decisión visual nueva para resolver
+estos bloqueos.
+
 ## Alcance
 
 Se conserva la identidad Athleta, las rutas, permisos, credenciales iniciales,

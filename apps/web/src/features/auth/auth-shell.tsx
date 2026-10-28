@@ -10,8 +10,8 @@ export function AuthShell({ children, mobileNavigationTrigger, mobileNavigationO
   const current = session.data;
   if (!current) return <main />;
   if (current.mustChangePassword) { if (typeof window !== 'undefined') window.location.assign('/change-password'); return <main />; }
-  return <><div inert={mobileNavigationOpen} className={`fixed inset-x-0 top-0 z-40 flex min-h-14 min-w-0 items-center justify-between gap-2 border-b border-border bg-surface px-3 py-1 transition-[left] duration-200 md:hidden md:gap-4 md:px-6`}>
+  return <>{mobileNavigationTrigger && <div inert={mobileNavigationOpen} className={`fixed inset-x-0 top-0 z-40 flex min-h-14 min-w-0 items-center justify-between gap-2 border-b border-border bg-surface px-3 py-1 transition-[left] duration-200 md:hidden md:gap-4 md:px-6`}>
     <div className="min-w-0 md:hidden">{mobileNavigationTrigger}</div>
 
-  </div>{children}</>;
+  </div>}{children}</>;
 }

@@ -5,9 +5,10 @@ import { DeveloperFooter } from '../../../features/branding/developer-footer';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Contact } from 'lucide-react';
 import React from 'react';
-import { SecretInput } from '../../../features/auth/secret-input';
+import { PinInput } from '../../../features/auth/pin-input';
 import { AthletaContact } from '../../../features/branding/athleta-contact';
 import { useState } from 'react';
+import { PortalMessage } from '../portal-message';
 
 export default function PortalLogin(): React.JSX.Element {
   const router = useRouter();
@@ -18,17 +19,18 @@ export default function PortalLogin(): React.JSX.Element {
   const submitting = React.useRef(false);
 
   return (
-    <main className="flex min-h-dvh flex-col bg-background">
-      <section className="bg-sidebar px-5 py-5 text-sidebar-foreground sm:px-8">
+    <main className="portal-access flex min-h-dvh flex-col">
+      <section className="portal-access-brand">
         <header className="flex items-center gap-3">
           <Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-32 sm:w-36 lg:w-40" />
-          <span className="text-sm text-zinc-300">Portal personal</span>
+          <span aria-label="Portal personal">PORTAL</span>
         </header>
+        <h1>DESBLOQUEÁ TU<br/><span>POTENCIAL.</span></h1>
       </section>
 
-      <section className="flex flex-1 flex-col items-center justify-center px-5 py-8 sm:px-8">
+      <section className="portal-access-body">
         <form
-          className="mx-auto flex w-full max-w-md flex-col" aria-busy={pending}
+          className="portal-access-card mx-auto flex w-full max-w-md flex-col" aria-busy={pending}
           onSubmit={async (event) => {
             event.preventDefault();
             if (submitting.current) return;
@@ -50,7 +52,7 @@ export default function PortalLogin(): React.JSX.Element {
             finally { submitting.current = false; setPending(false); }
           }}
         >
-          <h1 className="mb-6 text-2xl font-semibold">Iniciar sesión</h1>
+          <h2 className="mb-6 text-2xl font-semibold">Iniciar sesión</h2>
 
           <div className="space-y-2.5">
             <div className="space-y-1">
@@ -64,11 +66,11 @@ export default function PortalLogin(): React.JSX.Element {
 
             <div className="space-y-1">
               <label className="block text-sm font-medium" htmlFor="portal-pin">PIN</label>
-              <SecretInput id="portal-pin" secretLabel="PIN" required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="current-password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="Ingresá tu PIN" />
+              <PinInput id="portal-pin" secretLabel="PIN" required autoComplete="current-password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="Ingresá tu PIN" />
             </div>
           </div>
 
-          {error ? <p role="alert" className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</p> : null}
+          {error ? <div className="mt-4"><PortalMessage>{error}</PortalMessage></div> : null}
 
           <button type="submit" disabled={pending} className="mt-3 inline-flex h-12 w-full items-center justify-between rounded-md bg-primary px-4 font-semibold text-primary-foreground transition-colors disabled:cursor-wait disabled:opacity-60 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
             {pending ? 'Ingresando…' : 'Ingresar'}
@@ -82,7 +84,7 @@ export default function PortalLogin(): React.JSX.Element {
           <div className="text-center"><AthletaContact /></div>
         </form>
       </section>
-      <footer className="border-t border-border px-5 py-5 text-center"><DeveloperFooter /></footer>
+      <footer className="portal-access-footer"><DeveloperFooter /></footer>
     </main>
   );
 }

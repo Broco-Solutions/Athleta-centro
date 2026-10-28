@@ -22,7 +22,7 @@ beforeEach(() => {
 it('renders the official brand, personal access and verified contact', () => {
   renderPage();
   expect(screen.getByRole('img', { name: 'Athleta' })).toBeVisible();
-  expect(screen.getByText('Portal personal')).toBeVisible();
+  expect(screen.getByLabelText('Portal personal')).toBeVisible();
   expect(screen.getByRole('heading', { name: 'Iniciar sesión' })).toBeVisible();
   expect(screen.getByLabelText('DNI')).toHaveAttribute('autocomplete', 'username');
   expect(screen.getByLabelText('PIN')).toHaveAttribute('autocomplete', 'current-password');

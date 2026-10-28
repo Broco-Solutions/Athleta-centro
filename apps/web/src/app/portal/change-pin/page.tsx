@@ -1,4 +1,40 @@
 'use client';
+import React, { useRef, useState } from 'react';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { DeveloperFooter } from '../../../features/branding/developer-footer';
-import React, { useState } from 'react'; import { useRouter } from 'next/navigation';
-export default function ChangePin(){const router=useRouter();const [current,setCurrent]=useState('');const [next,setNext]=useState('');const [error,setError]=useState('');return <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-slate-50 p-4"><form className="w-full max-w-sm space-y-4 rounded-lg border bg-white p-6" onSubmit={async e=>{e.preventDefault();const session=await fetch('/api/portal/auth/session',{credentials:'include'}).then(r=>r.json());const r=await fetch('/api/portal/auth/change-pin',{method:'POST',headers:{'content-type':'application/json','x-csrf-token':session.data.csrfToken},credentials:'include',body:JSON.stringify({currentPin:current,nextPin:next})});if(!r.ok){setError('El PIN no es válido.');return}router.push('/portal')}}><h1 className="text-xl font-semibold">Elegí un nuevo PIN</h1><input aria-label="PIN actual" required pattern="[0-9]{4}" maxLength={4} value={current} onChange={e=>setCurrent(e.target.value)} placeholder="PIN actual" className="w-full rounded border p-2"/><input aria-label="Nuevo PIN" required pattern="[0-9]{4}" maxLength={4} value={next} onChange={e=>setNext(e.target.value)} placeholder="Nuevo PIN de 4 dígitos" className="w-full rounded border p-2"/>{error&&<p role="alert" className="text-sm text-red-600">{error}</p>}<button className="w-full rounded bg-[#FCCC05] px-4 py-2">Guardar PIN</button></form><footer className="text-center"><DeveloperFooter /></footer></main>}
+import { AthletaContact } from '../../../features/branding/athleta-contact';
+import { PinInput } from '../../../features/auth/pin-input';
+import { PortalMessage } from '../portal-message';
+
+export default function ChangePin(): React.JSX.Element {
+  const router = useRouter();
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [error, setError] = useState('');
+  const [pending, setPending] = useState(false);
+  const submitting = useRef(false);
+  return <main className="portal-access flex min-h-dvh flex-col">
+    <section className="portal-access-brand"><header><Image src="/logo-athleta.png" width={1983} height={793} alt="Athleta" priority className="h-auto w-36"/><span>PORTAL</span></header><h1>Elegí tu PIN personal</h1></section>
+    <section className="portal-access-body"><form className="portal-access-card space-y-5" aria-busy={pending} onSubmit={async event => {
+      event.preventDefault();
+      if (submitting.current) return;
+      submitting.current = true; setPending(true); setError('');
+      try {
+        const sessionResponse = await fetch('/api/portal/auth/session', { credentials: 'include' });
+        if (!sessionResponse.ok) throw new Error('SESSION_FAILED');
+        const session = await sessionResponse.json();
+        const response = await fetch('/api/portal/auth/change-pin', { method: 'POST', headers: { 'content-type': 'application/json', 'x-csrf-token': session.data.csrfToken }, credentials: 'include', body: JSON.stringify({ currentPin: current, nextPin: next }) });
+        if (!response.ok) { setError('El PIN no es válido.'); return; }
+        router.push('/portal');
+      } catch { setError('El PIN no es válido.'); }
+      finally { submitting.current = false; setPending(false); }
+    }}>
+      <div className="space-y-2"><label htmlFor="current-pin" className="block text-sm font-medium">PIN actual</label><PinInput id="current-pin" secretLabel="PIN actual" required autoComplete="current-password" value={current} onChange={event => setCurrent(event.target.value.replace(/\D/g, '').slice(0,4))}/></div>
+      <div className="space-y-2"><label htmlFor="next-pin" className="block text-sm font-medium">Nuevo PIN</label><PinInput id="next-pin" secretLabel="nuevo PIN" required autoComplete="new-password" value={next} onChange={event => setNext(event.target.value.replace(/\D/g, '').slice(0,4))} aria-describedby="pin-help"/><p id="pin-help" className="text-sm text-muted-foreground">4 números.</p></div>
+      {error && <PortalMessage>{error}</PortalMessage>}
+      <button type="submit" className="portal-primary w-full disabled:opacity-60" disabled={pending}>{pending ? 'Guardando…' : 'Guardar PIN'}</button>
+    </form><div className="mt-4 text-center"><AthletaContact /></div></section>
+    <footer className="portal-access-footer"><DeveloperFooter /></footer>
+  </main>;
+}

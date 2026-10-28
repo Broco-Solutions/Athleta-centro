@@ -16,6 +16,8 @@ function renderReservations(): void {
   render(<QueryClientProvider client={client}><PortalReservations /></QueryClientProvider>);
 }
 beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
   globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch;
   server.listen({ onUnhandledRequest: 'error' });
 });
@@ -49,7 +51,6 @@ it('combines only future RESERVED occurrences and active replacements in date/ti
 });
 
 it('cancels a fixed date using Portal CSRF and removes it after invalidation', async () => {
-  vi.spyOn(window, 'confirm').mockReturnValue(true);
   let cancelled = false;
   let request: Request | undefined;
   server.use(
@@ -58,6 +59,7 @@ it('cancels a fixed date using Portal CSRF and removes it after invalidation', a
   );
   renderReservations();
   fireEvent.click(await screen.findByRole('button', { name: 'Cancelar esta fecha' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar cancelación' }));
   await screen.findByText('No tenés próximos turnos disponibles.');
   expect(screen.queryByText('28/10/2026 · 18:00')).not.toBeInTheDocument();
   expect(request?.method).toBe('POST');
@@ -66,7 +68,6 @@ it('cancels a fixed date using Portal CSRF and removes it after invalidation', a
 });
 
 it('does not request cancellation when confirmation is rejected', async () => {
-  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
   let posts = 0;
   server.use(
     http.get(endpoint, () => HttpResponse.json({ data: { reservations: [
@@ -78,17 +79,18 @@ it('does not request cancellation when confirmation is rejected', async () => {
 
   renderReservations();
   fireEvent.click((await screen.findAllByRole('button', { name: 'Cancelar esta fecha' }))[0]!);
+  expect(screen.getByRole('dialog')).toHaveTextContent('¿Cancelar la reserva del 20/10/2026 a las 11:30?');
+  fireEvent.click(screen.getByRole('button', { name: 'Volver' }));
   fireEvent.click(screen.getAllByRole('button', { name: 'Cancelar esta fecha' })[1]!);
 
-  expect(confirm).toHaveBeenCalledWith('¿Cancelar la reserva del 20/10/2026 a las 11:30?');
-  expect(confirm).toHaveBeenNthCalledWith(2, '¿Cancelar la reserva del 23/10/2026?');
+  expect(screen.getByRole('dialog')).toHaveTextContent('¿Cancelar la reserva del 23/10/2026?');
+  fireEvent.click(screen.getByRole('button', { name: 'Volver' }));
   expect(posts).toBe(0);
   expect(screen.getByText('20/10/2026 · 11:30')).toBeVisible();
   expect(screen.queryByText('Reserva cancelada correctamente.')).not.toBeInTheDocument();
 });
 
 it('cancels with Portal CSRF, refetches the list and keeps other reservations', async () => {
-  vi.spyOn(window, 'confirm').mockReturnValue(true);
   let cancelled = false;
   let request: Request | undefined;
   server.use(
@@ -107,6 +109,7 @@ it('cancels with Portal CSRF, refetches the list and keeps other reservations', 
 
   renderReservations();
   fireEvent.click((await screen.findAllByRole('button', { name: 'Cancelar esta fecha' }))[0]!);
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar cancelación' }));
 
   expect(await screen.findByRole('status')).toHaveTextContent('Reserva cancelada correctamente.');
   await waitFor(() => expect(screen.queryByText('20/10/2026 · 11:30')).not.toBeInTheDocument());
@@ -118,7 +121,6 @@ it('cancels with Portal CSRF, refetches the list and keeps other reservations', 
 });
 
 it('shows a safe error after rejection, refetches and leaves the active reservation available', async () => {
-  vi.spyOn(window, 'confirm').mockReturnValue(true);
   server.use(
     http.get(endpoint, () => HttpResponse.json({ data: { reservations: [
       { id: 'a', date: '2026-10-20', startTime: '11:30', serviceType: { name: 'Calistenia' }, cancelledAt: null },
@@ -129,6 +131,7 @@ it('shows a safe error after rejection, refetches and leaves the active reservat
 
   renderReservations();
   fireEvent.click(await screen.findByRole('button', { name: 'Cancelar esta fecha' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar cancelación' }));
 
   expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos cancelar la reserva. Intentá nuevamente.');
   expect(screen.queryByText('Internal detail')).not.toBeInTheDocument();
@@ -137,7 +140,6 @@ it('shows a safe error after rejection, refetches and leaves the active reservat
 });
 
 it('disables only the pending reservation and shows the empty state after cancelling the last one', async () => {
-  vi.spyOn(window, 'confirm').mockReturnValue(true);
   let finishPost: (() => void) | undefined;
   let posts = 0;
   let cancelled = false;
@@ -158,6 +160,7 @@ it('disables only the pending reservation and shows the empty state after cancel
   renderReservations();
   const buttons = await screen.findAllByRole('button', { name: 'Cancelar esta fecha' });
   fireEvent.click(buttons[0]!);
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar cancelación' }));
   const cancelling = await screen.findByRole('button', { name: 'Cancelando…' });
 
   expect(cancelling).toBeDisabled();

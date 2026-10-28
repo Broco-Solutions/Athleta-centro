@@ -58,6 +58,23 @@ it('muestra la falta de permiso sin exponer el formulario', async () => {
   expect(screen.queryByLabelText('DNI del alumno')).not.toBeInTheDocument();
 });
 
+it('uses reception without administrative navigation and normalizes a pasted DNI preserving zeros', async () => {
+  let payload: unknown;
+  server.use(http.post('http://localhost:3000/api/sala/check-in', async ({ request }) => {
+    payload = await request.json(); return HttpResponse.json({ data: { status: 'REGISTERED', message: 'Registrado', person: 'Alumno ficticio' } });
+  }));
+  renderPage();
+  const input = await screen.findByLabelText('DNI del alumno');
+  expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Cerrar sesión' })).not.toBeInTheDocument();
+  fireEvent.change(input, { target: { value: '00.123.456' } });
+  expect(input).toHaveValue('00123456');
+  expect(payload).toBeUndefined();
+  fireEvent.submit(input.closest('form')!);
+  await screen.findByText('Alumno ficticio');
+  expect(payload).toEqual({ dni: '00123456' });
+});
+
 it.each([
   ['NO_BOOKING', noBookingMessage],
   ['NOT_FOUND', notFoundMessage],
@@ -65,7 +82,8 @@ it.each([
   await showResult(status, message);
 });
 
-it('vuelve al formulario a los 10 segundos exactos y enfoca el DNI', async () => {
+it.each([true, false])('vuelve a los 10 segundos y enfoca solo con puntero fino (%s)', async finePointer => {
+  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: finePointer })));
   const releaseResponse = await startDeferredResult(noBookingMessage);
   vi.useFakeTimers();
   try {
@@ -79,8 +97,10 @@ it('vuelve al formulario a los 10 segundos exactos y enfoca el DNI', async () =>
     expect(screen.getByRole('button', { name: 'Registrar ingreso' })).toBeInTheDocument();
     expect(screen.queryByText(noBookingMessage)).not.toBeInTheDocument();
     await act(async () => { await vi.advanceTimersByTimeAsync(16); });
-    expect(input).toHaveFocus();
+    if (finePointer) expect(input).toHaveFocus();
+    else expect(input).not.toHaveFocus();
   } finally {
+    vi.unstubAllGlobals();
     vi.useRealTimers();
   }
 });

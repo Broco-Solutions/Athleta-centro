@@ -1,11 +1,13 @@
 import { currentHealthDocument, declarationValidUntil } from '../src/sala/health-declaration/health-document';
+import { randomUUID } from 'node:crypto';
 import * as argon2 from 'argon2';
 import { PrismaClient, Role, type SalaWeekday } from '@prisma/client';
 import { assertIsolatedTestDatabase } from './test-database-safety';
 
 assertIsolatedTestDatabase();
 const prisma = new PrismaClient();
-const kind = process.argv[2];
+const scenario = process.argv[2];
+const kind = scenario === 'portal-reservations' ? 'portal-fixed-edit' : scenario === 'reception-paid' ? 'occurrence' : scenario;
 const email = `e2e.${kind}@athleta.test`;
 const password = 'ValidPass1!';
 
@@ -34,7 +36,7 @@ if (!['normal', 'temporary', 'inactive', 'people', 'team', 'sala', 'occurrence',
   }
   if (kind === 'portal-fixed-edit') {
     const existing = await prisma.person.findUnique({ where: { normalizedDni: '40999445' } });
-    if (existing) { await prisma.healthDeclaration.deleteMany({ where: { personId: existing.id } }); await prisma.session.deleteMany({ where: { personId: existing.id } }); await prisma.portalCredential.deleteMany({ where: { personId: existing.id } }); await prisma.salaOccurrence.deleteMany({ where: { personId: existing.id } }); await prisma.oneOffReservation.deleteMany({ where: { personId: existing.id } }); await prisma.fixedSalaBooking.deleteMany({ where: { personId: existing.id } }); await prisma.salaParticipation.deleteMany({ where: { personId: existing.id } }); await prisma.person.delete({ where: { id: existing.id } }); }
+    if (existing) { await prisma.salaPayment.deleteMany({ where: { personId: existing.id } }); await prisma.healthDeclaration.deleteMany({ where: { personId: existing.id } }); await prisma.session.deleteMany({ where: { personId: existing.id } }); await prisma.portalCredential.deleteMany({ where: { personId: existing.id } }); await prisma.salaOccurrence.deleteMany({ where: { personId: existing.id } }); await prisma.oneOffReservation.deleteMany({ where: { personId: existing.id } }); await prisma.fixedSalaBooking.deleteMany({ where: { personId: existing.id } }); await prisma.salaParticipation.deleteMany({ where: { personId: existing.id } }); await prisma.person.delete({ where: { id: existing.id } }); }
     await prisma.salaPlan.deleteMany({ where: { name: 'Portal Fixed Edit E2E' } }); await prisma.salaServiceType.deleteMany({ where: { normalizedName: 'evaluacion portal fixed edit e2e' } });
     const windows = await prisma.salaScheduleSlot.findMany({ where: { weekday: 'MONDAY', startTime: new Date('1970-01-01T06:00:00.000Z') }, select: { id: true } }); await prisma.salaScheduleException.deleteMany({ where: { scheduleSlotId: { in: windows.map((window) => window.id) } } }); await prisma.salaScheduleSlot.deleteMany({ where: { id: { in: windows.map((window) => window.id) } } });
   }
@@ -43,6 +45,7 @@ if (!['normal', 'temporary', 'inactive', 'people', 'team', 'sala', 'occurrence',
     const people = await prisma.person.findMany({ where: { normalizedDni: { in: ['40999661', '40999662'] } }, select: { id: true } });
     const personIds = people.map((person) => person.id);
     await prisma.salaOccurrence.deleteMany({ where: { personId: { in: personIds } } });
+    await prisma.salaPayment.deleteMany({ where: { personId: { in: personIds } } });
     await prisma.oneOffReservation.deleteMany({ where: { personId: { in: personIds } } });
     await prisma.fixedSalaBooking.deleteMany({ where: { personId: { in: personIds } } });
     await prisma.salaParticipation.deleteMany({ where: { personId: { in: personIds } } });
@@ -124,6 +127,28 @@ if (!['normal', 'temporary', 'inactive', 'people', 'team', 'sala', 'occurrence',
       consents: Object.fromEntries(document.consents.map(consent => [consent.key, ['physicalActivity', 'truthfulness', 'emergenciesAndPrivacy'].includes(consent.key)])),
       document: JSON.parse(JSON.stringify(document)),
     } });
+  }
+
+  if (scenario === 'portal-reservations' || scenario === 'reception-paid') {
+    const person = await prisma.person.findUniqueOrThrow({ where: { normalizedDni: scenario === 'portal-reservations' ? '40999445' : '40999661' } });
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date());
+    const start = new Date(`${today}T00:00:00.000Z`);
+    const end = new Date(start.getTime() + 60 * 86_400_000);
+    const paymentMethod = await prisma.paymentMethod.create({ data: { name: `Portal reservations E2E ${randomUUID()}` } });
+    await prisma.salaPayment.create({ data: {
+      personId: person.id, year: start.getUTCFullYear(), month: start.getUTCMonth() + 1,
+      paidAt: start, coverageStartDate: start, coverageEndDate: end, amount: 1000,
+      paymentMethodId: paymentMethod.id, registeredById: user.id, operationId: randomUUID(),
+      createdAt: new Date(start.getTime() - 86_400_000),
+    } });
+    if (scenario === 'reception-paid') {
+      const time = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
+      const [hour, minute] = time.split(':').map(Number);
+      const rounded = new Date(Date.UTC(1970, 0, 1, hour!, Math.floor(minute! / 15) * 15));
+      const booking = await prisma.fixedSalaBooking.findFirstOrThrow({ where: { personId: person.id } });
+      await prisma.salaScheduleSlot.update({ where: { id: booking.scheduleSlotId }, data: { startTime: new Date('1970-01-01T00:00:00.000Z'), durationMinutes: 1440 } });
+      await prisma.fixedSalaBooking.update({ where: { id: booking.id }, data: { startTime: rounded } });
+    }
   }
 
 }

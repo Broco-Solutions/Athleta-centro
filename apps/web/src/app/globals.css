@@ -4,4 +4,6 @@
 :root { --background: #f6f7f8; --foreground: #18181b; --surface: #ffffff; --surface-muted: #f3f4f6; --border: #e5e7eb; --muted-foreground: #71717a; --primary: #fccc05; --primary-hover: #e7b900; --primary-foreground: #18181b; --sidebar: #171717; --sidebar-foreground: #f9fafb; --ring: #e7b900; --radius: 0.5rem; }
 @theme inline { --color-background: var(--background); --color-foreground: var(--foreground); --color-surface: var(--surface); --color-surface-muted: var(--surface-muted); --color-border: var(--border); --color-muted-foreground: var(--muted-foreground); --color-primary: var(--primary); --color-primary-hover: var(--primary-hover); --color-primary-foreground: var(--primary-foreground); --color-sidebar: var(--sidebar); --color-sidebar-foreground: var(--sidebar-foreground); --color-ring: var(--ring); --radius-md: var(--radius); --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif; }
 * { border-color: var(--border); }
-body { margin: 0; background: var(--background); color: var(--foreground); font-family: Arial, Helvetica, sans-serif; }
+body { margin: 0; background: var(--background); color: var(--foreground); font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+:root { --reception-background: #1a1a1a; --surface-dark: #262626; --border-dark: #3f3f46; --border-control: #d4d4d8; --accent-text: #8a6d00; --error-bg: #fef3f2; --error-border: #fecdca; --error-text: #b42318; --success: #16a34a; --success-text: #166534; }
+:root { --warning-bg: #fef3c7; --warning-border: #fcd34d; --warning-text: #92400e; --success-bg: #dcfce7; }

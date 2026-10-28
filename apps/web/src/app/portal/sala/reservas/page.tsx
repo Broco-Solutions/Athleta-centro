@@ -3,6 +3,7 @@ import React from 'react';
 import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@athleta/ui';
 import { PortalFrame, portalFetch, formatDate, formatTime, today } from '../../portal-ui';
+import { CancelConfirmation } from '../../cancel-confirmation';
 
 type ReservationsData = {
   reservations: Array<{
@@ -28,6 +29,8 @@ export default function PortalReservations(): React.JSX.Element {
   const queryClient = useQueryClient();
   const [message, setMessage] = React.useState('');
   const [cancelError, setCancelError] = React.useState('');
+  const [confirmation, setConfirmation] = React.useState<UpcomingTurn | null>(null);
+  const submitting = React.useRef(false);
   const data = useQuery({ queryKey: ['portal', 'sala'], queryFn: () => portalFetch<ReservationsData>('sala'), retry: false });
   const currentDate = today();
   const reservations: UpcomingTurn[] = [
@@ -55,20 +58,20 @@ export default function PortalReservations(): React.JSX.Element {
       setMessage('Reserva cancelada correctamente.');
       setCancelError('');
       await queryClient.invalidateQueries({ queryKey: ['portal', 'sala'] });
+      setConfirmation(null);
     },
     onError: async () => {
       setMessage('');
       setCancelError('No pudimos cancelar la reserva. Intentá nuevamente.');
       await queryClient.invalidateQueries({ queryKey: ['portal', 'sala'] });
     },
+    onSettled: () => { submitting.current = false; },
   });
 
   const requestCancellation = (reservation: UpcomingTurn): void => {
-    const time = reservation.startTime ? ` a las ${formatTime(reservation.startTime)}` : '';
-    if (!window.confirm(`¿Cancelar la reserva del ${formatDate(reservation.date)}${time}?`)) return;
     setMessage('');
     setCancelError('');
-    cancelReservation.mutate(reservation);
+    setConfirmation(reservation);
   };
 
   return <PortalFrame title="Mis próximos turnos" backToHome>
@@ -76,12 +79,12 @@ export default function PortalReservations(): React.JSX.Element {
       : data.isError || !data.data ? <p role="alert">No pudimos cargar tus reservas. Intentá nuevamente.</p>
       : <>
         {message ? <p role="status" className="text-sm text-foreground">{message}</p> : null}
-        {cancelError ? <p role="alert" className="text-sm text-red-700">{cancelError}</p> : null}
-        {reservations.length ? <ul className="divide-y divide-border rounded-lg border border-border bg-white px-4">
-          {reservations.map(item => <li key={item.key} className="py-4 text-sm">
+        {cancelError && !confirmation ? <p role="alert" className="text-sm text-red-700">{cancelError}</p> : null}
+        {reservations.length ? <ul className="portal-turns">
+          {reservations.map(item => <li key={item.key} className="rounded-lg border border-border bg-white p-4 text-sm">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="font-semibold">{formatDate(item.date)}{item.startTime ? ` · ${formatTime(item.startTime)}` : ''}</p>
+                <p className="portal-turn-date font-semibold">{formatDate(item.date)}{item.startTime ? ` · ${formatTime(item.startTime)}` : ''}</p>
               </div>
               <Button variant="secondary" className="min-h-11 w-full sm:w-auto" disabled={pendingReservationIds.includes(item.key)} onClick={() => requestCancellation(item)}>
                 {pendingReservationIds.includes(item.key) ? 'Cancelando…' : 'Cancelar esta fecha'}
@@ -90,5 +93,6 @@ export default function PortalReservations(): React.JSX.Element {
           </li>)}
         </ul> : <p className="text-sm text-muted-foreground">No tenés próximos turnos disponibles.</p>}
       </>}
+    {confirmation && <CancelConfirmation text={`¿Cancelar la reserva del ${formatDate(confirmation.date)}${confirmation.startTime ? ` a las ${formatTime(confirmation.startTime)}` : ''}?`} pending={cancelReservation.isPending} error={cancelError} onClose={() => setConfirmation(null)} onConfirm={() => { if (submitting.current) return; submitting.current = true; setCancelError(''); cancelReservation.mutate(confirmation); }} />}
   </PortalFrame>;
 }

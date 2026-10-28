@@ -71,7 +71,7 @@ test('resets the PIN from the student, revokes the old Portal session and comple
     await page.getByRole('button', { name: 'Ingresar' }).click();
     await expect(page).toHaveURL('/portal/change-pin');
     const nextPin = pin === '9876' ? '6789' : '9876';
-    await page.getByLabel('PIN actual').fill(pin);
+    await page.getByLabel('PIN actual', { exact: true }).fill(pin);
     await page.getByLabel('Nuevo PIN', { exact: true }).fill(nextPin);
     await page.getByRole('button', { name: 'Guardar PIN' }).click();
     await expect(page).toHaveURL('/portal');
@@ -99,7 +99,7 @@ test('resets from the general Person dialog and closes the one-time notice', asy
 
 test('keeps compact navigation during route changes and lets an incorrect DNI retry immediately', async ({ page }) => {
   fixture('occurrence'); await login(page, 'occurrence');
-  await page.goto('/sala/ingreso');
+  await page.goto('/sala');
   await page.getByRole('button', { name: 'Ocultar menú lateral' }).click();
   await page.getByRole('link', { name: 'Sala: Alumnos', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Mostrar menú lateral' })).toBeVisible();
@@ -175,6 +175,8 @@ test('keeps navigation destinations stable, selects finance views once and redir
   fixture('team'); await login(page, 'team');
   await page.goto('/sala/fichaje?source=bookmark');
   await expect(page).toHaveURL('/sala/ingreso?source=bookmark');
+  await expect(page.getByRole('navigation')).toHaveCount(0);
+  await page.goto('/');
   const nav = page.getByRole('navigation', { name: 'Navegación principal' });
   const destinations = await nav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href')));
   expect(await nav.locator('[aria-expanded]').count()).toBe(0);
@@ -194,15 +196,19 @@ test('keeps navigation destinations stable, selects finance views once and redir
   expect(await create.evaluate(element => ({ gap: getComputedStyle(element).gap, shrink: getComputedStyle(element.querySelector('svg')!).flexShrink }))).toEqual({ gap: '8px', shrink: '0' });
 });
 
-test('logs out from Ingreso and protects the previous page on return', async ({ page }) => {
+test('opens reception without navigation, logs out from the workspace and protects reception on return', async ({ page }) => {
   fixture('occurrence'); await login(page, 'occurrence');
   await page.goto('/sala/ingreso');
   await expect(page.getByLabel('DNI del alumno')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cerrar sesión', exact: true })).toHaveCount(0);
+  await page.goto('/');
   const response = page.waitForResponse(value => value.url().endsWith('/api/auth/logout'));
   await page.getByRole('button', { name: 'Cerrar sesión', exact: true }).click();
   expect((await response).status()).toBe(200);
   await expect(page).toHaveURL('/login');
   await page.goBack();
+  await expect(page).toHaveURL('/login');
+  await page.goto('/sala/ingreso');
   await expect(page).toHaveURL('/login');
   await expect(page.getByLabel('DNI del alumno')).toHaveCount(0);
 });
@@ -237,4 +243,81 @@ test('protects both canonical and legacy Ingreso entries without a session', asy
     await expect(page).toHaveURL('/login');
     await expect(page.getByLabel('DNI del alumno')).toHaveCount(0);
   }
+});
+
+test('confirms a Portal cancellation on mobile and persists only the selected date', async ({ page }) => {
+  fixture('portal-reservations');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/portal/login');
+  await page.getByLabel('DNI', { exact: true }).fill('40999445');
+  const pin = page.getByLabel('PIN', { exact: true });
+  await expect(pin).toHaveAttribute('type', 'password');
+  await expect(page.locator('.portal-pin-cells > span')).toHaveCount(4);
+  await pin.fill('1234');
+  await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
+  await expect(page).toHaveURL('/portal');
+  await expect(page.getByRole('navigation', { name: 'Navegación del Portal' })).toBeVisible();
+  await page.getByRole('link', { name: 'Ver próximos turnos' }).click();
+  await expect(page).toHaveURL('/portal/sala/reservas');
+  const before = (await (await page.request.get('/api/portal/sala')).json()).data;
+  const dates = before.fixedOccurrences.filter((item: { status: string }) => item.status === 'RESERVED');
+  expect(dates.length).toBeGreaterThanOrEqual(2);
+  const selected = dates[0];
+  const next = dates[1];
+  const displayDate = selected.date.split('-').reverse().join('/');
+  const row = page.getByRole('listitem').filter({ hasText: displayDate });
+  const trigger = row.getByRole('button', { name: 'Cancelar esta fecha' });
+  const attempts: number[] = [];
+  page.on('response', response => { if (response.request().method() === 'POST' && response.url().endsWith('/cancel')) attempts.push(response.status()); });
+  const dialog = page.getByRole('dialog', { name: 'Cancelar esta fecha' });
+  await trigger.click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(`¿Cancelar la reserva del ${displayDate} a las 10:00?`)).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Volver' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  expect(attempts).toEqual([]);
+  await trigger.click();
+  await dialog.getByRole('button', { name: 'Volver' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(attempts).toEqual([]);
+  await trigger.click();
+  const response = page.waitForResponse(value => value.request().method() === 'POST' && value.url().endsWith(`/fixed-bookings/${selected.fixedSalaBookingId}/occurrences/${selected.date}/cancel`));
+  await dialog.getByRole('button', { name: 'Confirmar cancelación' }).click();
+  expect((await response).status()).toBe(200);
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText('Reserva cancelada correctamente.')).toBeVisible();
+  expect(attempts).toEqual([200]);
+  const after = (await (await page.request.get('/api/portal/sala')).json()).data;
+  expect(after.fixed).toEqual(before.fixed);
+  expect(after.fixedOccurrences).toContainEqual(next);
+  expect(after.fixedOccurrences).toContainEqual(expect.objectContaining({ fixedSalaBookingId: selected.fixedSalaBookingId, date: selected.date, status: 'CANCELLED' }));
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Mis próximos turnos' })).toBeVisible();
+  await expect(row).toHaveCount(0);
+});
+
+test('registers a real reception attendance with Enter and keeps it after reloading', async ({ page }) => {
+  fixture('reception-paid');
+  await login(page, 'occurrence');
+  await page.goto('/sala/ingreso');
+  await expect(page.getByRole('navigation')).toHaveCount(0);
+  const input = page.getByLabel('DNI del alumno');
+  await input.fill('40.999.661');
+  await expect(input).toHaveValue('40999661');
+  const response = page.waitForResponse(value => value.url().endsWith('/api/sala/check-in'));
+  await input.press('Enter');
+  expect((await response).status()).toBe(200);
+  expect((await (await response).json()).data.status).toBe('REGISTERED');
+  await expect(page.getByRole('heading', { name: 'Ingreso registrado', exact: true })).toBeVisible();
+  await expect(page.getByText(/Fija OccurrenceE2E/)).toBeVisible();
+  await page.reload();
+  await input.fill('40999661');
+  const repeated = page.waitForResponse(value => value.url().endsWith('/api/sala/check-in'));
+  await input.press('Enter');
+  expect((await (await repeated).json()).data.status).toBe('ALREADY_REGISTERED');
+  await expect(page.getByRole('heading', { name: 'Ingreso ya registrado', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Registrar otro alumno' }).click();
+  await expect(input).toHaveValue('');
 });
