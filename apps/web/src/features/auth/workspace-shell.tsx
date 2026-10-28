@@ -144,7 +144,7 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
   </Link>;
   const navigationContent = (onNavigate?: () => void) => groups
     ? groups.map((group) => group.key === 'home' || group.key === 'team'
-      ? <React.Fragment key={group.key}>{group.items.map(item => itemLink(item, onNavigate))}</React.Fragment>
+      ? <div key={group.key} className={group.key === 'team' ? 'mt-3 border-t border-zinc-700! pt-3' : undefined}>{group.items.map(item => itemLink(item, onNavigate))}</div>
       : <section key={group.key} className="space-y-1 py-2" aria-label={group.label}>
         <h2 className="px-3 pb-1 pt-2 text-xs font-medium text-zinc-400">{group.label}</h2>
         {group.items.map(item => itemLink(item, onNavigate))}
@@ -185,8 +185,8 @@ export function WorkspaceShell({ children, active }: { children: React.ReactNode
           {accountContent(() => setMobileMenuOpen(false))}
         </div>
       </> : null}
-      <section inert={mobileMenuOpen} className="min-w-0 flex-1 p-4 sm:p-5 md:p-8">{children}</section>
-      <footer inert={mobileMenuOpen} className="border-t border-border px-4 py-5 text-center sm:px-5 md:px-8"><DeveloperFooter /></footer>
+      <section inert={mobileMenuOpen} className={`min-w-0 flex-1 ${active === 'sala-check-in' ? 'flex flex-col' : 'p-4 sm:p-5 md:p-8'}`}>{children}</section>
+      {active !== 'sala-check-in' && <footer inert={mobileMenuOpen} className="border-t border-border px-4 py-5 text-center sm:px-5 md:px-8"><DeveloperFooter /></footer>}
     </main>
   </AuthShell>;
 }
