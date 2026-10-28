@@ -16,7 +16,7 @@ COPY packages/eslint-config/package.json packages/eslint-config/package.json
 COPY packages/typescript-config/package.json packages/typescript-config/package.json
 COPY packages/ui/package.json packages/ui/package.json
 
-RUN --mount=type=cache,id=athleta-pnpm-store,target=/root/.local/share/pnpm/store \
+RUN --mount=type=cache,id=s/da092a25-b125-4b25-8ccc-6c9c67b4e292-pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
 COPY apps/api apps/api
