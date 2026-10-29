@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { filterExerciseDefinitions } from './exercise-catalog';
 import { Button } from '@athleta/ui';
@@ -25,6 +25,7 @@ export type MovementPattern = { id: string; name: string };
 export type RoutineTemplate = { id: string; name: string; days: RoutineDay[] };
 
 const exclusiveMessage = 'Elegí Repeticiones o Tiempo, no ambos.';
+const EXERCISE_CATALOG_PAGE_SIZE = 8;
 export const exerciseSchema = z.object({
   exerciseDefinitionId: z.string().min(1, 'Seleccioná un ejercicio'),
   series: z.string().trim().max(80).optional(),
@@ -95,27 +96,32 @@ export function DayEditor({ day, index, definitions, onChange, onRemove, canRemo
 
 function ExerciseCatalog({ definitions, catalogLoading, catalogError, patterns, patternsLoading, patternsError, disabled, onAdd }: ExerciseCatalogProps & { disabled: boolean; dayName: string; onAdd: (definition: ExerciseDefinition) => void }): React.JSX.Element {
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const activeDefinitions = definitions.filter(item => item.isActive);
   const [selectedPattern, setSelectedPattern] = useState('all');
   const patternItems = [{ id: 'all', name: 'Todos los ejercicios' }, ...patterns.slice().sort((a, b) => a.name.localeCompare(b.name, 'es')), ...(activeDefinitions.some(item => !item.movementPatternId) ? [{ id: 'none', name: 'Sin patrón' }] : [])];
   const filteredBySearch = filterExerciseDefinitions(definitions, search);
   const results = filteredBySearch.filter(item => selectedPattern === 'all' || (selectedPattern === 'none' ? !item.movementPatternId : item.movementPatternId === selectedPattern));
+  const pages = Math.max(1, Math.ceil(results.length / EXERCISE_CATALOG_PAGE_SIZE));
+  const currentPage = Math.min(page, pages);
+  useEffect(() => { if (page !== currentPage) setPage(currentPage); }, [currentPage, page]);
   const count = (id: string) => activeDefinitions.filter(item => id === 'all' || (id === 'none' ? !item.movementPatternId : item.movementPatternId === id)).length;
   return <section aria-label="Agregar ejercicios" className="rounded-lg border bg-surface-muted p-4">
-    <div className="grid items-start gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
+    <div className="grid min-w-0 items-start gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:gap-5">
       <aside className="space-y-2">
         <h3 className="font-semibold">Patrones de movimiento</h3>
         {patternsLoading ? <p role="status" className="text-sm text-muted-foreground">Cargando patrones…</p> : null}
         {patternsError ? <p role="alert" className="text-sm text-red-700">No se pudieron cargar los patrones de movimiento.</p> : null}
-        <label className="block text-sm md:hidden">Patrón<select className={`${fieldClass} mt-1`} value={selectedPattern} disabled={disabled} onChange={event => setSelectedPattern(event.target.value)}>{patternItems.map(item => <option key={item.id} value={item.id}>{item.name} ({count(item.id)})</option>)}</select></label>
-        <ul className="hidden space-y-1 md:block">{patternItems.map(item => <li key={item.id}><button type="button" aria-label={`${item.name} ${count(item.id)}`} aria-pressed={selectedPattern === item.id} disabled={disabled} onClick={() => setSelectedPattern(item.id)} className={`flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm ${selectedPattern === item.id ? 'bg-white font-medium' : 'hover:bg-white'}`}><span className="flex-1 break-words">{item.name}</span><span>{count(item.id)}</span></button></li>)}</ul>
+        <label className="block text-sm md:hidden">Patrón<select className={`${fieldClass} mt-1`} value={selectedPattern} disabled={disabled} onChange={event => { setSelectedPattern(event.target.value); setPage(1); }}>{patternItems.map(item => <option key={item.id} value={item.id}>{item.name} ({count(item.id)})</option>)}</select></label>
+        <ul className="hidden space-y-1 md:block">{patternItems.map(item => <li key={item.id}><button type="button" aria-label={`${item.name} ${count(item.id)}`} aria-pressed={selectedPattern === item.id} disabled={disabled} onClick={() => { setSelectedPattern(item.id); setPage(1); }} className={`flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm ${selectedPattern === item.id ? 'bg-white font-medium' : 'hover:bg-white'}`}><span className="flex-1 break-words">{item.name}</span><span>{count(item.id)}</span></button></li>)}</ul>
       </aside>
       <div className="min-w-0">
-        <label className="block text-sm">Buscar ejercicio<input type="search" className={`${fieldClass} mt-1`} value={search} disabled={disabled} placeholder="Buscar por nombre, músculo o descripción" onChange={event => setSearch(event.target.value)}/></label>
-        {catalogLoading ? <p role="status">Cargando catálogo de ejercicios…</p> : catalogError ? <p role="alert">No se pudo cargar el catálogo de ejercicios.</p> : !results.length ? <p className="mt-3 text-sm text-muted-foreground">{search.trim() || selectedPattern !== 'all' ? 'No hay ejercicios que coincidan.' : 'Todavía no hay ejercicios en el catálogo.'}</p> : <ul className="mt-2 divide-y rounded-md border bg-white">{results.slice(0, 10).map(item => <li key={item.id} className="flex items-center justify-between gap-2 py-2 text-sm"><span className="min-w-0"><span className="block font-medium">{item.name}</span>{item.primaryMuscle ? <span className="block text-xs text-muted-foreground">{item.primaryMuscle}</span> : null}<span className="block text-xs text-muted-foreground">{patterns.find(pattern => pattern.id === item.movementPatternId)?.name ?? 'Sin patrón'}</span></span><Button type="button" variant="ghost" disabled={disabled} aria-label={'Agregar ' + item.name} onClick={() => onAdd(item)}>+ Agregar</Button></li>)}</ul>}
+        <label className="block text-sm">Buscar ejercicio<input type="search" className={`${fieldClass} mt-1`} value={search} disabled={disabled} placeholder="Buscar por nombre, músculo o descripción" onChange={event => { setSearch(event.target.value); setPage(1); }}/></label>
+        <p className="mt-2 text-sm">{results.length} resultados</p>
+        {catalogLoading ? <p role="status">Cargando catálogo de ejercicios…</p> : catalogError ? <p role="alert">No se pudo cargar el catálogo de ejercicios.</p> : !results.length ? <p className="mt-1 text-sm text-muted-foreground">{search.trim() || selectedPattern !== 'all' ? 'No hay ejercicios que coincidan.' : 'Todavía no hay ejercicios en el catálogo.'}</p> : <ul className="mt-1 divide-y rounded-md border bg-white">{results.slice((currentPage - 1) * EXERCISE_CATALOG_PAGE_SIZE, currentPage * EXERCISE_CATALOG_PAGE_SIZE).map(item => <li key={item.id} className="flex min-w-0 items-center justify-between gap-2 px-3 py-2 text-sm"><span className="min-w-0"><span className="block font-medium">{item.name}</span>{item.primaryMuscle ? <span className="block text-xs text-muted-foreground">{item.primaryMuscle}</span> : null}<span className="block text-xs text-muted-foreground">{patterns.find(pattern => pattern.id === item.movementPatternId)?.name ?? 'Sin patrón'}</span></span><Button type="button" variant="ghost" className="shrink-0" disabled={disabled} aria-label={'Agregar ' + item.name} onClick={() => onAdd(item)}>+ Agregar</Button></li>)}</ul>}
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm"><span>Página {currentPage} de {pages}</span><div className="flex gap-2"><Button type="button" variant="secondary" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Anterior</Button><Button type="button" variant="secondary" disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)}>Siguiente</Button></div></div>
       </div>
     </div>
-    {results.length > 10 ? <p className="text-sm">Hay más coincidencias. Afiná la búsqueda.</p> : null}
   </section>;
 }
 

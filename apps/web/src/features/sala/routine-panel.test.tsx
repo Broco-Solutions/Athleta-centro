@@ -40,6 +40,27 @@ it('shows the shared movement pattern filter when editing a student routine', as
   expect(catalog().getByRole('button', { name: /Todos los ejercicios/ })).toBeInTheDocument();
   expect(catalog().getByRole('button', { name: /Empuje/ })).toBeInTheDocument();
 });
+it('paginates the student routine exercise picker and preserves the edited day while navigating', async () => {
+  const many = Array.from({ length: 10 }, (_, index) => ({ id: `exercise-${index}`, name: `Ejercicio ${index}`, movementPatternId: 'push', isActive: true }));
+  renderPanel([], true, async () => many); await startNewRoutine();
+  expect(catalog().getAllByRole('button', { name: /^Agregar Ejercicio/ })).toHaveLength(8);
+  expect(catalog().getByText('Página 1 de 2')).toBeVisible();
+  expect(catalog().getByRole('button', { name: 'Anterior' })).toBeDisabled();
+  fireEvent.click(catalog().getByRole('button', { name: 'Siguiente' }));
+  expect(catalog().getByText('Página 2 de 2')).toBeVisible();
+  fireEvent.click(catalog().getByRole('button', { name: 'Agregar Ejercicio 8' }));
+  change(row(), 'Series', '3');
+  fireEvent.click(catalog().getByRole('button', { name: 'Anterior' }));
+  expect(row().getByLabelText('Series')).toHaveValue('3');
+  fireEvent.click(catalog().getByRole('button', { name: 'Siguiente' }));
+  expect(catalog().getByText('Página 2 de 2')).toBeVisible();
+  fireEvent.click(catalog().getByRole('button', { name: /Empuje/ }));
+  expect(catalog().getByText('Página 1 de 2')).toBeVisible();
+  fireEvent.click(catalog().getByRole('button', { name: 'Siguiente' }));
+  change(catalog(), 'Buscar ejercicio', 'Ejercicio 9');
+  expect(catalog().getByText('Página 1 de 1')).toBeVisible();
+  expect(row().getByLabelText('Series')).toHaveValue('3');
+});
 async function startEditing() {
   await waitFor(() => expect(screen.getByRole('button', { name: 'Editar rutina' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Editar rutina' }));

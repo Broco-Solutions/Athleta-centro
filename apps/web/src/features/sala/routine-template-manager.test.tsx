@@ -123,6 +123,25 @@ it('filters exercises by movement pattern and combines the pattern with search',
   change(catalog(), 'Buscar ejercicio', 'sentadilla');
   expect(catalog().getByRole('button', { name: 'Agregar Sentadilla' })).toBeInTheDocument();
 });
+it('paginates the template exercise picker and keeps added exercise edits across page changes', async () => {
+  const many = Array.from({ length: 10 }, (_, index) => ({ id: `exercise-${index}`, name: `Ejercicio ${index}`, movementPatternId: 'push', isActive: true }));
+  renderManager([], many); fireEvent.click(screen.getByRole('button', { name: 'Nueva rutina preestablecida' }));
+  await catalog().findByRole('button', { name: 'Agregar Ejercicio 0' });
+  expect(catalog().getAllByRole('button', { name: /^Agregar Ejercicio/ })).toHaveLength(8);
+  expect(catalog().getByText('Página 1 de 2')).toBeVisible();
+  fireEvent.click(catalog().getByRole('button', { name: 'Siguiente' }));
+  fireEvent.click(catalog().getByRole('button', { name: 'Agregar Ejercicio 8' }));
+  change(row(), 'Series', '4');
+  fireEvent.click(catalog().getByRole('button', { name: 'Anterior' }));
+  expect(row().getByLabelText('Series')).toHaveValue('4');
+  fireEvent.click(catalog().getByRole('button', { name: 'Siguiente' }));
+  fireEvent.click(catalog().getByRole('button', { name: /Empuje/ }));
+  expect(catalog().getByText('Página 1 de 2')).toBeVisible();
+  fireEvent.click(catalog().getByRole('button', { name: 'Siguiente' }));
+  change(catalog(), 'Buscar ejercicio', 'Ejercicio 9');
+  expect(catalog().getByText('Página 1 de 1')).toBeVisible();
+  expect(row().getByLabelText('Series')).toHaveValue('4');
+});
 it('offers Sin patrón only when active exercises have no pattern and filters those exercises', async () => {
   renderManager(); fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
   fireEvent.click(catalog().getByRole('button', { name: /Sin patrón/ }));

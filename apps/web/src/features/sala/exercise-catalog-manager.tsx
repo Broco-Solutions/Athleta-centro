@@ -13,6 +13,7 @@ import { errorMessage, fieldClass, type ExerciseDefinition } from './routine-edi
 
 type ExerciseValues = z.infer<typeof exerciseDefinitionSchema>;
 type CatalogError = Error & { code?: string; details?: { activeRoutines?: number } };
+const CATALOG_PAGE_SIZE = 10;
 const emptyValues: ExerciseValues = { name: '', primaryMuscle: '', description: '', movementPatternId: '' };
 
 function checkResponse(response: { status: number; data: unknown }): void {
@@ -89,7 +90,7 @@ export function ExerciseCatalogManager({ csrfToken, canManage }: { csrfToken: st
   });
   const active = (definitions.data ?? []).filter(item => item.isActive);
   const results = filterExerciseDefinitions(active, search).filter(item => selectedPattern === 'all' || (selectedPattern === 'none' ? !item.movementPatternId : item.movementPatternId === selectedPattern)).sort((a, b) => a.name.localeCompare(b.name, 'es'));
-  const pages = Math.max(1, Math.ceil(results.length / 20));
+  const pages = Math.max(1, Math.ceil(results.length / CATALOG_PAGE_SIZE));
   const currentPage = Math.min(page, pages);
   const patternItems = [{ id: 'all', name: 'Todos los ejercicios' }, ...(patterns.data ?? []).slice().sort((a,b) => a.name.localeCompare(b.name, 'es')), ...(active.some(item => !item.movementPatternId) ? [{ id: 'none', name: 'Sin patrón' }] : [])];
   const count = (id: string) => active.filter(item => id === 'all' || (id === 'none' ? !item.movementPatternId : item.movementPatternId === id)).length;
@@ -128,7 +129,7 @@ export function ExerciseCatalogManager({ csrfToken, canManage }: { csrfToken: st
     <label className="block text-sm">Buscar ejercicios<input type="search" className={`${fieldClass} mt-1`} placeholder="Buscar por nombre, músculo o descripción..." value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} /></label>
     {definitions.isPending ? <p role="status" className="text-sm text-muted-foreground">Cargando catálogo de ejercicios…</p> : definitions.isError ? <p role="alert" className="text-sm text-red-700">{errorMessage(definitions.error)}</p> : <>
       <p className="text-sm">{results.length} resultados</p>
-      {!results.length ? <p className="text-sm text-muted-foreground">{search.trim() ? 'No hay ejercicios que coincidan.' : 'Todavía no hay ejercicios en el catálogo.'}</p> : <ul aria-label="Ejercicios disponibles" className="divide-y rounded-md border bg-white">{results.slice((currentPage - 1) * 20, currentPage * 20).map(exercise => <li key={exercise.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
+      {!results.length ? <p className="text-sm text-muted-foreground">{search.trim() ? 'No hay ejercicios que coincidan.' : 'Todavía no hay ejercicios en el catálogo.'}</p> : <ul aria-label="Ejercicios disponibles" className="divide-y rounded-md border bg-white">{results.slice((currentPage - 1) * CATALOG_PAGE_SIZE, currentPage * CATALOG_PAGE_SIZE).map(exercise => <li key={exercise.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1 break-words"><h3 className="font-medium">{exercise.name}</h3>{exercise.primaryMuscle ? <p className="mt-1 text-sm text-muted-foreground">{exercise.primaryMuscle}</p> : null}<p className="text-sm text-muted-foreground">{patterns.data?.find(pattern => pattern.id === exercise.movementPatternId)?.name ?? 'Sin patrón'}</p></div>
         {canManage ? <div className="flex flex-wrap gap-2"><Button type="button" variant="secondary" disabled={formOpen || busy || Boolean(retirement)} onClick={() => openForm(exercise)}>Editar</Button><Button type="button" variant="ghost" disabled={formOpen || busy || Boolean(retirement)} onClick={() => { setFeedback(null); retire.mutate({ id: exercise.id, confirmActiveRoutineImpact: false }); }}>Retirar</Button></div> : null}
       </li>)}</ul>}
