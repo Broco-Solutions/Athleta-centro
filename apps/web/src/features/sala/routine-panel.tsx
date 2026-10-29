@@ -3,8 +3,8 @@
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@athleta/ui';
-import type { ExerciseDefinitionDto, ReplaceRoutineDto } from '@athleta/api-client';
-import { RoutineDaysEditor, RoutineContentSummary, copyRoutineDays, routineDaysToDraft, draftToRoutineDays, newDay, fieldClass, errorMessage, type EditingDay, type RoutineDay, type ExerciseDefinition, type RoutineTemplate } from './routine-editor';
+import type { ReplaceRoutineDto } from '@athleta/api-client';
+import { RoutineDaysEditor, RoutineContentSummary, copyRoutineDays, routineDaysToDraft, draftToRoutineDays, newDay, errorMessage, type EditingDay, type RoutineDay, type ExerciseDefinition, type RoutineTemplate } from './routine-editor';
 import { TrainingRecordHistory } from './training-record-history';
 import type { TrainingHistoryApi } from './training-record-api';
 export type { ExerciseDefinition, RoutineDay, RoutineExercise, RoutineTemplate } from './routine-editor';
@@ -21,9 +21,7 @@ export type RoutineApi = {
   create: (input: RoutineInput, options: RequestInit) => Promise<unknown>;
   replace: (routineId: string, input: RoutineInput, options: RequestInit) => Promise<unknown>;
   duplicate: (routineId: string, options: RequestInit) => Promise<unknown>;
-  createExercise: (input: ExerciseDefinitionDto, options: RequestInit) => Promise<ExerciseDefinition>;
-  updateExercise: (id: string, input: ExerciseDefinitionDto, options: RequestInit) => Promise<unknown>;
-  retireExercise: (id: string, input: { confirmActiveRoutineImpact: boolean }, options: RequestInit) => Promise<unknown>;
+
 };
 
 export function RoutinePanel({ personId, participationId, csrfToken, api, canManage }: { personId: string; participationId: string; csrfToken: string; api: RoutineApi; canManage: boolean }): React.JSX.Element {
@@ -35,31 +33,19 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
   const [days, setDays] = useState<EditingDay[]>(() => [newDay()]);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [routineToReuse, setRoutineToReuse] = useState<Routine | null>(null);
-  const [catalogId, setCatalogId] = useState<string | null>(null);
-  const [newExercise, setNewExercise] = useState({ name: '', primaryMuscle: '', description: '' });
-  const [retirement, setRetirement] = useState<{ id: string; activeRoutines: number } | null>(null);
-  const clearCatalogDraft = () => { setCatalogId(null); setNewExercise({ name: '', primaryMuscle: '', description: '' }); setRetirement(null); };
   const options = useMemo<RequestInit>(() => ({ credentials: 'include', headers: { 'x-csrf-token': csrfToken } }), [csrfToken]);
   const routines = useQuery({ queryKey: ['sala-routines', personId], queryFn: () => api.list(personId, options), enabled: Boolean(personId) });
   const definitions = useQuery({ queryKey: ['sala-exercise-definitions'], queryFn: () => api.exercises(options), enabled: canManage });
   const templates = useQuery({ queryKey: ['sala-routine-templates'], queryFn: () => api.templates(options), enabled: canManage && selectingTemplate });
   const active = routines.data?.find((routine) => routine.status === 'ACTIVE');
   const historical = routines.data?.filter((routine) => routine.status === 'HISTORICAL') ?? [];
-  const createInlineExercise = async (input: ExerciseDefinitionDto): Promise<ExerciseDefinition> => {
-    const created = await api.createExercise(input, options);
-    await queryClient.cancelQueries({ queryKey: ['sala-exercise-definitions'] });
-    queryClient.setQueryData<ExerciseDefinition[]>(['sala-exercise-definitions'], (current = []) => [...current.filter((item) => item.id !== created.id), created]);
-    void queryClient.invalidateQueries({ queryKey: ['sala-exercise-definitions'] });
-    return created;
-  };
   const refreshRoutines = () => queryClient.invalidateQueries({ queryKey: ['sala-routines', personId] });
-  const refreshCatalog = async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: ['sala-exercise-definitions'] }), refreshRoutines()]); };
   const mutation = useMutation({
     mutationFn: async () => {
       const input: RoutineInput = { personId, salaParticipationId: participationId, days: draftToRoutineDays(days) };
       return active ? api.replace(active.id, input, options) : api.create(input, options);
     },
-    onSuccess: async () => { setEditing(false); clearCatalogDraft(); setDays([newDay()]); setFeedback('Rutina guardada correctamente.'); await refreshRoutines(); },
+    onSuccess: async () => { setEditing(false);  setDays([newDay()]); setFeedback('Rutina guardada correctamente.'); await refreshRoutines(); },
   });
   const assign = useMutation({
     mutationFn: async (template: RoutineTemplate) => {
@@ -72,28 +58,14 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
     mutationFn: (id: string) => api.duplicate(id, options),
     onSuccess: async () => { setRoutineToReuse(null); setFeedback('Rutina activada correctamente.'); await refreshRoutines(); },
   });
-  const exerciseMutation = useMutation({
-    mutationFn: () => catalogId ? api.updateExercise(catalogId, newExercise, options) : api.createExercise(newExercise, options),
-    onSuccess: async () => { setFeedback(catalogId ? 'Ejercicio actualizado correctamente.' : 'Ejercicio creado correctamente.'); setCatalogId(null); setNewExercise({ name: '', primaryMuscle: '', description: '' }); await refreshCatalog(); },
-  });
-  const retire = useMutation({
-    mutationFn: ({ id, confirmActiveRoutineImpact }: { id: string; confirmActiveRoutineImpact: boolean }) => api.retireExercise(id, { confirmActiveRoutineImpact }, options),
-    onSuccess: async () => { setRetirement(null); setFeedback('Ejercicio retirado correctamente.'); await refreshCatalog(); },
-    onError: (error, variables) => {
-      const structured = error as Error & { code?: string; details?: { activeRoutines?: number } };
-      if (structured.code === 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED' && typeof structured.details?.activeRoutines === 'number') setRetirement({ id: variables.id, activeRoutines: structured.details.activeRoutines });
-    },
-  });
   const startEditing = () => {
     mutation.reset(); setFeedback(null);
-    clearCatalogDraft();
+
     setPersonalizing(false); setSelectingTemplate(false);
     setDays(active?.days.length ? routineDaysToDraft(active.days) : [newDay()]);
     setEditing(true);
   };
-  const retireNeedsConfirmation = (retire.error as (Error & { code?: string }) | null)?.code === 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED';
-  const actionErrors = [mutation.error, assign.error, reuseRoutine.error, exerciseMutation.error, retireNeedsConfirmation ? null : retire.error].filter(Boolean);
-  const catalogBusy = exerciseMutation.isPending || retire.isPending;
+  const actionErrors = [mutation.error, assign.error, reuseRoutine.error].filter(Boolean);
   return <section aria-labelledby="routine-heading" className="mt-4 rounded-md border bg-surface-muted p-4">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 id="routine-heading" className="font-semibold">Rutina</h3><p className="text-sm text-muted-foreground">Planificación de entrenamiento vigente e histórica.</p></div>{canManage && participationId ? <div className="flex flex-wrap gap-2"><Button type="button" variant={active ? 'secondary' : 'primary'} onClick={startEditing} disabled={routines.isLoading || routines.isError || editing || Boolean(routineToReuse) || reuseRoutine.isPending || assign.isPending}>{active ? 'Editar rutina' : 'Crear desde cero'}</Button><Button type="button" variant={active ? 'ghost' : 'secondary'} disabled={routines.isLoading || routines.isError || editing || Boolean(routineToReuse) || reuseRoutine.isPending || assign.isPending} onClick={() => { setSelectingTemplate(true); setSelectedTemplate(null); setFeedback(null); assign.reset(); }}>Usar preestablecida</Button></div> : null}</div>
     {feedback ? <p role="status" className="mt-3 text-sm">{feedback}</p> : null}
@@ -114,15 +86,9 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
       </>}
     </div> : null}
     {canManage && editing ? <div className="mt-4 rounded-lg border bg-white p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="text-xl font-semibold">{personalizing ? 'Personalizar rutina' : active ? 'Editar rutina' : 'Crear rutina desde cero'}</h4><p className="mt-1 text-sm text-muted-foreground">Organizá los días y completá los ejercicios del alumno.</p></div></div>
-      <RoutineDaysEditor days={days} definitions={[...(definitions.data ?? []), ...(selectedTemplate?.days.flatMap((day) => day.exercises.filter((entry) => entry.exerciseDefinition?.isActive === false).map((entry) => ({ id: entry.exerciseDefinitionId, name: entry.exerciseDefinition!.name, primaryMuscle: '', isActive: false }))) ?? [])]} catalogLoading={definitions.isLoading} catalogError={definitions.isError} onCreateExercise={createInlineExercise} disabled={mutation.isPending} onChange={setDays}/>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">Los cambios se aplican al guardar.</p><div className="flex gap-2"><Button type="button" variant="secondary" onClick={() => { setEditing(false); clearCatalogDraft(); }} disabled={mutation.isPending}>Cancelar</Button><Button type="button" onClick={() => { setFeedback(null); mutation.mutate(); }} disabled={mutation.isPending}>{mutation.isPending ? 'Guardando…' : 'Guardar cambios'}</Button></div></div>
-      <details className="mt-3 rounded-md border bg-white p-3"><summary className="cursor-pointer text-sm font-medium">Administrar ejercicios</summary><p className="mt-2 text-xs text-muted-foreground">Catálogo utilizado para armar rutinas.</p>
-      <div className="mt-3 grid gap-2 sm:grid-cols-3"><input className={fieldClass} aria-label="Nombre del ejercicio" placeholder="Nombre" maxLength={120} value={newExercise.name} onChange={(event) => setNewExercise((current) => ({ ...current, name: event.target.value }))}/><label className="text-sm">Músculo principal (opcional)<input className={fieldClass} aria-label="Músculo principal (opcional)" placeholder="Músculo principal (opcional)" maxLength={120} value={newExercise.primaryMuscle} onChange={(event) => setNewExercise((current) => ({ ...current, primaryMuscle: event.target.value }))}/></label><input className={fieldClass} aria-label="Descripción del ejercicio" placeholder="Descripción opcional" maxLength={500} value={newExercise.description} onChange={(event) => setNewExercise((current) => ({ ...current, description: event.target.value }))}/></div>
-      <Button className="mt-2" type="button" disabled={!newExercise.name.trim() || catalogBusy} onClick={() => { setFeedback(null); exerciseMutation.mutate(); }}>{catalogId ? 'Guardar cambios del ejercicio' : 'Nuevo ejercicio'}</Button>{catalogId ? <Button type="button" variant="ghost" onClick={() => { setCatalogId(null); setNewExercise({ name: '', primaryMuscle: '', description: '' }); exerciseMutation.reset(); }}>Cancelar edición del catálogo</Button> : null}
-      {definitions.isError ? <p role="alert">{errorMessage(definitions.error)}</p> : null}
-      <ul className="mt-3 divide-y">{definitions.data?.filter((item) => item.isActive).map((item) => <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"><span>{[item.name, item.primaryMuscle].filter(Boolean).join(' · ')}</span><span><Button type="button" variant="ghost" disabled={catalogBusy} onClick={() => { exerciseMutation.reset(); setFeedback(null); setCatalogId(item.id); setNewExercise({ name: item.name, primaryMuscle: item.primaryMuscle ?? '', description: item.description ?? '' }); }}>Editar</Button><Button type="button" variant="ghost" disabled={catalogBusy || Boolean(retirement)} onClick={() => { setFeedback(null); retire.mutate({ id: item.id, confirmActiveRoutineImpact: false }); }}>Retirar</Button></span></li>)}</ul>
-      {retirement ? <div role="alertdialog" aria-label="Confirmar retiro" className="mt-3 rounded-md border p-3"><p className="text-sm">Este ejercicio se utiliza en {retirement.activeRoutines} Rutinas activas. Si lo retirás, se quitará de esas Rutinas. Las Rutinas históricas no se modificarán.</p><div className="mt-2 flex gap-2"><Button type="button" disabled={retire.isPending} onClick={() => retire.mutate({ id: retirement.id, confirmActiveRoutineImpact: true })}>Confirmar retiro</Button><Button type="button" variant="secondary" disabled={retire.isPending} onClick={() => { setRetirement(null); retire.reset(); }}>Cancelar retiro</Button></div></div> : null}
-      </details></div> : null}
+      <RoutineDaysEditor days={days} definitions={[...(definitions.data ?? []), ...((selectedTemplate ?? active)?.days.flatMap((day) => day.exercises.filter((entry) => entry.exerciseDefinition?.isActive === false).map((entry) => ({ id: entry.exerciseDefinitionId, name: entry.exerciseDefinition!.name, primaryMuscle: '', isActive: false }))) ?? [])]} catalogLoading={definitions.isLoading} catalogError={definitions.isError} disabled={mutation.isPending} onChange={setDays}/>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">Los cambios se aplican al guardar.</p><div className="flex gap-2"><Button type="button" variant="secondary" onClick={() => { setEditing(false);  }} disabled={mutation.isPending}>Cancelar</Button><Button type="button" onClick={() => { setFeedback(null); mutation.mutate(); }} disabled={mutation.isPending}>{mutation.isPending ? 'Guardando…' : 'Guardar cambios'}</Button></div></div>
+</div> : null}
   </section>;
 }
 

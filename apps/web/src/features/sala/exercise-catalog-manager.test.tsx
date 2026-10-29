@@ -21,6 +21,7 @@ beforeAll(() => {
 beforeEach(() => {
   definitions = [squat, plank, { ...squat, id: 'retired', name: 'Retirado', isActive: false }]; writes = [];
   server.use(
+    http.get('http://localhost:3000/api/sala/movement-patterns', () => HttpResponse.json({ data: [{ id: 'pattern', name: 'Empuje' }] })),
     http.get(base, () => HttpResponse.json({ data: definitions })),
     http.post(base, async ({ request }) => {
       const body = await request.json() as { name: string; primaryMuscle: string; description: string };
@@ -52,7 +53,9 @@ function renderCatalog(canManage = true) {
 }
 function exerciseRow(name = squat.name) { return screen.getByRole('heading', { name }).closest('li')!; }
 function startNew() { fireEvent.click(screen.getByRole('button', { name: '+ Nuevo ejercicio' })); }
-function fill(name = 'Remo', primaryMuscle = 'Espalda', description = 'Con banda') {
+async function fill(name = 'Remo', primaryMuscle = 'Espalda', description = 'Con banda') {
+  await screen.findByRole('option', { name: 'Empuje' });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Patrón de movimiento' }), { target: { value: 'pattern' } });
   fireEvent.change(screen.getByRole('textbox', { name: /Nombre/ }), { target: { value: name } });
   fireEvent.change(screen.getByRole('textbox', { name: /Músculo principal/ }), { target: { value: primaryMuscle } });
   fireEvent.change(screen.getByRole('textbox', { name: /Descripción/ }), { target: { value: description } });
@@ -63,10 +66,10 @@ function expectRefreshed(invalidate: ReturnType<typeof renderCatalog>['invalidat
 
 it('lists active exercises alphabetically, omits empty optional fields and uses the shared search', async () => {
   renderCatalog(); await screen.findByRole('heading', { name: squat.name });
-  expect(screen.getAllByRole('listitem').map(item => within(item).getByRole('heading').textContent)).toEqual(['Plancha', squat.name]);
+  expect(within(screen.getByRole('list', { name: 'Ejercicios disponibles' })).getAllByRole('listitem').map(item => within(item).getByRole('heading').textContent)).toEqual(['Plancha', squat.name]);
   expect(exerciseRow('Plancha')).not.toHaveTextContent(' · ');
   expect(within(exerciseRow('Plancha')).queryByText(/opcional|Sin músculo|Sin descripción/)).not.toBeInTheDocument();
-  expect(screen.getByText(squat.description!)).toBeVisible(); expect(screen.queryByText('Retirado')).not.toBeInTheDocument();
+  expect(screen.queryByText(squat.description!)).not.toBeInTheDocument(); expect(screen.queryByText('Retirado')).not.toBeInTheDocument();
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'BULGARA futbol' } });
   expect(screen.getByRole('heading', { name: squat.name })).toBeVisible(); expect(screen.queryByRole('heading', { name: 'Plancha' })).not.toBeInTheDocument();
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'tenis' } });
@@ -74,12 +77,12 @@ it('lists active exercises alphabetically, omits empty optional fields and uses 
 });
 
 it('creates a name-only exercise through the generated client, closes its form and refreshes catalog and routines', async () => {
-  const { invalidate } = renderCatalog(); startNew(); fill('  Remo  ', '', '');
+  const { invalidate } = renderCatalog(); startNew(); await fill('  Remo  ', '', '');
   fireEvent.click(screen.getByRole('button', { name: 'Crear ejercicio' }));
   expect(await screen.findByText('Ejercicio creado correctamente.')).toBeVisible();
   expect(await screen.findByRole('heading', { name: 'Remo' })).toBeVisible();
   expect(screen.queryByRole('form')).not.toBeInTheDocument();
-  expect(writes).toEqual([{ method: 'POST', body: { name: 'Remo', primaryMuscle: '', description: '' }, csrf: 'synthetic-csrf' }]);
+  expect(writes).toEqual([{ method: 'POST', body: { name: 'Remo', primaryMuscle: '', description: '', movementPatternId: 'pattern' }, csrf: 'synthetic-csrf' }]);
   expectRefreshed(invalidate);
 });
 
@@ -89,13 +92,13 @@ it.each([
   ['Remo', 'a'.repeat(121), '', 'El Músculo principal admite hasta 120 caracteres.'],
   ['Remo', '', 'a'.repeat(501), 'La Descripción admite hasta 500 caracteres.'],
 ])('validates required name and DTO lengths before writing (%s)', async (name, muscle, description, message) => {
-  renderCatalog(); startNew(); fill(name, muscle, description);
+  renderCatalog(); startNew(); await fill(name, muscle, description);
   fireEvent.click(screen.getByRole('button', { name: 'Crear ejercicio' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(message); expect(writes).toEqual([]);
 });
 
 it('allows all fields at their maximum length', async () => {
-  renderCatalog(); startNew(); fill('n'.repeat(120), 'm'.repeat(120), 'd'.repeat(500));
+  renderCatalog(); startNew(); await fill('n'.repeat(120), 'm'.repeat(120), 'd'.repeat(500));
   fireEvent.click(screen.getByRole('button', { name: 'Crear ejercicio' }));
   expect(await screen.findByText('Ejercicio creado correctamente.')).toBeVisible(); expect(writes).toHaveLength(1);
 });
@@ -107,7 +110,7 @@ it('blocks repeated submissions while creation is pending', async () => {
     await new Promise<void>(resolve => { release = resolve; });
     return HttpResponse.json({ data: { ...plank, id: 'new', name: 'Remo' } }, { status: 201 });
   }));
-  renderCatalog(); startNew(); fill(); const form = screen.getByRole('form');
+  renderCatalog(); startNew(); await fill(); const form = screen.getByRole('form');
   fireEvent.submit(form); fireEvent.submit(form);
   await waitFor(() => expect(writes).toHaveLength(1));
   expect(screen.getByRole('button', { name: 'Guardando…' })).toBeDisabled();
@@ -121,18 +124,18 @@ it('edits all fields on the existing definition without creating a new exercise'
   expect(screen.getByRole('textbox', { name: /Nombre/ })).toHaveValue(squat.name);
   expect(screen.getByRole('textbox', { name: /Músculo/ })).toHaveValue(squat.primaryMuscle);
   expect(screen.getByRole('textbox', { name: /Descripción/ })).toHaveValue(squat.description);
-  fill('Sentadilla actualizada', '', 'Estabilidad para hockey');
+  await fill('Sentadilla actualizada', '', 'Estabilidad para hockey');
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
   await screen.findByText('Ejercicio actualizado correctamente.');
   expect(await screen.findByRole('heading', { name: 'Sentadilla actualizada' })).toBeVisible();
-  expect(screen.getByText('Estabilidad para hockey')).toBeVisible();
-  expect(writes).toEqual([{ method: 'PATCH', id: 'squat', body: { name: 'Sentadilla actualizada', primaryMuscle: '', description: 'Estabilidad para hockey' }, csrf: 'synthetic-csrf' }]);
+  expect(screen.queryByText('Estabilidad para hockey')).not.toBeInTheDocument();
+  expect(writes).toEqual([{ method: 'PATCH', id: 'squat', body: { name: 'Sentadilla actualizada', primaryMuscle: '', description: 'Estabilidad para hockey', movementPatternId: 'pattern' }, csrf: 'synthetic-csrf' }]);
   expectRefreshed(invalidate);
 });
 
 it('cancels an edit without saving and restores persisted values when reopened', async () => {
   renderCatalog(); await screen.findByRole('heading', { name: squat.name });
-  fireEvent.click(within(exerciseRow()).getByRole('button', { name: 'Editar' })); fill();
+  fireEvent.click(within(exerciseRow()).getByRole('button', { name: 'Editar' })); await fill();
   fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
   expect(writes).toEqual([]); expect(screen.queryByRole('form')).not.toBeInTheDocument();
   fireEvent.click(within(exerciseRow()).getByRole('button', { name: 'Editar' }));
@@ -143,7 +146,7 @@ it.each(['create', 'update'])('preserves input and shows backend conflicts witho
   const handler = operation === 'create' ? http.post(base, () => HttpResponse.json({ code: 'SALA_EXERCISE_DUPLICATE', message: 'Exercise already exists' }, { status: 409 })) : http.patch(`${base}/:id`, () => HttpResponse.json({ message: 'No se pudo guardar el ejercicio.' }, { status: 500 }));
   server.use(handler); const { invalidate } = renderCatalog(); await screen.findByRole('heading', { name: squat.name });
   if (operation === 'create') startNew(); else fireEvent.click(within(exerciseRow()).getByRole('button', { name: 'Editar' }));
-  fill(); fireEvent.click(screen.getByRole('button', { name: operation === 'create' ? 'Crear ejercicio' : 'Guardar cambios' }));
+  await fill(); fireEvent.click(screen.getByRole('button', { name: operation === 'create' ? 'Crear ejercicio' : 'Guardar cambios' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(operation === 'create' ? 'Ya existe un ejercicio con ese nombre.' : 'No se pudo guardar el ejercicio.');
   expect(screen.getByRole('textbox', { name: /Nombre/ })).toHaveValue('Remo');
   expect(screen.getByRole('textbox', { name: /Músculo/ })).toHaveValue('Espalda');
@@ -196,6 +199,48 @@ it('supports read-only catalog access without administration actions', async () 
 
 it('shows localized loading and catalog read errors', async () => {
   server.use(http.get(base, () => HttpResponse.json({ message: 'No se pudo cargar el catálogo.' }, { status: 500 })));
-  renderCatalog(); expect(screen.getByRole('status')).toHaveTextContent('Cargando catálogo');
+  renderCatalog(); expect(screen.getByText('Cargando catálogo de ejercicios…')).toBeVisible();
   expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo cargar el catálogo.');
+});
+
+it('creates a pattern with zero exercises, selects it and renames it without losing its association', async () => {
+  let patterns = [{ id: 'pattern', name: 'Empuje' }];
+  server.use(
+    http.get('http://localhost:3000/api/sala/movement-patterns', () => HttpResponse.json({ data: patterns })),
+    http.post('http://localhost:3000/api/sala/movement-patterns', async ({ request }) => {
+      const body = await request.json() as { name: string };
+      patterns = [...patterns, { id: 'new-pattern', name: body.name }];
+      return HttpResponse.json({ data: patterns[1] }, { status: 201 });
+    }),
+    http.patch('http://localhost:3000/api/sala/movement-patterns/:id', async ({ request, params }) => {
+      const body = await request.json() as { name: string };
+      patterns = patterns.map(item => item.id === params.id ? { ...item, name: body.name } : item);
+      return HttpResponse.json({ data: patterns.find(item => item.id === params.id) });
+    }),
+  );
+  renderCatalog(); await screen.findByRole('heading', { name: squat.name });
+  fireEvent.click(screen.getByRole('button', { name: '+ Nuevo patrón' }));
+  fireEvent.change(screen.getByLabelText('Nombre del patrón'), { target: { value: 'Tracción' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByRole('heading', { name: 'Tracción' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Tracción 0' })).toHaveAttribute('aria-pressed', 'true');
+  fireEvent.click(screen.getByRole('button', { name: 'Renombrar patrón' }));
+  fireEvent.change(screen.getByLabelText('Nombre del patrón'), { target: { value: 'Tracción superior' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByRole('heading', { name: 'Tracción superior' })).toBeVisible();
+});
+
+it('paginates hundreds of active exercises and combines pattern and text filters', async () => {
+  definitions = Array.from({ length: 125 }, (_, index) => ({ id: String(index), name: 'Ejercicio ' + String(index).padStart(3, '0'), isActive: true, movementPatternId: index < 110 ? 'pattern' : null }));
+  renderCatalog(); await screen.findByText('125 resultados');
+  const list = () => within(screen.getByRole('list', { name: 'Ejercicios disponibles' }));
+  expect(list().getAllByRole('listitem')).toHaveLength(20);
+  fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
+  expect(screen.getByText('Página 2 de 7')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Empuje 110' }));
+  expect(screen.getByText('Página 1 de 6')).toBeVisible();
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Ejercicio 00' } });
+  expect(screen.getByText('11 resultados')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Sin patrón 15' }));
+  expect(screen.getByText('0 resultados')).toBeVisible();
 });

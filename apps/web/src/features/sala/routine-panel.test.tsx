@@ -20,8 +20,7 @@ function renderPanel(rows: Routine[] = [routine], canManage = true, catalog: Rou
     list: vi.fn<RoutineApi['list']>().mockResolvedValue(rows), exercises: vi.fn<RoutineApi['exercises']>().mockImplementation(catalog),
     templates: vi.fn<RoutineApi['templates']>().mockResolvedValue([]),
     create: vi.fn<RoutineApi['create']>().mockResolvedValue({}), replace: vi.fn<RoutineApi['replace']>().mockResolvedValue({}),
-    duplicate: vi.fn<RoutineApi['duplicate']>().mockResolvedValue({}), createExercise: vi.fn<RoutineApi['createExercise']>().mockResolvedValue({ id: 'row', name: 'Remo', primaryMuscle: 'Espalda', isActive: true }),
-    updateExercise: vi.fn<RoutineApi['updateExercise']>().mockResolvedValue({}), retireExercise: vi.fn<RoutineApi['retireExercise']>().mockResolvedValue({}),
+    duplicate: vi.fn<RoutineApi['duplicate']>().mockResolvedValue({}),
   };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(<QueryClientProvider client={client}><RoutinePanel personId="person" participationId="participation" csrfToken="csrf" api={api} canManage={canManage}/></QueryClientProvider>);
@@ -38,23 +37,18 @@ it('keeps exercise catalog management out of the initial empty routine view', as
 async function startEditing() {
   await waitFor(() => expect(screen.getByRole('button', { name: 'Editar rutina' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Editar rutina' }));
-  await screen.findAllByRole('option', { name: 'Sentadilla · Piernas' });
+  await screen.findByRole('region', { name: 'Agregar ejercicios' });
 }
 function day(index: number) { fireEvent.click(screen.getByRole('button', { name: new RegExp(`^Día ${index}:`) })); return within(screen.getByRole('group', { name: `Día ${index}` })); }
 function change(scope: ReturnType<typeof within>, label: string, value: string) { fireEvent.change(scope.getByLabelText(label), { target: { value } }); }
 async function add(scope: ReturnType<typeof within>, id = 'squat') {
   const name = id === 'plank' ? 'Plancha' : 'Sentadilla';
+  fireEvent.change(catalog().getByRole('searchbox'), { target: { value: name } });
   fireEvent.click(await screen.findByRole('button', { name: `Agregar ${name}` }));
   expect(scope.getAllByRole('button', { name: /^Quitar / }).length).toBeGreaterThan(0);
 }
 function catalog() { return within(screen.getByRole('region', { name: 'Agregar ejercicios' })); }
 function row(index = 0) { return within(screen.getByRole('group', { name: /^Día \d+$/ }).querySelectorAll('li')[index]!); }
-function openCatalog() { fireEvent.click(screen.getByText('Administrar ejercicios')); }
-function fillCatalog() {
-  fireEvent.change(screen.getByLabelText('Nombre del ejercicio'), { target: { value: 'Remo' } });
-  fireEvent.change(screen.getByLabelText('Músculo principal (opcional)'), { target: { value: 'Espalda' } });
-  fireEvent.change(screen.getByLabelText('Descripción del ejercicio'), { target: { value: 'Con banda' } });
-}
 
 it('reads every day and optional value, including historical definitions absent from the active catalog', async () => {
   renderPanel([routine, { ...routine, id: 'old', status: 'HISTORICAL', version: 1, days: [{ position: 1, name: 'Histórico', exercises: [{ exerciseDefinitionId: 'retired', exerciseDefinition: { name: 'Ejercicio retirado', description: 'Descripción conservada' }, series: null }] }] }]);
@@ -75,7 +69,7 @@ it('mounts only the active day, retains inline changes and saves every day in or
   expect(screen.queryByRole('group', { name: 'Día 2' })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: /^Día 1:/ })).toHaveAttribute('aria-pressed', 'true');
   expect(day(1).queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
-  for (const [label, value] of [['Ejercicio', 'squat'], ['Series', '4'], ['Valor', '10'], ['Carga', '40 kg'], ['Descanso', '30 s'], ['Observación', 'Controlar técnica']]) expect(row().getByLabelText(label!)).toHaveValue(value);
+  for (const [label, value] of [['Series', '4'], ['Valor', '10'], ['Carga', '40 kg'], ['Descanso', '30 s'], ['Observación', 'Controlar técnica']]) expect(row().getByLabelText(label!)).toHaveValue(value);
   change(row(), 'Series', '5'); change(row(), 'Carga', 'Banda roja'); change(row(), 'Descanso', '1 min');
   day(2); expect(screen.queryByRole('group', { name: 'Día 1' })).not.toBeInTheDocument();
   expect(row().getByLabelText('Tipo')).toHaveValue('duration'); expect(row().getByLabelText('Valor')).toHaveValue('45 s');
@@ -103,16 +97,13 @@ it('mounts only the active day, retains inline changes and saves every day in or
   for (const savedDay of api.replace.mock.calls[0]![1].days) expect(savedDay).not.toHaveProperty('position');
 });
 
-it('shows catalog management only while editing an active routine and clears its draft on cancel', async () => {
-  renderPanel(); await screen.findByText('Fuerza');
+it('keeps management and exercise selectors out of routine editing', async () => {
+  renderPanel(); await startEditing();
   expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument();
-  await startEditing(); openCatalog(); fillCatalog();
-  fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
-  expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument();
-  await startEditing(); openCatalog();
-  expect(screen.getByLabelText('Nombre del ejercicio')).toHaveValue('');
+  expect(screen.queryByRole('button', { name: '+ Crear nuevo ejercicio' })).not.toBeInTheDocument();
+  expect(catalog().getByRole('searchbox')).toBeInTheDocument();
+  expect(row().queryByRole('combobox', { name: 'Ejercicio' })).not.toBeInTheDocument();
 });
-
 it('requires only the exercise and keeps at least one visible day', async () => {
   const { api } = renderPanel([]); await startNewRoutine();
   expect(day(1).getByRole('button', { name: 'Eliminar día' })).toBeDisabled();
@@ -201,43 +192,6 @@ it('preserves the confirmation context and reports reuse errors without success 
   expect(api.list).toHaveBeenCalledTimes(1);
   fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancelar' }));
 });
-it('creates a catalog exercise and clears the form while keeping the routine editor open', async () => {
-  const { api } = renderPanel(); await startEditing(); openCatalog(); fillCatalog();
-  fireEvent.click(within(screen.getByText('Administrar ejercicios').closest('details')!).getByRole('button', { name: 'Nuevo ejercicio' })); await screen.findByText('Ejercicio creado correctamente.');
-  expect(api.createExercise).toHaveBeenCalledWith({ name: 'Remo', primaryMuscle: 'Espalda', description: 'Con banda' }, expect.any(Object));
-  expect(screen.getByLabelText('Nombre del ejercicio')).toHaveValue(''); expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeInTheDocument();
-  await waitFor(() => expect(api.exercises).toHaveBeenCalledTimes(2));
-});
-it('edits the same catalog exercise and refreshes definitions and routines', async () => {
-  const { api } = renderPanel(); await screen.findByText('Fuerza'); await startEditing(); openCatalog();
-  const catalog = within(screen.getByText('Administrar ejercicios').closest('details')!);
-  fireEvent.click(within(catalog.getByText('Sentadilla · Piernas').closest('li')!).getByRole('button', { name: 'Editar' }));
-  expect(screen.getByLabelText('Nombre del ejercicio')).toHaveValue('Sentadilla'); fillCatalog();
-  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios del ejercicio' })); await screen.findByText('Ejercicio actualizado correctamente.');
-  expect(api.updateExercise).toHaveBeenCalledWith('squat', { name: 'Remo', primaryMuscle: 'Espalda', description: 'Con banda' }, expect.any(Object));
-  await waitFor(() => { expect(api.list).toHaveBeenCalledTimes(2); expect(api.exercises).toHaveBeenCalledTimes(2); });
-});
-it('retires directly when no active routine is affected', async () => {
-  const { api } = renderPanel(); await screen.findByText('Fuerza'); await startEditing(); openCatalog();
-  fireEvent.click(screen.getAllByRole('button', { name: 'Retirar' })[0]!); await screen.findByText('Ejercicio retirado correctamente.');
-  expect(api.retireExercise).toHaveBeenCalledWith('squat', { confirmActiveRoutineImpact: false }, expect.any(Object));
-  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-  await waitFor(() => { expect(api.list).toHaveBeenCalledTimes(2); expect(api.exercises).toHaveBeenCalledTimes(2); });
-});
-it('shows distinct active routine impact and waits for explicit retirement confirmation', async () => {
-  const { api } = renderPanel(); api.retireExercise.mockRejectedValueOnce(Object.assign(new Error('Confirmación requerida'), { code: 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED', details: { activeRoutines: 2 } }));
-  await screen.findByText('Fuerza'); await startEditing(); openCatalog(); fireEvent.click(screen.getAllByRole('button', { name: 'Retirar' })[0]!);
-  expect(await screen.findByRole('alertdialog')).toHaveTextContent('Este ejercicio se utiliza en 2 Rutinas activas. Si lo retirás, se quitará de esas Rutinas. Las Rutinas históricas no se modificarán.');
-  expect(api.retireExercise).toHaveBeenCalledTimes(1); expect(api.list).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole('button', { name: 'Confirmar retiro' })); await screen.findByText('Ejercicio retirado correctamente.');
-  expect(api.retireExercise).toHaveBeenLastCalledWith('squat', { confirmActiveRoutineImpact: true }, expect.any(Object));
-});
-it('keeps catalog input and reports a creation error', async () => {
-  const { api } = renderPanel(); api.createExercise.mockRejectedValue(new Error('Ejercicio duplicado'));
-  await screen.findByText('Fuerza'); await startEditing(); openCatalog(); fillCatalog(); fireEvent.click(within(screen.getByText('Administrar ejercicios').closest('details')!).getByRole('button', { name: 'Nuevo ejercicio' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('Ejercicio duplicado'); expect(screen.getByLabelText('Nombre del ejercicio')).toHaveValue('Remo');
-  expect(screen.queryByText('Ejercicio creado correctamente.')).not.toBeInTheDocument(); expect(api.exercises).toHaveBeenCalledTimes(1);
-});
 it('allows read-only users to see active and historical routines without management or catalog requests', async () => {
   const { api } = renderPanel([routine, { ...routine, id: 'old', version: 1, status: 'HISTORICAL' }], false);
   await screen.findAllByText('Fuerza'); fireEvent.click(screen.getByText('Rutinas históricas (1)'));
@@ -250,69 +204,30 @@ async function startNewRoutine() {
   await waitFor(() => expect(screen.getByRole('button', { name: 'Crear desde cero' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Crear desde cero' }));
 }
-function fillInline() {
-  fireEvent.click(catalog().getByRole('button', { name: '+ Crear nuevo ejercicio' }));
-  change(catalog(), 'Nombre del ejercicio', 'Remo'); change(catalog(), 'Músculo principal (opcional)', 'Espalda'); change(catalog(), 'Descripción del ejercicio', 'Con banda');
-}
 it('searches all catalog fields with normalized words and adds only active definitions without restricting duplicates', async () => {
   renderPanel([], true, async () => [...definitions.map(item => ({ ...item, description: item.id === 'squat' ? 'Fuerza para fútbol' : null })), { id: 'retired', name: 'Plancha retirada', isActive: false }]); await startNewRoutine();
+  change(catalog(), 'Buscar ejercicio', 'Plancha');
   await catalog().findByRole('button', { name: 'Agregar Plancha' });
-  change(catalog(), 'Buscar un ejercicio en el catálogo', 'pLaNcHa');
+  change(catalog(), 'Buscar ejercicio', 'pLaNcHa');
   expect(catalog().queryByRole('button', { name: 'Agregar Sentadilla' })).not.toBeInTheDocument();
   expect(catalog().queryByRole('button', { name: 'Agregar Plancha retirada' })).not.toBeInTheDocument();
-  await add(day(1), 'plank'); expect(row().getByLabelText('Ejercicio')).toHaveValue('plank');
-  change(catalog(), 'Buscar un ejercicio en el catálogo', 'PIERNAS');
+  await add(day(1), 'plank'); expect(row().getByText('Plancha')).toBeInTheDocument();
+  change(catalog(), 'Buscar ejercicio', 'PIERNAS');
   expect(catalog().getByRole('button', { name: 'Agregar Sentadilla' })).toBeInTheDocument();
-  change(catalog(), 'Buscar un ejercicio en el catálogo', 'SENTADILLA futbol');
+  change(catalog(), 'Buscar ejercicio', 'SENTADILLA futbol');
   expect(catalog().getByRole('button', { name: 'Agregar Sentadilla' })).toBeInTheDocument();
   expect(catalog().queryByRole('button', { name: 'Agregar Plancha' })).not.toBeInTheDocument();
   expect(catalog().getByRole('searchbox')).toHaveAttribute('placeholder', 'Buscar por nombre, músculo o descripción');
-  change(catalog(), 'Buscar un ejercicio en el catálogo', 'futbol tenis');
+  change(catalog(), 'Buscar ejercicio', 'futbol tenis');
   expect(catalog().getByText('No hay ejercicios que coincidan.')).toBeInTheDocument();
-  change(catalog(), 'Buscar un ejercicio en el catálogo', ''); await add(day(1), 'plank');
+  change(catalog(), 'Buscar ejercicio', ''); await add(day(1), 'plank');
   expect(day(1).getAllByRole('listitem')).toHaveLength(2);
 });
-it('creates and immediately adds an exercise while preserving all local days and fields', async () => {
-  const { api, client } = renderPanel(); await startEditing();
-  change(day(1), 'Nombre del día 1', 'Fuerza editada'); change(row(), 'Series', '7');
-  fireEvent.click(screen.getByRole('button', { name: '+ Agregar día' })); day(1);
-  fillInline(); fireEvent.click(catalog().getByRole('button', { name: 'Crear y agregar' }));
-  await waitFor(() => expect(day(1).getAllByRole('listitem')).toHaveLength(2));
-  expect(row(1).getByLabelText('Ejercicio')).toHaveValue('row'); expect(row(1).getByRole('option', { name: 'Remo · Espalda' })).toBeInTheDocument();
-  expect(api.createExercise).toHaveBeenCalledExactlyOnceWith({ name: 'Remo', primaryMuscle: 'Espalda', description: 'Con banda' }, expect.any(Object));
-  expect(day(1).getByLabelText('Nombre del día 1')).toHaveValue('Fuerza editada'); expect(row().getByLabelText('Series')).toHaveValue('7');
-  expect(catalog().queryByRole('group', { name: 'Nuevo ejercicio del catálogo' })).not.toBeInTheDocument();
-  day(2); expect(row().getByLabelText('Valor')).toHaveValue('45 s'); day(3); expect(day(3).getByLabelText('Nombre del día 3')).toHaveValue('Día 3');
-  expect(api.replace).not.toHaveBeenCalled(); expect(api.create).not.toHaveBeenCalled();
-  expect(client.getQueryData(['sala-exercise-definitions'])).toBeDefined();
-  fireEvent.click(catalog().getByRole('button', { name: '+ Crear nuevo ejercicio' })); expect(catalog().getByLabelText('Nombre del ejercicio')).toHaveValue('');
-});
-it('retains inline creation input on failure, adds no false row and allows retry', async () => {
-  const { api } = renderPanel(); await startEditing(); api.createExercise.mockRejectedValueOnce(new Error('No se pudo crear el ejercicio'));
-  fillInline(); fireEvent.click(catalog().getByRole('button', { name: 'Crear y agregar' }));
-  expect(await catalog().findByRole('alert')).toHaveTextContent('No se pudo crear el ejercicio');
-  for (const [label, value] of [['Nombre del ejercicio', 'Remo'], ['Músculo principal (opcional)', 'Espalda'], ['Descripción del ejercicio', 'Con banda']]) expect(catalog().getByLabelText(label!)).toHaveValue(value);
-  expect(day(1).getAllByRole('listitem')).toHaveLength(1); expect(api.exercises).toHaveBeenCalledTimes(1);
-  fireEvent.click(catalog().getByRole('button', { name: 'Crear y agregar' }));
-  await waitFor(() => expect(day(1).getAllByRole('listitem')).toHaveLength(2));
-});
-it('requires a name and allows creating with no muscle via Enter while catalog refetch is pending', async () => {
-  let finishRefetch!: (value: typeof definitions) => void;
-  const { api } = renderPanel([], true, async () => []); await startNewRoutine();
-  expect(await catalog().findByText('Todavía no hay ejercicios en el catálogo.')).toBeInTheDocument();
-  api.exercises.mockImplementation(() => new Promise(resolve => { finishRefetch = resolve; }));
-  fireEvent.click(catalog().getByRole('button', { name: '+ Crear nuevo ejercicio' })); fireEvent.click(catalog().getByRole('button', { name: 'Crear y agregar' }));
-  expect(await catalog().findByRole('alert')).toHaveTextContent('El Nombre es obligatorio.');
-  change(catalog(), 'Nombre del ejercicio', 'Remo'); fireEvent.keyDown(catalog().getByLabelText('Nombre del ejercicio'), { key: 'Enter' });
-  await waitFor(() => expect(row().getByLabelText('Ejercicio')).toHaveValue('row'));
-  expect(api.createExercise).toHaveBeenCalledExactlyOnceWith({ name: 'Remo', primaryMuscle: '', description: '' }, expect.any(Object));
-  finishRefetch(definitions); await waitFor(() => expect(row().getByLabelText('Ejercicio')).toHaveValue('row'));
-});
-it('shows catalog failure while keeping quick creation available', async () => {
+it('reports catalog failure without exposing quick creation', async () => {
   renderPanel([], true, async () => { throw new Error('API unavailable'); }); await startNewRoutine();
   expect(await catalog().findByText('No se pudo cargar el catálogo de ejercicios.')).toBeInTheDocument();
-  expect(catalog().getByLabelText('Buscar un ejercicio en el catálogo')).toBeDisabled();
-  expect(catalog().getByRole('button', { name: '+ Crear nuevo ejercicio' })).toBeEnabled();
+  expect(catalog().getByRole('alert')).toHaveTextContent('No se pudo cargar');
+  expect(catalog().queryByRole('button', { name: '+ Crear nuevo ejercicio' })).not.toBeInTheDocument();
   expect(catalog().queryByText(/Todavía no hay ejercicios/)).not.toBeInTheDocument();
 });
 it('shows catalog loading without a misleading empty state', async () => {
@@ -371,7 +286,7 @@ it('personalizes every template day without changing the original template', asy
   expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument();
   fireEvent.click(within(screen.getByRole('region', { name: 'Vista previa de preestablecida' })).getByRole('button', { name: 'Editar' }));
   expect(screen.getByText('Personalizar rutina')).toBeInTheDocument();
-  expect(screen.getByText('Administrar ejercicios')).toBeInTheDocument();
+  expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument();
   expect(day(1).getByLabelText('Nombre del día 1')).toHaveValue('Modelo fuerza');
   expect(day(2).getByLabelText('Nombre del día 2')).toHaveValue('Modelo core');
   change(day(1), 'Series', '3'); change(day(1), 'Valor', '8');
@@ -397,8 +312,8 @@ it('blocks direct assignment of retired entries but permits replacement in the e
   expect(screen.getByRole('button', { name: 'Asignar rutina' })).toBeDisabled();
   expect(screen.getByText('Esta rutina contiene ejercicios que ya no están disponibles. Editala para reemplazarlos o quitarlos.')).toBeInTheDocument();
   fireEvent.click(within(screen.getByRole('region', { name: 'Vista previa de preestablecida' })).getByRole('button', { name: 'Editar' }));
-  change(day(1), 'Ejercicio', 'plank');
-  expect(row().getByLabelText('Ejercicio')).toHaveValue('plank'); expect(row().getByLabelText('Series')).toHaveValue('4');
+  fireEvent.click(row().getByRole('button', { name: /^Quitar/ })); await add(day(1), 'plank');
+  expect(row().getByText('Plancha')).toBeInTheDocument(); change(row(), 'Series', '4');
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
   await waitFor(() => expect(api.create).toHaveBeenCalled());
   expect(api.create.mock.calls[0]![0].days[0]?.exercises[0]?.exerciseDefinitionId).toBe('plank');
@@ -415,41 +330,16 @@ it('does not request templates for read-only users', async () => {
   expect(screen.queryByRole('button', { name: 'Usar preestablecida' })).not.toBeInTheDocument(); expect(api.templates).not.toHaveBeenCalled();
 });
 
-it('shows exercises without muscle and permits clearing the muscle in the catalog', async () => {
-  const { api } = renderPanel([], true, async () => [{ id: 'row', name: 'Plancha', primaryMuscle: null, isActive: true }, ...definitions]);
-  await startNewRoutine();
-  fireEvent.click((await catalog().findAllByRole('button', { name: 'Agregar Plancha' }))[0]!); expect(row().getByLabelText('Ejercicio')).toHaveValue('row'); expect(row().getByRole('option', { name: 'Plancha' })).toHaveTextContent(/^Plancha$/);
-  fireEvent.click(screen.getByText('Administrar ejercicios'));
-  const catalogRow = screen.getByText('Sentadilla · Piernas', { selector: 'span' }).closest('li')!;
-  fireEvent.click(within(catalogRow).getByRole('button', { name: 'Editar' }));
-  fireEvent.change(screen.getByLabelText('Músculo principal (opcional)'), { target: { value: '' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios del ejercicio' }));
-  await waitFor(() => expect(api.updateExercise).toHaveBeenCalledWith('squat', { name: 'Sentadilla', primaryMuscle: '', description: '' }, expect.any(Object)));
-});
-
-it('keeps a pending inline creation in its originating day and preserves edits made while waiting', async () => {
-  const { api } = renderPanel(); await startEditing();
-  let finishCreation!: (value: typeof definitions[number]) => void;
-  api.createExercise.mockImplementation(() => new Promise(resolve => { finishCreation = resolve; }));
-  fillInline(); fireEvent.click(catalog().getByRole('button', { name: 'Crear y agregar' }));
-  await waitFor(() => expect(api.createExercise).toHaveBeenCalledTimes(1));
-  day(2); change(row(), 'Series', '6');
-  finishCreation({ id: 'row', name: 'Remo', primaryMuscle: 'Espalda', isActive: true });
-  await waitFor(() => expect(catalog().queryByRole('group')).not.toBeInTheDocument());
-  expect(screen.getByRole('group', { name: 'Día 2' })).toBeInTheDocument();
-  expect(row().getByLabelText('Series')).toHaveValue('6'); expect(day(2).getAllByRole('listitem')).toHaveLength(1);
-  day(1); expect(day(1).getAllByRole('listitem')).toHaveLength(2); expect(row(1).getByLabelText('Ejercicio')).toHaveValue('row');
-});
 it('retains an unavailable selection when the catalog refresh omits its definition', async () => {
   const { api, client } = renderPanel([{ ...routine, days: [{ position: 1, exercises: [{ exerciseDefinitionId: 'retired', series: '3' }] }] }]);
   await startEditing();
-  expect(row().getByRole('option', { name: 'Ejercicio retirado · No disponible' })).toBeDisabled();
-  expect(row().getByLabelText('Ejercicio')).toHaveValue('retired');
+  expect(row().queryByRole('combobox', { name: 'Ejercicio' })).not.toBeInTheDocument();
+  expect(row().getByText('Ejercicio retirado · No disponible')).toBeInTheDocument();
   api.exercises.mockResolvedValue([definitions[1]!]); await client.invalidateQueries({ queryKey: ['sala-exercise-definitions'] });
   await waitFor(() => expect(row().queryByRole('option', { name: 'Sentadilla · Piernas' })).not.toBeInTheDocument());
-  expect(row().getByLabelText('Ejercicio')).toHaveValue('retired');
+  expect(row().getByText('Ejercicio retirado · No disponible')).toBeInTheDocument();
   expect(catalog().queryByRole('button', { name: /Agregar Ejercicio retirado/ })).not.toBeInTheDocument();
-  change(row(), 'Ejercicio', 'plank'); expect(row().getByLabelText('Ejercicio')).toHaveValue('plank');
+  fireEvent.click(row().getByRole('button', { name: /^Quitar/ })); await add(day(1), 'plank'); expect(row().getByText('Plancha')).toBeInTheDocument();
 });
 it('preserves an empty time selection across tabs and keeps it out of the payload', async () => {
   const { api } = renderPanel(); await startEditing(); change(row(), 'Tipo', 'duration');

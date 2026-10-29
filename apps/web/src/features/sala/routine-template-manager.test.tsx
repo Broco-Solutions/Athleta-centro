@@ -13,7 +13,7 @@ const template = { id: 'template', name: 'Modelo fuerza', days: [
 function renderManager(rows = [template], catalogDefinitions: Awaited<ReturnType<RoutineTemplateApi['exercises']>> = definitions) {
   const api = {
     list: vi.fn<RoutineTemplateApi['list']>().mockResolvedValue(rows), create: vi.fn<RoutineTemplateApi['create']>().mockResolvedValue({}), update: vi.fn<RoutineTemplateApi['update']>().mockResolvedValue({}), delete: vi.fn<RoutineTemplateApi['delete']>().mockResolvedValue({}),
-    exercises: vi.fn<RoutineTemplateApi['exercises']>().mockResolvedValue(catalogDefinitions), createExercise: vi.fn<RoutineTemplateApi['createExercise']>().mockResolvedValue({ id: 'new', name: 'Remo', primaryMuscle: 'Espalda', isActive: true }),
+    exercises: vi.fn<RoutineTemplateApi['exercises']>().mockResolvedValue(catalogDefinitions),
   };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(<QueryClientProvider client={client}><RoutineTemplateManager csrfToken="csrf" api={api}/></QueryClientProvider>);
@@ -21,7 +21,7 @@ function renderManager(rows = [template], catalogDefinitions: Awaited<ReturnType
 }
 const day = (index: number) => { fireEvent.click(screen.getByRole('button', { name: new RegExp(`^Día ${index}:`) })); return within(screen.getByRole('group', { name: `Día ${index}` })); };
 const change = (scope: ReturnType<typeof within>, label: string, value: string) => fireEvent.change(scope.getByLabelText(label), { target: { value } });
-async function add(index: number, id: string) { day(index); fireEvent.click(await screen.findByRole('button', { name: `Agregar ${id === 'squat' ? 'Sentadilla' : 'Plancha'}` })); }
+async function add(index: number, id: string) { day(index); change(catalog(), 'Buscar ejercicio', id === 'squat' ? 'Sentadilla' : 'Plancha'); fireEvent.click(await screen.findByRole('button', { name: `Agregar ${id === 'squat' ? 'Sentadilla' : 'Plancha'}` })); }
 const catalog = () => within(screen.getByRole('region', { name: 'Agregar ejercicios' }));
 const row = (index = 0) => within(screen.getByRole('group', { name: /^Día \d+$/ }).querySelectorAll('li')[index]!);
 afterEach(cleanup);
@@ -29,7 +29,7 @@ it('uses the shared description and accent-insensitive search while preserving t
   renderManager([template], [...definitions.map(item => ({ ...item, description: item.id === 'squat' ? 'Fuerza para fútbol' : null })), { id: 'retired', name: 'Sentadilla retirada', description: 'Fútbol', isActive: false }]);
   fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
   change(row(), 'Series', '7');
-  change(catalog(), 'Buscar un ejercicio en el catálogo', 'SENTADILLA futbol');
+  change(catalog(), 'Buscar ejercicio', 'SENTADILLA futbol');
   expect(catalog().getByRole('button', { name: 'Agregar Sentadilla' })).toBeInTheDocument();
   expect(catalog().queryByRole('button', { name: 'Agregar Plancha' })).not.toBeInTheDocument();
   expect(catalog().queryByRole('button', { name: 'Agregar Sentadilla retirada' })).not.toBeInTheDocument();
@@ -46,6 +46,7 @@ it('lists ordered days and exercises with optional fields', async () => {
 });
 it('creates several days and exercises, including optional content and an exercise-only entry', async () => {
   const { api } = renderManager([]); fireEvent.click(screen.getByRole('button', { name: 'Nueva rutina preestablecida' }));
+  change(catalog(), 'Buscar ejercicio', 'Sentadilla');
   await catalog().findByRole('button', { name: 'Agregar Sentadilla' });
   fireEvent.change(screen.getByLabelText('Nombre de la preestablecida'), { target: { value: '  Modelo nuevo  ' } });
   await add(1, 'squat');
@@ -81,28 +82,11 @@ it('requires confirmation before deletion and supports cancellation', async () =
   fireEvent.click(screen.getByRole('button', { name: 'Eliminar' })); fireEvent.click(screen.getByRole('button', { name: 'Confirmar eliminación' }));
   await screen.findByText('Rutina preestablecida eliminada correctamente.'); expect(api.delete).toHaveBeenCalledExactlyOnceWith('template', expect.any(Object)); await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2));
 });
-it('creates and directly adds inline while preserving template name, entries and all days', async () => {
-  const { api } = renderManager([]); fireEvent.click(screen.getByRole('button', { name: 'Nueva rutina preestablecida' }));
-  await add(1, 'squat'); change(row(), 'Series', '3'); change(day(1), 'Nombre del día 1', 'Fuerza nueva');
-  fireEvent.change(screen.getByLabelText('Nombre de la preestablecida'), { target: { value: 'Con remo' } });
-  fireEvent.click(screen.getByRole('button', { name: '+ Agregar día' }));
-  expect(screen.queryByRole('group', { name: 'Día 1' })).not.toBeInTheDocument();
-  expect(screen.getByRole('group', { name: 'Día 2' })).toBeInTheDocument(); day(1);
-  fireEvent.click(catalog().getByRole('button', { name: '+ Crear nuevo ejercicio' }));
-  change(catalog(), 'Nombre del ejercicio', 'Remo'); change(catalog(), 'Músculo principal (opcional)', 'Espalda'); change(catalog(), 'Descripción del ejercicio', 'Con banda');
-  fireEvent.click(catalog().getByRole('button', { name: 'Crear y agregar' }));
-  await waitFor(() => expect(row(1).getByLabelText('Ejercicio')).toHaveValue('new'));
-  expect(api.createExercise).toHaveBeenCalledWith({ name: 'Remo', primaryMuscle: 'Espalda', description: 'Con banda' }, expect.any(Object));
-  expect(row().getByLabelText('Series')).toHaveValue('3'); expect(day(1).getByLabelText('Nombre del día 1')).toHaveValue('Fuerza nueva');
-  expect(catalog().queryByRole('group')).not.toBeInTheDocument();
-  expect(day(2).getByLabelText('Nombre del día 2')).toHaveValue('Día 2');
-  expect(screen.getByLabelText('Nombre de la preestablecida')).toHaveValue('Con remo');
-  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' })); await waitFor(() => expect(api.create).toHaveBeenCalled());
-  expect(api.create.mock.calls[0]![0].days).toHaveLength(2);
-  expect(api.create.mock.calls[0]![0].days[0]?.exercises).toEqual([
-    { exerciseDefinitionId: 'squat', series: '3', repetitions: null, duration: null, load: null, rest: null, notes: null },
-    { exerciseDefinitionId: 'new', series: null, repetitions: null, duration: null, load: null, rest: null, notes: null },
-  ]);
+it('keeps catalog management outside template editing', async () => {
+  renderManager(); fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  expect(screen.queryByRole('button', { name: '+ Crear nuevo ejercicio' })).not.toBeInTheDocument();
+  expect(catalog().getByRole('searchbox')).toBeInTheDocument();
+  expect(row().queryByRole('combobox', { name: 'Ejercicio' })).not.toBeInTheDocument();
 });
 it('cancels template editing without persistence or source mutation and places both actions at the end', async () => {
   const { api } = renderManager(); const original = structuredClone(template);
@@ -144,21 +128,6 @@ it.each(['create', 'update', 'delete'])('reports real HTTP errors without claimi
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
   }
   expect(await screen.findByRole('alert')).toHaveTextContent('HTTP rechazado'); expect(screen.queryByText(/correctamente/)).not.toBeInTheDocument(); expect(listCalls).toBe(1);
-});
-
-it('creates and selects a name-only exercise without an empty muscle separator', async () => {
-  const { api } = renderManager([]);
-  fireEvent.click(await screen.findByRole('button', { name: 'Nueva rutina preestablecida' }));
-  const created = { id: 'new-plank', name: 'Plancha nueva', primaryMuscle: null, description: null, isActive: true };
-  api.createExercise.mockResolvedValue(created);
-  api.exercises.mockResolvedValue([...definitions, created]);
-  fireEvent.click(catalog().getByRole('button', { name: '+ Crear nuevo ejercicio' }));
-  change(catalog(), 'Nombre del ejercicio', 'Plancha nueva');
-  fireEvent.click(catalog().getByRole('button', { name: 'Crear y agregar' }));
-  const option = await day(1).findByRole('option', { name: 'Plancha nueva' });
-  expect(option).toHaveTextContent(/^Plancha nueva$/);
-  expect(day(1).getByRole('option', { name: 'Sentadilla · Piernas' })).toBeInTheDocument();
-  expect(api.createExercise).toHaveBeenCalledWith({ name: 'Plancha nueva', primaryMuscle: '', description: '' }, expect.any(Object));
 });
 
 it('filters the template list, keeps the selected detail clear and duplicates through the existing create operation', async () => {

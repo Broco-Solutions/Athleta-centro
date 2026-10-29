@@ -1,12 +1,10 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { exerciseDefinitionSchema as definitionSchema, filterExerciseDefinitions } from './exercise-catalog';
+import { filterExerciseDefinitions } from './exercise-catalog';
 import { Button } from '@athleta/ui';
-import type { ExerciseDefinitionDto, RoutineDayDto } from '@athleta/api-client';
+import type { RoutineDayDto } from '@athleta/api-client';
 
 export type RoutineExercise = {
   id?: string;
@@ -22,7 +20,7 @@ export type RoutineExercise = {
   notes?: string | null | undefined;
 };
 export type RoutineDay = { id?: string; position: number; name?: string | null | undefined; exercises: RoutineExercise[] };
-export type ExerciseDefinition = { id: string; name: string; primaryMuscle?: string | null; description?: string | null | undefined; isActive: boolean };
+export type ExerciseDefinition = { id: string; name: string; movementPatternId?: string | null; primaryMuscle?: string | null; description?: string | null | undefined; isActive: boolean };
 export type RoutineTemplate = { id: string; name: string; days: RoutineDay[] };
 
 const exclusiveMessage = 'Elegí Repeticiones o Tiempo, no ambos.';
@@ -56,7 +54,6 @@ type ExerciseCatalogProps = {
   definitions: ExerciseDefinition[];
   catalogLoading: boolean;
   catalogError: boolean;
-  onCreateExercise: (input: ExerciseDefinitionDto) => Promise<ExerciseDefinition>;
 };
 
 function ExerciseRow({ exercise, definitions, onChange, onRemove, disabled }: {
@@ -67,10 +64,7 @@ function ExerciseRow({ exercise, definitions, onChange, onRemove, disabled }: {
   const selected = definitions.find((item) => item.id === exercise.exerciseDefinitionId);
   return <li className="space-y-2 p-3">
     <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,.7fr)_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
-      <label className="min-w-0 text-sm">Ejercicio<select className={fieldClass} value={exercise.exerciseDefinitionId} disabled={disabled} onChange={(event) => onChange({ ...exercise, exerciseDefinitionId: event.target.value })}>
-        {!selected?.isActive ? <option value={exercise.exerciseDefinitionId} disabled>{selected?.name ?? 'Ejercicio retirado'} · No disponible</option> : null}
-        {definitions.filter((item) => item.isActive).map((item) => <option key={item.id} value={item.id}>{[item.name, item.primaryMuscle].filter(Boolean).join(' · ')}</option>)}
-      </select></label>
+      <div className="min-w-0 text-sm">Ejercicio<p className="font-medium">{selected?.name ?? 'Ejercicio retirado'}{!selected?.isActive ? ' · No disponible' : ''}</p></div>
       <label className="min-w-0 text-sm">Series<input className={fieldClass} value={exercise.series ?? ''} maxLength={80} disabled={disabled} onChange={(event) => onChange({ ...exercise, series: event.target.value })}/></label>
       <div className="grid min-w-0 gap-2 sm:grid-cols-2"><p className="hidden text-sm md:col-span-2 md:block">Repeticiones o tiempo</p><label className="min-w-0 text-sm"><span className="md:sr-only">Tipo</span><select className={fieldClass} value={mode} disabled={disabled} onChange={(event) => {
         const next = event.target.value === 'duration' ? 'duration' : 'repetitions';
@@ -95,61 +89,28 @@ export function DayEditor({ day, index, definitions, onChange, onRemove, canRemo
   </fieldset>;
 }
 
-function ExerciseCatalog({ definitions, catalogLoading, catalogError, onCreateExercise, onAdd, dayName, disabled }: ExerciseCatalogProps & {
-  onAdd: (definition: ExerciseDefinition) => void; dayName: string; disabled: boolean;
-}): React.JSX.Element {
+function ExerciseCatalog({ definitions, catalogLoading, catalogError, disabled, onAdd }: ExerciseCatalogProps & { disabled: boolean; dayName: string; onAdd: (definition: ExerciseDefinition) => void }): React.JSX.Element {
   const [search, setSearch] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [validationError, setValidationError] = useState<string | null>(null);
-  const form = useForm<z.infer<typeof definitionSchema>>({ defaultValues: { name: '', primaryMuscle: '', description: '' } });
-  const create = useMutation({ mutationFn: onCreateExercise, onSuccess: () => {
-    form.reset({ name: '', primaryMuscle: '', description: '' }); setCreating(false); setValidationError(null);
-  } });
-  const submit = form.handleSubmit((values) => {
-    if (disabled || create.isPending) return;
-    const parsed = definitionSchema.safeParse(values);
-    if (!parsed.success) { setValidationError(parsed.error.issues[0]?.message ?? 'Revisá los datos del ejercicio.'); return; }
-    setValidationError(null); create.mutate(parsed.data);
-  });
-  const active = definitions.filter((item) => item.isActive === true);
-  const results = filterExerciseDefinitions(definitions, search);
+  const results = search.trim() ? filterExerciseDefinitions(definitions, search) : [];
   return <section aria-label="Agregar ejercicios" className="rounded-lg border bg-white p-4">
-    <div className="flex flex-wrap items-center justify-between gap-3"><h4 className="font-semibold">Agregar ejercicio {/^Día \d+$/.test(dayName) ? 'al' : 'a'} {dayName}</h4><Button type="button" variant="secondary" disabled={disabled || create.isPending} onClick={() => setCreating(true)}>+ Crear nuevo ejercicio</Button></div>
-    {creating ? <fieldset aria-label="Nuevo ejercicio del catálogo" className="mt-3 grid gap-3 rounded-md border p-3" disabled={disabled || create.isPending} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void submit(); } }}>
-      <label className="text-sm">Nombre *<input aria-label="Nombre del ejercicio" className={fieldClass} maxLength={120} {...form.register('name')}/></label>
-      <label className="text-sm">Músculo principal (opcional)<input className={fieldClass} maxLength={120} {...form.register('primaryMuscle')}/></label>
-      <label className="text-sm">Descripción (opcional)<input aria-label="Descripción del ejercicio" className={fieldClass} maxLength={500} {...form.register('description')}/></label>
-      {validationError || create.error ? <p role="alert" className="text-sm text-red-700">{validationError ?? errorMessage(create.error)}</p> : null}
-      <Button type="button" disabled={disabled || create.isPending} onClick={() => void submit()}>{create.isPending ? 'Creando…' : 'Crear y agregar'}</Button>
-    </fieldset> : null}
-    <label className="mt-4 block text-sm">Buscar un ejercicio en el catálogo<input className={`${fieldClass} mt-1`} type="search" placeholder="Buscar por nombre, músculo o descripción" value={search} disabled={disabled || catalogLoading || catalogError} onChange={(event) => setSearch(event.target.value)}/></label>
-    {catalogLoading ? <p role="status" className="mt-3 text-sm text-muted-foreground">Cargando catálogo de ejercicios…</p> : catalogError ? <p role="alert" className="mt-3 text-sm text-red-700">No se pudo cargar el catálogo de ejercicios.</p> : !active.length ? <p className="mt-3 text-sm text-muted-foreground">Todavía no hay ejercicios en el catálogo.</p> : <>
-      {!results.length ? <p className="mt-3 text-sm text-muted-foreground">No hay ejercicios que coincidan.</p> : null}
-      <ul className="mt-3 grid max-h-72 gap-x-4 overflow-y-auto sm:grid-cols-2">{results.map((item) => <li key={item.id} className="flex items-center justify-between gap-2 border-b py-2 text-sm"><div className="min-w-0"><p className="font-medium">{item.name}</p>{item.primaryMuscle ? <p className="text-xs text-muted-foreground">{item.primaryMuscle}</p> : null}</div><Button type="button" variant="ghost" aria-label={`Agregar ${item.name}`} disabled={disabled} onClick={() => onAdd(item)}>+ Agregar</Button></li>)}</ul>
-    </>}
+    <label className="block text-sm">Buscar ejercicio<input type="search" className={fieldClass} value={search} disabled={disabled} placeholder="Buscar por nombre, músculo o descripción" onChange={event => setSearch(event.target.value)}/></label>
+    {catalogLoading ? <p role="status">Cargando catálogo de ejercicios…</p> : catalogError ? <p role="alert">No se pudo cargar el catálogo de ejercicios.</p> : !search.trim() ? <p>Escribí para buscar un ejercicio</p> : !results.length ? <p>No hay ejercicios que coincidan.</p> : <ul>{results.slice(0, 10).map(item => <li key={item.id} className="flex items-center justify-between gap-2 border-b py-2 text-sm"><span>{item.name}{item.primaryMuscle ? ' · ' + item.primaryMuscle : ''}</span><Button type="button" variant="ghost" disabled={disabled} aria-label={'Agregar ' + item.name} onClick={() => onAdd(item)}>+ Agregar</Button></li>)}</ul>}
+    {results.length > 10 ? <p className="text-sm">Hay más coincidencias. Afiná la búsqueda.</p> : null}
   </section>;
 }
 
-export function RoutineDaysEditor({ days, definitions, catalogLoading, catalogError, onCreateExercise, onChange, disabled }: ExerciseCatalogProps & { days: EditingDay[]; onChange: (days: EditingDay[]) => void; disabled: boolean }): React.JSX.Element {
+export function RoutineDaysEditor({ days, definitions, catalogLoading, catalogError, onChange, disabled }: ExerciseCatalogProps & { days: EditingDay[]; onChange: (days: EditingDay[]) => void; disabled: boolean }): React.JSX.Element {
   const [activeKey, setActiveKey] = useState(days[0]?.key ?? '');
   // Attach asynchronous creation to its originating day, preserving the latest draft.
   const latest = useRef({ days, onChange });
   latest.current = { days, onChange };
-  const [createdDefinitions, setCreatedDefinitions] = useState<ExerciseDefinition[]>([]);
-  const editorDefinitions = [...new Map([...definitions, ...createdDefinitions.filter((created) => !definitions.some((item) => item.id === created.id))].map((item) => [item.id, item])).values()];
+  const editorDefinitions = definitions;
   const activeIndex = Math.max(0, days.findIndex((day) => day.key === activeKey));
   const activeDay = days[activeIndex];
   const changeDay = (updated: EditingDay) => onChange(days.map((day) => day.key === updated.key ? updated : day));
   const addExercise = (key: string, definition: ExerciseDefinition) => {
     const current = latest.current;
     current.onChange(current.days.map((day) => day.key === key ? { ...day, exercises: [...day.exercises, { ...emptyExercise(), exerciseDefinitionId: definition.id }] } : day));
-  };
-  const createExercise = async (input: ExerciseDefinitionDto) => {
-    const key = activeDay?.key;
-    const created = await onCreateExercise(input);
-    setCreatedDefinitions((current) => [...current.filter((item) => item.id !== created.id), created]);
-    if (key) addExercise(key, created);
-    return created;
   };
   const removeDay = () => {
     if (!activeDay || days.length <= 1) return;
@@ -161,7 +122,7 @@ export function RoutineDaysEditor({ days, definitions, catalogLoading, catalogEr
     <nav aria-label="Días de la rutina" className="flex items-center gap-2 overflow-x-auto pb-1">{days.map((day, index) => <button key={day.key} type="button" disabled={disabled} aria-label={`Día ${index + 1}: ${day.name || `Día ${index + 1}`}`} aria-pressed={activeDay?.key === day.key} onClick={() => setActiveKey(day.key)} className={`min-h-11 shrink-0 border-b-2 px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${activeDay?.key === day.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:bg-surface-muted'}`}>{day.name || `Día ${index + 1}`} <span className="ml-1 text-xs">{day.exercises.length}</span></button>)}<Button type="button" variant="ghost" className="shrink-0" disabled={disabled} onClick={addDay}>+ Agregar día</Button></nav>
     {activeDay ? <>
       <DayEditor key={activeDay.key} day={activeDay} index={activeIndex} definitions={editorDefinitions} disabled={disabled} canRemove={days.length > 1} onRemove={removeDay} onChange={changeDay}/>
-      <ExerciseCatalog definitions={editorDefinitions} catalogLoading={catalogLoading} catalogError={catalogError} onCreateExercise={createExercise} disabled={disabled} dayName={activeDay.name.trim() || `Día ${activeIndex + 1}`} onAdd={(definition) => addExercise(activeDay.key, definition)}/>
+      <ExerciseCatalog definitions={editorDefinitions} catalogLoading={catalogLoading} catalogError={catalogError} disabled={disabled} dayName={activeDay.name.trim() || `Día ${activeIndex + 1}`} onAdd={(definition) => addExercise(activeDay.key, definition)}/>
     </> : null}
   </section>;
 }

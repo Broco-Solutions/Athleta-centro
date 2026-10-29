@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Button } from '@athleta/ui';
-import { createSalaRoutineTemplate, updateSalaRoutineTemplate, deleteSalaRoutineTemplate, listSalaRoutineTemplates, listSalaExerciseDefinitions, createSalaExerciseDefinition, type RoutineTemplateDto, type ExerciseDefinitionDto } from '@athleta/api-client';
+import { createSalaRoutineTemplate, updateSalaRoutineTemplate, deleteSalaRoutineTemplate, listSalaRoutineTemplates, listSalaExerciseDefinitions, type RoutineTemplateDto } from '@athleta/api-client';
 import { RoutineDaysEditor, RoutineContentSummary, draftToRoutineDays, routineDaysToDraft, newDay, fieldClass, errorMessage, type EditingDay, type RoutineTemplate, type ExerciseDefinition } from './routine-editor';
 
 export type RoutineTemplateApi = {
@@ -14,7 +14,7 @@ export type RoutineTemplateApi = {
   update: (id: string, input: RoutineTemplateDto, options: RequestInit) => Promise<unknown>;
   delete: (id: string, options: RequestInit) => Promise<unknown>;
   exercises: (options: RequestInit) => Promise<ExerciseDefinition[]>;
-  createExercise: (input: ExerciseDefinitionDto, options: RequestInit) => Promise<ExerciseDefinition>;
+
 };
 
 function checkedBody(response: { status: number; data: unknown }): unknown {
@@ -32,11 +32,7 @@ const templateApi: RoutineTemplateApi = {
   update: async (id, input, options) => checkedBody(await updateSalaRoutineTemplate(id, input, options)),
   delete: async (id, options) => checkedBody(await deleteSalaRoutineTemplate(id, options)),
   exercises: async (options) => checkedData(await listSalaExerciseDefinitions(options)),
-  createExercise: async (input, options) => {
-    const created = checkedData(await createSalaExerciseDefinition(input, options));
-    if (!created?.id || typeof created.name !== 'string' || typeof created.isActive !== 'boolean') throw new Error('La respuesta no contiene el ejercicio creado.');
-    return created;
-  },
+
 };
 const nameSchema = z.string().trim().min(1, 'El Nombre es obligatorio.').max(120, 'El Nombre admite hasta 120 caracteres.');
 
@@ -63,13 +59,6 @@ export function RoutineTemplateManager({ csrfToken, api = templateApi }: { csrfT
     mutationFn: (id: string) => api.delete(id, options),
     onSuccess: async () => { setDeleting(null); setFeedback('Rutina preestablecida eliminada correctamente.'); await refresh(); },
   });
-  const createInlineExercise = async (input: ExerciseDefinitionDto): Promise<ExerciseDefinition> => {
-    const created = await api.createExercise(input, options);
-    await client.cancelQueries({ queryKey: ['sala-exercise-definitions'] });
-    client.setQueryData<ExerciseDefinition[]>(['sala-exercise-definitions'], (current = []) => [...current.filter((item) => item.id !== created.id), created]);
-    void client.invalidateQueries({ queryKey: ['sala-exercise-definitions'] });
-    return created;
-  };
   const startEditing = (template: RoutineTemplate | null, duplicate = false) => {
     setSource(duplicate ? null : template); setDays(template ? routineDaysToDraft(template.days) : [newDay()]); reset({ name: duplicate && template ? `Copia de ${template.name}`.slice(0, 120) : template?.name ?? '' });
     setEditing(true); setFeedback(null); setValidationError(null); save.reset();
@@ -95,7 +84,7 @@ export function RoutineTemplateManager({ csrfToken, api = templateApi }: { csrfT
     {editing ? <div className="rounded-md border bg-white p-4">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">{source ? 'Editar rutina preestablecida' : 'Nueva rutina preestablecida'}</h2><p className="mt-1 text-sm text-muted-foreground">Organizá los días y agregá los ejercicios del plan.</p></div></div>
       <div className="mt-4 grid gap-3 rounded-md bg-surface-muted p-4 sm:grid-cols-[minmax(16rem,1fr)_auto] sm:items-end"><label className="text-sm font-medium">Nombre de la rutina<input aria-label="Nombre de la preestablecida" className={`${fieldClass} mt-1`} maxLength={120} {...register('name')} disabled={save.isPending}/></label><p className="text-sm text-muted-foreground">{days.length} {days.length === 1 ? 'día' : 'días'} · {days.reduce((count, day) => count + day.exercises.length, 0)} ejercicios</p></div>
-      <RoutineDaysEditor days={days} definitions={editorDefinitions} catalogLoading={definitions.isLoading} catalogError={definitions.isError} onCreateExercise={createInlineExercise} disabled={save.isPending} onChange={setDays}/>
+      <RoutineDaysEditor days={days} definitions={editorDefinitions} catalogLoading={definitions.isLoading} catalogError={definitions.isError} disabled={save.isPending} onChange={setDays}/>
       {validationError || save.error ? <p role="alert" className="mt-3 text-sm text-red-700">{validationError ?? errorMessage(save.error)}</p> : null}
       <p className="mt-4 text-sm text-muted-foreground">Los cambios se aplican al guardar.</p><div className="mt-4 flex flex-wrap justify-end gap-2"><Button type="button" variant="secondary" disabled={save.isPending} onClick={() => setEditing(false)}>Cancelar</Button><Button type="button" disabled={save.isPending} onClick={() => void submit()}>{save.isPending ? 'Guardando…' : 'Guardar cambios'}</Button></div>
     </div> : templates.data?.length ? <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(15rem,0.34fr)_minmax(0,1fr)]">

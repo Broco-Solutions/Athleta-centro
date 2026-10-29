@@ -15,7 +15,22 @@ import { SalaService } from '../src/sala/sala.service';
 
 describe('Sala configuration API', () => {
   let app: INestApplication; let prisma: PrismaService; let users: InternalUserService; let auth: AuthService; let sala: SalaService;
-  async function cleanSalaFixtures() { await prisma.salaClinicalIndication.deleteMany(); await prisma.salaPaymentReversal.deleteMany(); await prisma.salaPaymentAllocation.deleteMany(); await prisma.salaPayment.deleteMany(); await prisma.clinicalPatient.deleteMany(); await prisma.physicalTestResult.deleteMany(); await prisma.physicalEvaluation.deleteMany(); await prisma.physicalTestDefinition.deleteMany(); await prisma.routineExercise.deleteMany(); await prisma.routineDay.deleteMany(); await prisma.routine.deleteMany(); await prisma.routineTemplate.deleteMany(); await prisma.exerciseDefinition.deleteMany(); await prisma.salaOccurrence.deleteMany(); await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaServiceType.deleteMany(); await prisma.salaCharge.deleteMany(); await prisma.salaBillingConfiguration.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.salaScheduleException.deleteMany(); await prisma.salaScheduleSlot.deleteMany(); await prisma.salaPlan.deleteMany(); await prisma.salaConfiguration.deleteMany(); await prisma.paperHealthDeclaration.deleteMany(); await prisma.healthDeclaration.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); await prisma.portalCredential.deleteMany(); await prisma.person.deleteMany(); }
+  it('persists normalized movement patterns and preserves exercises on rename and reassignment', async () => {
+    const sala = app.get(SalaService);
+    const legacy = await sala.createExerciseDefinition({ name: 'Legacy exercise' });
+    expect(legacy.movementPatternId).toBeNull();
+    await expect(sala.saveMovementPattern('   ')).rejects.toThrow();
+    const pattern = await sala.saveMovementPattern(' Empuje ');
+    await expect(sala.saveMovementPattern('empuje')).rejects.toMatchObject({ response: { code: 'SALA_MOVEMENT_PATTERN_DUPLICATE' } });
+    const exercise = await sala.createExerciseDefinition({ name: 'Press', movementPatternId: pattern.id });
+    await sala.saveMovementPattern('Empuje superior', pattern.id);
+    expect(await sala.listMovementPatterns()).toEqual(expect.arrayContaining([expect.objectContaining({ id: pattern.id, name: 'Empuje superior' })]));
+    const other = await sala.saveMovementPattern('Tracción');
+    const updated = await sala.updateExerciseDefinition(exercise.id, { name: 'Press', movementPatternId: other.id });
+    expect(updated).toMatchObject({ id: exercise.id, movementPatternId: other.id });
+    await expect(sala.createExerciseDefinition({ name: 'Invalid', movementPatternId: '00000000-0000-4000-8000-000000000000' })).rejects.toMatchObject({ response: { code: 'SALA_MOVEMENT_PATTERN_NOT_FOUND' } });
+  });
+  async function cleanSalaFixtures() { await prisma.salaClinicalIndication.deleteMany(); await prisma.salaPaymentReversal.deleteMany(); await prisma.salaPaymentAllocation.deleteMany(); await prisma.salaPayment.deleteMany(); await prisma.clinicalPatient.deleteMany(); await prisma.physicalTestResult.deleteMany(); await prisma.physicalEvaluation.deleteMany(); await prisma.physicalTestDefinition.deleteMany(); await prisma.routineExercise.deleteMany(); await prisma.routineDay.deleteMany(); await prisma.routine.deleteMany(); await prisma.routineTemplate.deleteMany(); await prisma.exerciseDefinition.deleteMany(); await prisma.exerciseMovementPattern.deleteMany(); await prisma.salaOccurrence.deleteMany(); await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaServiceType.deleteMany(); await prisma.salaCharge.deleteMany(); await prisma.salaBillingConfiguration.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.salaScheduleException.deleteMany(); await prisma.salaScheduleSlot.deleteMany(); await prisma.salaPlan.deleteMany(); await prisma.salaConfiguration.deleteMany(); await prisma.paperHealthDeclaration.deleteMany(); await prisma.healthDeclaration.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); await prisma.portalCredential.deleteMany(); await prisma.person.deleteMany(); }
   beforeAll(async () => { app = (await Test.createTestingModule({ imports: [AppModule] }).compile()).createNestApplication(); app.use(cookieParser()); app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })); app.setGlobalPrefix('api'); await app.init(); prisma = app.get(PrismaService); users = app.get(InternalUserService); auth = app.get(AuthService); sala = app.get(SalaService); await cleanSalaFixtures(); });
   afterEach(cleanSalaFixtures);
   afterAll(() => app.close());
@@ -2008,6 +2023,19 @@ describe('Sala configuration API', () => {
     ] as const) await request(app.getHttpServer())[method](`/api/sala/${path}`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(body).expect(403);
   });
 
+  it('enforces movement pattern permissions and validates normalized names over HTTP', async () => {
+    const manager = await session(Role.GENERAL_ADMIN);
+    const reader = await session(Role.ADMINISTRATIVE);
+    const base = '/api/sala/movement-patterns';
+    await request(app.getHttpServer()).get(base).expect(401);
+    await request(app.getHttpServer()).get(base).set('Cookie', reader.cookie).expect(200);
+    await request(app.getHttpServer()).post(base).set('Cookie', reader.cookie).set('x-csrf-token', reader.csrf).send({ name: 'Empuje' }).expect(403);
+    for (const name of ['', '   ', 'x'.repeat(121)]) await request(app.getHttpServer()).post(base).set('Cookie', manager.cookie).set('x-csrf-token', manager.csrf).send({ name }).expect(400);
+    const created = await request(app.getHttpServer()).post(base).set('Cookie', manager.cookie).set('x-csrf-token', manager.csrf).send({ name: ' Empuje ' }).expect(201);
+    await request(app.getHttpServer()).post(base).set('Cookie', manager.cookie).set('x-csrf-token', manager.csrf).send({ name: 'empuje' }).expect(409);
+    await request(app.getHttpServer()).patch(base + '/' + created.body.data.id).set('Cookie', reader.cookie).set('x-csrf-token', reader.csrf).send({ name: 'No permitido' }).expect(403);
+    await request(app.getHttpServer()).patch(base + '/' + created.body.data.id).set('Cookie', manager.cookie).set('x-csrf-token', manager.csrf).send({ name: 'Empuje superior' }).expect(200);
+  });
   it('creates and clears optional exercise muscles without changing the catalog identity', async () => {
     const a = await session(Role.GENERAL_ADMIN);
     const call = (method: 'post' | 'patch', path: string, body: object) => request(app.getHttpServer())[method](`/api/sala/exercise-definitions${path}`).set('Cookie', a.cookie).set('x-csrf-token', a.csrf).send(body);

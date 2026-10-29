@@ -93,7 +93,22 @@ export class SalaDashboardEnvelopeDto {
   @ApiProperty({ type: () => SalaDashboardDto }) data!: SalaDashboardDto;
 }
 export class SalaAgendaResponseDto { @ApiProperty({ type: [SalaAgendaGroupDto] }) data!: SalaAgendaGroupDto[]; }
+export class MovementPatternDto {
+  @ApiProperty({ type: String, maxLength: 120 }) @IsString() @MinLength(1) @MaxLength(120) name!: string;
+}
+export class MovementPatternResponseDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: String }) name!: string;
+}
+export class MovementPatternEnvelopeDto {
+  @ApiProperty({ type: () => MovementPatternResponseDto }) data!: MovementPatternResponseDto;
+}
+export class MovementPatternListEnvelopeDto {
+  @ApiProperty({ type: () => [MovementPatternResponseDto] }) data!: MovementPatternResponseDto[];
+}
 export class ExerciseDefinitionDto {
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true }) @IsOptional() @IsUUID() movementPatternId?: string | null;
+
   @ApiProperty({ type: String, maxLength: 120 }) @IsString() @MinLength(1) @MaxLength(120) name!: string;
   @ApiPropertyOptional({ type: String, maxLength: 120, nullable: true }) @IsOptional() @IsString() @MaxLength(120) primaryMuscle?: string | null;
   @ApiPropertyOptional({ type: String, maxLength: 500, nullable: true }) @IsOptional() @IsString() @MaxLength(500) description?: string | null;
@@ -243,6 +258,8 @@ export class PhysicalEvaluationEnvelopeDto { @ApiProperty({ type: () => Physical
 export class PhysicalEvaluationListEnvelopeDto { @ApiProperty({ type: () => [PhysicalEvaluationResponseDto] }) data!: PhysicalEvaluationResponseDto[]; }
 
 export class ExerciseDefinitionResponseDto {
+  @ApiPropertyOptional({ type: String, nullable: true }) movementPatternId?: string | null;
+
   @ApiProperty({ type: String }) id!: string;
   @ApiProperty({ type: String }) name!: string;
   @ApiProperty({ type: String, nullable: true }) primaryMuscle!: string | null;
