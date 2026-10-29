@@ -5,8 +5,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Button } from '@athleta/ui';
-import { createSalaRoutineTemplate, updateSalaRoutineTemplate, deleteSalaRoutineTemplate, listSalaRoutineTemplates, listSalaExerciseDefinitions, type RoutineTemplateDto } from '@athleta/api-client';
-import { RoutineDaysEditor, RoutineContentSummary, draftToRoutineDays, routineDaysToDraft, newDay, fieldClass, errorMessage, type EditingDay, type RoutineTemplate, type ExerciseDefinition } from './routine-editor';
+import { createSalaRoutineTemplate, updateSalaRoutineTemplate, deleteSalaRoutineTemplate, listSalaRoutineTemplates, listSalaExerciseDefinitions, listSalaMovementPatterns, type RoutineTemplateDto } from '@athleta/api-client';
+import { RoutineDaysEditor, RoutineContentSummary, draftToRoutineDays, routineDaysToDraft, newDay, fieldClass, errorMessage, type EditingDay, type RoutineTemplate, type ExerciseDefinition, type MovementPattern } from './routine-editor';
 
 export type RoutineTemplateApi = {
   list: (options: RequestInit) => Promise<RoutineTemplate[]>;
@@ -14,6 +14,7 @@ export type RoutineTemplateApi = {
   update: (id: string, input: RoutineTemplateDto, options: RequestInit) => Promise<unknown>;
   delete: (id: string, options: RequestInit) => Promise<unknown>;
   exercises: (options: RequestInit) => Promise<ExerciseDefinition[]>;
+  patterns: (options: RequestInit) => Promise<MovementPattern[]>;
 
 };
 
@@ -32,6 +33,7 @@ const templateApi: RoutineTemplateApi = {
   update: async (id, input, options) => checkedBody(await updateSalaRoutineTemplate(id, input, options)),
   delete: async (id, options) => checkedBody(await deleteSalaRoutineTemplate(id, options)),
   exercises: async (options) => checkedData(await listSalaExerciseDefinitions(options)),
+  patterns: async (options) => checkedData(await listSalaMovementPatterns(options)),
 
 };
 const nameSchema = z.string().trim().min(1, 'El Nombre es obligatorio.').max(120, 'El Nombre admite hasta 120 caracteres.');
@@ -41,6 +43,7 @@ export function RoutineTemplateManager({ csrfToken, api = templateApi }: { csrfT
   const options = useMemo<RequestInit>(() => ({ credentials: 'include', headers: { 'x-csrf-token': csrfToken } }), [csrfToken]);
   const templates = useQuery({ queryKey: ['sala-routine-templates'], queryFn: () => api.list(options) });
   const definitions = useQuery({ queryKey: ['sala-exercise-definitions'], queryFn: () => api.exercises(options) });
+  const patterns = useQuery({ queryKey: ['sala-movement-patterns'], queryFn: () => api.patterns(options) });
   const [editing, setEditing] = useState(false);
   const [source, setSource] = useState<RoutineTemplate | null>(null);
   const [days, setDays] = useState<EditingDay[]>(() => [newDay()]);
@@ -83,8 +86,8 @@ export function RoutineTemplateManager({ csrfToken, api = templateApi }: { csrfT
     {remove.error ? <p role="alert">{errorMessage(remove.error)}</p> : null}
     {editing ? <div className="rounded-md border bg-white p-4">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">{source ? 'Editar rutina preestablecida' : 'Nueva rutina preestablecida'}</h2><p className="mt-1 text-sm text-muted-foreground">Organizá los días y agregá los ejercicios del plan.</p></div></div>
-      <div className="mt-4 grid gap-3 rounded-md bg-surface-muted p-4 sm:grid-cols-[minmax(16rem,1fr)_auto] sm:items-end"><label className="text-sm font-medium">Nombre de la rutina<input aria-label="Nombre de la preestablecida" className={`${fieldClass} mt-1`} maxLength={120} {...register('name')} disabled={save.isPending}/></label><p className="text-sm text-muted-foreground">{days.length} {days.length === 1 ? 'día' : 'días'} · {days.reduce((count, day) => count + day.exercises.length, 0)} ejercicios</p></div>
-      <RoutineDaysEditor days={days} definitions={editorDefinitions} catalogLoading={definitions.isLoading} catalogError={definitions.isError} disabled={save.isPending} onChange={setDays}/>
+      <div className="mt-4 grid gap-3 rounded-md bg-surface-muted p-4 sm:grid-cols-[minmax(16rem,1fr)_auto] sm:items-end"><label className="text-sm font-medium">Nombre de la rutina<input aria-label="Nombre de la preestablecida" className={`${fieldClass} mt-1`} maxLength={120} {...register('name')} disabled={save.isPending}/></label><p className="text-sm text-muted-foreground">{days.length} {days.length === 1 ? 'día' : 'días'}</p></div>
+      <RoutineDaysEditor days={days} definitions={editorDefinitions} catalogLoading={definitions.isLoading} catalogError={definitions.isError} patterns={patterns.data ?? []} patternsLoading={patterns.isLoading} patternsError={patterns.isError} disabled={save.isPending} onChange={setDays}/>
       {validationError || save.error ? <p role="alert" className="mt-3 text-sm text-red-700">{validationError ?? errorMessage(save.error)}</p> : null}
       <p className="mt-4 text-sm text-muted-foreground">Los cambios se aplican al guardar.</p><div className="mt-4 flex flex-wrap justify-end gap-2"><Button type="button" variant="secondary" disabled={save.isPending} onClick={() => setEditing(false)}>Cancelar</Button><Button type="button" disabled={save.isPending} onClick={() => void submit()}>{save.isPending ? 'Guardando…' : 'Guardar cambios'}</Button></div>
     </div> : templates.data?.length ? <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(15rem,0.34fr)_minmax(0,1fr)]">

@@ -4,7 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@athleta/ui';
 import type { ReplaceRoutineDto } from '@athleta/api-client';
-import { RoutineDaysEditor, RoutineContentSummary, copyRoutineDays, routineDaysToDraft, draftToRoutineDays, newDay, errorMessage, type EditingDay, type RoutineDay, type ExerciseDefinition, type RoutineTemplate } from './routine-editor';
+import { RoutineDaysEditor, RoutineContentSummary, copyRoutineDays, routineDaysToDraft, draftToRoutineDays, newDay, errorMessage, type EditingDay, type RoutineDay, type ExerciseDefinition, type MovementPattern, type RoutineTemplate } from './routine-editor';
 import { TrainingRecordHistory } from './training-record-history';
 import type { TrainingHistoryApi } from './training-record-api';
 export type { ExerciseDefinition, RoutineDay, RoutineExercise, RoutineTemplate } from './routine-editor';
@@ -18,6 +18,7 @@ export type RoutineApi = {
   list: (personId: string, options: RequestInit) => Promise<Routine[]>;
   templates: (options: RequestInit) => Promise<RoutineTemplate[]>;
   exercises: (options: RequestInit) => Promise<ExerciseDefinition[]>;
+  patterns: (options: RequestInit) => Promise<MovementPattern[]>;
   create: (input: RoutineInput, options: RequestInit) => Promise<unknown>;
   replace: (routineId: string, input: RoutineInput, options: RequestInit) => Promise<unknown>;
   duplicate: (routineId: string, options: RequestInit) => Promise<unknown>;
@@ -36,6 +37,7 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
   const options = useMemo<RequestInit>(() => ({ credentials: 'include', headers: { 'x-csrf-token': csrfToken } }), [csrfToken]);
   const routines = useQuery({ queryKey: ['sala-routines', personId], queryFn: () => api.list(personId, options), enabled: Boolean(personId) });
   const definitions = useQuery({ queryKey: ['sala-exercise-definitions'], queryFn: () => api.exercises(options), enabled: canManage });
+  const patterns = useQuery({ queryKey: ['sala-movement-patterns'], queryFn: () => api.patterns(options), enabled: canManage });
   const templates = useQuery({ queryKey: ['sala-routine-templates'], queryFn: () => api.templates(options), enabled: canManage && selectingTemplate });
   const active = routines.data?.find((routine) => routine.status === 'ACTIVE');
   const historical = routines.data?.filter((routine) => routine.status === 'HISTORICAL') ?? [];
@@ -86,7 +88,7 @@ export function RoutinePanel({ personId, participationId, csrfToken, api, canMan
       </>}
     </div> : null}
     {canManage && editing ? <div className="mt-4 rounded-lg border bg-white p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="text-xl font-semibold">{personalizing ? 'Personalizar rutina' : active ? 'Editar rutina' : 'Crear rutina desde cero'}</h4><p className="mt-1 text-sm text-muted-foreground">Organizá los días y completá los ejercicios del alumno.</p></div></div>
-      <RoutineDaysEditor days={days} definitions={[...(definitions.data ?? []), ...((selectedTemplate ?? active)?.days.flatMap((day) => day.exercises.filter((entry) => entry.exerciseDefinition?.isActive === false).map((entry) => ({ id: entry.exerciseDefinitionId, name: entry.exerciseDefinition!.name, primaryMuscle: '', isActive: false }))) ?? [])]} catalogLoading={definitions.isLoading} catalogError={definitions.isError} disabled={mutation.isPending} onChange={setDays}/>
+      <RoutineDaysEditor days={days} definitions={[...(definitions.data ?? []), ...((selectedTemplate ?? active)?.days.flatMap((day) => day.exercises.filter((entry) => entry.exerciseDefinition?.isActive === false).map((entry) => ({ id: entry.exerciseDefinitionId, name: entry.exerciseDefinition!.name, primaryMuscle: '', isActive: false }))) ?? [])]} catalogLoading={definitions.isLoading} catalogError={definitions.isError} patterns={patterns.data ?? []} patternsLoading={patterns.isLoading} patternsError={patterns.isError} disabled={mutation.isPending} onChange={setDays}/>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">Los cambios se aplican al guardar.</p><div className="flex gap-2"><Button type="button" variant="secondary" onClick={() => { setEditing(false);  }} disabled={mutation.isPending}>Cancelar</Button><Button type="button" onClick={() => { setFeedback(null); mutation.mutate(); }} disabled={mutation.isPending}>{mutation.isPending ? 'Guardando…' : 'Guardar cambios'}</Button></div></div>
 </div> : null}
   </section>;

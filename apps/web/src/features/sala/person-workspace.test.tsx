@@ -159,7 +159,8 @@ function routineHandlers() {
   let reads = 0;
   server.use(
     http.get(`http://localhost:3000/api/sala/people/${personId}/routines`, () => { reads++; return HttpResponse.json({ data: [workspaceRoutine] }); }),
-    http.get('http://localhost:3000/api/sala/exercise-definitions', () => HttpResponse.json({ data: [{ id: 'squat', name: 'Sentadilla', primaryMuscle: 'Piernas', isActive: true }] })),
+    http.get('http://localhost:3000/api/sala/exercise-definitions', () => HttpResponse.json({ data: [{ id: 'squat', name: 'Sentadilla', primaryMuscle: 'Piernas', movementPatternId: 'push', isActive: true }] })),
+    http.get('http://localhost:3000/api/sala/movement-patterns', () => HttpResponse.json({ data: [{ id: 'push', name: 'Empuje' }] })),
   );
   return () => reads;
 }
@@ -196,7 +197,11 @@ it('uses existing exercise search in the student workspace without catalog admin
   expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: '+ Crear nuevo ejercicio' })).not.toBeInTheDocument();
   const catalog = within(screen.getByRole('region', { name: 'Agregar ejercicios' }));
-  expect(catalog.getByText('Escribí para buscar un ejercicio')).toBeInTheDocument();
+  expect(catalog.getByText('Patrones de movimiento')).toBeInTheDocument();
+  expect(catalog.getByRole('button', { name: /Todos los ejercicios/ })).toBeInTheDocument();
+  expect(catalog.getByRole('button', { name: /Empuje/ })).toBeInTheDocument();
+  expect(catalog.queryByRole('button', { name: '+ Nuevo patrón' })).not.toBeInTheDocument();
+  expect(catalog.queryByRole('button', { name: '+ Nuevo ejercicio' })).not.toBeInTheDocument();
   fireEvent.change(catalog.getByRole('searchbox'), { target: { value: 'sentadilla' } });
   fireEvent.click(await catalog.findByRole('button', { name: 'Agregar Sentadilla' }));
   expect(within(screen.getByRole('group', { name: 'Día 1' })).getAllByRole('listitem')).toHaveLength(2);

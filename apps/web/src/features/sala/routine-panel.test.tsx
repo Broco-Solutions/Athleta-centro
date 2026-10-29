@@ -17,7 +17,7 @@ const routine: Routine = {
 function renderPanel(rows: Routine[] = [routine], canManage = true, catalog: RoutineApi['exercises'] = async () => definitions) {
   const api = {
     training: { list: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }), detail: vi.fn() },
-    list: vi.fn<RoutineApi['list']>().mockResolvedValue(rows), exercises: vi.fn<RoutineApi['exercises']>().mockImplementation(catalog),
+    list: vi.fn<RoutineApi['list']>().mockResolvedValue(rows), exercises: vi.fn<RoutineApi['exercises']>().mockImplementation(catalog), patterns: vi.fn<RoutineApi['patterns']>().mockResolvedValue([{ id: 'push', name: 'Empuje' }]),
     templates: vi.fn<RoutineApi['templates']>().mockResolvedValue([]),
     create: vi.fn<RoutineApi['create']>().mockResolvedValue({}), replace: vi.fn<RoutineApi['replace']>().mockResolvedValue({}),
     duplicate: vi.fn<RoutineApi['duplicate']>().mockResolvedValue({}),
@@ -33,6 +33,12 @@ it('keeps exercise catalog management out of the initial empty routine view', as
   expect(screen.getByRole('button', { name: 'Crear desde cero' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Usar preestablecida' })).toBeInTheDocument();
   expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument();
+});
+it('shows the shared movement pattern filter when editing a student routine', async () => {
+  renderPanel([]); await startNewRoutine();
+  expect(catalog().getByText('Patrones de movimiento')).toBeInTheDocument();
+  expect(catalog().getByRole('button', { name: /Todos los ejercicios/ })).toBeInTheDocument();
+  expect(catalog().getByRole('button', { name: /Empuje/ })).toBeInTheDocument();
 });
 async function startEditing() {
   await waitFor(() => expect(screen.getByRole('button', { name: 'Editar rutina' })).toBeEnabled());

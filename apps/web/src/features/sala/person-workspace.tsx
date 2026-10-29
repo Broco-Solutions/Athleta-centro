@@ -13,7 +13,7 @@ import { Button } from '@athleta/ui';
 import { GeneralPersonForm, personInput, type PersonValues } from '../people/general-person-form';
 import { usePinDialogFocus } from '../people/use-pin-dialog-focus';
 import { editPerson, resetPersonPortalPin } from '../people/people-api';
-import { reassignFixedSalaOccurrence, listPersonPhysicalEvaluations, listSalaStudents, cancelSalaReservation, changeFixedSalaBooking, createFixedSalaBooking, duplicateSalaRoutine, createSalaReservation, endFixedSalaBooking, getPerson, getSalaAvailability, listFixedSalaBookings, listPersonSalaParticipations, listPersonSalaRoutines, listSalaExerciseDefinitions, listSalaRoutineTemplates, listSalaReservations, listPersonSalaServices, replaceSalaRoutine, type ChangeFixedBookingDto, type FixedBookingDto, type OneOffReservationDto } from '@athleta/api-client';
+import { reassignFixedSalaOccurrence, listPersonPhysicalEvaluations, listSalaStudents, cancelSalaReservation, changeFixedSalaBooking, createFixedSalaBooking, duplicateSalaRoutine, createSalaReservation, endFixedSalaBooking, getPerson, getSalaAvailability, listFixedSalaBookings, listPersonSalaParticipations, listPersonSalaRoutines, listSalaExerciseDefinitions, listSalaMovementPatterns, listSalaRoutineTemplates, listSalaReservations, listPersonSalaServices, replaceSalaRoutine, type ChangeFixedBookingDto, type FixedBookingDto, type OneOffReservationDto } from '@athleta/api-client';
 import { currentSession } from '../auth/auth';
 import { WorkspaceShell } from '../auth/workspace-shell';
 import { RoutinePanel, type RoutineApi } from './routine-panel';
@@ -110,6 +110,7 @@ export function SalaPersonWorkspace({ personId }: { personId: string }): React.J
     list: async (id, requestOptions) => { const response = await listPersonSalaRoutines(id, requestOptions); assertRoutineResponse(response); return response.data.data; },
     templates: async (requestOptions) => { const response = await listSalaRoutineTemplates(requestOptions); assertRoutineResponse(response); return response.data.data; },
     exercises: async (requestOptions) => { const response = await listSalaExerciseDefinitions(requestOptions); assertRoutineResponse(response); return response.data.data; },
+    patterns: async (requestOptions) => { const response = await listSalaMovementPatterns(requestOptions); assertRoutineResponse(response); return response.data.data; },
     create: async (input, requestOptions) => assertRoutineResponse(await replaceSalaRoutine(input, requestOptions)),
     replace: async (_id, input, requestOptions) => assertRoutineResponse(await replaceSalaRoutine(input, requestOptions)),
     duplicate: async (id, requestOptions) => assertRoutineResponse(await duplicateSalaRoutine(id, requestOptions)),

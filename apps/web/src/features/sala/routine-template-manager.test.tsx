@@ -4,16 +4,18 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import { RoutineTemplateManager, type RoutineTemplateApi } from './routine-template-manager';
+import type { RoutineTemplate } from './routine-editor';
 
-const definitions = [{ id: 'squat', name: 'Sentadilla', primaryMuscle: 'Piernas', isActive: true }, { id: 'plank', name: 'Plancha', primaryMuscle: 'Core', isActive: true }];
+const definitions = [{ id: 'squat', name: 'Sentadilla', primaryMuscle: 'Piernas', movementPatternId: 'push', isActive: true }, { id: 'plank', name: 'Plancha', primaryMuscle: 'Core', movementPatternId: 'core', isActive: true }, { id: 'free', name: 'Movilidad libre', primaryMuscle: 'Movilidad', movementPatternId: null, isActive: true }];
+const patterns = [{ id: 'push', name: 'Empuje' }, { id: 'core', name: 'Core' }];
 const template = { id: 'template', name: 'Modelo fuerza', days: [
   { position: 1, name: 'Fuerza', exercises: [{ exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla', description: 'Descenso controlado', isActive: true }, series: '4', repetitions: '10', load: '60 kg', rest: '90 s', notes: 'Técnica' }] },
   { position: 2, name: 'Core', exercises: [{ exerciseDefinitionId: 'plank', exerciseDefinition: { name: 'Plancha', isActive: true }, duration: '45 s' }] },
 ] };
-function renderManager(rows = [template], catalogDefinitions: Awaited<ReturnType<RoutineTemplateApi['exercises']>> = definitions) {
+function renderManager(rows: RoutineTemplate[] = [template], catalogDefinitions: Awaited<ReturnType<RoutineTemplateApi['exercises']>> = definitions) {
   const api = {
     list: vi.fn<RoutineTemplateApi['list']>().mockResolvedValue(rows), create: vi.fn<RoutineTemplateApi['create']>().mockResolvedValue({}), update: vi.fn<RoutineTemplateApi['update']>().mockResolvedValue({}), delete: vi.fn<RoutineTemplateApi['delete']>().mockResolvedValue({}),
-    exercises: vi.fn<RoutineTemplateApi['exercises']>().mockResolvedValue(catalogDefinitions),
+    exercises: vi.fn<RoutineTemplateApi['exercises']>().mockResolvedValue(catalogDefinitions), patterns: vi.fn<RoutineTemplateApi['patterns']>().mockResolvedValue(patterns),
   };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(<QueryClientProvider client={client}><RoutineTemplateManager csrfToken="csrf" api={api}/></QueryClientProvider>);
@@ -74,6 +76,24 @@ it('edits the complete template without any person and without mutating the sour
   expect(id).toBe('template'); expect(input.name).toBe('Actualizada'); expect(input.days).toHaveLength(1); expect(input.days[0]?.exercises[0]?.series).toBe('5');
   expect(input).not.toHaveProperty('personId'); expect(input).not.toHaveProperty('salaParticipationId'); expect(template).toEqual(original);
 });
+it('omits exercise totals in the routine editor and uses muted surfaces for its three editing blocks', async () => {
+  const singleDay: RoutineTemplate = { id: 'single', name: 'Una jornada', days: [{ position: 1, name: 'Fuerza', exercises: [
+    { exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla', isActive: true }, series: '4' },
+    { exerciseDefinitionId: 'plank', exerciseDefinition: { name: 'Plancha', isActive: true }, duration: '45 s' },
+  ] }] };
+  renderManager([singleDay]); fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  const nameBlock = screen.getByLabelText('Nombre de la preestablecida').parentElement!.parentElement!;
+  expect(nameBlock).toHaveClass('bg-surface-muted');
+  expect(nameBlock).toHaveTextContent('1 día');
+  expect(nameBlock).not.toHaveTextContent(/ejercicios/);
+  const tab = screen.getByRole('button', { name: /^Día 1:/ });
+  expect(tab).not.toHaveTextContent(/Día 1\s+1/);
+  const editorDay = screen.getByRole('group', { name: 'Día 1' });
+  expect(editorDay).toHaveClass('bg-surface-muted');
+  expect(within(editorDay).queryByText(/1 ejercicio/)).not.toBeInTheDocument();
+  const exercisePicker = screen.getByRole('region', { name: 'Agregar ejercicios' });
+  expect(exercisePicker).toHaveClass('bg-surface-muted');
+});
 it('requires confirmation before deletion and supports cancellation', async () => {
   const { api } = renderManager(); await screen.findByRole('article', { name: 'Modelo fuerza' });
   fireEvent.click(screen.getByRole('button', { name: 'Eliminar' }));
@@ -84,9 +104,31 @@ it('requires confirmation before deletion and supports cancellation', async () =
 });
 it('keeps catalog management outside template editing', async () => {
   renderManager(); fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
-  expect(screen.queryByRole('button', { name: '+ Crear nuevo ejercicio' })).not.toBeInTheDocument();
+  expect(catalog().getByText('Patrones de movimiento')).toBeInTheDocument();
+  for (const name of ['+ Nuevo ejercicio', '+ Nuevo patrón', 'Renombrar patrón', 'Editar', 'Retirar', 'Crear ejercicio']) expect(catalog().queryByRole('button', { name })).not.toBeInTheDocument();
   expect(catalog().getByRole('searchbox')).toBeInTheDocument();
   expect(row().queryByRole('combobox', { name: 'Ejercicio' })).not.toBeInTheDocument();
+});
+it('filters exercises by movement pattern and combines the pattern with search', async () => {
+  renderManager(); fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  expect(catalog().getByRole('button', { name: /Todos los ejercicios/ })).toBeInTheDocument();
+  expect(catalog().getByRole('button', { name: /Empuje/ })).toBeInTheDocument();
+  expect(catalog().getByRole('button', { name: /Core/ })).toBeInTheDocument();
+  fireEvent.click(catalog().getByRole('button', { name: /Empuje/ }));
+  expect(catalog().getByRole('button', { name: 'Agregar Sentadilla' })).toBeInTheDocument();
+  expect(catalog().queryByRole('button', { name: 'Agregar Plancha' })).not.toBeInTheDocument();
+  expect(catalog().queryByRole('button', { name: 'Agregar Movilidad libre' })).not.toBeInTheDocument();
+  change(catalog(), 'Buscar ejercicio', 'press');
+  expect(catalog().getByText('No hay ejercicios que coincidan.')).toBeInTheDocument();
+  change(catalog(), 'Buscar ejercicio', 'sentadilla');
+  expect(catalog().getByRole('button', { name: 'Agregar Sentadilla' })).toBeInTheDocument();
+});
+it('offers Sin patrón only when active exercises have no pattern and filters those exercises', async () => {
+  renderManager(); fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  fireEvent.click(catalog().getByRole('button', { name: /Sin patrón/ }));
+  expect(catalog().getByRole('button', { name: 'Agregar Movilidad libre' })).toBeInTheDocument();
+  expect(catalog().queryByRole('button', { name: 'Agregar Sentadilla' })).not.toBeInTheDocument();
+  expect(catalog().queryByRole('button', { name: 'Agregar Plancha' })).not.toBeInTheDocument();
 });
 it('cancels template editing without persistence or source mutation and places both actions at the end', async () => {
   const { api } = renderManager(); const original = structuredClone(template);
@@ -116,6 +158,7 @@ it.each(['create', 'update', 'delete'])('reports real HTTP errors without claimi
   server.use(
     http.get('http://localhost:3000/api/sala/routine-templates', () => { listCalls++; return HttpResponse.json({ data: operation === 'create' ? [] : [template] }); }),
     http.get('http://localhost:3000/api/sala/exercise-definitions', () => HttpResponse.json({ data: definitions })),
+    http.get('http://localhost:3000/api/sala/movement-patterns', () => HttpResponse.json({ data: patterns })),
     http.post('http://localhost:3000/api/sala/routine-templates', () => HttpResponse.json({ message: 'HTTP rechazado' }, { status: 400 })),
     http.put('http://localhost:3000/api/sala/routine-templates/template', () => HttpResponse.json({ message: 'HTTP rechazado' }, { status: 400 })),
     http.delete('http://localhost:3000/api/sala/routine-templates/template', () => HttpResponse.json({ message: 'HTTP rechazado' }, { status: 404 })),
