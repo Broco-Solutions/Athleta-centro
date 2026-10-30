@@ -877,3 +877,22 @@ it('confirms before resetting the PIN and only shows it once after confirmation'
   const result = await screen.findByRole('dialog', { name: 'Nuevo PIN temporal' }); expect(result).toHaveTextContent('Alumno Sintético'); expect(within(result).getByLabelText('PIN temporal')).toHaveTextContent('4821'); expect(resets).toBe(1);
   fireEvent.click(within(result).getByRole('button', { name: 'Entendido' })); expect(screen.queryByText('4821')).not.toBeInTheDocument();
 });
+
+it('prints the existing person full name without requesting it again', async () => {
+  const print = vi.spyOn(window, 'print').mockImplementation(() => {});
+  let personReads = 0;
+  try {
+    navigation.tab = 'routine';
+    routineSession(['SALA_ROUTINE_READ']);
+    routineHandlers();
+    server.use(http.get(`http://localhost:3000/api/people/${personId}`, () => {
+      personReads++;
+      return HttpResponse.json({ data: { id: personId, firstName: 'Alumno', lastName: 'Sintético', dni: '12345678' } });
+    }));
+    renderWorkspace();
+    fireEvent.click(await screen.findByRole('button', { name: 'Imprimir / PDF' }));
+    expect(document.getElementById('athleta-routine-print-root')).toHaveTextContent('Alumno: Alumno Sintético');
+    expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('12345678');
+    expect(personReads).toBe(1);
+  } finally { print.mockRestore(); }
+});

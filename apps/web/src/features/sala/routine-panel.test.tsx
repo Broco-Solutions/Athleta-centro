@@ -23,7 +23,7 @@ function renderPanel(rows: Routine[] = [routine], canManage = true, catalog: Rou
     duplicate: vi.fn<RoutineApi['duplicate']>().mockResolvedValue({}),
   };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(<QueryClientProvider client={client}><RoutinePanel personId="person" participationId="participation" csrfToken="csrf" api={api} canManage={canManage}/></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><RoutinePanel personName="Alumno Prueba" personId="person" participationId="participation" csrfToken="csrf" api={api} canManage={canManage}/></QueryClientProvider>);
   return { api, client };
 }
 afterEach(cleanup);
@@ -384,4 +384,43 @@ it('places training history between the active routine and historical routines',
   expect(active.compareDocumentPosition(training) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(training.compareDocumentPosition(historical) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Editar rutina' })).not.toBeInTheDocument();
+});
+
+it.each([true, false])('prints active and specific historical routines without writes (manage=%s)', async canManage => {
+  const print = vi.spyOn(window, 'print').mockImplementation(() => {});
+  try {
+    const { api } = renderPanel([routine, { ...routine, id: 'old', status: 'HISTORICAL', version: 1, days: [{ position: 1, name: 'Histórico exclusivo', exercises: [] }] }], canManage);
+    await screen.findByText('Rutina v2');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Imprimir / PDF' })[0]!);
+    let root = document.getElementById('athleta-routine-print-root')!;
+    expect(root).toHaveTextContent('Alumno: Alumno Prueba');
+    expect(root).toHaveTextContent('Estado: Activa · Versión: 2');
+    expect(root).not.toHaveTextContent('Histórico exclusivo');
+    expect(root).not.toHaveTextContent('Historial de entrenamientos');
+    fireEvent(window, new Event('afterprint'));
+    fireEvent.click(screen.getByText('Rutinas históricas (1)'));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Imprimir / PDF' })[1]!);
+    root = document.getElementById('athleta-routine-print-root')!;
+    expect(root).toHaveTextContent('Estado: Histórica · Versión: 1');
+    expect(root).toHaveTextContent('Histórico exclusivo');
+    expect(root).not.toHaveTextContent('Controlar técnica');
+    for (const write of [api.create, api.replace, api.duplicate]) expect(write).not.toHaveBeenCalled();
+  } finally { print.mockRestore(); }
+});
+it('prints the selected template preview without assignment', async () => {
+  const print = vi.spyOn(window, 'print').mockImplementation(() => {});
+  try {
+    const { api } = renderPanel([]);
+    await screen.findByText('No hay una rutina activa.');
+    expect(screen.queryByRole('button', { name: 'Imprimir / PDF' })).not.toBeInTheDocument();
+    api.templates.mockResolvedValue([{ id: 'template', name: 'Modelo previo', days: routine.days }]);
+    fireEvent.click(screen.getByRole('button', { name: 'Usar preestablecida' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Modelo previo' }));
+    const preview = within(screen.getByRole('region', { name: 'Vista previa de preestablecida' }));
+    expect(preview.getAllByRole('button').map(button => button.textContent)).toEqual(['Asignar rutina', 'Imprimir / PDF', 'Editar', 'Volver']);
+    fireEvent.click(preview.getByRole('button', { name: 'Imprimir / PDF' }));
+    expect(document.getElementById('athleta-routine-print-root')).toHaveTextContent('Rutina: Modelo previo');
+    expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('Alumno:');
+    for (const write of [api.create, api.replace, api.duplicate]) expect(write).not.toHaveBeenCalled();
+  } finally { print.mockRestore(); }
 });

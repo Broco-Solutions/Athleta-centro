@@ -7,3 +7,54 @@
 body { margin: 0; background: var(--background); color: var(--foreground); font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
 :root { --reception-background: #1a1a1a; --surface-dark: #262626; --border-dark: #3f3f46; --border-control: #d4d4d8; --accent-text: #8a6d00; --error-bg: #fef3f2; --error-border: #fecdca; --error-text: #b42318; --success: #16a34a; --success-text: #166534; }
 :root { --warning-bg: #fef3c7; --warning-border: #fcd34d; --warning-text: #92400e; --success-bg: #dcfce7; }
+
+#athleta-routine-print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  body:has(> #athleta-routine-print-root) {
+    margin: 0;
+    background: white;
+  }
+
+  body:has(> #athleta-routine-print-root) > :not(#athleta-routine-print-root) {
+    display: none !important;
+  }
+
+  #athleta-routine-print-root {
+    display: block !important;
+    color: #171717;
+    background: white;
+    font-family: Arial, sans-serif;
+    font-size: 9pt;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  #athleta-routine-print-root header {
+    border-bottom: 0.5pt solid #171717;
+    border-top: 3pt solid #FCCC05;
+    padding: 5pt 0;
+    margin-bottom: 6pt;
+  }
+
+  #athleta-routine-print-root h1 { font-size: 16pt; font-weight: bold; margin: 0; }
+  #athleta-routine-print-root p { margin: 0; white-space: pre-wrap; }
+  #athleta-routine-print-root header p { font-weight: bold; margin-top: 2pt; }
+  #athleta-routine-print-root .routine-print-identification { margin-bottom: 7pt; }
+  #athleta-routine-print-root section { margin-bottom: 7pt; break-inside: auto; }
+  #athleta-routine-print-root h2 { font-size: 11pt; font-weight: bold; margin: 0 0 3pt; break-after: avoid; }
+  #athleta-routine-print-root table { table-layout: fixed; width: 100%; border-collapse: collapse; break-inside: auto; }
+  #athleta-routine-print-root thead { display: table-header-group; }
+  #athleta-routine-print-root tr { break-inside: avoid; }
+  #athleta-routine-print-root th,
+  #athleta-routine-print-root td { border: 0.5pt solid #999; padding: 3pt; vertical-align: top; text-align: left; white-space: pre-wrap; }
+  #athleta-routine-print-root th { font-size: 8pt; font-weight: bold; }
+  #athleta-routine-print-root .routine-print-description { color: #555; font-size: 8pt; margin-top: 2pt; }
+}

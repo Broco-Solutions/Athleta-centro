@@ -212,3 +212,24 @@ it('filters the template list, keeps the selected detail clear and duplicates th
   expect(api.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Copia de Modelo fuerza', days: expect.any(Array) }), expect.any(Object));
   expect(api.update).not.toHaveBeenCalled();
 });
+
+it('prints only the selected saved template and never writes', async () => {
+  const print = vi.spyOn(window, 'print').mockImplementation(() => {});
+  try {
+    const { api } = renderManager([template, { ...template, id: 'other', name: 'Otra rutina', days: [] }]);
+    const article = await screen.findByRole('article', { name: template.name });
+    expect(within(article).getAllByRole('button').map(button => button.textContent)).toEqual(['Duplicar', 'Imprimir / PDF', 'Editar', 'Eliminar']);
+    fireEvent.click(within(article).getByRole('button', { name: 'Imprimir / PDF' }));
+    expect(document.getElementById('athleta-routine-print-root')).toHaveTextContent('Rutina: Modelo fuerza');
+    expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('Otra rutina');
+    fireEvent(window, new Event('afterprint'));
+    fireEvent.click(screen.getByRole('button', { name: /Otra rutina/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Imprimir / PDF' }));
+    expect(document.getElementById('athleta-routine-print-root')).toHaveTextContent('Rutina: Otra rutina');
+    expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('Modelo fuerza');
+    fireEvent(window, new Event('afterprint'));
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+    expect(screen.queryByRole('button', { name: 'Imprimir / PDF' })).not.toBeInTheDocument();
+    for (const write of [api.create, api.update, api.delete]) expect(write).not.toHaveBeenCalled();
+  } finally { print.mockRestore(); }
+});
