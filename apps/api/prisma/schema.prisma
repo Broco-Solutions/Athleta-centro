@@ -653,7 +653,21 @@ model SalaServiceType {
   @@map("sala_service_types")
 }
 
+model ExerciseMovementPattern {
+  id String @id @default(uuid()) @db.Uuid
+  name String @db.VarChar(120)
+  normalizedName String @unique @map("normalized_name") @db.VarChar(120)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  exercises ExerciseDefinition[]
+
+  @@map("exercise_movement_patterns")
+}
+
 model ExerciseDefinition {
+  movementPatternId String? @map("movement_pattern_id") @db.Uuid
+  movementPattern ExerciseMovementPattern? @relation(fields: [movementPatternId], references: [id], onDelete: Restrict)
+
   id               String            @id @default(uuid()) @db.Uuid
   name             String            @db.VarChar(120)
   primaryMuscle    String?           @map("primary_muscle") @db.VarChar(120)

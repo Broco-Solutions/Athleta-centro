@@ -25,6 +25,7 @@ beforeAll(() => {
 beforeEach(() => {
   reads = 0; catalogReads = 0; rows = [template];
   server.use(
+    http.get(`${base}/sala/movement-patterns`, () => HttpResponse.json({ data: [{ id: 'pattern', name: 'Empuje' }] })),
     http.get(`${base}/auth/session`, () => HttpResponse.json({ data: session })),
     http.get(`${base}/sala/routine-templates`, () => { reads++; return HttpResponse.json({ data: rows }); }),
     http.get(`${base}/sala/exercise-definitions`, () => { catalogReads++; return HttpResponse.json({ data: [exercise] }); }),
@@ -92,6 +93,7 @@ it('switches accessible sections with the keyboard and preserves drafts in both 
 it('creates an exercise without a routine and then finds it by description in a template draft', async () => {
   let catalogRows = [exercise]; let created = 0;
   server.use(
+    http.get(`${base}/sala/movement-patterns`, () => HttpResponse.json({ data: [{ id: 'pattern', name: 'Empuje' }] })),
     http.get(`${base}/sala/exercise-definitions`, () => HttpResponse.json({ data: catalogRows })),
     http.post(`${base}/sala/exercise-definitions`, async ({ request }) => {
       const body = await request.json() as { name: string; primaryMuscle: string; description: string };
@@ -104,15 +106,17 @@ it('creates an exercise without a routine and then finds it by description in a 
   fireEvent.click(screen.getByRole('button', { name: '+ Nuevo ejercicio' }));
   fireEvent.change(screen.getByRole('textbox', { name: /Nombre/ }), { target: { value: 'Sentadilla búlgara' } });
   fireEvent.change(screen.getByRole('textbox', { name: /Descripción/ }), { target: { value: 'Fuerza para fútbol' } });
+  await screen.findByRole('option', { name: 'Empuje' });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Patrón de movimiento' }), { target: { value: 'pattern' } });
   fireEvent.click(screen.getByRole('button', { name: 'Crear ejercicio' }));
   await screen.findByText('Ejercicio creado correctamente.');
   await screen.findByRole('heading', { name: 'Sentadilla búlgara' });
   expect(created).toBe(1); expect(screen.queryByLabelText('Nombre de la preestablecida')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('tab', { name: 'Rutinas preestablecidas' }));
   fireEvent.click(screen.getByRole('button', { name: 'Nueva rutina preestablecida' }));
-  fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar un ejercicio en el catálogo' }), { target: { value: 'BULGARA futbol' } });
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar ejercicio' }), { target: { value: 'BULGARA futbol' } });
   fireEvent.click(await screen.findByRole('button', { name: 'Agregar Sentadilla búlgara' }));
-  expect(within(screen.getByRole('group', { name: 'Día 1' })).getByLabelText('Ejercicio')).toHaveValue('new-exercise');
+  expect(within(screen.getByRole('group', { name: 'Día 1' })).getByText('Sentadilla búlgara')).toBeInTheDocument();
 });
 
 it('allows read-only exercise consultation without template or catalog management', async () => {

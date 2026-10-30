@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const exerciseDefinitionSchema = z.object({
+  movementPatternId: z.string().optional(),
   name: z.string().trim().min(1, 'El Nombre es obligatorio.').max(120, 'El Nombre admite hasta 120 caracteres.'),
   primaryMuscle: z.string().trim().max(120, 'El Músculo principal admite hasta 120 caracteres.'),
   description: z.string().trim().max(500, 'La Descripción admite hasta 500 caracteres.'),

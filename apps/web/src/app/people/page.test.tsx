@@ -23,6 +23,100 @@ it('shows the shared general-person sections in a wide dialog without Sala field
   for (const heading of ['Datos personales', 'Contacto de emergencia', 'Cobertura médica']) expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
   expect(screen.queryByRole('heading', { name: 'Entrenamiento' })).not.toBeInTheDocument();
 });
+it('lets a catalog administrator add a social work, selects it, and enables the affiliate number', async () => {
+  let works = [{ id: 'work-a', name: 'Cobertura A', isSelectable: true }];
+  let postBody: unknown;
+  let csrf: string | null = null;
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: [...session.permissions, 'SOCIAL_WORK_CATALOG_MANAGE'] } })),
+    http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: works })),
+    http.post('http://localhost:3000/api/clinic/social-works', async ({ request }) => {
+      postBody = await request.json();
+      csrf = request.headers.get('x-csrf-token');
+      const created = { id: 'work-new', name: (postBody as { name: string }).name, normalizedName: 'osde', isSelectable: true, createdAt: '2026-10-30T12:00:00.000Z' };
+      works = [...works, created];
+      return HttpResponse.json({ data: created }, { status: 201 });
+    }),
+  );
+  renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  await screen.findByLabelText('Obra social (opcional)');
+  expect(screen.getByRole('button', { name: 'Agregar obra social' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Agregar obra social' }));
+  const editor = screen.getByRole('group', { name: 'Nueva obra social' });
+  fireEvent.change(within(editor).getByLabelText('Nueva obra social'), { target: { value: 'OSDE' } });
+  fireEvent.click(within(editor).getByRole('button', { name: 'Agregar' }));
+  await waitFor(() => expect(screen.getByLabelText('Obra social (opcional)')).toHaveValue('work-new'));
+  expect(postBody).toEqual({ name: 'OSDE' });
+  expect(csrf).toBe('csrf-test');
+  expect(screen.queryByRole('group', { name: 'Nueva obra social' })).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Número de afiliado (opcional)')).toBeEnabled();
+});
+
+it('cancels social work creation without changing coverage and reopens with an empty input', async () => {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: [...session.permissions, 'SOCIAL_WORK_CATALOG_MANAGE'] } })));
+  renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  const selector = await screen.findByLabelText('Obra social (opcional)');
+  await screen.findByRole('option', { name: 'Cobertura A' });
+  fireEvent.change(selector, { target: { value: 'work-a' } });
+  expect(screen.getByLabelText('Número de afiliado (opcional)')).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Agregar obra social' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Nueva obra social' }), { target: { value: 'Descartada' } });
+  fireEvent.click(within(screen.getByRole('group', { name: 'Nueva obra social' })).getByRole('button', { name: 'Cancelar' }));
+  expect(screen.queryByRole('group', { name: 'Nueva obra social' })).not.toBeInTheDocument();
+  expect(selector).toHaveValue('work-a');
+  expect(screen.getByLabelText('Número de afiliado (opcional)')).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Agregar obra social' }));
+  expect(screen.getByRole('textbox', { name: 'Nueva obra social' })).toHaveValue('');
+});
+
+it('keeps the inline editor open and explains duplicate social work names', async () => {
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: [...session.permissions, 'SOCIAL_WORK_CATALOG_MANAGE'] } })),
+    http.post('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ code: 'SOCIAL_WORK_NAME_DUPLICATE' }, { status: 409 })),
+  );
+  renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Agregar obra social' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Nueva obra social' }), { target: { value: ' OSDE ' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+  expect(await screen.findByText('Ya existe una obra social con ese nombre.')).toBeInTheDocument();
+  expect(screen.getByRole('group', { name: 'Nueva obra social' })).toBeInTheDocument();
+});
+
+it('allows an administrator to create the first work when the catalog is empty', async () => {
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, permissions: [...session.permissions, 'SOCIAL_WORK_CATALOG_MANAGE'] } })),
+    http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: [] })),
+  );
+  renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  expect(await screen.findByRole('option', { name: 'Sin obra social' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Agregar obra social' })).toBeInTheDocument();
+  expect(await screen.findByText(/No hay obras sociales cargadas/)).toBeInTheDocument();
+  expect(screen.queryByText('No pudimos cargar las obras sociales.')).not.toBeInTheDocument();
+});
+
+it('shows a retry action when the social work catalog request fails', async () => {
+  let failed = true;
+  server.use(http.get('http://localhost:3000/api/clinic/social-works', () => failed ? HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 }) : HttpResponse.json({ data: [{ id: 'work-retry', name: 'Cobertura recuperada', isSelectable: true }] })));
+  renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  expect(await screen.findByText('No pudimos cargar las obras sociales.')).toBeInTheDocument();
+  failed = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+  expect(await screen.findByRole('option', { name: 'Cobertura recuperada' })).toBeInTheDocument();
+});
+
+it('keeps the social work selector available but hides catalog creation for Professor without the permission', async () => {
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { ...session, roles: ['PROFESSOR'], permissions: session.permissions.filter((permission) => permission !== 'SOCIAL_WORK_CATALOG_MANAGE') } })));
+  renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  await screen.findByLabelText('Obra social (opcional)');
+  expect(screen.getByLabelText('Obra social (opcional)')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Agregar obra social' })).not.toBeInTheDocument();
+});
 it('presents duplicate DNI safely', async () => { server.use(http.post('http://localhost:3000/api/people', () => HttpResponse.json({ statusCode: 409, code: 'PERSON_DNI_ALREADY_EXISTS', message: 'Conflict' }, { status: 409 }))); renderPage(); await screen.findByText('Sintética, Ana'); fireEvent.click(screen.getByRole('button', { name: /Nueva Persona/ })); fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Otra' } }); fireEvent.change(screen.getByLabelText('Apellido'), { target: { value: 'Persona' } }); fireEvent.change(screen.getByLabelText('DNI'), { target: { value: '20.123.456' } }); fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '3515550100' } }); fireEvent.change(screen.getByLabelText('Fecha de nacimiento'), { target: { value: '1990-01-01' } }); fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); expect(await screen.findByRole('alert')).toHaveTextContent('Ya existe una Persona con ese DNI.'); });
 it('edits general data and invalidates the People query', async () => { let updatedPhone = ''; server.use(http.patch(`http://localhost:3000/api/people/${person.id}`, async ({ request }) => { updatedPhone = String((await request.json() as { phone: string }).phone); return HttpResponse.json({ data: { ...person, phone: updatedPhone } }); })); renderPage(); fireEvent.click(await screen.findByText('Sintética, Ana')); fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '3515559999' } }); fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); await waitFor(() => expect(updatedPhone).toBe('3515559999')); });
 

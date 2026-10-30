@@ -159,7 +159,8 @@ function routineHandlers() {
   let reads = 0;
   server.use(
     http.get(`http://localhost:3000/api/sala/people/${personId}/routines`, () => { reads++; return HttpResponse.json({ data: [workspaceRoutine] }); }),
-    http.get('http://localhost:3000/api/sala/exercise-definitions', () => HttpResponse.json({ data: [{ id: 'squat', name: 'Sentadilla', primaryMuscle: 'Piernas', isActive: true }] })),
+    http.get('http://localhost:3000/api/sala/exercise-definitions', () => HttpResponse.json({ data: [{ id: 'squat', name: 'Sentadilla', primaryMuscle: 'Piernas', movementPatternId: 'push', isActive: true }] })),
+    http.get('http://localhost:3000/api/sala/movement-patterns', () => HttpResponse.json({ data: [{ id: 'push', name: 'Empuje' }] })),
   );
   return () => reads;
 }
@@ -189,71 +190,23 @@ it('treats an Orval HTTP 409 as a mutation error and preserves the editor withou
   expect(screen.getByLabelText('Nombre del día 1')).toHaveValue('Día de fuerza');
   expect(screen.queryByText('Rutina guardada correctamente.')).not.toBeInTheDocument();
 });
-it('preserves structured HTTP retirement errors so the panel displays impact before confirmation', async () => {
+it('uses existing exercise search in the student workspace without catalog administration', async () => {
   navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); routineHandlers();
-  const confirmations: boolean[] = [];
-  server.use(http.post('http://localhost:3000/api/sala/exercise-definitions/squat/retire', async ({ request }) => {
-    const body = await request.json() as { confirmActiveRoutineImpact: boolean }; confirmations.push(body.confirmActiveRoutineImpact);
-    return body.confirmActiveRoutineImpact ? HttpResponse.json({ data: { affectedActiveRoutines: 2 } }) : HttpResponse.json({ code: 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED', message: 'Confirmation required', details: { activeRoutines: 2 } }, { status: 409 });
-  }));
-  renderWorkspace(); await screen.findByText('Día de fuerza'); fireEvent.click(screen.getByRole('button', { name: 'Editar rutina' })); fireEvent.click(screen.getByText('Administrar ejercicios'));
-  fireEvent.click(await screen.findByRole('button', { name: 'Retirar' }));
-  expect(await screen.findByRole('alertdialog')).toHaveTextContent('2 Rutinas activas'); expect(confirmations).toEqual([false]);
-  fireEvent.click(screen.getByRole('button', { name: 'Confirmar retiro' })); await screen.findByText('Ejercicio retirado correctamente.'); expect(confirmations).toEqual([false, true]);
-});
-
-async function startInlineCreation() {
-  await screen.findByText('Día de fuerza');
+  renderWorkspace(); await screen.findByText('Día de fuerza');
   fireEvent.click(screen.getByRole('button', { name: 'Editar rutina' }));
-  const scope = within(screen.getByRole('group', { name: 'Día 1' }));
-  fireEvent.change(scope.getByLabelText('Series'), { target: { value: '4' } });
+  expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '+ Crear nuevo ejercicio' })).not.toBeInTheDocument();
   const catalog = within(screen.getByRole('region', { name: 'Agregar ejercicios' }));
-  fireEvent.click(catalog.getByRole('button', { name: '+ Crear nuevo ejercicio' }));
-  for (const [label, value] of [['Nombre del ejercicio', 'Peso muerto'], ['Músculo principal (opcional)', 'Piernas'], ['Descripción del ejercicio', 'Con barra']]) fireEvent.change(catalog.getByLabelText(label!), { target: { value } });
-  fireEvent.click(catalog.getByRole('button', { name: 'Crear y agregar' }));
-  return scope;
-}
-it('returns the actual created catalog entity through the adapter and adds it directly to the day', async () => {
-  navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); routineHandlers();
-  const created = { id: 'deadlift', name: 'Peso muerto', primaryMuscle: 'Piernas', description: 'Con barra', isActive: true };
-  const writes: unknown[] = [];
-  let saved = false;
-  server.use(
-    http.get('http://localhost:3000/api/sala/exercise-definitions', () => HttpResponse.json({ data: saved ? [created] : [] })),
-    http.post('http://localhost:3000/api/sala/exercise-definitions', async ({ request }) => {
-      writes.push(await request.json()); saved = true;
-      expect(request.headers.get('x-csrf-token')).toBe('csrf');
-      return HttpResponse.json({ data: created }, { status: 201 });
-    }),
-  );
-  renderWorkspace(); const scope = await startInlineCreation();
-  await waitFor(() => expect(scope.getAllByLabelText('Ejercicio')).toHaveLength(2));
-  expect(scope.getAllByLabelText('Ejercicio')[1]).toHaveValue('deadlift');
-  expect(scope.getAllByRole('option', { name: 'Peso muerto · Piernas' })).toHaveLength(2);
-  expect(writes).toEqual([{ name: 'Peso muerto', primaryMuscle: 'Piernas', description: 'Con barra' }]);
-  expect(scope.getAllByLabelText('Series')[0]).toHaveValue('4'); expect(scope.getAllByRole('listitem')).toHaveLength(2);
-  expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeInTheDocument();
+  expect(catalog.getByText('Patrones de movimiento')).toBeInTheDocument();
+  expect(catalog.getByRole('button', { name: /Todos los ejercicios/ })).toBeInTheDocument();
+  expect(catalog.getByRole('button', { name: /Empuje/ })).toBeInTheDocument();
+  expect(catalog.queryByRole('button', { name: '+ Nuevo patrón' })).not.toBeInTheDocument();
+  expect(catalog.queryByRole('button', { name: '+ Nuevo ejercicio' })).not.toBeInTheDocument();
+  fireEvent.change(catalog.getByRole('searchbox'), { target: { value: 'sentadilla' } });
+  fireEvent.click(await catalog.findByRole('button', { name: 'Agregar Sentadilla' }));
+  expect(within(screen.getByRole('group', { name: 'Día 1' })).getAllByRole('listitem')).toHaveLength(2);
+  expect(screen.queryByRole('combobox', { name: 'Ejercicio' })).not.toBeInTheDocument();
 });
-it.each([400, 409])('keeps an inline HTTP %s catalog creation failure as an error', async status => {
-  navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); routineHandlers();
-  server.use(http.post('http://localhost:3000/api/sala/exercise-definitions', () => HttpResponse.json({ code: 'EXERCISE_CREATION_FAILED', message: 'No se pudo crear el ejercicio.' }, { status })));
-  renderWorkspace(); const scope = await startInlineCreation();
-  expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo crear el ejercicio.');
-  expect(within(screen.getByRole('region', { name: 'Agregar ejercicios' })).getByLabelText('Nombre del ejercicio')).toHaveValue('Peso muerto');
-  expect(within(screen.getByRole('region', { name: 'Agregar ejercicios' })).getByLabelText('Músculo principal (opcional)')).toHaveValue('Piernas');
-  expect(within(screen.getByRole('region', { name: 'Agregar ejercicios' })).getByLabelText('Descripción del ejercicio')).toHaveValue('Con barra');
-  expect(scope.queryByRole('option', { name: 'Peso muerto · Piernas' })).not.toBeInTheDocument();
-  expect(scope.getByLabelText('Series')).toHaveValue('4'); expect(scope.getAllByRole('listitem')).toHaveLength(1);
-});
-it('rejects an unexpected successful creation body without a created entity', async () => {
-  navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); routineHandlers();
-  server.use(http.post('http://localhost:3000/api/sala/exercise-definitions', () => HttpResponse.json({ data: {} }, { status: 201 })));
-  renderWorkspace(); const scope = await startInlineCreation();
-  expect(await screen.findByRole('alert')).toHaveTextContent('La respuesta no contiene el ejercicio creado.');
-  expect(within(screen.getByRole('region', { name: 'Agregar ejercicios' })).getByLabelText('Nombre del ejercicio')).toHaveValue('Peso muerto');
-  expect(scope.queryByRole('option', { name: 'Peso muerto · Piernas' })).not.toBeInTheDocument();
-});
-
 it.each([false, true])('uses the generated template list and routine replacement endpoint for assignment (reject=%s)', async (reject) => {
   navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); const reads = routineHandlers();
   let templateReads = 0; const writes: unknown[] = [];
@@ -923,4 +876,23 @@ it('confirms before resetting the PIN and only shows it once after confirmation'
   fireEvent.click(screen.getByRole('button', { name: 'Restablecer PIN del Portal' })); fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Confirmar restablecimiento' }));
   const result = await screen.findByRole('dialog', { name: 'Nuevo PIN temporal' }); expect(result).toHaveTextContent('Alumno Sintético'); expect(within(result).getByLabelText('PIN temporal')).toHaveTextContent('4821'); expect(resets).toBe(1);
   fireEvent.click(within(result).getByRole('button', { name: 'Entendido' })); expect(screen.queryByText('4821')).not.toBeInTheDocument();
+});
+
+it('prints the existing person full name without requesting it again', async () => {
+  const print = vi.spyOn(window, 'print').mockImplementation(() => {});
+  let personReads = 0;
+  try {
+    navigation.tab = 'routine';
+    routineSession(['SALA_ROUTINE_READ']);
+    routineHandlers();
+    server.use(http.get(`http://localhost:3000/api/people/${personId}`, () => {
+      personReads++;
+      return HttpResponse.json({ data: { id: personId, firstName: 'Alumno', lastName: 'Sintético', dni: '12345678' } });
+    }));
+    renderWorkspace();
+    fireEvent.click(await screen.findByRole('button', { name: 'Imprimir / PDF' }));
+    expect(document.getElementById('athleta-routine-print-root')).toHaveTextContent('Alumno: Alumno Sintético');
+    expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('12345678');
+    expect(personReads).toBe(1);
+  } finally { print.mockRestore(); }
 });

@@ -995,6 +995,8 @@ export interface SpontaneousOccurrenceDto {
 }
 
 export interface ExerciseDefinitionResponseDto {
+  /** @nullable */
+  movementPatternId?: string | null;
   id: string;
   name: string;
   /** @nullable */
@@ -1182,11 +1184,31 @@ export interface ReplaceRoutineDto {
   days: RoutineDayDto[];
 }
 
+export interface MovementPatternResponseDto {
+  id: string;
+  name: string;
+}
+
+export interface MovementPatternListEnvelopeDto {
+  data: MovementPatternResponseDto[];
+}
+
+export interface MovementPatternDto {
+  /** @maxLength 120 */
+  name: string;
+}
+
+export interface MovementPatternEnvelopeDto {
+  data: MovementPatternResponseDto;
+}
+
 export interface ExerciseDefinitionListEnvelopeDto {
   data: ExerciseDefinitionResponseDto[];
 }
 
 export interface ExerciseDefinitionDto {
+  /** @nullable */
+  movementPatternId?: string | null;
   /** @maxLength 120 */
   name: string;
   /**
@@ -5069,6 +5091,165 @@ export const duplicateSalaRoutine = async (id: string, options?: RequestInit): P
 
   const data: duplicateSalaRoutineResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as duplicateSalaRoutineResponse
+}
+
+
+
+export type listSalaMovementPatternsResponse200 = {
+  data: MovementPatternListEnvelopeDto
+  status: 200
+}
+
+export type listSalaMovementPatternsResponseSuccess = (listSalaMovementPatternsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listSalaMovementPatternsResponse = (listSalaMovementPatternsResponseSuccess)
+
+export const getListSalaMovementPatternsUrl = () => {
+
+
+
+
+  return `/api/sala/movement-patterns`
+}
+
+export const listSalaMovementPatterns = async ( options?: RequestInit): Promise<listSalaMovementPatternsResponse> => {
+
+  const res = await fetch(getListSalaMovementPatternsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSalaMovementPatternsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSalaMovementPatternsResponse
+}
+
+
+
+export type createSalaMovementPatternResponse201 = {
+  data: MovementPatternEnvelopeDto
+  status: 201
+}
+
+export type createSalaMovementPatternResponseSuccess = (createSalaMovementPatternResponse201) & {
+  headers: Headers;
+};
+;
+
+export type createSalaMovementPatternResponse = (createSalaMovementPatternResponseSuccess)
+
+export const getCreateSalaMovementPatternUrl = () => {
+
+
+
+
+  return `/api/sala/movement-patterns`
+}
+
+export const createSalaMovementPattern = async (movementPatternDto: MovementPatternDto, options?: RequestInit): Promise<createSalaMovementPatternResponse> => {
+
+  const res = await fetch(getCreateSalaMovementPatternUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      movementPatternDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSalaMovementPatternResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSalaMovementPatternResponse
+}
+
+
+
+export type deleteSalaMovementPatternResponse200 = {
+  data: void
+  status: 200
+}
+
+export type deleteSalaMovementPatternResponseSuccess = (deleteSalaMovementPatternResponse200) & {
+  headers: Headers;
+};
+;
+
+export type deleteSalaMovementPatternResponse = (deleteSalaMovementPatternResponseSuccess)
+
+export const getDeleteSalaMovementPatternUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/movement-patterns/${id}`
+}
+
+export const deleteSalaMovementPattern = async (id: string, options?: RequestInit): Promise<deleteSalaMovementPatternResponse> => {
+
+  const res = await fetch(getDeleteSalaMovementPatternUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteSalaMovementPatternResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as deleteSalaMovementPatternResponse
+}
+
+
+
+export type updateSalaMovementPatternResponse200 = {
+  data: MovementPatternEnvelopeDto
+  status: 200
+}
+
+export type updateSalaMovementPatternResponseSuccess = (updateSalaMovementPatternResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateSalaMovementPatternResponse = (updateSalaMovementPatternResponseSuccess)
+
+export const getUpdateSalaMovementPatternUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/movement-patterns/${id}`
+}
+
+export const updateSalaMovementPattern = async (id: string,
+    movementPatternDto: MovementPatternDto, options?: RequestInit): Promise<updateSalaMovementPatternResponse> => {
+
+  const res = await fetch(getUpdateSalaMovementPatternUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      movementPatternDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateSalaMovementPatternResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateSalaMovementPatternResponse
 }
 
 

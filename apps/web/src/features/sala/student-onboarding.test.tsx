@@ -10,7 +10,7 @@ const session = { roles: ['ADMINISTRATIVE'], permissions: ['SALA_PARTICIPATION_M
 let canPlanManage = false;
 let canCreate = true;
 beforeAll(() => { globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch; server.listen({ onUnhandledRequest: 'error' }); });
-beforeEach(() => { canPlanManage = false; canCreate = true; server.use(http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: [], meta: { page: 1, pageSize: 100, total: 0, totalPages: 0 } }))); });
+beforeEach(() => { canPlanManage = false; canCreate = true; server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: session })), http.get('http://localhost:3000/api/people', () => HttpResponse.json({ data: [], meta: { page: 1, pageSize: 100, total: 0, totalPages: 0 } }))); });
 afterEach(() => server.resetHandlers()); afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 function OnboardingConsumer(): React.JSX.Element {
   useQuery({ queryKey: ['people', 'sala-students'], queryFn: () => listPeople({ page: 1, pageSize: 100 }, { credentials: 'include' }) });

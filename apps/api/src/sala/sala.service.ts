@@ -620,13 +620,33 @@ export class SalaService {
     });
   }
   async cancelReservation(id: string) { try { return await this.prisma.oneOffReservation.update({ where: { id }, data: { cancelledAt: new Date() } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_RESERVATION_NOT_FOUND', message: 'Reservation not found' }); throw error; } }
+  async listMovementPatterns() { return this.prisma.exerciseMovementPattern.findMany({ orderBy: { name: 'asc' } }); }
+  async saveMovementPattern(name: string, id?: string) {
+    const trimmed = name.trim();
+    if (!trimmed) throw new BadRequestException({ code: 'SALA_MOVEMENT_PATTERN_NAME_REQUIRED', message: 'El nombre del patrón es obligatorio.' });
+    const data = { name: trimmed, normalizedName: this.normalizeName(name) };
+    try {
+      return id ? await this.prisma.exerciseMovementPattern.update({ where: { id }, data }) : await this.prisma.exerciseMovementPattern.create({ data });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') throw new ConflictException({ code: 'SALA_MOVEMENT_PATTERN_DUPLICATE', message: 'Ya existe un patrón con ese nombre.' });
+        if (error.code === 'P2025') throw new NotFoundException({ code: 'SALA_MOVEMENT_PATTERN_NOT_FOUND', message: 'No existe el patrón.' });
+      }
+      throw error;
+    }
+  }
+  private async validateMovementPattern(id?: string | null) {
+    if (id && !await this.prisma.exerciseMovementPattern.findUnique({ where: { id } })) throw new BadRequestException({ code: 'SALA_MOVEMENT_PATTERN_NOT_FOUND', message: 'No existe el patrón seleccionado.' });
+  }
   async listExerciseDefinitions(includeInactive = false) { return this.prisma.exerciseDefinition.findMany({ where: includeInactive ? {} : { isActive: true }, orderBy: { name: 'asc' } }); }
-  async createExerciseDefinition(input: ExerciseDefinitionDto) { try { return await this.prisma.exerciseDefinition.create({ data: { name: input.name.trim(), primaryMuscle: this.optionalText(input.primaryMuscle), description: this.optionalText(input.description) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_EXERCISE_DUPLICATE', message: 'Exercise already exists' }); throw error; } }
-  async updateExerciseDefinition(id: string, input: ExerciseDefinitionDto) { try { return await this.prisma.exerciseDefinition.update({ where: { id }, data: { name: input.name.trim(), primaryMuscle: this.optionalText(input.primaryMuscle), description: this.optionalText(input.description) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_EXERCISE_NOT_FOUND', message: 'Exercise not found' }); if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_EXERCISE_DUPLICATE', message: 'Exercise already exists' }); throw error; } }
+  async createExerciseDefinition(input: ExerciseDefinitionDto) { await this.validateMovementPattern(input.movementPatternId); try { return await this.prisma.exerciseDefinition.create({ data: { ...(input.movementPatternId !== undefined ? { movementPatternId: input.movementPatternId } : {}), name: input.name.trim(), primaryMuscle: this.optionalText(input.primaryMuscle), description: this.optionalText(input.description) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_EXERCISE_DUPLICATE', message: 'Exercise already exists' }); throw error; } }
+  async updateExerciseDefinition(id: string, input: ExerciseDefinitionDto) { await this.validateMovementPattern(input.movementPatternId); try { return await this.prisma.exerciseDefinition.update({ where: { id }, data: { ...(input.movementPatternId !== undefined ? { movementPatternId: input.movementPatternId } : {}), name: input.name.trim(), primaryMuscle: this.optionalText(input.primaryMuscle), description: this.optionalText(input.description) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_EXERCISE_NOT_FOUND', message: 'Exercise not found' }); if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_EXERCISE_DUPLICATE', message: 'Exercise already exists' }); throw error; } }
   async retireExerciseDefinition(id: string, confirmActiveRoutineImpact: boolean) {
     return this.prisma.$transaction(async (tx) => {
       const exercise = await tx.exerciseDefinition.findUnique({ where: { id } });
       if (!exercise || !exercise.isActive) throw new NotFoundException({ code: 'SALA_EXERCISE_NOT_FOUND', message: 'Exercise not found' });
+      const templateReference = await tx.routineTemplateExercise.findFirst({ where: { exerciseDefinitionId: id }, select: { id: true } });
+      if (templateReference) throw new ConflictException({ code: 'SALA_EXERCISE_IN_ROUTINE_TEMPLATE', message: 'No se puede retirar el ejercicio porque está incluido en una rutina preestablecida. Primero quitá el ejercicio de esa rutina para poder retirarlo.' });
       const affectedDays = await tx.routineDay.findMany({ where: { routine: { status: RoutineStatus.ACTIVE }, exercises: { some: { exerciseDefinitionId: id } } }, select: { routineId: true }, distinct: ['routineId'] });
       const activeRoutines = affectedDays.length;
       if (activeRoutines > 0 && !confirmActiveRoutineImpact) throw new ConflictException({ code: 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED', message: 'Confirmation is required because active routines are affected', details: { activeRoutines } });
@@ -634,6 +654,17 @@ export class SalaService {
       const retired = await tx.exerciseDefinition.update({ where: { id }, data: { isActive: false } });
       return { exercise: retired, affectedActiveRoutines: activeRoutines };
     });
+  }
+  async deleteMovementPattern(id: string) {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.exerciseDefinition.updateMany({ where: { movementPatternId: id }, data: { movementPatternId: null } });
+        return await tx.exerciseMovementPattern.delete({ where: { id } });
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_MOVEMENT_PATTERN_NOT_FOUND', message: 'Movement pattern not found' });
+      throw error;
+    }
   }
   async listRoutineTemplates() {
     return this.prisma.routineTemplate.findMany({ orderBy: { name: 'asc' }, include: this.routineTemplateInclude() });
