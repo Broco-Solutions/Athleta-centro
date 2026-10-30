@@ -67,12 +67,15 @@ it('does not offer a new training when no routine is active', async () => {
 
 it('shows blocks without changing form order or exercise IDs in the weight payload', async () => {
   const grouped = { ...context, routine: { ...context.routine, days: [{ ...context.routine.days[0]!, exercises: [
-    { ...entry, id: 'b', blockPosition: 1, position: 2, series: '4' }, { ...entry, id: 'a', exerciseName: 'Remo', blockPosition: 1, position: 1, series: '4' }, { ...entry, id: 'c', exerciseName: 'Plancha', blockPosition: 2, position: 3, series: '3' },
+    { ...entry, id: 'b', repetitions: '10+10', load: '12,5', blockPosition: 1, position: 2, series: '4' }, { ...entry, id: 'a', load: '30', exerciseName: 'Remo', blockPosition: 1, position: 1, series: '4' }, { ...entry, id: 'c', repetitions: null, duration: '45', exerciseName: 'Plancha', blockPosition: 2, position: 3, series: '3' },
   ] }, context.routine.days[1]!] } };
   let payload: unknown;
   server.use(http.get(`${base}/sala/training-context`, () => HttpResponse.json({ data: grouped })), http.post(`${base}/sala/training-records`, async ({ request }) => { payload = await request.json(); return HttpResponse.json({ data: { id: 'saved' } }, { status: 201 }); }));
   renderPage(); expect(await screen.findByText('Bloque A — 4 series')).toBeInTheDocument();
   expect(screen.getByText('A1 — Press')).toBeInTheDocument(); expect(screen.getByText('A2 — Remo')).toBeInTheDocument(); expect(screen.getByText('B1 — Plancha')).toBeInTheDocument();
+  expect(screen.getByText('10+10 rep.')).toBeInTheDocument(); expect(screen.getByText('Tiempo 45 seg.')).toBeInTheDocument();
+  expect(screen.getByText('12,5 kg')).toBeInTheDocument(); expect(screen.getAllByText('30 kg')).toHaveLength(2);
+  expect(screen.queryByText(/Descanso/)).not.toBeInTheDocument();
   expect(weights()).toHaveLength(3); fireEvent.change(weights()[0]!, { target: { value: '32,5' } }); fireEvent.change(weights()[1]!, { target: { value: '22' } });
   fireEvent.click(screen.getByRole('button', { name: 'Guardar entrenamiento' })); await screen.findByText('Entrenamiento guardado correctamente.');
   expect(payload).toEqual({ routineId: 'routine', routineDayId: 'day-1', date: '2026-10-26', exercises: [{ id: 'b', weightKg: '32.5' }, { id: 'a', weightKg: '22' }, { id: 'c', weightKg: null }] });

@@ -14,7 +14,7 @@ afterEach(cleanup);
 it('loads a paginated list, opens details only on demand and closes in place for staff', async () => {
   const api = renderHistory(); await screen.findByText('26/10/2026'); expect(api.detail).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: /Ver detalle del/ }));
-  expect(await screen.findByText('Press de banca')).toBeInTheDocument(); expect(api.detail).toHaveBeenCalledWith('record'); expect(screen.getByText('30 kg')).toBeInTheDocument(); expect(screen.getByText('32,5 kg')).toBeInTheDocument(); expect(screen.getByText('Sin registro')).toBeInTheDocument(); expect(screen.getByText('Tiempo 30 s')).toBeInTheDocument();
+  expect(await screen.findByText('Press de banca')).toBeInTheDocument(); expect(api.detail).toHaveBeenCalledWith('record'); expect(screen.getByText('30 kg')).toBeInTheDocument(); expect(screen.getByText('32,5 kg')).toBeInTheDocument(); expect(screen.getByText('Sin registro')).toBeInTheDocument(); expect(screen.getByText('Tiempo 30 s')).toBeInTheDocument(); expect(screen.getByText('3 series · 10 rep. · Descanso 60 s')).toBeInTheDocument();
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument(); expect(screen.queryByText('Editar registro')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: /Cerrar detalle del/ })); expect(screen.queryByText('Press de banca')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Siguiente' })); await waitFor(() => expect(api.list).toHaveBeenCalledWith(2));
@@ -24,9 +24,11 @@ it('offers correction only to the Portal owner', async () => {
   expect(await screen.findByRole('link', { name: 'Editar registro' })).toHaveAttribute('href', '/portal/sala/entrenamientos/registrar?recordId=record');
 });
 it('renders grouping exclusively from the historical snapshot', async () => {
-  const api = renderHistory(); api.detail.mockResolvedValue({ ...savedTraining, exercises: savedTraining.exercises.map(e => ({ ...e, blockPosition: 1, series: '3' })) });
+  const api = renderHistory(); api.detail.mockResolvedValue({ ...savedTraining, exercises: savedTraining.exercises.map((e, i) => ({ ...e, blockPosition: 1, series: '3', repetitions: i ? null : '8+8', duration: i ? '30' : null, load: i ? null : '30', notes: 'Observación sintética' })) });
   fireEvent.click(await screen.findByRole('button', { name: /Ver detalle del/ }));
   expect(await screen.findByText('Bloque A — 3 series')).toBeInTheDocument();
+  expect(screen.getByText('8+8 rep.')).toBeInTheDocument(); expect(screen.getByText('Tiempo 30 seg.')).toBeInTheDocument();
+  expect(screen.queryByText(/Descanso/)).not.toBeInTheDocument(); expect(screen.getAllByText('Observación sintética')).toHaveLength(2);
   expect(screen.getByText('A1 — Press de banca')).toBeInTheDocument(); expect(screen.getByText('A2 — Remo')).toBeInTheDocument();
   expect(screen.getByText('32,5 kg')).toBeInTheDocument(); expect(screen.getByText('30 kg')).toBeInTheDocument();
 });

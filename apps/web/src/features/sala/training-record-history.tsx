@@ -1,5 +1,5 @@
 'use client';
-import { groupRoutineBlocks, isGroupedDay } from './routine-blocks';
+import { groupRoutineBlocks, isGroupedDay, formatRoutineRepetitions, formatRoutineDuration, formatRoutineLoad } from './routine-blocks';
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
@@ -12,8 +12,8 @@ export function TrainingRecordDetail({ record }: { record: TrainingRecordDetailD
   return <ul className="mt-3 divide-y" aria-label="Ejercicios del entrenamiento">{record.exercises.map(exercise => {
     const block = blocks.find(item => item.exercises.includes(exercise));
     return <React.Fragment key={exercise.id}>{block?.exercises[0] === exercise ? <li className="pt-3 font-semibold">Bloque {block.label}{block.series ? ` — ${block.series} series` : ''}</li> : null}<li className="grid gap-2 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-    <div className="min-w-0 break-words"><p className="font-medium">{block ? `${block.label}${block.exercises.indexOf(exercise) + 1} — ` : ''}{exercise.exerciseName}</p><p className="mt-1 text-sm text-muted-foreground">{[!block && exercise.series && `${exercise.series} series`, exercise.repetitions && `${exercise.repetitions} rep.`, exercise.duration && `Tiempo ${exercise.duration}`, exercise.rest && `Descanso ${exercise.rest}`].filter(Boolean).join(' · ')}</p>{exercise.notes ? <p className="mt-1 text-sm">{exercise.notes}</p> : null}</div>
-    <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-muted-foreground">Carga indicada</dt><dd className="mt-1 break-words">{exercise.load || 'Sin indicación'}</dd></div><div><dt className="text-muted-foreground">Peso realizado</dt><dd className="mt-1 font-medium tabular-nums">{trainingWeight(exercise.weightKg)}</dd></div></dl>
+    <div className="min-w-0 break-words"><p className="font-medium">{block ? `${block.label}${block.exercises.indexOf(exercise) + 1} — ` : ''}{exercise.exerciseName}</p><p className="mt-1 text-sm text-muted-foreground">{(block ? [formatRoutineRepetitions(exercise.repetitions), exercise.duration && `Tiempo ${formatRoutineDuration(exercise.duration)}`] : [!block && exercise.series && `${exercise.series} series`, exercise.repetitions && `${exercise.repetitions} rep.`, exercise.duration && `Tiempo ${exercise.duration}`, exercise.rest && `Descanso ${exercise.rest}`]).filter(Boolean).join(' · ')}</p>{exercise.notes ? <p className="mt-1 text-sm">{exercise.notes}</p> : null}</div>
+    <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-muted-foreground">Carga indicada</dt><dd className="mt-1 break-words">{(block ? formatRoutineLoad(exercise.load) : exercise.load) || 'Sin indicación'}</dd></div><div><dt className="text-muted-foreground">Peso realizado</dt><dd className="mt-1 font-medium tabular-nums">{trainingWeight(exercise.weightKg)}</dd></div></dl>
   </li></React.Fragment>; })}</ul>;
 }
 function RecordDetail({ id, api, queryKey, editable }: { id: string; api: TrainingHistoryApi; queryKey: string[]; editable: boolean }): React.JSX.Element {

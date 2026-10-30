@@ -1376,7 +1376,7 @@ export class SalaService {
         if (!grouped) continue;
         const position = exercise.blockPosition;
         const series = this.optionalText(exercise.series);
-        if (position == null || !Number.isInteger(position) || position < 1 || (position !== currentBlock && position !== currentBlock + 1) || (position === currentBlock && series !== blockSeries)) {
+        if (!series || !/^[0-9]+$/.test(series) || BigInt(series) < 1n || position == null || !Number.isInteger(position) || position < 1 || (position !== currentBlock && position !== currentBlock + 1) || (position === currentBlock && series !== blockSeries)) {
           throw new BadRequestException({ code: 'SALA_ROUTINE_BLOCKS_INVALID', message: 'La organización de bloques de la rutina es inválida. Revisá el orden y las series de los ejercicios.' });
         }
         if (position !== currentBlock) { currentBlock = position; blockSeries = series; }

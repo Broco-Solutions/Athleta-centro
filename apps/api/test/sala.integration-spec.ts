@@ -962,12 +962,33 @@ describe('Sala configuration API', () => {
     await expect(sala.updateRoutineTemplate(template.id, { name: 'Inválida', days: [{ exercises: positions.map(blockPosition => ({ exerciseDefinitionId: definition.id, blockPosition, series: '4' })) }] })).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_BLOCKS_INVALID' } });
     expect((await sala.listRoutineTemplates()).find(t => t.id === template.id)).toEqual(template);
   });
+  it.each(['abc', '4.5', '0', '-1', null, ''])('rejects grouped series %j for template creation, editing and assigned routines', async series => {
+    const definition = await sala.createExerciseDefinition({ name: 'Validación series' });
+    const dni = uniqueDni();
+    const person = await prisma.person.create({ data: { firstName: 'Series', lastName: 'Sintético', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1991-01-01') } });
+    const plan = await prisma.salaPlan.create({ data: { name: 'Plan series', monthlyAmount: 1000 } });
+    const professor = await users.create({ firstName: 'Profesor', lastName: 'Series', email: `series-${dni}@sala.test`, roles: [Role.PROFESSOR] });
+    const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' });
+    const validDays = [{ exercises: [{ exerciseDefinitionId: definition.id, blockPosition: 1, series: '4' }] }];
+    const template = await sala.createRoutineTemplate({ name: 'Válida', days: validDays });
+    const assigned = await sala.replaceRoutine({ personId: person.id, salaParticipationId: participation.id, days: validDays });
+    const savedRoutines = await sala.listRoutines(person.id);
+    const invalidDays = [{ exercises: [{ exerciseDefinitionId: definition.id, blockPosition: 1, series }] }];
+    const error = { response: { code: 'SALA_ROUTINE_BLOCKS_INVALID' } };
+    await expect(sala.createRoutineTemplate({ name: 'Inválida', days: invalidDays })).rejects.toMatchObject(error);
+    await expect(sala.updateRoutineTemplate(template.id, { name: 'Inválida', days: invalidDays })).rejects.toMatchObject(error);
+    await expect(sala.replaceRoutine({ personId: person.id, salaParticipationId: participation.id, days: invalidDays })).rejects.toMatchObject(error);
+    expect((await sala.listRoutineTemplates()).find(t => t.id === template.id)).toEqual(template);
+    expect(await sala.listRoutines(person.id)).toEqual(savedRoutines);
+    expect(assigned.days[0]!.exercises[0]!.series).toBe('4');
+    const legacy = await sala.createRoutineTemplate({ name: 'Anterior', days: [{ exercises: [{ exerciseDefinitionId: definition.id, series }] }] });
+    expect(legacy.days[0]!.exercises[0]!.series).toBe(series || null);
+  });
   it('normalizes series for comparison and rejects inconsistent shared series', async () => {
     const definition = await sala.createExerciseDefinition({ name: 'Series compartidas' });
     const exercise = { exerciseDefinitionId: definition.id, blockPosition: 1 };
     await expect(sala.createRoutineTemplate({ name: 'Inválida', days: [{ exercises: [{ ...exercise, series: '4' }, { ...exercise, series: '3' }] }] })).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_BLOCKS_INVALID' } });
-    const empty = await sala.createRoutineTemplate({ name: 'Vacías', days: [{ exercises: [{ ...exercise, series: ' ' }, { ...exercise, series: null }] }] });
-    expect(empty.days[0]!.exercises.map(e => e.series)).toEqual([null, null]);
+    await expect(sala.createRoutineTemplate({ name: 'Vacías', days: [{ exercises: [{ ...exercise, series: ' ' }, { ...exercise, series: null }] }] })).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_BLOCKS_INVALID' } });
     const normalized = await sala.createRoutineTemplate({ name: 'Normalizadas', days: [{ exercises: [{ ...exercise, series: ' 4 ' }, { ...exercise, series: '4' }] }] });
     expect(normalized.days[0]!.exercises.map(e => e.series)).toEqual(['4', '4']);
   });

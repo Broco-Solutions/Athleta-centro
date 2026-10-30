@@ -29,3 +29,15 @@ export function groupRoutineBlocks<T extends BlockExercise>(exercises: readonly 
   }
   return [...blocks.values()];
 }
+
+export function formatRoutineRepetitions(value: string | null | undefined): string {
+  return value && /^\d+(?:\+\d+)*$/.test(value) ? `${value} rep.` : value ?? '';
+}
+
+export function formatRoutineDuration(value: string | null | undefined): string {
+  return value && /^\d+$/.test(value) ? `${value} seg.` : value ?? '';
+}
+
+export function formatRoutineLoad(value: string | null | undefined): string {
+  return value && /^\d+(?:[.,]\d+)?$/.test(value) ? `${value} kg` : value ?? '';
+}

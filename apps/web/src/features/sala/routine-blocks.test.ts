@@ -1,4 +1,4 @@
-import { blockLabel, groupRoutineBlocks, isGroupedDay } from './routine-blocks';
+import { blockLabel, groupRoutineBlocks, isGroupedDay, formatRoutineRepetitions, formatRoutineDuration, formatRoutineLoad } from './routine-blocks';
 
 it.each([[1, 'A'], [2, 'B'], [3, 'C'], [26, 'Z'], [27, 'AA'], [28, 'AB']] as const)('labels block %s as %s', (position, label) => expect(blockLabel(position)).toBe(label));
 it('groups without mutating or reordering exercises and recovers shared series', () => {
@@ -27,4 +27,29 @@ it('round-trips mixed legacy and grouped days without IDs or duplicate editable 
   expect(copyRoutineDays(days)[1]!.exercises.map(e => e.blockPosition)).toEqual([1, 1, 2]);
   for (const day of copyRoutineDays(days)) { expect(day).not.toHaveProperty('id'); for (const e of day.exercises) { expect(e).not.toHaveProperty('id'); expect(e).not.toHaveProperty('key'); } }
   expect(days).toEqual(original);
+});
+
+const formatterCases: [typeof formatRoutineLoad, [string, string][]][] = [
+  [formatRoutineRepetitions, [['8', '8 rep.'], ['10', '10 rep.'], ['8+8', '8+8 rep.'], ['10+10', '10+10 rep.'], ['8 rep.', '8 rep.']]],
+  [formatRoutineDuration, [['30', '30 seg.'], ['45', '45 seg.'], ['45 s', '45 s'], ['45 seg.', '45 seg.'], ['1 min', '1 min']]],
+  [formatRoutineLoad, [['20', '20 kg'], ['12,5', '12,5 kg'], ['12.5', '12.5 kg'], ['40 kg', '40 kg'], ['Banda roja', 'Banda roja']]],
+];
+
+describe.each(formatterCases)('presentation formatter %s', (format, cases) => {
+  it.each(cases)('formats %s as %s without modifying stored values', (value, expected) => expect(format(value)).toBe(expected));
+  it.each([null, undefined, ''])('keeps empty value %s empty', value => expect(format(value)).toBe(''));
+});
+
+it.each(['abc', '4.5', '0', '-1', '', ' '])('rejects invalid grouped series %j without changing the draft', async series => {
+  const { routineDaysToDraft, draftToRoutineDays } = await import('./routine-editor');
+  const draft = routineDaysToDraft([{ position: 1, exercises: [{ exerciseDefinitionId: 'a', blockPosition: 1, series, rest: '90 s' }] }]);
+  const original = structuredClone(draft);
+  expect(() => draftToRoutineDays(draft)).toThrow('Las series del Bloque A del Día 1 deben ser un número entero mayor a cero.');
+  expect(draft).toEqual(original);
+});
+
+it('preserves hidden rest and existing units when serializing saved blocks', async () => {
+  const { routineDaysToDraft, draftToRoutineDays } = await import('./routine-editor');
+  const exercise = { exerciseDefinitionId: 'a', blockPosition: 1, series: '4', duration: '1 min', load: 'Banda roja', rest: '90 s' };
+  expect(draftToRoutineDays(routineDaysToDraft([{ position: 1, exercises: [exercise] }]))[0]!.exercises[0]).toMatchObject(exercise);
 });

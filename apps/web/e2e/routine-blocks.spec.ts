@@ -12,8 +12,8 @@ test('blocks survive template editing, assignment, portal weights, replacement, 
   async function capture(target: Page, name: string) {
     for (const width of [1440, 768, 390]) {
       await target.setViewportSize({ width, height: 1000 });
-      await expect.poll(() => target.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await target.screenshot({ path: `/tmp/athleta-blocks-${name}-${width}.png`, fullPage: true });
+      await expect.poll(() => target.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), { message: `Sin desborde horizontal en ${name} a ${width}px` }).toBe(true);
     }
     const markup = await target.evaluate(async () => {
       const clone = document.documentElement.cloneNode(true) as HTMLElement;
@@ -57,20 +57,21 @@ test('blocks survive template editing, assignment, portal weights, replacement, 
     const templateName = `Bloques ${fixture.personId}`;
     await page.getByLabel('Nombre de la preestablecida').fill(templateName);
     await expect(page.getByRole('button', { name: 'Eliminar bloque' })).toBeDisabled();
+    await page.getByRole('button', { name: 'Buscar ejercicios para el bloque A' }).click();
     await page.getByLabel('Buscar ejercicio').fill(name);
     const a = page.getByRole('region', { name: 'Bloque A', exact: true });
-    await a.getByLabel('Series del bloque').fill('4');
+    await expect(a.getByLabel('Series del bloque A', { exact: true })).toHaveText('4');
     for (let i = 0; i < 3; i++) await page.getByRole('button', { name: `Agregar ${name}`, exact: true }).click();
-    await a.getByLabel('Valor', { exact: true }).first().fill('8'); await a.getByLabel('Carga', { exact: true }).first().fill('60 kg');
+    await a.getByLabel('Valor', { exact: true }).first().fill('8'); await a.getByLabel('Carga', { exact: true }).first().fill('60');
     await page.getByRole('button', { name: '+ Agregar bloque' }).click();
-    const b = page.getByRole('region', { name: 'Bloque B', exact: true }); await b.getByLabel('Series del bloque').fill('3'); await b.getByRole('button', { name: 'Agregar ejercicio al bloque' }).click();
+    const b = page.getByRole('region', { name: 'Bloque B', exact: true }); await b.getByRole('button', { name: 'Disminuir series del bloque B' }).click(); await b.getByRole('button', { name: 'Buscar ejercicios para el bloque B' }).click(); await page.getByLabel('Buscar ejercicio').fill(name);
     for (let i = 0; i < 2; i++) await page.getByRole('button', { name: `Agregar ${name}`, exact: true }).click();
     await capture(page, 'editor');
     const created = page.waitForResponse(response => response.url().endsWith('/sala/routine-templates') && response.request().method() === 'POST');
     await page.getByRole('button', { name: 'Guardar cambios' }).click(); templateId = (await (await created).json()).data.id as string;
     await expect(page.getByText('Rutina preestablecida guardada correctamente.')).toBeVisible();
     await page.getByRole('button', { name: 'Editar', exact: true }).click();
-    await expect(a.getByLabel('Series del bloque')).toHaveValue('4'); await expect(b.getByLabel('Series del bloque')).toHaveValue('3');
+    await expect(a.getByLabel('Series del bloque A', { exact: true })).toHaveText('4'); await expect(b.getByLabel('Series del bloque B', { exact: true })).toHaveText('3');
     await expect(a.getByText(`A3 — ${name}`, { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
     await print(page, 'template');
     await page.goto(`/sala/people/${fixture.personId}?tab=routine`); await page.getByRole('button', { name: 'Usar preestablecida', exact: true }).click(); await page.getByRole('button', { name: templateName, exact: true }).click(); await page.getByRole('button', { name: 'Asignar rutina', exact: true }).click();
@@ -80,7 +81,7 @@ test('blocks survive template editing, assignment, portal weights, replacement, 
     await portal.getByRole('link', { name: /^Registrar este día:/ }).click();
     const weights = portal.getByLabel(/Peso utilizado/); await expect(weights).toHaveCount(5); await weights.nth(0).fill('32,5'); await weights.nth(1).fill('22');
     await portal.getByRole('button', { name: 'Guardar entrenamiento', exact: true }).click(); await expect(portal.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
-    await page.getByRole('button', { name: 'Editar rutina' }).click(); await page.getByLabel('Series del bloque').first().fill('6'); await page.getByRole('button', { name: 'Guardar cambios' }).click(); await expect(page.getByText('Rutina guardada correctamente.')).toBeVisible();
+    await page.getByRole('button', { name: 'Editar rutina' }).click(); await page.getByRole('button', { name: 'Aumentar series del bloque A' }).click(); await page.getByRole('button', { name: 'Aumentar series del bloque A' }).click(); await page.getByRole('button', { name: 'Guardar cambios' }).click(); await expect(page.getByText('Rutina guardada correctamente.')).toBeVisible();
     await portal.getByRole('link', { name: 'Ver mi historial' }).click(); await portal.getByRole('button', { name: /Ver detalle del/ }).click(); await expect(portal.getByText('Bloque A — 4 series')).toBeVisible(); await expect(portal.getByText('32,5 kg', { exact: true })).toBeVisible(); await capture(portal, 'history');
     await portal.getByRole('link', { name: 'Editar registro', exact: true }).click(); await portal.getByLabel(/Peso utilizado/).first().fill('34,5'); await portal.getByRole('button', { name: 'Guardar corrección', exact: true }).click(); await expect(portal.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
     await page.locator('summary').filter({ hasText: 'Rutinas históricas' }).click();
