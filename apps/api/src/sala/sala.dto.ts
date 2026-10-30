@@ -117,6 +117,7 @@ export class RetireExerciseDefinitionDto {
   @ApiPropertyOptional({ type: Boolean, default: false }) @IsOptional() @IsBoolean() confirmActiveRoutineImpact = false;
 }
 export class RoutineExerciseDto {
+  @ApiPropertyOptional({ type: Number, nullable: true }) @IsOptional() @IsInt() @Min(1) blockPosition?: number | null;
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() exerciseDefinitionId!: string;
   @ApiPropertyOptional({ type: String, maxLength: 80, nullable: true }) @IsOptional() @IsString() @MaxLength(80) series?: string | null;
   @ApiPropertyOptional({ type: String, maxLength: 80, nullable: true }) @IsOptional() @IsString() @MaxLength(80) repetitions?: string | null;
@@ -273,6 +274,7 @@ export class ExerciseDefinitionListEnvelopeDto {
   @ApiProperty({ type: () => [ExerciseDefinitionResponseDto] }) data!: ExerciseDefinitionResponseDto[];
 }
 export class RoutineExerciseResponseDto {
+  @ApiProperty({ type: Number, nullable: true }) blockPosition!: number | null;
   @ApiProperty({ type: String }) id!: string;
   @ApiProperty({ type: Number }) position!: number;
   @ApiProperty({ type: String }) exerciseDefinitionId!: string;

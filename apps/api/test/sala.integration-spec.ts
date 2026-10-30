@@ -9,6 +9,7 @@ import { ValidationPipe, type INestApplication } from '@nestjs/common';
 import { Prisma, Role, type Person, type SalaParticipation, type SalaWeekday } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { AuthService } from '../src/auth/auth.service';
+import { AuthRateLimitService } from '../src/auth/auth-rate-limit.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { InternalUserService } from '../src/team/internal-user.service';
 import { SalaService } from '../src/sala/sala.service';
@@ -76,6 +77,11 @@ describe('Sala configuration API', () => {
   });
   async function cleanSalaFixtures() { await prisma.salaClinicalIndication.deleteMany(); await prisma.salaPaymentReversal.deleteMany(); await prisma.salaPaymentAllocation.deleteMany(); await prisma.salaPayment.deleteMany(); await prisma.clinicalPatient.deleteMany(); await prisma.physicalTestResult.deleteMany(); await prisma.physicalEvaluation.deleteMany(); await prisma.physicalTestDefinition.deleteMany(); await prisma.routineExercise.deleteMany(); await prisma.routineDay.deleteMany(); await prisma.routine.deleteMany(); await prisma.routineTemplate.deleteMany(); await prisma.exerciseDefinition.deleteMany(); await prisma.exerciseMovementPattern.deleteMany(); await prisma.salaOccurrence.deleteMany(); await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaServiceType.deleteMany(); await prisma.salaCharge.deleteMany(); await prisma.salaBillingConfiguration.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.salaScheduleException.deleteMany(); await prisma.salaScheduleSlot.deleteMany(); await prisma.salaPlan.deleteMany(); await prisma.salaConfiguration.deleteMany(); await prisma.paperHealthDeclaration.deleteMany(); await prisma.healthDeclaration.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); await prisma.portalCredential.deleteMany(); await prisma.person.deleteMany(); }
   beforeAll(async () => { app = (await Test.createTestingModule({ imports: [AppModule] }).compile()).createNestApplication(); app.use(cookieParser()); app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })); app.setGlobalPrefix('api'); await app.init(); prisma = app.get(PrismaService); users = app.get(InternalUserService); auth = app.get(AuthService); sala = app.get(SalaService); await cleanSalaFixtures(); });
+  beforeEach(() => {
+    // This app is shared across cases that move the clock forward and backward.
+    // Reset only its in-memory request history; the real limiter stays active.
+    app.get(AuthRateLimitService)['generalBuckets'].clear();
+  });
   afterEach(cleanSalaFixtures);
   afterAll(() => app.close());
   const uniqueDni = () => `${Date.now()}${Math.floor(Math.random() * 100000)}`.slice(-12);
@@ -926,6 +932,71 @@ describe('Sala configuration API', () => {
   });
   it('rolls back LeaveSala after booking mutations fail', async () => {
     const plan = await prisma.salaPlan.create({ data: { name: 'Leave rollback', monthlyAmount: 1000 } }); const service = await sala.createServiceType({ name: 'Musculación', durationMinutes: 60 }); await prisma.salaPlanService.create({ data: { planId: plan.id, serviceTypeId: service.id } }); const slot = await sala.createSlot({ weekday: 'FRIDAY', startTime: '18:00', durationMinutes: 120 }); const professor = await users.create({ firstName: 'Prof', lastName: 'Leave rollback', email: `leave-rollback-${uniqueDni()}@sala.test`, roles: [Role.PROFESSOR] }); const dni = uniqueDni(); const person = await prisma.person.create({ data: { firstName: 'Leave', lastName: 'Rollback', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1991-01-01T00:00:00Z') } }); const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' }); const fixed = await sala.createFixed({ personId: person.id, salaParticipationId: participation.id, scheduleSlotId: slot.id, serviceTypeId: service.id, startDate: '2026-01-01' }); const reservation = await sala.createReservation({ personId: person.id, salaParticipationId: participation.id, scheduleSlotId: slot.id, serviceTypeId: service.id, startTime: '19:00', date: '2026-08-28', confirmOverbooking: true }); await expect(sala.leave(participation.id, true)).rejects.toThrow('SIMULATED_LEAVE_FAILURE'); expect((await prisma.salaParticipation.findUnique({ where: { id: participation.id } }))?.endDate).toBeNull(); expect((await prisma.fixedSalaBooking.findUnique({ where: { id: fixed.id } }))?.endDate).toBeNull(); expect((await prisma.oneOffReservation.findUnique({ where: { id: reservation.id } }))?.cancelledAt).toBeNull();
+  });
+  it('persists, edits and copies blocks across templates, assignments and historical reuse', async () => {
+    const exercise = await sala.createExerciseDefinition({ name: 'Bloques sintéticos' });
+    const exercises = [1, 1, 2].map(blockPosition => ({ exerciseDefinitionId: exercise.id, blockPosition, series: blockPosition === 1 ? '4' : '3', repetitions: '8', load: '30 kg' }));
+    const template = await sala.createRoutineTemplate({ name: 'Bloques', days: [{ exercises }] });
+    expect(template.days[0]!.exercises.map(e => [e.blockPosition, e.series])).toEqual([[1, '4'], [1, '4'], [2, '3']]);
+    const edited = await sala.updateRoutineTemplate(template.id, { name: 'Editada', days: [{ exercises: exercises.map(e => ({ ...e, series: '5' })) }] });
+    const duplicate = await sala.createRoutineTemplate({ name: 'Copia', days: edited.days });
+    expect(duplicate.days[0]!.exercises.map(e => e.blockPosition)).toEqual([1, 1, 2]);
+    const dni = uniqueDni();
+    const person = await prisma.person.create({ data: { firstName: 'Bloques', lastName: 'Sintético', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1991-01-01') } });
+    const plan = await prisma.salaPlan.create({ data: { name: 'Plan bloques', monthlyAmount: 1000 } });
+    const professor = await users.create({ firstName: 'Profesor', lastName: 'Sintético', email: 'blocks@sala.test', roles: [Role.PROFESSOR] });
+    const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' });
+    const assigned = await sala.replaceRoutine({ personId: person.id, salaParticipationId: participation.id, days: duplicate.days });
+    expect(assigned.days[0]!.exercises.map(e => [e.blockPosition, e.series])).toEqual([[1, '5'], [1, '5'], [2, '5']]);
+    await sala.replaceRoutine({ personId: person.id, salaParticipationId: participation.id, days: [{ exercises: [{ exerciseDefinitionId: exercise.id, series: 'individual', load: '9 kg' }] }] });
+    const reused = await sala.duplicateRoutine(assigned.id);
+    expect(reused.version).toBe(3); expect(reused.days[0]!.exercises.map(e => [e.blockPosition, e.series])).toEqual([[1, '5'], [1, '5'], [2, '5']]);
+    const legacy = (await sala.listRoutines(person.id)).find(r => r.version === 2)!;
+    expect(legacy.days[0]!.exercises[0]).toMatchObject({ blockPosition: null, series: 'individual', load: '9 kg' });
+    expect((await sala.listRoutineTemplates()).find(t => t.id === template.id)!.days[0]!.exercises.map(e => e.series)).toEqual(['5', '5', '5']);
+    for (const table of ['routine_template_exercises', 'routine_exercises', 'sala_training_record_exercises']) {
+      const constraint = await prisma.$queryRawUnsafe<{ count: bigint }[]>(`SELECT count(*) FROM pg_constraint WHERE conrelid = '${table}'::regclass AND conname = 'chk_${table}_block_position'`);
+      expect(Number(constraint[0]!.count)).toBe(1);
+    }
+    await expect(prisma.routineExercise.update({ where: { id: reused.days[0]!.exercises[0]!.id }, data: { blockPosition: 0 } })).rejects.toThrow();
+  });
+  it.each([
+    [2], [1, 3], [1, 2, 1], [1, null], [0], [-1], [1.5],
+  ])('rejects invalid block positions %j without modifying saved content', async (...positions: (number | null)[]) => {
+    const definition = await sala.createExerciseDefinition({ name: 'Validación bloques' });
+    const template = await sala.createRoutineTemplate({ name: 'Anterior', days: [{ exercises: [{ exerciseDefinitionId: definition.id, blockPosition: null, series: '7' }] }] });
+    await expect(sala.updateRoutineTemplate(template.id, { name: 'Inválida', days: [{ exercises: positions.map(blockPosition => ({ exerciseDefinitionId: definition.id, blockPosition, series: '4' })) }] })).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_BLOCKS_INVALID' } });
+    expect((await sala.listRoutineTemplates()).find(t => t.id === template.id)).toEqual(template);
+  });
+  it.each(['abc', '4.5', '0', '-1', null, ''])('rejects grouped series %j for template creation, editing and assigned routines', async series => {
+    const definition = await sala.createExerciseDefinition({ name: 'Validación series' });
+    const dni = uniqueDni();
+    const person = await prisma.person.create({ data: { firstName: 'Series', lastName: 'Sintético', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1991-01-01') } });
+    const plan = await prisma.salaPlan.create({ data: { name: 'Plan series', monthlyAmount: 1000 } });
+    const professor = await users.create({ firstName: 'Profesor', lastName: 'Series', email: `series-${dni}@sala.test`, roles: [Role.PROFESSOR] });
+    const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' });
+    const validDays = [{ exercises: [{ exerciseDefinitionId: definition.id, blockPosition: 1, series: '4' }] }];
+    const template = await sala.createRoutineTemplate({ name: 'Válida', days: validDays });
+    const assigned = await sala.replaceRoutine({ personId: person.id, salaParticipationId: participation.id, days: validDays });
+    const savedRoutines = await sala.listRoutines(person.id);
+    const invalidDays = [{ exercises: [{ exerciseDefinitionId: definition.id, blockPosition: 1, series }] }];
+    const error = { response: { code: 'SALA_ROUTINE_BLOCKS_INVALID' } };
+    await expect(sala.createRoutineTemplate({ name: 'Inválida', days: invalidDays })).rejects.toMatchObject(error);
+    await expect(sala.updateRoutineTemplate(template.id, { name: 'Inválida', days: invalidDays })).rejects.toMatchObject(error);
+    await expect(sala.replaceRoutine({ personId: person.id, salaParticipationId: participation.id, days: invalidDays })).rejects.toMatchObject(error);
+    expect((await sala.listRoutineTemplates()).find(t => t.id === template.id)).toEqual(template);
+    expect(await sala.listRoutines(person.id)).toEqual(savedRoutines);
+    expect(assigned.days[0]!.exercises[0]!.series).toBe('4');
+    const legacy = await sala.createRoutineTemplate({ name: 'Anterior', days: [{ exercises: [{ exerciseDefinitionId: definition.id, series }] }] });
+    expect(legacy.days[0]!.exercises[0]!.series).toBe(series || null);
+  });
+  it('normalizes series for comparison and rejects inconsistent shared series', async () => {
+    const definition = await sala.createExerciseDefinition({ name: 'Series compartidas' });
+    const exercise = { exerciseDefinitionId: definition.id, blockPosition: 1 };
+    await expect(sala.createRoutineTemplate({ name: 'Inválida', days: [{ exercises: [{ ...exercise, series: '4' }, { ...exercise, series: '3' }] }] })).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_BLOCKS_INVALID' } });
+    await expect(sala.createRoutineTemplate({ name: 'Vacías', days: [{ exercises: [{ ...exercise, series: ' ' }, { ...exercise, series: null }] }] })).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_BLOCKS_INVALID' } });
+    const normalized = await sala.createRoutineTemplate({ name: 'Normalizadas', days: [{ exercises: [{ ...exercise, series: ' 4 ' }, { ...exercise, series: '4' }] }] });
+    expect(normalized.days[0]!.exercises.map(e => e.series)).toEqual(['4', '4']);
   });
   it('creates, lists and atomically edits complete shared routine templates without unique names', async () => {
     const authn = await session(Role.PROFESSOR);
@@ -2094,6 +2165,17 @@ describe('Sala configuration API', () => {
     }
     const list = await request(app.getHttpServer()).get('/api/sala/exercise-definitions').set('Cookie', a.cookie).expect(200);
     expect(list.body.data).toEqual(expect.arrayContaining([expect.objectContaining({ id: plank.body.data.id, primaryMuscle: null })]));
+  });
+  it('keeps the general request limit active within an independent case', async () => {
+    await request(app.getHttpServer()).get('/api/auth/session').expect(401);
+    const limiter = app.get(AuthRateLimitService);
+    const [ip] = limiter['generalBuckets'].keys();
+    expect(ip).toBeDefined();
+    // Fill the same real bucket without sending hundreds of redundant requests.
+    for (let attempt = 1; attempt < 299; attempt++) limiter.assertGeneralLimit(ip!);
+    await request(app.getHttpServer()).get('/api/auth/session').expect(401);
+    const limited = await request(app.getHttpServer()).get('/api/auth/session').expect(429);
+    expect(limited.body).toMatchObject({ statusCode: 429, code: 'RATE_LIMIT_EXCEEDED' });
   });
   it('accepts optional physical test type and validates every supplied type on create and edit', async () => {
     const a = await session(Role.GENERAL_ADMIN);

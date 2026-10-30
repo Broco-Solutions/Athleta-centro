@@ -710,7 +710,7 @@ export class SalaService {
     return { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } } } as const;
   }
   private routineContent(days: RoutineDayDto[]) {
-    return days.map((day, dayIndex) => ({ position: dayIndex + 1, name: this.optionalText(day.name), exercises: { create: day.exercises.map((exercise, exerciseIndex) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, position: exerciseIndex + 1, series: this.optionalText(exercise.series), repetitions: this.optionalText(exercise.repetitions), duration: this.optionalText(exercise.duration), load: this.optionalText(exercise.load), rest: this.optionalText(exercise.rest), notes: this.optionalText(exercise.notes) })) } }));
+    return days.map((day, dayIndex) => ({ position: dayIndex + 1, name: this.optionalText(day.name), exercises: { create: day.exercises.map((exercise, exerciseIndex) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, blockPosition: exercise.blockPosition ?? null, position: exerciseIndex + 1, series: this.optionalText(exercise.series), repetitions: this.optionalText(exercise.repetitions), duration: this.optionalText(exercise.duration), load: this.optionalText(exercise.load), rest: this.optionalText(exercise.rest), notes: this.optionalText(exercise.notes) })) } }));
   }
   async listRoutines(personId: string) { return this.prisma.routine.findMany({ where: { personId }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } }, salaParticipation: { select: { id: true, startDate: true, endDate: true } } }, orderBy: { version: 'desc' } }); }
   async replaceRoutine(input: ReplaceRoutineDto, failureAfterArchive = false) {
@@ -723,7 +723,7 @@ export class SalaService {
       const currentVersion = await tx.routine.aggregate({ where: { personId: input.personId }, _max: { version: true } });
       await tx.routine.updateMany({ where: { personId: input.personId, status: RoutineStatus.ACTIVE }, data: { status: RoutineStatus.HISTORICAL } });
       if (failureAfterArchive) throw new Error('SIMULATED_ROUTINE_REPLACEMENT_FAILURE');
-      return tx.routine.create({ data: { personId: input.personId, salaParticipationId: input.salaParticipationId, status: RoutineStatus.ACTIVE, version: (currentVersion._max.version ?? 0) + 1, days: { create: input.days.map((day, dayIndex) => ({ position: dayIndex + 1, name: this.optionalText(day.name), exercises: { create: day.exercises.map((exercise, exerciseIndex) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, position: exerciseIndex + 1, series: this.optionalText(exercise.series), repetitions: this.optionalText(exercise.repetitions), duration: this.optionalText(exercise.duration), load: this.optionalText(exercise.load), rest: this.optionalText(exercise.rest), notes: this.optionalText(exercise.notes) })) } })) } }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } } } });
+      return tx.routine.create({ data: { personId: input.personId, salaParticipationId: input.salaParticipationId, status: RoutineStatus.ACTIVE, version: (currentVersion._max.version ?? 0) + 1, days: { create: input.days.map((day, dayIndex) => ({ position: dayIndex + 1, name: this.optionalText(day.name), exercises: { create: day.exercises.map((exercise, exerciseIndex) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, blockPosition: exercise.blockPosition ?? null, position: exerciseIndex + 1, series: this.optionalText(exercise.series), repetitions: this.optionalText(exercise.repetitions), duration: this.optionalText(exercise.duration), load: this.optionalText(exercise.load), rest: this.optionalText(exercise.rest), notes: this.optionalText(exercise.notes) })) } })) } }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } } } });
     });
   }
   async duplicateRoutine(id: string) {
@@ -731,7 +731,7 @@ export class SalaService {
     if (!source) throw new NotFoundException({ code: 'SALA_ROUTINE_NOT_FOUND', message: 'Routine not found' });
     const participation = await this.prisma.salaParticipation.findFirst({ where: { personId: source.personId, endDate: null }, select: { id: true } });
     if (!participation) throw new BadRequestException({ code: 'SALA_ACTIVE_PARTICIPATION_REQUIRED', message: 'An active Sala participation is required' });
-    return this.replaceRoutine({ personId: source.personId, salaParticipationId: participation.id, days: source.days.map((day) => ({ name: day.name, exercises: day.exercises.map((exercise) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, series: exercise.series, repetitions: exercise.repetitions, duration: exercise.duration, load: exercise.load, rest: exercise.rest, notes: exercise.notes })) })) });
+    return this.replaceRoutine({ personId: source.personId, salaParticipationId: participation.id, days: source.days.map((day) => ({ name: day.name, exercises: day.exercises.map((exercise) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, blockPosition: exercise.blockPosition ?? null, series: exercise.series, repetitions: exercise.repetitions, duration: exercise.duration, load: exercise.load, rest: exercise.rest, notes: exercise.notes })) })) });
   }
   async listPhysicalTests() {
     return this.prisma.physicalTestDefinition.findMany({ where: { isActive: true }, select: physicalTestSelect, orderBy: { name: 'asc' } });
@@ -1366,7 +1366,23 @@ export class SalaService {
     }
     return { startTime: resolvedStartTime, durationMinutes };
   }
-  private validateRoutine(input: { days: RoutineDayDto[] }): void { for (const day of input.days) for (const exercise of day.exercises) if (this.optionalText(exercise.repetitions) && this.optionalText(exercise.duration)) throw new BadRequestException({ code: 'SALA_ROUTINE_REPETITIONS_DURATION_EXCLUSIVE', message: 'Repetitions and duration are alternatives' }); }
+  private validateRoutine(input: { days: RoutineDayDto[] }): void {
+    for (const day of input.days) {
+      let currentBlock = 0;
+      let blockSeries: string | null = null;
+      const grouped = day.exercises.some(exercise => exercise.blockPosition != null);
+      for (const exercise of day.exercises) {
+        if (this.optionalText(exercise.repetitions) && this.optionalText(exercise.duration)) throw new BadRequestException({ code: 'SALA_ROUTINE_REPETITIONS_DURATION_EXCLUSIVE', message: 'Repetitions and duration are alternatives' });
+        if (!grouped) continue;
+        const position = exercise.blockPosition;
+        const series = this.optionalText(exercise.series);
+        if (!series || !/^[0-9]+$/.test(series) || BigInt(series) < 1n || position == null || !Number.isInteger(position) || position < 1 || (position !== currentBlock && position !== currentBlock + 1) || (position === currentBlock && series !== blockSeries)) {
+          throw new BadRequestException({ code: 'SALA_ROUTINE_BLOCKS_INVALID', message: 'La organización de bloques de la rutina es inválida. Revisá el orden y las series de los ejercicios.' });
+        }
+        if (position !== currentBlock) { currentBlock = position; blockSeries = series; }
+      }
+    }
+  }
   private minutes(value: Date): number { return value.getUTCHours() * 60 + value.getUTCMinutes(); }
   private parseMinutes(value: string): number { const [hours, minutes] = value.split(':').map(Number); return (hours ?? 0) * 60 + (minutes ?? 0); }
   private formatMinutes(value: number): string { return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`; }

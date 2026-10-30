@@ -17,6 +17,37 @@ process.once('SIGINT', () => {
 void main().catch((error: unknown) => { process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`); process.exitCode = 1; });
 
 async function main(): Promise<void> {
+  // The mode is not a Jest argument. Any forwarded argument keeps the existing
+  // single-database invocation, including flags that do not select test paths.
+  if (mode !== 'integration' || args.length > 0) {
+    const result = await runIsolatedTests(args);
+    if (result !== 0) process.exitCode = result;
+    return;
+  }
+
+  const initialAdminPath = 'test/initial-admin.integration-spec.ts';
+  const phases = [
+    { name: 'Initial administrator', args: ['--runTestsByPath', initialAdminPath] },
+    { name: 'Remaining integration suites', args: ['--testPathIgnorePatterns', initialAdminPath.replaceAll('.', '\\.')] },
+  ];
+  const results: string[] = [];
+  for (const phase of phases) {
+    if (process.exitCode === 130) break;
+    process.stdout.write(`\nIntegration phase: ${phase.name}\n`);
+    try {
+      const result = await runIsolatedTests(phase.args);
+      results.push(`${phase.name}: ${result === 0 ? 'PASS' : `FAIL (exit ${result})`}`);
+      if (result !== 0) process.exitCode = result;
+    } catch (error) {
+      results.push(`${phase.name}: FAIL`);
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    }
+  }
+  process.stdout.write(`\nIntegration results:\n${results.join('\n')}\n`);
+}
+
+async function runIsolatedTests(testArgs: string[]): Promise<number> {
   let postgres: Awaited<ReturnType<PostgreSqlContainer['start']>> | undefined;
   const services = activeServices;
   try {
@@ -34,8 +65,7 @@ async function main(): Promise<void> {
     await run('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], { cwd: apiDirectory, env: testEnv });
 
     if (mode === 'integration') {
-      const result = await run('pnpm', ['exec', 'jest', '--config', 'test/jest-integration.json', '--passWithNoTests', ...args], { cwd: apiDirectory, env: testEnv, allowFailure: true });
-      if (result !== 0) process.exitCode = result;
+      return await run('pnpm', ['exec', 'jest', '--config', 'test/jest-integration.json', '--passWithNoTests', ...testArgs], { cwd: apiDirectory, env: testEnv, allowFailure: true });
     } else {
       await run('pnpm', ['run', 'prisma:seed:demo'], { cwd: apiDirectory, env: { ...testEnv, ALLOW_DUMMY_SEED: 'true' }, quiet: true });
       process.stdout.write('Synthetic fixtures initialized; credential output omitted.\n');
@@ -53,8 +83,7 @@ async function main(): Promise<void> {
       services.push(spawn('pnpm', ['start', '--port', '3000'], { cwd: webDirectory, env: webEnv, stdio: 'inherit', detached: true }));
       await waitForHttp('http://127.0.0.1:3001/health', services);
       await waitForHttp('http://127.0.0.1:3000/login', services);
-      const result = await run('pnpm', ['exec', 'playwright', 'test', ...args], { cwd: webDirectory, env: testEnv, allowFailure: true });
-      if (result !== 0) process.exitCode = result;
+      return await run('pnpm', ['exec', 'playwright', 'test', ...testArgs], { cwd: webDirectory, env: testEnv, allowFailure: true });
     }
   } finally {
     await stopServices(services);

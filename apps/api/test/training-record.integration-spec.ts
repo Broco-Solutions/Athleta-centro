@@ -129,6 +129,23 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     await request(app.getHttpServer()).get('/api/portal/sala/training-records').set('Cookie', f.cookie).expect(403);
     expect((await training.detail(f.person.id, saved.id)).exercises[0]!.weightKg).toBe('32.5');
   });
+  it('snapshots blocks and preserves them after replacement and weight correction', async () => {
+    const f = await fixture();
+    const grouped = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, days: [{ name: 'Bloques', exercises: [1, 1, 2].map((blockPosition, i) => ({ exerciseDefinitionId: i === 1 ? f.b.id : f.a.id, blockPosition, series: blockPosition === 1 ? '4' : '3', load: '20 kg' })) }] });
+    await prisma.routine.update({ where: { id: grouped.id }, data: { createdAt: new Date('2026-10-20T02:00:00Z') } });
+    const context = await training.context(f.person.id, f.body.date);
+    expect(context.routine!.days[0]!.exercises.map(e => e.blockPosition)).toEqual([1, 1, 2]);
+    const body = { ...f.body, routineId: grouped.id, routineDayId: grouped.days[0]!.id, exercises: grouped.days[0]!.exercises.map((e, i) => ({ id: e.id, weightKg: i === 2 ? null : '30' })) };
+    const saved = (await create(f, body).expect(201)).body.data;
+    expect(saved.exercises.map((e: { blockPosition: number }) => e.blockPosition)).toEqual([1, 1, 2]);
+    await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, days: [{ exercises: [{ exerciseDefinitionId: f.b.id }] }] });
+    expect(await training.detail(f.person.id, saved.id)).toEqual(saved);
+    const old = await training.detail(f.person.id, saved.id);
+    const correction = await request(app.getHttpServer()).post(`/api/portal/sala/training-records/${old.id}/correct`).set('Cookie', f.cookie).set('x-csrf-token', f.csrf).send({ exercises: old.exercises.map(e => ({ id: e.id, weightKg: '42' })) }).expect(200);
+    expect(correction.body.data.exercises).toEqual(saved.exercises.map((e: object) => ({ ...e, weightKg: '42' })));
+    const legacy = await prisma.routineExercise.findMany({ where: { routineDayId: f.routine.days[0]!.id } });
+    expect(legacy.every(e => e.blockPosition === null)).toBe(true);
+  });
   it('preserves snapshots after catalog edits/retirement/replacement and corrects only saved weights', async () => {
     const f = await fixture(); const saved = (await create(f).expect(201)).body.data;
     await sala.updateExerciseDefinition(f.a.id, { name: 'Press actualizado' });

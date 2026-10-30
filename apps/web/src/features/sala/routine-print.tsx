@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { Button } from '@athleta/ui';
+import { groupRoutineBlocks, isGroupedDay } from './routine-blocks';
 import type { RoutineDay, RoutineExercise, ExerciseDefinition } from './routine-editor';
 
 type Props = {
@@ -51,16 +52,18 @@ export function RoutinePrintButton({ days, definitions = [], templateName, stude
       </div>
       {[...days].sort((a, b) => a.position - b.position).map((day, dayIndex) => <section key={dayIndex}>
         <h2>{day.name || `Día ${day.position}`}</h2>
+        {(isGroupedDay(day.exercises) ? groupRoutineBlocks(day.exercises) : [{ position: 0, label: '', series: null, exercises: orderedExercises(day.exercises) }]).map(block => <div key={block.position} className="routine-print-block">
+        {block.position > 0 ? <h3>Bloque {block.label}{block.series ? ` — ${block.series} series` : ''}</h3> : null}
         <table>
-          <colgroup>{[34, 8, 16, 12, 11, 19].map((width, index) => <col key={index} style={{ width: `${width}%` }}/>)}</colgroup>
-          <thead><tr>{['Ejercicio', 'Series', 'Rep./Tiempo', 'Carga', 'Descanso', 'Observaciones'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-          <tbody>{orderedExercises(day.exercises).map((exercise, index) => <tr key={index}>
-            <td>{exercise.exerciseDefinition?.name || exercise.exerciseName || definitions.find(entry => entry.id === exercise.exerciseDefinitionId)?.name || 'Ejercicio'}{exercise.exerciseDefinition?.description?.trim() ? <p className="routine-print-description">{exercise.exerciseDefinition.description}</p> : null}</td>
-            <td>{exercise.series || '-'}</td>
+          <colgroup>{(block.position ? [38, 18, 13, 12, 19] : [34, 8, 16, 12, 11, 19]).map((width, index) => <col key={index} style={{ width: `${width}%` }}/>)}</colgroup>
+          <thead><tr>{(block.position ? ['Ejercicio', 'Rep./Tiempo', 'Carga', 'Descanso', 'Observaciones'] : ['Ejercicio', 'Series', 'Rep./Tiempo', 'Carga', 'Descanso', 'Observaciones']).map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+          <tbody>{block.exercises.map((exercise, index) => <tr key={index}>
+            <td>{block.position ? `${block.label}${index + 1} — ` : ''}{exercise.exerciseDefinition?.name || exercise.exerciseName || definitions.find(entry => entry.id === exercise.exerciseDefinitionId)?.name || 'Ejercicio'}{exercise.exerciseDefinition?.description?.trim() ? <p className="routine-print-description">{exercise.exerciseDefinition.description}</p> : null}</td>
+            {!block.position ? <td>{exercise.series || '-'}</td> : null}
             <td>{[exercise.repetitions ? `${exercise.repetitions} rep.` : '', exercise.duration].filter(Boolean).join(' / ') || '-'}</td>
             <td>{exercise.load || '-'}</td><td>{exercise.rest || '-'}</td><td>{exercise.notes || '-'}</td>
           </tr>)}</tbody>
-        </table>
+        </table></div>)}
       </section>)}
     </main>, document.body) : null}
   </>;

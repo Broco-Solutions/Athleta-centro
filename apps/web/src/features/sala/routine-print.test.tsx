@@ -69,3 +69,14 @@ it('respects disabled and falls back to Ejercicio for missing names', () => {
   fireEvent.click(screen.getByRole('button'));
   expect(within(document.getElementById('athleta-routine-print-root')!).getByRole('cell', { name: 'Ejercicio' })).toBeInTheDocument();
 });
+
+it.each(['template', 'ACTIVE', 'HISTORICAL'] as const)('prints grouped %s routines with shared series and five columns without writes', kind => {
+  const fetch = vi.spyOn(globalThis, 'fetch');
+  const grouped: RoutineDay[] = [{ position: 1, name: 'Fuerza', exercises: [{ exerciseDefinitionId: 'a', exerciseName: 'Sentadilla', blockPosition: 1, series: '4', repetitions: '8', load: '60 kg' }, { exerciseDefinitionId: 'b', exerciseName: 'Remo', blockPosition: 1, series: '4', notes: 'Control' }, { exerciseDefinitionId: 'c', exerciseName: 'Press', blockPosition: 2, series: '3' }] }];
+  const original = structuredClone(grouped);
+  const { root } = start({ days: grouped, ...(kind === 'template' ? { templateName: 'Modelo' } : { studentName: 'Alumno', status: kind, version: 2 }) });
+  for (const text of ['Bloque A — 4 series', 'Bloque B — 3 series', 'A1 — Sentadilla', 'A2 — Remo', 'B1 — Press', '60 kg', 'Control']) expect(root.getByText(text)).toBeInTheDocument();
+  expect(root.queryByRole('columnheader', { name: 'Series' })).not.toBeInTheDocument();
+  for (const table of root.getAllByRole('table')) expect(within(table).getAllByRole('columnheader')).toHaveLength(5);
+  expect(grouped).toEqual(original); expect(fetch).not.toHaveBeenCalled();
+});
