@@ -30,6 +30,50 @@ describe('Sala configuration API', () => {
     expect(updated).toMatchObject({ id: exercise.id, movementPatternId: other.id });
     await expect(sala.createExerciseDefinition({ name: 'Invalid', movementPatternId: '00000000-0000-4000-8000-000000000000' })).rejects.toMatchObject({ response: { code: 'SALA_MOVEMENT_PATTERN_NOT_FOUND' } });
   });
+  it('deletes a movement pattern while preserving active, retired, and routine exercise references', async () => {
+    const pattern = await sala.saveMovementPattern('Empuje');
+    const active = await sala.createExerciseDefinition({ name: 'Press activo', movementPatternId: pattern.id });
+    const retired = await sala.createExerciseDefinition({ name: 'Press retirado', movementPatternId: pattern.id });
+    await prisma.exerciseDefinition.update({ where: { id: retired.id }, data: { isActive: false } });
+    const template = await sala.createRoutineTemplate({ name: 'Modelo', days: [{ exercises: [{ exerciseDefinitionId: active.id }] }] });
+    await sala.deleteMovementPattern(pattern.id);
+    expect(await prisma.exerciseMovementPattern.findUnique({ where: { id: pattern.id } })).toBeNull();
+    expect(await prisma.exerciseDefinition.findMany({ where: { id: { in: [active.id, retired.id] } }, orderBy: { name: 'asc' } })).toEqual(expect.arrayContaining([expect.objectContaining({ id: active.id, isActive: true, movementPatternId: null }), expect.objectContaining({ id: retired.id, isActive: false, movementPatternId: null })]));
+    expect((await sala.listRoutineTemplates()).find((item) => item.id === template.id)?.days[0]?.exercises[0]?.exerciseDefinitionId).toBe(active.id);
+    await expect(sala.deleteMovementPattern(pattern.id)).rejects.toMatchObject({ response: { code: 'SALA_MOVEMENT_PATTERN_NOT_FOUND' } });
+  });
+  it('rolls back exercise unassignment when pattern deletion fails', async () => {
+    const pattern = await sala.saveMovementPattern('Rotación');
+    const exercise = await sala.createExerciseDefinition({ name: 'Rotación externa', movementPatternId: pattern.id });
+    await prisma.$executeRawUnsafe(`CREATE FUNCTION test_reject_movement_pattern_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'SIMULATED_PATTERN_DELETE_FAILURE'; END $$`);
+    await prisma.$executeRawUnsafe(`CREATE TRIGGER test_reject_movement_pattern_delete BEFORE DELETE ON exercise_movement_patterns FOR EACH ROW EXECUTE FUNCTION test_reject_movement_pattern_delete()`);
+    try {
+      await expect(sala.deleteMovementPattern(pattern.id)).rejects.toThrow('SIMULATED_PATTERN_DELETE_FAILURE');
+      expect(await prisma.exerciseDefinition.findUnique({ where: { id: exercise.id } })).toMatchObject({ movementPatternId: pattern.id });
+      expect(await prisma.exerciseMovementPattern.findUnique({ where: { id: pattern.id } })).not.toBeNull();
+    } finally {
+      await prisma.$executeRawUnsafe('DROP TRIGGER test_reject_movement_pattern_delete ON exercise_movement_patterns');
+      await prisma.$executeRawUnsafe('DROP FUNCTION test_reject_movement_pattern_delete()');
+    }
+  });
+  it('returns a clear conflict and keeps a template exercise active when retirement is attempted over HTTP', async () => {
+    const authn = await session(Role.PROFESSOR);
+    const exercise = await sala.createExerciseDefinition({ name: 'Peso muerto' });
+    await sala.createRoutineTemplate({ name: 'Fuerza', days: [{ exercises: [{ exerciseDefinitionId: exercise.id }] }] });
+    const response = await request(app.getHttpServer()).post(`/api/sala/exercise-definitions/${exercise.id}/retire`).set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send({ confirmActiveRoutineImpact: true }).expect(409);
+    expect(response.body).toMatchObject({ code: 'SALA_EXERCISE_IN_ROUTINE_TEMPLATE', message: 'No se puede retirar el ejercicio porque está incluido en una rutina preestablecida. Primero quitá el ejercicio de esa rutina para poder retirarlo.' });
+    expect(await prisma.exerciseDefinition.findUnique({ where: { id: exercise.id } })).toMatchObject({ isActive: true });
+  });
+  it('protects the movement pattern delete endpoint with routine management permission', async () => {
+    const pattern = await sala.saveMovementPattern('Tracción');
+    const allowed = await session(Role.PROFESSOR);
+    await request(app.getHttpServer()).delete(`/api/sala/movement-patterns/${pattern.id}`).set('Cookie', allowed.cookie).set('x-csrf-token', allowed.csrf).expect(200);
+    await expect(sala.deleteMovementPattern(pattern.id)).rejects.toMatchObject({ response: { code: 'SALA_MOVEMENT_PATTERN_NOT_FOUND' } });
+    const denied = await session(Role.BROCO_SUPPORT);
+    const another = await sala.saveMovementPattern('Empuje');
+    await request(app.getHttpServer()).delete(`/api/sala/movement-patterns/${another.id}`).set('Cookie', denied.cookie).set('x-csrf-token', denied.csrf).expect(403);
+    expect(await prisma.exerciseMovementPattern.findUnique({ where: { id: another.id } })).not.toBeNull();
+  });
   async function cleanSalaFixtures() { await prisma.salaClinicalIndication.deleteMany(); await prisma.salaPaymentReversal.deleteMany(); await prisma.salaPaymentAllocation.deleteMany(); await prisma.salaPayment.deleteMany(); await prisma.clinicalPatient.deleteMany(); await prisma.physicalTestResult.deleteMany(); await prisma.physicalEvaluation.deleteMany(); await prisma.physicalTestDefinition.deleteMany(); await prisma.routineExercise.deleteMany(); await prisma.routineDay.deleteMany(); await prisma.routine.deleteMany(); await prisma.routineTemplate.deleteMany(); await prisma.exerciseDefinition.deleteMany(); await prisma.exerciseMovementPattern.deleteMany(); await prisma.salaOccurrence.deleteMany(); await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaServiceType.deleteMany(); await prisma.salaCharge.deleteMany(); await prisma.salaBillingConfiguration.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.salaScheduleException.deleteMany(); await prisma.salaScheduleSlot.deleteMany(); await prisma.salaPlan.deleteMany(); await prisma.salaConfiguration.deleteMany(); await prisma.paperHealthDeclaration.deleteMany(); await prisma.healthDeclaration.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); await prisma.portalCredential.deleteMany(); await prisma.person.deleteMany(); }
   beforeAll(async () => { app = (await Test.createTestingModule({ imports: [AppModule] }).compile()).createNestApplication(); app.use(cookieParser()); app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })); app.setGlobalPrefix('api'); await app.init(); prisma = app.get(PrismaService); users = app.get(InternalUserService); auth = app.get(AuthService); sala = app.get(SalaService); await cleanSalaFixtures(); });
   afterEach(cleanSalaFixtures);
@@ -918,7 +962,7 @@ describe('Sala configuration API', () => {
     await expect(sala.updateRoutineTemplate(id, { name: 'Must roll back', days: [{ name: 'x'.repeat(121), exercises: [{ exerciseDefinitionId: squat.id }] }] })).rejects.toThrow();
     expect(await prisma.routineTemplate.findUnique({ where: { id }, include: { days: { include: { exercises: true } } } })).toEqual(before);
   });
-  it('rejects empty names, missing days, invalid/retired exercises and repetitions with time; preserves retired references for reading', async () => {
+  it('rejects empty names, missing days, invalid/retired exercises and repetitions with time; prebuilt routines block retirement', async () => {
     const exercise = await sala.createExerciseDefinition({ name: 'Sentadilla', primaryMuscle: 'Piernas' });
     const input = { name: 'Modelo', days: [{ exercises: [{ exerciseDefinitionId: exercise.id }] }] };
     const template = await sala.createRoutineTemplate(input);
@@ -927,12 +971,12 @@ describe('Sala configuration API', () => {
     await expect(sala.createRoutineTemplate({ ...input, days: [{ exercises: [{ exerciseDefinitionId: exercise.id, repetitions: '10', duration: '45 s' }] }] })).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_REPETITIONS_DURATION_EXCLUSIVE' } });
     await expect(sala.createRoutineTemplate({ ...input, days: [{ exercises: [{ exerciseDefinitionId: '00000000-0000-4000-8000-000000000099' }] }] })).rejects.toMatchObject({ response: { code: 'SALA_EXERCISE_INVALID' } });
     await expect(prisma.exerciseDefinition.delete({ where: { id: exercise.id } })).rejects.toMatchObject({ code: 'P2003' });
+    await expect(sala.retireExerciseDefinition(exercise.id, false)).rejects.toMatchObject({ response: { code: 'SALA_EXERCISE_IN_ROUTINE_TEMPLATE' } });
+    expect(await prisma.exerciseDefinition.findUnique({ where: { id: exercise.id } })).toMatchObject({ isActive: true });
+    await sala.updateRoutineTemplate(template.id, { ...input, days: [{ exercises: [] }] });
     await sala.retireExerciseDefinition(exercise.id, false);
-    const before = (await sala.listRoutineTemplates())[0];
-    expect(before?.days[0]?.exercises[0]?.exerciseDefinition).toMatchObject({ id: exercise.id, isActive: false });
     await expect(sala.createRoutineTemplate(input)).rejects.toMatchObject({ response: { code: 'SALA_EXERCISE_INVALID' } });
     await expect(sala.updateRoutineTemplate(template.id, { ...input, name: 'Rechazada' })).rejects.toMatchObject({ response: { code: 'SALA_EXERCISE_INVALID' } });
-    expect((await sala.listRoutineTemplates())[0]).toEqual(before);
     expect(await prisma.routineTemplate.count()).toBe(1);
     const active = await sala.createExerciseDefinition({ name: 'Remo', primaryMuscle: 'Espalda' });
     await sala.updateRoutineTemplate(template.id, { ...input, days: [{ exercises: [{ exerciseDefinitionId: active.id }] }] });

@@ -15,7 +15,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const code = typeof rawResponse === 'object' && rawResponse !== null && 'code' in rawResponse
       ? String(rawResponse.code)
       : statusCode === 400 ? 'VALIDATION_ERROR' : statusCode === 429 ? 'RATE_LIMIT_EXCEEDED' : statusCode === 500 ? 'INTERNAL_ERROR' : 'HTTP_ERROR';
-    const details: { requestId: string | undefined; fullSlots?: number; requiredSlots?: number; recordId?: string } = { requestId: request.header('x-request-id') };
+    const details: { requestId: string | undefined; fullSlots?: number; requiredSlots?: number; recordId?: string; activeRoutines?: number } = { requestId: request.header('x-request-id') };
+    if (code === 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED' && typeof rawResponse === 'object' && rawResponse !== null && 'details' in rawResponse) {
+      const retirement = rawResponse.details;
+      if (typeof retirement === 'object' && retirement !== null && 'activeRoutines' in retirement && typeof retirement.activeRoutines === 'number') details.activeRoutines = retirement.activeRoutines;
+    }
     if (code === 'SALA_CAPACITY_EXCEEDED_CONFIRMATION_REQUIRED' && typeof rawResponse === 'object' && rawResponse !== null && 'details' in rawResponse) {
       const capacity = rawResponse.details;
       if (typeof capacity === 'object' && capacity !== null && 'fullSlots' in capacity && 'requiredSlots' in capacity

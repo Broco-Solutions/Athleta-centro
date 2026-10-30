@@ -346,7 +346,7 @@ describe('Clinic operational appointments API', () => {
   });
   it.each([Role.PROFESSOR, Role.KINESIOLOGIST, Role.OSTEOPATH, Role.ADMINISTRATIVE, Role.GENERAL_ADMIN])('applies catalog permissions for %s independently of order permissions', async (role) => {
     const user = await session(role);
-    const canManage = role === Role.ADMINISTRATIVE || role === Role.GENERAL_ADMIN;
+    const canManage = role === Role.PROFESSOR || role === Role.ADMINISTRATIVE || role === Role.GENERAL_ADMIN;
     const work = await prisma.socialWork.create({ data: { name: 'Catalog fixture', normalizedName: `catalog-${suffix()}` } });
     const listed = await request(app.getHttpServer()).get('/api/clinic/social-works').set('Cookie', user.cookie).expect(200);
     expect(listed.body.data).toEqual(expect.arrayContaining([expect.objectContaining({ id: work.id, name: work.name })]));

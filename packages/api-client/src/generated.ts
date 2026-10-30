@@ -5174,6 +5174,45 @@ export const createSalaMovementPattern = async (movementPatternDto: MovementPatt
 
 
 
+export type deleteSalaMovementPatternResponse200 = {
+  data: void
+  status: 200
+}
+
+export type deleteSalaMovementPatternResponseSuccess = (deleteSalaMovementPatternResponse200) & {
+  headers: Headers;
+};
+;
+
+export type deleteSalaMovementPatternResponse = (deleteSalaMovementPatternResponseSuccess)
+
+export const getDeleteSalaMovementPatternUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/movement-patterns/${id}`
+}
+
+export const deleteSalaMovementPattern = async (id: string, options?: RequestInit): Promise<deleteSalaMovementPatternResponse> => {
+
+  const res = await fetch(getDeleteSalaMovementPatternUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteSalaMovementPatternResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as deleteSalaMovementPatternResponse
+}
+
+
+
 export type updateSalaMovementPatternResponse200 = {
   data: MovementPatternEnvelopeDto
   status: 200

@@ -76,13 +76,14 @@ it('lists active exercises alphabetically, omits empty optional fields and uses 
   expect(screen.getByText('No hay ejercicios que coincidan.')).toBeVisible();
 });
 
-it('creates a name-only exercise through the generated client, closes its form and refreshes catalog and routines', async () => {
+it('creates a name-only exercise without a movement pattern, closes its form and refreshes catalog and routines', async () => {
   const { invalidate } = renderCatalog(); startNew(); await fill('  Remo  ', '', '');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Patrón de movimiento' }), { target: { value: '' } });
   fireEvent.click(screen.getByRole('button', { name: 'Crear ejercicio' }));
   expect(await screen.findByText('Ejercicio creado correctamente.')).toBeVisible();
   expect(await screen.findByRole('heading', { name: 'Remo' })).toBeVisible();
   expect(screen.queryByRole('form')).not.toBeInTheDocument();
-  expect(writes).toEqual([{ method: 'POST', body: { name: 'Remo', primaryMuscle: '', description: '', movementPatternId: 'pattern' }, csrf: 'synthetic-csrf' }]);
+  expect(writes).toEqual([{ method: 'POST', body: { name: 'Remo', primaryMuscle: '', description: '', movementPatternId: null }, csrf: 'synthetic-csrf' }]);
   expectRefreshed(invalidate);
 });
 
@@ -130,6 +131,25 @@ it('edits all fields on the existing definition without creating a new exercise'
   expect(await screen.findByRole('heading', { name: 'Sentadilla actualizada' })).toBeVisible();
   expect(screen.queryByText('Estabilidad para hockey')).not.toBeInTheDocument();
   expect(writes).toEqual([{ method: 'PATCH', id: 'squat', body: { name: 'Sentadilla actualizada', primaryMuscle: '', description: 'Estabilidad para hockey', movementPatternId: 'pattern' }, csrf: 'synthetic-csrf' }]);
+  expectRefreshed(invalidate);
+});
+
+it('allows creating without patterns and clearing an existing exercise pattern', async () => {
+  server.use(http.get('http://localhost:3000/api/sala/movement-patterns', () => HttpResponse.json({ data: [] })));
+  renderCatalog(); startNew();
+  fireEvent.change(screen.getByRole('textbox', { name: /Nombre/ }), { target: { value: 'Sin patrón' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Crear ejercicio' }));
+  await screen.findByText('Ejercicio creado correctamente.');
+  expect(writes[0]).toMatchObject({ method: 'POST', body: { movementPatternId: null } });
+});
+
+it('allows removing an assigned pattern while editing', async () => {
+  const { invalidate } = renderCatalog(); await screen.findByRole('heading', { name: squat.name });
+  fireEvent.click(within(exerciseRow()).getByRole('button', { name: 'Editar' }));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Patrón de movimiento' }), { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+  await screen.findByText('Ejercicio actualizado correctamente.');
+  expect(writes.at(-1)).toMatchObject({ method: 'PATCH', id: 'squat', body: { movementPatternId: null } });
   expectRefreshed(invalidate);
 });
 
@@ -191,6 +211,15 @@ it('shows retirement errors without claiming success or hiding the exercise', as
   expect(screen.getByRole('heading', { name: squat.name })).toBeVisible(); expect(invalidate).not.toHaveBeenCalled();
 });
 
+it('explains routine-template retirement conflicts and keeps the exercise visible', async () => {
+  server.use(http.post(`${base}/:id/retire`, () => HttpResponse.json({ code: 'SALA_EXERCISE_IN_ROUTINE_TEMPLATE', message: 'No se puede retirar el ejercicio porque está incluido en una rutina preestablecida.' }, { status: 409 })));
+  const { invalidate } = renderCatalog(); await screen.findByRole('heading', { name: squat.name });
+  fireEvent.click(within(exerciseRow()).getByRole('button', { name: 'Retirar' }));
+  const message = await screen.findByText('No se puede retirar el ejercicio');
+  expect(message.parentElement).toHaveTextContent('primero tenés que quitarlo de esa rutina');
+  expect(screen.getByRole('heading', { name: squat.name })).toBeVisible(); expect(invalidate).not.toHaveBeenCalled();
+});
+
 it('supports read-only catalog access without administration actions', async () => {
   renderCatalog(false); await screen.findByRole('heading', { name: squat.name });
   expect(screen.getByRole('searchbox')).toBeVisible();
@@ -224,10 +253,39 @@ it('creates a pattern with zero exercises, selects it and renames it without los
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
   expect(await screen.findByRole('heading', { name: 'Tracción' })).toBeVisible();
   expect(screen.getByRole('button', { name: 'Tracción 0' })).toHaveAttribute('aria-pressed', 'true');
-  fireEvent.click(screen.getByRole('button', { name: 'Renombrar patrón' }));
+  fireEvent.click(screen.getAllByRole('button', { name: 'Renombrar patrón Tracción' })[0]!);
   fireEvent.change(screen.getByLabelText('Nombre del patrón'), { target: { value: 'Tracción superior' } });
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
   expect(await screen.findByRole('heading', { name: 'Tracción superior' })).toBeVisible();
+  expect(writes).toEqual([]);
+});
+
+it('shows rename and delete actions only for real patterns and confirms deletion before refreshing', async () => {
+  let patterns = [{ id: 'pattern', name: 'Empuje' }];
+  server.use(
+    http.get('http://localhost:3000/api/sala/movement-patterns', () => HttpResponse.json({ data: patterns })),
+    http.delete('http://localhost:3000/api/sala/movement-patterns/:id', ({ params }) => { patterns = patterns.filter(item => item.id !== params.id); return HttpResponse.json({ data: {} }); }),
+  );
+  const { invalidate } = renderCatalog(); await screen.findByRole('heading', { name: squat.name });
+  expect(screen.getByRole('button', { name: 'Renombrar patrón Empuje' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Eliminar patrón Empuje' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: /Renombrar patrón (Todos los ejercicios|Sin patrón)/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Eliminar patrón Empuje' }));
+  const dialog = screen.getByRole('alertdialog', { name: 'Confirmar eliminación de patrón' });
+  expect(dialog).toHaveTextContent('Los ejercicios asociados pasarán automáticamente a «Sin patrón».');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+  expect(patterns).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Eliminar patrón Empuje' }));
+  fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Eliminar patrón' }));
+  expect(await screen.findByText('Patrón eliminado correctamente.')).toBeVisible();
+  expect(await screen.findByRole('button', { name: 'Sin patrón 2' })).toHaveAttribute('aria-pressed', 'true');
+  await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['sala-exercise-definitions'] }));
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['sala-movement-patterns'] });
+});
+
+it('hides pattern administration actions in read-only mode', async () => {
+  renderCatalog(false); await screen.findByRole('heading', { name: squat.name });
+  expect(screen.queryByRole('button', { name: /Renombrar patrón|Eliminar patrón/ })).not.toBeInTheDocument();
 });
 
 it('paginates hundreds of active exercises and combines pattern and text filters', async () => {

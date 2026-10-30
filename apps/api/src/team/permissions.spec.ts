@@ -1,6 +1,14 @@
 import { InternalUserStatus, Role } from '@prisma/client';
 import { effectivePermissions } from './permissions';
 describe('effectivePermissions', () => {
+  it('grants social work catalog management to Professor and Administration, but not clinical roles', () => {
+    for (const role of [Role.PROFESSOR, Role.ADMINISTRATIVE, Role.GENERAL_ADMIN]) {
+      expect(effectivePermissions(InternalUserStatus.ACTIVE, [role]).has('SOCIAL_WORK_CATALOG_MANAGE')).toBe(true);
+    }
+    for (const role of [Role.KINESIOLOGIST, Role.OSTEOPATH]) {
+      expect(effectivePermissions(InternalUserStatus.ACTIVE, [role]).has('SOCIAL_WORK_CATALOG_MANAGE')).toBe(false);
+    }
+  });
   it('reserves payment management for Administration, preserving role unions', () => {
     const professor = effectivePermissions(InternalUserStatus.ACTIVE, [Role.PROFESSOR]);
     expect(professor.has('SALA_PAYMENT_READ')).toBe(true);

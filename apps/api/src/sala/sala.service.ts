@@ -645,6 +645,8 @@ export class SalaService {
     return this.prisma.$transaction(async (tx) => {
       const exercise = await tx.exerciseDefinition.findUnique({ where: { id } });
       if (!exercise || !exercise.isActive) throw new NotFoundException({ code: 'SALA_EXERCISE_NOT_FOUND', message: 'Exercise not found' });
+      const templateReference = await tx.routineTemplateExercise.findFirst({ where: { exerciseDefinitionId: id }, select: { id: true } });
+      if (templateReference) throw new ConflictException({ code: 'SALA_EXERCISE_IN_ROUTINE_TEMPLATE', message: 'No se puede retirar el ejercicio porque está incluido en una rutina preestablecida. Primero quitá el ejercicio de esa rutina para poder retirarlo.' });
       const affectedDays = await tx.routineDay.findMany({ where: { routine: { status: RoutineStatus.ACTIVE }, exercises: { some: { exerciseDefinitionId: id } } }, select: { routineId: true }, distinct: ['routineId'] });
       const activeRoutines = affectedDays.length;
       if (activeRoutines > 0 && !confirmActiveRoutineImpact) throw new ConflictException({ code: 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED', message: 'Confirmation is required because active routines are affected', details: { activeRoutines } });
@@ -652,6 +654,17 @@ export class SalaService {
       const retired = await tx.exerciseDefinition.update({ where: { id }, data: { isActive: false } });
       return { exercise: retired, affectedActiveRoutines: activeRoutines };
     });
+  }
+  async deleteMovementPattern(id: string) {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.exerciseDefinition.updateMany({ where: { movementPatternId: id }, data: { movementPatternId: null } });
+        return await tx.exerciseMovementPattern.delete({ where: { id } });
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_MOVEMENT_PATTERN_NOT_FOUND', message: 'Movement pattern not found' });
+      throw error;
+    }
   }
   async listRoutineTemplates() {
     return this.prisma.routineTemplate.findMany({ orderBy: { name: 'asc' }, include: this.routineTemplateInclude() });
