@@ -16,7 +16,8 @@ export class AuthSecurityMiddleware {
     const allowedWhilePasswordChangeRequired = path === '/api/auth/session' || path === '/api/auth/change-password' || path === '/api/auth/logout';
     if (path.startsWith('/api/')) this.rateLimits.assertGeneralLimit(request.ip ?? 'unknown');
     const clinicalPath = ['/api/clinic', '/api/portal/clinic', '/api/finance/clinical-incomes'].some((base) => path === base || path.startsWith(`${base}/`));
-    if (!isClinicEnabled() && clinicalPath) return next(new NotFoundException({ code: 'CLINIC_UNAVAILABLE', message: 'Not found' }));
+    const socialWorksCatalogPath = path === '/api/clinic/social-works' && ['GET', 'POST'].includes(request.method);
+    if (!isClinicEnabled() && clinicalPath && !socialWorksCatalogPath) return next(new NotFoundException({ code: 'CLINIC_UNAVAILABLE', message: 'Not found' }));
     if (bypassInternalSecurity || !request.cookies?.athleta_session) return next();
     try {
       const current = await this.auth.current(request.cookies.athleta_session);
