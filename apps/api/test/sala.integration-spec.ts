@@ -9,6 +9,7 @@ import { ValidationPipe, type INestApplication } from '@nestjs/common';
 import { Prisma, Role, type Person, type SalaParticipation, type SalaWeekday } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { AuthService } from '../src/auth/auth.service';
+import { AuthRateLimitService } from '../src/auth/auth-rate-limit.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { InternalUserService } from '../src/team/internal-user.service';
 import { SalaService } from '../src/sala/sala.service';
@@ -76,6 +77,11 @@ describe('Sala configuration API', () => {
   });
   async function cleanSalaFixtures() { await prisma.salaClinicalIndication.deleteMany(); await prisma.salaPaymentReversal.deleteMany(); await prisma.salaPaymentAllocation.deleteMany(); await prisma.salaPayment.deleteMany(); await prisma.clinicalPatient.deleteMany(); await prisma.physicalTestResult.deleteMany(); await prisma.physicalEvaluation.deleteMany(); await prisma.physicalTestDefinition.deleteMany(); await prisma.routineExercise.deleteMany(); await prisma.routineDay.deleteMany(); await prisma.routine.deleteMany(); await prisma.routineTemplate.deleteMany(); await prisma.exerciseDefinition.deleteMany(); await prisma.exerciseMovementPattern.deleteMany(); await prisma.salaOccurrence.deleteMany(); await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaServiceType.deleteMany(); await prisma.salaCharge.deleteMany(); await prisma.salaBillingConfiguration.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.salaScheduleException.deleteMany(); await prisma.salaScheduleSlot.deleteMany(); await prisma.salaPlan.deleteMany(); await prisma.salaConfiguration.deleteMany(); await prisma.paperHealthDeclaration.deleteMany(); await prisma.healthDeclaration.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); await prisma.portalCredential.deleteMany(); await prisma.person.deleteMany(); }
   beforeAll(async () => { app = (await Test.createTestingModule({ imports: [AppModule] }).compile()).createNestApplication(); app.use(cookieParser()); app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })); app.setGlobalPrefix('api'); await app.init(); prisma = app.get(PrismaService); users = app.get(InternalUserService); auth = app.get(AuthService); sala = app.get(SalaService); await cleanSalaFixtures(); });
+  beforeEach(() => {
+    // This app is shared across cases that move the clock forward and backward.
+    // Reset only its in-memory request history; the real limiter stays active.
+    app.get(AuthRateLimitService)['generalBuckets'].clear();
+  });
   afterEach(cleanSalaFixtures);
   afterAll(() => app.close());
   const uniqueDni = () => `${Date.now()}${Math.floor(Math.random() * 100000)}`.slice(-12);
@@ -2159,6 +2165,17 @@ describe('Sala configuration API', () => {
     }
     const list = await request(app.getHttpServer()).get('/api/sala/exercise-definitions').set('Cookie', a.cookie).expect(200);
     expect(list.body.data).toEqual(expect.arrayContaining([expect.objectContaining({ id: plank.body.data.id, primaryMuscle: null })]));
+  });
+  it('keeps the general request limit active within an independent case', async () => {
+    await request(app.getHttpServer()).get('/api/auth/session').expect(401);
+    const limiter = app.get(AuthRateLimitService);
+    const [ip] = limiter['generalBuckets'].keys();
+    expect(ip).toBeDefined();
+    // Fill the same real bucket without sending hundreds of redundant requests.
+    for (let attempt = 1; attempt < 299; attempt++) limiter.assertGeneralLimit(ip!);
+    await request(app.getHttpServer()).get('/api/auth/session').expect(401);
+    const limited = await request(app.getHttpServer()).get('/api/auth/session').expect(429);
+    expect(limited.body).toMatchObject({ statusCode: 429, code: 'RATE_LIMIT_EXCEEDED' });
   });
   it('accepts optional physical test type and validates every supplied type on create and edit', async () => {
     const a = await session(Role.GENERAL_ADMIN);
