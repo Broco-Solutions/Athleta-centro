@@ -68,3 +68,15 @@ it('shows a safe error when the routine read model fails', async () => {
   expect(screen.queryByText('Internal detail')).not.toBeInTheDocument();
 });
 
+
+it('shows grouped prescriptions and one registration action per day without block editing or printing', async () => {
+  server.use(http.get(endpoint, () => HttpResponse.json({ data: { routine: { days: [{ id: 'grouped-day', position: 1, name: 'Fuerza', exercises: [
+    { id: 'a', exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla', description: 'Control' }, blockPosition: 1, series: '4', repetitions: '8', load: '60 kg', rest: '90 s', notes: 'Técnica' },
+    { id: 'b', exerciseDefinitionId: 'row', exerciseDefinition: { name: 'Remo' }, blockPosition: 1, series: '4', duration: '30 s' },
+    { id: 'c', exerciseDefinitionId: 'press', exerciseDefinition: { name: 'Press' }, blockPosition: 2, series: '3' },
+  ] }] } } })));
+  renderRoutine(); expect(await screen.findByText('Bloque A — 4 series')).toBeInTheDocument();
+  for (const text of ['Bloque B — 3 series', 'A1 — Sentadilla', 'A2 — Remo', 'B1 — Press', 'Control', 'Observación: Técnica', '8 rep. · Carga 60 kg · Descanso 90 s', 'Tiempo 30 s']) expect(screen.getByText(text)).toBeInTheDocument();
+  expect(screen.getAllByRole('link', { name: /^Registrar este día:/ })).toHaveLength(1);
+  for (const name of ['Eliminar bloque', '+ Agregar bloque', 'Imprimir / PDF']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+});

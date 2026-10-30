@@ -49,9 +49,9 @@ it('paginates the student routine exercise picker and preserves the edited day w
   fireEvent.click(catalog().getByRole('button', { name: 'Siguiente' }));
   expect(catalog().getByText('Página 2 de 2')).toBeVisible();
   fireEvent.click(catalog().getByRole('button', { name: 'Agregar Ejercicio 8' }));
-  change(row(), 'Series', '3');
+  change(day(1), 'Series del bloque', '3');
   fireEvent.click(catalog().getByRole('button', { name: 'Anterior' }));
-  expect(row().getByLabelText('Series')).toHaveValue('3');
+  expect(day(1).getByLabelText('Series del bloque')).toHaveValue('3');
   fireEvent.click(catalog().getByRole('button', { name: 'Siguiente' }));
   expect(catalog().getByText('Página 2 de 2')).toBeVisible();
   fireEvent.click(catalog().getByRole('button', { name: /Empuje/ }));
@@ -59,7 +59,7 @@ it('paginates the student routine exercise picker and preserves the edited day w
   fireEvent.click(catalog().getByRole('button', { name: 'Siguiente' }));
   change(catalog(), 'Buscar ejercicio', 'Ejercicio 9');
   expect(catalog().getByText('Página 1 de 1')).toBeVisible();
-  expect(row().getByLabelText('Series')).toHaveValue('3');
+  expect(day(1).getByLabelText('Series del bloque')).toHaveValue('3');
 });
 async function startEditing() {
   await waitFor(() => expect(screen.getByRole('button', { name: 'Editar rutina' })).toBeEnabled());
@@ -119,7 +119,7 @@ it('mounts only the active day, retains inline changes and saves every day in or
       { exerciseDefinitionId: 'plank', series: null, repetitions: null, duration: null, load: null, rest: null, notes: null },
     ] },
     { name: 'Core', exercises: [{ exerciseDefinitionId: 'plank', series: null, repetitions: null, duration: '45 s', load: null, rest: null, notes: null }] },
-    { name: 'Movilidad', exercises: [{ exerciseDefinitionId: 'plank', series: null, repetitions: null, duration: null, load: null, rest: null, notes: null }] },
+    { name: 'Movilidad', exercises: [{ exerciseDefinitionId: 'plank', blockPosition: 1, series: null, repetitions: null, duration: null, load: null, rest: null, notes: null }] },
   ] }, expect.objectContaining({ credentials: 'include', headers: { 'x-csrf-token': 'csrf' } }));
   for (const savedDay of api.replace.mock.calls[0]![1].days) expect(savedDay).not.toHaveProperty('position');
 });
@@ -135,10 +135,10 @@ it('requires only the exercise and keeps at least one visible day', async () => 
   const { api } = renderPanel([]); await startNewRoutine();
   expect(day(1).getByRole('button', { name: 'Eliminar día' })).toBeDisabled();
   await add(day(1), 'plank');
-  for (const label of ['Series', 'Valor', 'Carga', 'Descanso', 'Observación']) expect(row().getByLabelText(label)).toHaveValue('');
+  for (const label of ['Valor', 'Carga', 'Descanso', 'Observación']) expect(row().getByLabelText(label)).toHaveValue('');
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
   await waitFor(() => expect(api.create).toHaveBeenCalled());
-  expect(api.create.mock.calls[0]?.[0].days[0]?.exercises[0]).toEqual({ exerciseDefinitionId: 'plank', series: null, repetitions: null, duration: null, load: null, rest: null, notes: null });
+  expect(api.create.mock.calls[0]?.[0].days[0]?.exercises[0]).toEqual({ exerciseDefinitionId: 'plank', blockPosition: 1, series: null, repetitions: null, duration: null, load: null, rest: null, notes: null });
 });
 it('keeps invalid historical alternatives until explicitly resolved and blocks saving', async () => {
   const { api } = renderPanel([{ ...routine, days: [{ position: 1, exercises: [{ exerciseDefinitionId: 'squat', repetitions: '10', duration: '45 s' }] }] }]);
@@ -238,7 +238,7 @@ it('searches all catalog fields with normalized words and adds only active defin
   change(catalog(), 'Buscar ejercicio', 'pLaNcHa');
   expect(catalog().queryByRole('button', { name: 'Agregar Sentadilla' })).not.toBeInTheDocument();
   expect(catalog().queryByRole('button', { name: 'Agregar Plancha retirada' })).not.toBeInTheDocument();
-  await add(day(1), 'plank'); expect(row().getByText('Plancha')).toBeInTheDocument();
+  await add(day(1), 'plank'); expect(row().getByText('A1 — Plancha')).toBeInTheDocument();
   change(catalog(), 'Buscar ejercicio', 'PIERNAS');
   expect(catalog().getByRole('button', { name: 'Agregar Sentadilla' })).toBeInTheDocument();
   change(catalog(), 'Buscar ejercicio', 'SENTADILLA futbol');
@@ -423,4 +423,14 @@ it('prints the selected template preview without assignment', async () => {
     expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('Alumno:');
     for (const write of [api.create, api.replace, api.duplicate]) expect(write).not.toHaveBeenCalled();
   } finally { print.mockRestore(); }
+});
+
+it('assigns and personalizes grouped templates without source IDs or source mutations', async () => {
+  const { api } = renderPanel([]);
+  const grouped = { ...template, days: template.days.map(d => ({ ...d, exercises: d.exercises.map(e => ({ ...e, blockPosition: 1, series: '4' })) })) };
+  api.templates.mockResolvedValue([grouped]); const original = structuredClone(grouped);
+  await previewTemplate(); expect(screen.getAllByText('Bloque A — 4 series')).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Asignar rutina' })); await waitFor(() => expect(api.create).toHaveBeenCalled());
+  const saved = api.create.mock.calls[0]![0]; expect(saved.days[0]!.exercises[0]).toMatchObject({ blockPosition: 1, series: '4' });
+  expect(saved.days[0]).not.toHaveProperty('id'); expect(saved.days[0]!.exercises[0]).not.toHaveProperty('id'); expect(grouped).toEqual(original);
 });

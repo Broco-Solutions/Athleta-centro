@@ -28,6 +28,7 @@ export class TrainingContextQueryDto {
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) date?: string;
 }
 export class TrainingExerciseSnapshotDto {
+  @ApiProperty({ type: Number, nullable: true }) blockPosition!: number | null;
   @ApiProperty({ type: String }) id!: string;
   @ApiProperty({ type: String }) exerciseDefinitionId!: string;
   @ApiProperty({ type: String }) exerciseName!: string;

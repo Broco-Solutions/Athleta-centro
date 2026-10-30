@@ -721,6 +721,7 @@ model RoutineTemplateExercise {
   @@unique([routineTemplateDayId, position])
   @@index([exerciseDefinitionId])
   @@map("routine_template_exercises")
+  blockPosition Int? @map("block_position")
 }
 
 model Routine {
@@ -771,6 +772,7 @@ model RoutineExercise {
   @@unique([routineDayId, position])
   @@index([exerciseDefinitionId])
   @@map("routine_exercises")
+  blockPosition Int? @map("block_position")
 }
 
 model PhysicalTestDefinition {
@@ -1299,4 +1301,5 @@ model SalaTrainingRecordExercise {
   @@unique([recordId, routineExerciseId])
   @@index([exerciseDefinitionId, recordId])
   @@map("sala_training_record_exercises")
+  blockPosition Int? @map("block_position")
 }

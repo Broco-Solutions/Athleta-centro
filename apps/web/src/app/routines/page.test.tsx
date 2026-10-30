@@ -116,7 +116,7 @@ it('creates an exercise without a routine and then finds it by description in a 
   fireEvent.click(screen.getByRole('button', { name: 'Nueva rutina preestablecida' }));
   fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar ejercicio' }), { target: { value: 'BULGARA futbol' } });
   fireEvent.click(await screen.findByRole('button', { name: 'Agregar Sentadilla búlgara' }));
-  expect(within(screen.getByRole('group', { name: 'Día 1' })).getByText('Sentadilla búlgara')).toBeInTheDocument();
+  expect(within(screen.getByRole('group', { name: 'Día 1' })).getByText('A1 — Sentadilla búlgara')).toBeInTheDocument();
 });
 
 it('allows read-only exercise consultation without template or catalog management', async () => {

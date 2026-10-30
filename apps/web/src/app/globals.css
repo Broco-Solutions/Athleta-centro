@@ -58,3 +58,15 @@ body { margin: 0; background: var(--background); color: var(--foreground); font-
   #athleta-routine-print-root th { font-size: 8pt; font-weight: bold; }
   #athleta-routine-print-root .routine-print-description { color: #555; font-size: 8pt; margin-top: 2pt; }
 }
+
+@media print {
+  #athleta-routine-print-root .routine-print-block h3 {
+    margin: 4mm 0 2mm;
+    font-size: 10pt;
+    text-transform: uppercase;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  #athleta-routine-print-root .routine-print-block table { break-before: avoid; }
+  #athleta-routine-print-root .routine-print-block tr { break-inside: avoid; }
+}

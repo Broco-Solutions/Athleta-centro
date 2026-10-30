@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { TrainingRecordHistory } from './training-record-history';
 import type { TrainingHistoryApi } from './training-record-api';
 
-export const savedTraining = { id: 'record', routineId: 'routine', routineDayId: 'day', date: '2026-10-26', dayName: 'Fuerza', dayPosition: 1, createdAt: '2026-10-26T10:00:00Z', updatedAt: '2026-10-26T10:00:00Z', exercises: [{ id: 'saved-entry', routineExerciseId: 'source', exerciseDefinitionId: 'definition', exerciseName: 'Press de banca', position: 1, series: '3', repetitions: '10', duration: null, load: '30 kg', rest: '60 s', notes: null, weightKg: '32.5' }, { id: 'saved-entry-2', routineExerciseId: 'source2', exerciseDefinitionId: 'definition2', exerciseName: 'Remo', position: 2, series: null, repetitions: null, duration: '30 s', load: null, rest: null, notes: null, weightKg: null }] };
+export const savedTraining = { id: 'record', routineId: 'routine', routineDayId: 'day', date: '2026-10-26', dayName: 'Fuerza', dayPosition: 1, createdAt: '2026-10-26T10:00:00Z', updatedAt: '2026-10-26T10:00:00Z', exercises: [{ id: 'saved-entry', routineExerciseId: 'source', exerciseDefinitionId: 'definition', exerciseName: 'Press de banca', blockPosition: null, position: 1, series: '3', repetitions: '10', duration: null, load: '30 kg', rest: '60 s', notes: null, weightKg: '32.5' }, { id: 'saved-entry-2', routineExerciseId: 'source2', exerciseDefinitionId: 'definition2', exerciseName: 'Remo', blockPosition: null, position: 2, series: null, repetitions: null, duration: '30 s', load: null, rest: null, notes: null, weightKg: null }] };
 function renderHistory(editable = false) {
   const api = { list: vi.fn<TrainingHistoryApi['list']>().mockResolvedValue({ data: [savedTraining], meta: { page: 1, pageSize: 1, total: 2, totalPages: 2 } }), detail: vi.fn<TrainingHistoryApi['detail']>().mockResolvedValue(savedTraining) };
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TrainingRecordHistory api={api} queryKey={['training-test']} editable={editable}/></QueryClientProvider>);
@@ -22,4 +22,11 @@ it('loads a paginated list, opens details only on demand and closes in place for
 it('offers correction only to the Portal owner', async () => {
   renderHistory(true); fireEvent.click(await screen.findByRole('button', { name: /Ver detalle del/ }));
   expect(await screen.findByRole('link', { name: 'Editar registro' })).toHaveAttribute('href', '/portal/sala/entrenamientos/registrar?recordId=record');
+});
+it('renders grouping exclusively from the historical snapshot', async () => {
+  const api = renderHistory(); api.detail.mockResolvedValue({ ...savedTraining, exercises: savedTraining.exercises.map(e => ({ ...e, blockPosition: 1, series: '3' })) });
+  fireEvent.click(await screen.findByRole('button', { name: /Ver detalle del/ }));
+  expect(await screen.findByText('Bloque A — 3 series')).toBeInTheDocument();
+  expect(screen.getByText('A1 — Press de banca')).toBeInTheDocument(); expect(screen.getByText('A2 — Remo')).toBeInTheDocument();
+  expect(screen.getByText('32,5 kg')).toBeInTheDocument(); expect(screen.getByText('30 kg')).toBeInTheDocument();
 });

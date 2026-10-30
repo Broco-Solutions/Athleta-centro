@@ -927,6 +927,50 @@ describe('Sala configuration API', () => {
   it('rolls back LeaveSala after booking mutations fail', async () => {
     const plan = await prisma.salaPlan.create({ data: { name: 'Leave rollback', monthlyAmount: 1000 } }); const service = await sala.createServiceType({ name: 'Musculación', durationMinutes: 60 }); await prisma.salaPlanService.create({ data: { planId: plan.id, serviceTypeId: service.id } }); const slot = await sala.createSlot({ weekday: 'FRIDAY', startTime: '18:00', durationMinutes: 120 }); const professor = await users.create({ firstName: 'Prof', lastName: 'Leave rollback', email: `leave-rollback-${uniqueDni()}@sala.test`, roles: [Role.PROFESSOR] }); const dni = uniqueDni(); const person = await prisma.person.create({ data: { firstName: 'Leave', lastName: 'Rollback', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1991-01-01T00:00:00Z') } }); const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' }); const fixed = await sala.createFixed({ personId: person.id, salaParticipationId: participation.id, scheduleSlotId: slot.id, serviceTypeId: service.id, startDate: '2026-01-01' }); const reservation = await sala.createReservation({ personId: person.id, salaParticipationId: participation.id, scheduleSlotId: slot.id, serviceTypeId: service.id, startTime: '19:00', date: '2026-08-28', confirmOverbooking: true }); await expect(sala.leave(participation.id, true)).rejects.toThrow('SIMULATED_LEAVE_FAILURE'); expect((await prisma.salaParticipation.findUnique({ where: { id: participation.id } }))?.endDate).toBeNull(); expect((await prisma.fixedSalaBooking.findUnique({ where: { id: fixed.id } }))?.endDate).toBeNull(); expect((await prisma.oneOffReservation.findUnique({ where: { id: reservation.id } }))?.cancelledAt).toBeNull();
   });
+  it('persists, edits and copies blocks across templates, assignments and historical reuse', async () => {
+    const exercise = await sala.createExerciseDefinition({ name: 'Bloques sintéticos' });
+    const exercises = [1, 1, 2].map(blockPosition => ({ exerciseDefinitionId: exercise.id, blockPosition, series: blockPosition === 1 ? '4' : '3', repetitions: '8', load: '30 kg' }));
+    const template = await sala.createRoutineTemplate({ name: 'Bloques', days: [{ exercises }] });
+    expect(template.days[0]!.exercises.map(e => [e.blockPosition, e.series])).toEqual([[1, '4'], [1, '4'], [2, '3']]);
+    const edited = await sala.updateRoutineTemplate(template.id, { name: 'Editada', days: [{ exercises: exercises.map(e => ({ ...e, series: '5' })) }] });
+    const duplicate = await sala.createRoutineTemplate({ name: 'Copia', days: edited.days });
+    expect(duplicate.days[0]!.exercises.map(e => e.blockPosition)).toEqual([1, 1, 2]);
+    const dni = uniqueDni();
+    const person = await prisma.person.create({ data: { firstName: 'Bloques', lastName: 'Sintético', dni, normalizedDni: dni, phone: '351', birthDate: new Date('1991-01-01') } });
+    const plan = await prisma.salaPlan.create({ data: { name: 'Plan bloques', monthlyAmount: 1000 } });
+    const professor = await users.create({ firstName: 'Profesor', lastName: 'Sintético', email: 'blocks@sala.test', roles: [Role.PROFESSOR] });
+    const participation = await sala.join({ personId: person.id, planId: plan.id, mainProfessorId: professor.id, startDate: '2026-01-01' });
+    const assigned = await sala.replaceRoutine({ personId: person.id, salaParticipationId: participation.id, days: duplicate.days });
+    expect(assigned.days[0]!.exercises.map(e => [e.blockPosition, e.series])).toEqual([[1, '5'], [1, '5'], [2, '5']]);
+    await sala.replaceRoutine({ personId: person.id, salaParticipationId: participation.id, days: [{ exercises: [{ exerciseDefinitionId: exercise.id, series: 'individual', load: '9 kg' }] }] });
+    const reused = await sala.duplicateRoutine(assigned.id);
+    expect(reused.version).toBe(3); expect(reused.days[0]!.exercises.map(e => [e.blockPosition, e.series])).toEqual([[1, '5'], [1, '5'], [2, '5']]);
+    const legacy = (await sala.listRoutines(person.id)).find(r => r.version === 2)!;
+    expect(legacy.days[0]!.exercises[0]).toMatchObject({ blockPosition: null, series: 'individual', load: '9 kg' });
+    expect((await sala.listRoutineTemplates()).find(t => t.id === template.id)!.days[0]!.exercises.map(e => e.series)).toEqual(['5', '5', '5']);
+    for (const table of ['routine_template_exercises', 'routine_exercises', 'sala_training_record_exercises']) {
+      const constraint = await prisma.$queryRawUnsafe<{ count: bigint }[]>(`SELECT count(*) FROM pg_constraint WHERE conrelid = '${table}'::regclass AND conname = 'chk_${table}_block_position'`);
+      expect(Number(constraint[0]!.count)).toBe(1);
+    }
+    await expect(prisma.routineExercise.update({ where: { id: reused.days[0]!.exercises[0]!.id }, data: { blockPosition: 0 } })).rejects.toThrow();
+  });
+  it.each([
+    [2], [1, 3], [1, 2, 1], [1, null], [0], [-1], [1.5],
+  ])('rejects invalid block positions %j without modifying saved content', async (...positions: (number | null)[]) => {
+    const definition = await sala.createExerciseDefinition({ name: 'Validación bloques' });
+    const template = await sala.createRoutineTemplate({ name: 'Anterior', days: [{ exercises: [{ exerciseDefinitionId: definition.id, blockPosition: null, series: '7' }] }] });
+    await expect(sala.updateRoutineTemplate(template.id, { name: 'Inválida', days: [{ exercises: positions.map(blockPosition => ({ exerciseDefinitionId: definition.id, blockPosition, series: '4' })) }] })).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_BLOCKS_INVALID' } });
+    expect((await sala.listRoutineTemplates()).find(t => t.id === template.id)).toEqual(template);
+  });
+  it('normalizes series for comparison and rejects inconsistent shared series', async () => {
+    const definition = await sala.createExerciseDefinition({ name: 'Series compartidas' });
+    const exercise = { exerciseDefinitionId: definition.id, blockPosition: 1 };
+    await expect(sala.createRoutineTemplate({ name: 'Inválida', days: [{ exercises: [{ ...exercise, series: '4' }, { ...exercise, series: '3' }] }] })).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_BLOCKS_INVALID' } });
+    const empty = await sala.createRoutineTemplate({ name: 'Vacías', days: [{ exercises: [{ ...exercise, series: ' ' }, { ...exercise, series: null }] }] });
+    expect(empty.days[0]!.exercises.map(e => e.series)).toEqual([null, null]);
+    const normalized = await sala.createRoutineTemplate({ name: 'Normalizadas', days: [{ exercises: [{ ...exercise, series: ' 4 ' }, { ...exercise, series: '4' }] }] });
+    expect(normalized.days[0]!.exercises.map(e => e.series)).toEqual(['4', '4']);
+  });
   it('creates, lists and atomically edits complete shared routine templates without unique names', async () => {
     const authn = await session(Role.PROFESSOR);
     const squat = await sala.createExerciseDefinition({ name: 'Sentadilla', primaryMuscle: 'Piernas' });

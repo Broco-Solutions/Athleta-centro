@@ -1007,6 +1007,8 @@ export interface ExerciseDefinitionResponseDto {
 }
 
 export interface RoutineExerciseResponseDto {
+  /** @nullable */
+  blockPosition: number | null;
   id: string;
   position: number;
   exerciseDefinitionId: string;
@@ -1044,6 +1046,8 @@ export interface RoutineTemplateListEnvelopeDto {
 }
 
 export interface RoutineExerciseDto {
+  /** @nullable */
+  blockPosition?: number | null;
   exerciseDefinitionId: string;
   /**
    * @maxLength 80
@@ -1117,6 +1121,8 @@ export interface TrainingRecordListEnvelopeDto {
 }
 
 export interface TrainingRecordExerciseDto {
+  /** @nullable */
+  blockPosition: number | null;
   id: string;
   exerciseDefinitionId: string;
   exerciseName: string;
@@ -2020,6 +2026,8 @@ export interface SubmitHealthDeclarationDto {
 }
 
 export interface TrainingContextExerciseDto {
+  /** @nullable */
+  blockPosition: number | null;
   id: string;
   exerciseDefinitionId: string;
   exerciseName: string;

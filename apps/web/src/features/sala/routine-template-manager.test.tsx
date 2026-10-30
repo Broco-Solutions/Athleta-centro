@@ -52,13 +52,13 @@ it('creates several days and exercises, including optional content and an exerci
   await catalog().findByRole('button', { name: 'Agregar Sentadilla' });
   fireEvent.change(screen.getByLabelText('Nombre de la preestablecida'), { target: { value: '  Modelo nuevo  ' } });
   await add(1, 'squat');
-  for (const [label, value] of [['Series', '4'], ['Valor', '10'], ['Carga', '60 kg'], ['Descanso', '90 s'], ['Observación', 'Técnica']]) change(day(1), label!, value!);
+  for (const [label, value] of [['Series del bloque', '4'], ['Valor', '10'], ['Carga', '60 kg'], ['Descanso', '90 s'], ['Observación', 'Técnica']]) change(day(1), label!, value!);
   await add(1, 'plank'); change(row(1), 'Tipo', 'duration'); change(row(1), 'Valor', '45 s');
   fireEvent.click(screen.getByRole('button', { name: '+ Agregar día' })); await add(2, 'squat');
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' })); await screen.findByText('Rutina preestablecida guardada correctamente.');
   expect(api.create).toHaveBeenCalledExactlyOnceWith({ name: 'Modelo nuevo', days: [
-    { name: 'Día 1', exercises: [{ exerciseDefinitionId: 'squat', series: '4', repetitions: '10', duration: null, load: '60 kg', rest: '90 s', notes: 'Técnica' }, { exerciseDefinitionId: 'plank', series: null, repetitions: null, duration: '45 s', load: null, rest: null, notes: null }] },
-    { name: 'Día 2', exercises: [{ exerciseDefinitionId: 'squat', series: null, repetitions: null, duration: null, load: null, rest: null, notes: null }] },
+    { name: 'Día 1', exercises: [{ exerciseDefinitionId: 'squat', blockPosition: 1, series: '4', repetitions: '10', duration: null, load: '60 kg', rest: '90 s', notes: 'Técnica' }, { exerciseDefinitionId: 'plank', blockPosition: 1, series: '4', repetitions: null, duration: '45 s', load: null, rest: null, notes: null }] },
+    { name: 'Día 2', exercises: [{ exerciseDefinitionId: 'squat', blockPosition: 1, series: null, repetitions: null, duration: null, load: null, rest: null, notes: null }] },
   ] }, expect.objectContaining({ credentials: 'include', headers: { 'x-csrf-token': 'csrf' } }));
   expect(api.update).not.toHaveBeenCalled(); await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2)); expect(api.exercises).toHaveBeenCalledTimes(1);
 });
@@ -131,16 +131,16 @@ it('paginates the template exercise picker and keeps added exercise edits across
   expect(catalog().getByText('Página 1 de 2')).toBeVisible();
   fireEvent.click(catalog().getByRole('button', { name: 'Siguiente' }));
   fireEvent.click(catalog().getByRole('button', { name: 'Agregar Ejercicio 8' }));
-  change(row(), 'Series', '4');
+  change(day(1), 'Series del bloque', '4');
   fireEvent.click(catalog().getByRole('button', { name: 'Anterior' }));
-  expect(row().getByLabelText('Series')).toHaveValue('4');
+  expect(day(1).getByLabelText('Series del bloque')).toHaveValue('4');
   fireEvent.click(catalog().getByRole('button', { name: 'Siguiente' }));
   fireEvent.click(catalog().getByRole('button', { name: /Empuje/ }));
   expect(catalog().getByText('Página 1 de 2')).toBeVisible();
   fireEvent.click(catalog().getByRole('button', { name: 'Siguiente' }));
   change(catalog(), 'Buscar ejercicio', 'Ejercicio 9');
   expect(catalog().getByText('Página 1 de 1')).toBeVisible();
-  expect(row().getByLabelText('Series')).toHaveValue('4');
+  expect(day(1).getByLabelText('Series del bloque')).toHaveValue('4');
 });
 it('offers Sin patrón only when active exercises have no pattern and filters those exercises', async () => {
   renderManager(); fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
@@ -186,7 +186,7 @@ it.each(['create', 'update', 'delete'])('reports real HTTP errors without claimi
   if (operation === 'delete') { fireEvent.click(await screen.findByRole('button', { name: 'Eliminar' })); fireEvent.click(screen.getByRole('button', { name: 'Confirmar eliminación' })); }
   else {
     if (operation === 'update') fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
-    else { fireEvent.click(screen.getByRole('button', { name: 'Nueva rutina preestablecida' })); fireEvent.change(screen.getByLabelText('Nombre de la preestablecida'), { target: { value: 'Nuevo' } }); }
+    else { fireEvent.click(screen.getByRole('button', { name: 'Nueva rutina preestablecida' })); fireEvent.change(screen.getByLabelText('Nombre de la preestablecida'), { target: { value: 'Nuevo' } }); await add(1, 'squat'); }
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
   }
   expect(await screen.findByRole('alert')).toHaveTextContent('HTTP rechazado'); expect(screen.queryByText(/correctamente/)).not.toBeInTheDocument(); expect(listCalls).toBe(1);
@@ -232,4 +232,46 @@ it('prints only the selected saved template and never writes', async () => {
     expect(screen.queryByRole('button', { name: 'Imprimir / PDF' })).not.toBeInTheDocument();
     for (const write of [api.create, api.update, api.delete]) expect(write).not.toHaveBeenCalled();
   } finally { print.mockRestore(); }
+});
+
+it('creates, removes and renumbers blocks and exercises, validates empty blocks and restores saved grouping', async () => {
+  const { api } = renderManager([]);
+  fireEvent.click(screen.getByRole('button', { name: 'Nueva rutina preestablecida' }));
+  fireEvent.change(screen.getByLabelText('Nombre de la preestablecida'), { target: { value: 'Agrupada' } });
+  expect(screen.getByText('Bloque A')).toBeInTheDocument();
+  expect(day(1).getByRole('button', { name: 'Eliminar bloque' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('El Bloque A del Día 1 no tiene ejercicios. Agregá uno o eliminá el bloque.'); expect(api.create).not.toHaveBeenCalled();
+  await add(1, 'squat'); await add(1, 'plank'); await add(1, 'squat');
+  for (const code of ['A1 — Sentadilla', 'A2 — Plancha', 'A3 — Sentadilla']) expect(day(1).getByText(code)).toBeInTheDocument();
+  change(day(1), 'Series del bloque', '4');
+  fireEvent.click(row(1).getByRole('button', { name: 'Quitar Plancha' }));
+  expect(day(1).getByText('A2 — Sentadilla')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar bloque' }));
+  let b = within(screen.getByRole('region', { name: 'Bloque B' }));
+  change(b, 'Series del bloque', '3'); fireEvent.click(b.getByRole('button', { name: 'Agregar ejercicio al bloque' }));
+  await add(1, 'plank'); await add(1, 'squat');
+  expect(b.getByText('B1 — Plancha')).toBeInTheDocument(); expect(b.getByText('B2 — Sentadilla')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar bloque' }));
+  const c = within(screen.getByRole('region', { name: 'Bloque C' })); fireEvent.click(c.getByRole('button', { name: 'Agregar ejercicio al bloque' })); await add(1, 'squat');
+  fireEvent.click(b.getByRole('button', { name: 'Eliminar bloque' }));
+  b = within(screen.getByRole('region', { name: 'Bloque B' })); expect(b.getByText('B1 — Sentadilla')).toBeInTheDocument();
+  fireEvent.click(b.getByRole('button', { name: 'Eliminar bloque' }));
+  expect(screen.getByText('Agregando ejercicios al Bloque A')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar día' })); await add(2, 'plank'); day(1);
+  expect(screen.getByText('A2 — Sentadilla')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' })); await screen.findByText('Rutina preestablecida guardada correctamente.');
+  const saved = api.create.mock.calls[0]![0]; expect(saved.days[0]!.exercises).toHaveLength(2);
+  expect(saved.days[0]!.exercises.every(e => e.blockPosition === 1 && e.series === '4')).toBe(true);
+});
+it('edits and duplicates grouped templates preserving shared series and independent content', async () => {
+  const grouped = { ...template, days: template.days.map((d, i) => ({ ...d, exercises: d.exercises.map(e => ({ ...e, blockPosition: 1, series: i ? '3' : '4' })) })) };
+  const original = structuredClone(grouped); const { api } = renderManager([grouped]);
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  expect(day(1).getByLabelText('Series del bloque')).toHaveValue('4'); expect(row().queryByLabelText('Series')).not.toBeInTheDocument();
+  change(day(1), 'Series del bloque', '6'); fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+  expect(api.update).not.toHaveBeenCalled(); expect(grouped).toEqual(original);
+  fireEvent.click(screen.getByRole('button', { name: 'Duplicar' })); expect(day(1).getByLabelText('Series del bloque')).toHaveValue('4');
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' })); await screen.findByText('Rutina preestablecida guardada correctamente.');
+  expect(api.create.mock.calls[0]![0].days[0]!.exercises[0]).toMatchObject({ blockPosition: 1, series: '4' }); expect(grouped).toEqual(original);
 });

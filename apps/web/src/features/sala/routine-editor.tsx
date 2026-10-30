@@ -2,11 +2,13 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
+import { blockLabel, groupRoutineBlocks, isGroupedDay } from './routine-blocks';
 import { filterExerciseDefinitions } from './exercise-catalog';
 import { Button } from '@athleta/ui';
 import type { RoutineDayDto } from '@athleta/api-client';
 
 export type RoutineExercise = {
+  blockPosition?: number | null;
   id?: string;
   position?: number;
   exerciseDefinitionId: string;
@@ -37,13 +39,15 @@ export const exerciseSchema = z.object({
 }).refine((entry) => !(entry.repetitions && entry.duration), { message: exclusiveMessage });
 // UI-only choice for an empty value; exerciseSchema strips it before serialization.
 type ExerciseForm = z.infer<typeof exerciseSchema> & { valueMode?: 'repetitions' | 'duration' };
-export type EditingDay = { key: string; name: string; exercises: ExerciseForm[] };
+type EditingBlock = { key: string; series: string; exercises: ExerciseForm[] };
+export type EditingDay = { key: string; name: string; exercises: ExerciseForm[]; blocks: EditingBlock[] | null };
+function newBlock(): EditingBlock { return { key: crypto.randomUUID(), series: '', exercises: [] }; }
 export const fieldClass = 'h-10 w-full rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-ring';
 
 function emptyExercise(): ExerciseForm {
   return { exerciseDefinitionId: '', series: '', repetitions: '', duration: '', load: '', rest: '', notes: '' };
 }
-export function newDay(name = 'Día 1'): EditingDay { return { key: crypto.randomUUID(), name, exercises: [] }; }
+export function newDay(name = 'Día 1'): EditingDay { return { key: crypto.randomUUID(), name, exercises: [], blocks: [newBlock()] }; }
 function displayExercise(exercise: RoutineExercise, definitions: ExerciseDefinition[]): string {
   return exercise.exerciseDefinition?.name ?? exercise.exerciseName ?? definitions.find((item) => item.id === exercise.exerciseDefinitionId)?.name ?? 'Ejercicio';
 }
@@ -61,16 +65,16 @@ type ExerciseCatalogProps = {
   patternsError: boolean;
 };
 
-function ExerciseRow({ exercise, definitions, onChange, onRemove, disabled }: {
-  exercise: ExerciseForm; definitions: ExerciseDefinition[]; onChange: (exercise: ExerciseForm) => void; onRemove: () => void; disabled: boolean;
+function ExerciseRow({ exercise, definitions, onChange, onRemove, disabled, showSeries = true, code }: {
+  showSeries?: boolean; code?: string; exercise: ExerciseForm; definitions: ExerciseDefinition[]; onChange: (exercise: ExerciseForm) => void; onRemove: () => void; disabled: boolean;
 }): React.JSX.Element {
   const invalid = Boolean(exercise.repetitions?.trim() && exercise.duration?.trim());
   const mode = invalid ? '' : exercise.duration ? 'duration' : exercise.repetitions ? 'repetitions' : exercise.valueMode ?? 'repetitions';
   const selected = definitions.find((item) => item.id === exercise.exerciseDefinitionId);
   return <li className="space-y-2 p-3">
-    <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,.7fr)_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
-      <div className="min-w-0 text-sm">Ejercicio<p className="font-medium">{selected?.name ?? 'Ejercicio retirado'}{!selected?.isActive ? ' · No disponible' : ''}</p></div>
-      <label className="min-w-0 text-sm">Series<input className={fieldClass} value={exercise.series ?? ''} maxLength={80} disabled={disabled} onChange={(event) => onChange({ ...exercise, series: event.target.value })}/></label>
+    <div className={`grid min-w-0 gap-3 md:items-end ${showSeries ? 'md:grid-cols-[minmax(0,2fr)_minmax(0,.7fr)_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]' : 'md:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'}`}>
+      <div className="min-w-0 text-sm">Ejercicio<p className="font-medium">{code ? `${code} — ` : ''}{selected?.name ?? 'Ejercicio retirado'}{!selected?.isActive ? ' · No disponible' : ''}</p></div>
+      {showSeries ? <label className="min-w-0 text-sm">Series<input className={fieldClass} value={exercise.series ?? ''} maxLength={80} disabled={disabled} onChange={(event) => onChange({ ...exercise, series: event.target.value })}/></label> : null}
       <div className="grid min-w-0 gap-2 sm:grid-cols-2"><p className="hidden text-sm md:col-span-2 md:block">Repeticiones o tiempo</p><label className="min-w-0 text-sm"><span className="md:sr-only">Tipo</span><select className={fieldClass} value={mode} disabled={disabled} onChange={(event) => {
         const next = event.target.value === 'duration' ? 'duration' : 'repetitions';
         onChange({ ...exercise, valueMode: next, repetitions: next === 'repetitions' ? exercise.repetitions ?? '' : '', duration: next === 'duration' ? exercise.duration ?? '' : '' });
@@ -85,12 +89,18 @@ function ExerciseRow({ exercise, definitions, onChange, onRemove, disabled }: {
   </li>;
 }
 
-export function DayEditor({ day, index, definitions, onChange, onRemove, canRemove, disabled }: {
-  day: EditingDay; index: number; definitions: ExerciseDefinition[]; onChange: (day: EditingDay) => void; onRemove: () => void; canRemove: boolean; disabled: boolean;
+export function DayEditor({ day, index, definitions, onChange, onRemove, canRemove, disabled, onSelectBlock, selectedBlockKey }: {
+  onSelectBlock: (key: string) => void; selectedBlockKey?: string | undefined; day: EditingDay; index: number; definitions: ExerciseDefinition[]; onChange: (day: EditingDay) => void; onRemove: () => void; canRemove: boolean; disabled: boolean;
 }): React.JSX.Element {
   return <fieldset aria-label={`Día ${index + 1}`} className="min-w-0 rounded-lg border bg-surface-muted p-4" disabled={disabled}>
     <div className="flex flex-wrap items-end justify-between gap-3"><label className="min-w-0 grow text-sm font-medium">Nombre del día<input aria-label={`Nombre del día ${index + 1}`} className={`${fieldClass} mt-1`} placeholder={`Día ${index + 1} (opcional)`} maxLength={120} value={day.name} onChange={(event) => onChange({ ...day, name: event.target.value })}/></label><Button type="button" variant="ghost" disabled={!canRemove || disabled} onClick={onRemove}>Eliminar día</Button></div>
-    {day.exercises.length ? <ul className="mt-4 divide-y rounded-md border">{day.exercises.map((exercise, entryIndex) => <ExerciseRow key={entryIndex} exercise={exercise} definitions={definitions} disabled={disabled} onChange={(updated) => onChange({ ...day, exercises: day.exercises.map((item, i) => i === entryIndex ? updated : item) })} onRemove={() => onChange({ ...day, exercises: day.exercises.filter((_, i) => i !== entryIndex) })}/>)}</ul> : <p className="mt-4 text-sm text-muted-foreground">Sin ejercicios. Agregalos desde el catálogo.</p>}
+    {day.blocks !== null ? <div className="mt-4 space-y-4">{day.blocks.map((block, blockIndex) => <section key={block.key} aria-label={`Bloque ${blockLabel(blockIndex + 1)}`} className="rounded-md border bg-white p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">Bloque {blockLabel(blockIndex + 1)}</h3><Button type="button" variant="ghost" disabled={disabled || day.blocks!.length === 1} onClick={() => onChange({ ...day, blocks: day.blocks!.filter(item => item.key !== block.key) })}>Eliminar bloque</Button></div>
+      <p className="text-xs text-muted-foreground">Al quitar el bloque también se quitan sus ejercicios del borrador.</p>
+      <label className="mt-3 block text-sm">Series del bloque<input className={`${fieldClass} mt-1`} maxLength={80} value={block.series} onChange={event => onChange({ ...day, blocks: day.blocks!.map(item => item.key === block.key ? { ...item, series: event.target.value } : item) })}/></label>
+      {block.exercises.length ? <ul className="mt-3 divide-y">{block.exercises.map((exercise, entryIndex) => <ExerciseRow key={entryIndex} exercise={exercise} definitions={definitions} disabled={disabled} showSeries={false} code={`${blockLabel(blockIndex + 1)}${entryIndex + 1}`} onChange={updated => onChange({ ...day, blocks: day.blocks!.map(item => item.key === block.key ? { ...item, exercises: item.exercises.map((entry, i) => i === entryIndex ? updated : entry) } : item) })} onRemove={() => onChange({ ...day, blocks: day.blocks!.map(item => item.key === block.key ? { ...item, exercises: item.exercises.filter((_, i) => i !== entryIndex) } : item) })}/>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">Sin ejercicios. Agregalos desde el catálogo.</p>}
+      <Button type="button" variant="secondary" className="mt-3" aria-pressed={selectedBlockKey === block.key} onClick={() => onSelectBlock(block.key)}>Agregar ejercicio al bloque</Button>
+    </section>)}<Button type="button" variant="ghost" onClick={() => onChange({ ...day, blocks: [...day.blocks!, newBlock()] })}>+ Agregar bloque</Button></div> : day.exercises.length ? <ul className="mt-4 divide-y rounded-md border">{day.exercises.map((exercise, entryIndex) => <ExerciseRow key={entryIndex} exercise={exercise} definitions={definitions} disabled={disabled} onChange={(updated) => onChange({ ...day, exercises: day.exercises.map((item, i) => i === entryIndex ? updated : item) })} onRemove={() => onChange({ ...day, exercises: day.exercises.filter((_, i) => i !== entryIndex) })}/>)}</ul> : <p className="mt-4 text-sm text-muted-foreground">Sin ejercicios. Agregalos desde el catálogo.</p>}
   </fieldset>;
 }
 
@@ -126,6 +136,7 @@ function ExerciseCatalog({ definitions, catalogLoading, catalogError, patterns, 
 }
 
 export function RoutineDaysEditor({ days, definitions, catalogLoading, catalogError, patterns, patternsLoading, patternsError, onChange, disabled }: ExerciseCatalogProps & { days: EditingDay[]; onChange: (days: EditingDay[]) => void; disabled: boolean }): React.JSX.Element {
+  const [blockTargets, setBlockTargets] = useState<Record<string, string>>({});
   const [activeKey, setActiveKey] = useState(days[0]?.key ?? '');
   // Attach asynchronous creation to its originating day, preserving the latest draft.
   const latest = useRef({ days, onChange });
@@ -133,10 +144,11 @@ export function RoutineDaysEditor({ days, definitions, catalogLoading, catalogEr
   const editorDefinitions = definitions;
   const activeIndex = Math.max(0, days.findIndex((day) => day.key === activeKey));
   const activeDay = days[activeIndex];
+  const targetBlock = activeDay?.blocks?.find(block => block.key === blockTargets[activeDay.key]) ?? activeDay?.blocks?.[0];
   const changeDay = (updated: EditingDay) => onChange(days.map((day) => day.key === updated.key ? updated : day));
   const addExercise = (key: string, definition: ExerciseDefinition) => {
     const current = latest.current;
-    current.onChange(current.days.map((day) => day.key === key ? { ...day, exercises: [...day.exercises, { ...emptyExercise(), exerciseDefinitionId: definition.id }] } : day));
+    current.onChange(current.days.map((day) => day.key === key ? day.blocks === null ? { ...day, exercises: [...day.exercises, { ...emptyExercise(), exerciseDefinitionId: definition.id }] } : { ...day, blocks: day.blocks.map(block => block.key === targetBlock?.key ? { ...block, exercises: [...block.exercises, { ...emptyExercise(), exerciseDefinitionId: definition.id }] } : block) } : day));
   };
   const removeDay = () => {
     if (!activeDay || days.length <= 1) return;
@@ -147,37 +159,46 @@ export function RoutineDaysEditor({ days, definitions, catalogLoading, catalogEr
   return <section className="mt-4 min-w-0 space-y-4" aria-label="Contenido de la rutina">
     <nav aria-label="Días de la rutina" className="flex items-center gap-2 overflow-x-auto pb-1">{days.map((day, index) => <button key={day.key} type="button" disabled={disabled} aria-label={`Día ${index + 1}: ${day.name || `Día ${index + 1}`}`} aria-pressed={activeDay?.key === day.key} onClick={() => setActiveKey(day.key)} className={`min-h-11 shrink-0 border-b-2 px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${activeDay?.key === day.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:bg-surface-muted'}`}>{day.name || `Día ${index + 1}`}</button>)}<Button type="button" variant="ghost" className="shrink-0" disabled={disabled} onClick={addDay}>+ Agregar día</Button></nav>
     {activeDay ? <>
-      <DayEditor key={activeDay.key} day={activeDay} index={activeIndex} definitions={editorDefinitions} disabled={disabled} canRemove={days.length > 1} onRemove={removeDay} onChange={changeDay}/>
+      <DayEditor key={activeDay.key} day={activeDay} index={activeIndex} definitions={editorDefinitions} disabled={disabled} canRemove={days.length > 1} onRemove={removeDay} onChange={changeDay} selectedBlockKey={targetBlock?.key} onSelectBlock={key => setBlockTargets({ ...blockTargets, [activeDay.key]: key })}/>
+      {targetBlock ? <p className="text-sm font-medium">Agregando ejercicios al Bloque {blockLabel(activeDay.blocks!.indexOf(targetBlock) + 1)}</p> : null}
       <ExerciseCatalog definitions={editorDefinitions} catalogLoading={catalogLoading} catalogError={catalogError} patterns={patterns} patternsLoading={patternsLoading} patternsError={patternsError} disabled={disabled} dayName={activeDay.name.trim() || `Día ${activeIndex + 1}`} onAdd={(definition) => addExercise(activeDay.key, definition)}/>
     </> : null}
   </section>;
 }
 
+function exerciseToForm(exercise: RoutineExercise): ExerciseForm {
+  return { exerciseDefinitionId: exercise.exerciseDefinitionId, series: exercise.series ?? '', repetitions: exercise.repetitions ?? '', duration: exercise.duration ?? '', load: exercise.load ?? '', rest: exercise.rest ?? '', notes: exercise.notes ?? '' };
+}
 export function routineDaysToDraft(days: RoutineDay[]): EditingDay[] {
-  return days.map((day, index) => ({ key: crypto.randomUUID(), name: day.name ?? `Día ${index + 1}`, exercises: day.exercises.map((exercise) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, series: exercise.series ?? '', repetitions: exercise.repetitions ?? '', duration: exercise.duration ?? '', load: exercise.load ?? '', rest: exercise.rest ?? '', notes: exercise.notes ?? '' })) }));
+  return days.map((day, index) => ({ key: crypto.randomUUID(), name: day.name ?? `Día ${index + 1}`, exercises: isGroupedDay(day.exercises) ? [] : day.exercises.map(exerciseToForm), blocks: isGroupedDay(day.exercises) ? groupRoutineBlocks(day.exercises).map(block => ({ key: crypto.randomUUID(), series: block.series ?? '', exercises: block.exercises.map(exerciseToForm) })) : null }));
 }
 export function draftToRoutineDays(days: EditingDay[]): RoutineDayDto[] {
-  return days.map((day, index) => ({ name: day.name.trim() || `Día ${index + 1}`, exercises: day.exercises.map((exercise) => {
+  return days.map((day, index) => ({ name: day.name.trim() || `Día ${index + 1}`, exercises: (day.blocks === null ? day.exercises : day.blocks.flatMap((block, blockIndex) => {
+    if (!block.exercises.length) throw new Error(`El Bloque ${blockLabel(blockIndex + 1)} del Día ${index + 1} no tiene ejercicios. Agregá uno o eliminá el bloque.`);
+    return block.exercises.map(exercise => ({ ...exercise, series: block.series, blockPosition: blockIndex + 1 }));
+  })).map((exercise) => {
     const parsed = exerciseSchema.parse(exercise);
-    return { exerciseDefinitionId: parsed.exerciseDefinitionId, series: parsed.series || null, repetitions: parsed.repetitions || null, duration: parsed.duration || null, load: parsed.load || null, rest: parsed.rest || null, notes: parsed.notes || null };
+    return { exerciseDefinitionId: parsed.exerciseDefinitionId, ...('blockPosition' in exercise ? { blockPosition: exercise.blockPosition as number } : {}), series: parsed.series || null, repetitions: parsed.repetitions || null, duration: parsed.duration || null, load: parsed.load || null, rest: parsed.rest || null, notes: parsed.notes || null };
   }) }));
 }
 /** Copy only content; omit all source aggregate and child IDs. Preserve optional day names. */
 export function copyRoutineDays(days: RoutineDay[]): RoutineDayDto[] {
-  return days.map((day) => ({ name: day.name ?? null, exercises: day.exercises.map((exercise) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, series: exercise.series ?? null, repetitions: exercise.repetitions ?? null, duration: exercise.duration ?? null, load: exercise.load ?? null, rest: exercise.rest ?? null, notes: exercise.notes ?? null })) }));
+  return days.map((day) => ({ name: day.name ?? null, exercises: day.exercises.map((exercise) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, ...(exercise.blockPosition != null ? { blockPosition: exercise.blockPosition } : {}), series: exercise.series ?? null, repetitions: exercise.repetitions ?? null, duration: exercise.duration ?? null, load: exercise.load ?? null, rest: exercise.rest ?? null, notes: exercise.notes ?? null })) }));
 }
 export function RoutineContentSummary({ days, definitions = [], dayAction }: { days: RoutineDay[]; definitions?: ExerciseDefinition[]; dayAction?: (day: RoutineDay) => React.ReactNode }): React.JSX.Element {
   return <div className="mt-4 grid gap-3 sm:grid-cols-2">{days.map((day) => <section key={day.id ?? day.position} className="min-w-0 rounded-md border border-border bg-white">
     <header className="flex items-center justify-between gap-2 border-b border-border bg-surface-muted px-3 py-2"><h5 className="truncate rounded-sm bg-primary px-2.5 py-1 text-sm font-semibold text-primary-foreground">{day.name ?? `Día ${day.position}`}</h5><span className="shrink-0 text-xs text-muted-foreground">{day.exercises.length} {day.exercises.length === 1 ? 'ejercicio' : 'ejercicios'}</span></header>
-    {day.exercises.length === 0 ? <p className="px-3 py-3 text-sm text-muted-foreground">Sin ejercicios.</p> : <ul className="divide-y divide-border">{day.exercises.map((exercise, index) => {
-      const parameters = [exercise.series && `${exercise.series} series`, exercise.repetitions && `${exercise.repetitions} rep.`, exercise.duration && `Tiempo ${exercise.duration}`, exercise.load && `Carga ${exercise.load}`, exercise.rest && `Descanso ${exercise.rest}`].filter(Boolean).join(' · ');
+    {day.exercises.length === 0 ? <p className="px-3 py-3 text-sm text-muted-foreground">Sin ejercicios.</p> : (isGroupedDay(day.exercises) ? groupRoutineBlocks(day.exercises) : [{ position: 0, label: '', series: null, exercises: day.exercises }]).map(block => <section key={block.position}>
+    {block.position > 0 ? <h6 className="border-b bg-surface-muted px-3 py-2 text-sm font-semibold">Bloque {block.label}{block.series ? ` — ${block.series} series` : ''}</h6> : null}
+    <ul className="divide-y divide-border">{block.exercises.map((exercise, index) => {
+      const parameters = [!block.position && exercise.series && `${exercise.series} series`, exercise.repetitions && `${exercise.repetitions} rep.`, exercise.duration && `Tiempo ${exercise.duration}`, exercise.load && `Carga ${exercise.load}`, exercise.rest && `Descanso ${exercise.rest}`].filter(Boolean).join(' · ');
       return <li key={exercise.id ?? index} className="px-3 py-2 text-sm">
-        <p className="font-medium">{displayExercise(exercise, definitions)}{exerciseUnavailable(exercise, definitions) ? <span className="ml-1 text-xs font-normal text-muted-foreground">· No disponible</span> : null}</p>
+        <p className="font-medium">{block.position > 0 ? `${block.label}${index + 1} — ` : ''}{displayExercise(exercise, definitions)}{exerciseUnavailable(exercise, definitions) ? <span className="ml-1 text-xs font-normal text-muted-foreground">· No disponible</span> : null}</p>
         {parameters ? <p className="mt-1 text-xs text-muted-foreground">{parameters}</p> : null}
         {exercise.exerciseDefinition?.description ? <p className="mt-1 text-xs text-muted-foreground">{exercise.exerciseDefinition.description}</p> : null}
         {exercise.notes ? <p className="mt-1 text-xs text-muted-foreground">Observación: {exercise.notes}</p> : null}
       </li>;
-    })}</ul>}
+    })}</ul></section>)}
     {dayAction ? <div className="px-3 py-3">{dayAction(day)}</div> : null}
   </section>)}</div>;
 }

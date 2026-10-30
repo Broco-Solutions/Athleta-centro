@@ -82,9 +82,9 @@ export class TrainingRecordService {
     const submitted = new Set(input.exercises.map(exercise => exercise.id));
     if (submitted.size !== input.exercises.length || submitted.size !== ids.length || ids.some(id => !submitted.has(id))) throw new BadRequestException({ code: 'TRAINING_EXERCISES_INVALID', message: 'Los ejercicios no corresponden al día o registro seleccionado. Revisá la rutina.' });
   }
-  private snapshot(exercise: { exerciseDefinitionId: string; exerciseDefinition: { name: string }; position: number; series: string | null; repetitions: string | null; duration: string | null; load: string | null; rest: string | null; notes: string | null }) {
-    const { exerciseDefinitionId, position, series, repetitions, duration, load, rest, notes } = exercise;
-    return { exerciseDefinitionId, exerciseName: exercise.exerciseDefinition.name, position, series, repetitions, duration, load, rest, notes };
+  private snapshot(exercise: { blockPosition: number | null; exerciseDefinitionId: string; exerciseDefinition: { name: string }; position: number; series: string | null; repetitions: string | null; duration: string | null; load: string | null; rest: string | null; notes: string | null }) {
+    const { exerciseDefinitionId, position, blockPosition, series, repetitions, duration, load, rest, notes } = exercise;
+    return { exerciseDefinitionId, exerciseName: exercise.exerciseDefinition.name, position, blockPosition, series, repetitions, duration, load, rest, notes };
   }
   private summary(record: Pick<SalaTrainingRecord, keyof typeof summarySelect>) { return { id: record.id, routineId: record.routineId, routineDayId: record.routineDayId, dayName: record.dayName, dayPosition: record.dayPosition, date: record.date.toISOString().slice(0, 10), createdAt: record.createdAt.toISOString(), updatedAt: record.updatedAt.toISOString() }; }
   private serialize(record: SalaTrainingRecord & { exercises: SalaTrainingRecordExercise[] }) {
