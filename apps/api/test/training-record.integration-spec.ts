@@ -91,11 +91,23 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     expect((await training.detail(f.person.id, saved.id)).exercises[0]!.weightKg).toBe('32.5');
   });
   it('rejects duplicates, including concurrent requests, and exposes the existing owned record', async () => {
-    const f = await fixture(); const responses = await Promise.all([create(f), create(f)]);
+    const f = await fixture(); const responses = await Promise.all([create(f), create(f, { ...f.body, date: '2026-10-25' })]);
     expect(responses.map(r => r.status).sort()).toEqual([201, 409]);
     expect(responses.find(r => r.status === 409)!.body).toMatchObject({ code: 'TRAINING_DUPLICATE', details: { recordId: responses.find(r => r.status === 201)!.body.data.id } });
     expect(await prisma.salaTrainingRecord.count({ where: { personId: f.person.id } })).toBe(1);
-    await expect(prisma.salaTrainingRecord.create({ data: { personId: f.person.id, routineId: f.body.routineId, routineDayId: f.body.routineDayId, date: new Date(f.body.date), dayPosition: 1 } })).rejects.toMatchObject({ code: 'P2002' });
+    const duplicate = await create(f, { ...f.body, date: '2026-10-24' }).expect(409);
+    expect(duplicate.body).toMatchObject({ code: 'TRAINING_DUPLICATE', details: { recordId: responses.find(r => r.status === 201)!.body.data.id } });
+    const winnerDate = responses.find(r => r.status === 201)!.body.data.date as string;
+    await expect(prisma.salaTrainingRecord.create({ data: { personId: f.person.id, routineId: f.body.routineId, routineDayId: f.body.routineDayId, date: new Date(winnerDate), dayPosition: 1 } })).rejects.toMatchObject({ code: 'P2002' });
+  });
+  it('uses one calendar week across month/year boundaries and allows the next week', async () => {
+    const f = await fixture();
+    await prisma.routine.update({ where: { id: f.routine.id }, data: { createdAt: new Date('2025-12-01T12:00:00Z') } });
+    const saved = (await create(f, { ...f.body, date: '2025-12-31' }).expect(201)).body.data;
+    const duplicate = await create(f, { ...f.body, date: '2026-01-04' }).expect(409);
+    expect(duplicate.body).toMatchObject({ code: 'TRAINING_DUPLICATE', details: { recordId: saved.id } });
+    await create(f, { ...f.body, date: '2026-01-05' }).expect(201);
+    expect(await prisma.salaTrainingRecord.count({ where: { personId: f.person.id } })).toBe(2);
   });
   it.each(['2026-10-27', '2026-10-18', '2026-02-30'])('rejects invalid date %s with no partial record', async date => {
     const f = await fixture(); await create(f, { ...f.body, date }).expect(400);
@@ -187,6 +199,25 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     expect(corrected.body.data.createdAt).toBe(saved.createdAt);
     expect(await prisma.salaTrainingRecord.count({ where: { personId: f.person.id } })).toBe(1);
   });
+  it('keeps multiple legacy weekly records intact and returns corrected values to Management', async () => {
+    const f = await fixture();
+    const original = await training.create(f.person.id, f.body);
+    const legacy = await prisma.salaTrainingRecord.create({ data: {
+      personId: f.person.id, routineId: original.routineId, routineDayId: original.routineDayId,
+      date: new Date('2026-10-22'), dayName: original.dayName, dayPosition: original.dayPosition,
+      exercises: { create: original.exercises.map(({ id: _id, weightKg, ...snapshot }) => { void _id; return { ...snapshot, weightKg }; }) },
+    }, include: { exercises: true } });
+    const duplicate = await create(f, { ...f.body, date: '2026-10-23' }).expect(409);
+    expect(duplicate.body).toMatchObject({ code: 'TRAINING_DUPLICATE', details: { recordId: legacy.id } });
+    const corrected = await training.correct(f.person.id, original.id, { exercises: original.exercises.map((e, i) => ({ id: e.id, weightKg: i ? e.weightKg : '45' })) });
+    expect(corrected.exercises.slice(1)).toEqual(original.exercises.slice(1));
+    expect(corrected).toMatchObject({ id: original.id, date: original.date, createdAt: original.createdAt });
+    const cookie = await internal(Role.PROFESSOR);
+    const management = await request(app.getHttpServer()).get(`/api/sala/people/${f.person.id}/training-records/${original.id}`).set('Cookie', cookie).expect(200);
+    expect(management.body.data).toEqual(corrected);
+    expect(await prisma.salaTrainingRecord.findUnique({ where: { id: legacy.id }, include: { exercises: true } })).toEqual(legacy);
+    expect(await prisma.salaTrainingRecord.count({ where: { personId: f.person.id } })).toBe(2);
+  });
   it('rejects creation when no active routine exists and serializes replacement races', async () => {
     const f = await fixture();
     const race = await Promise.allSettled([training.create(f.person.id, f.body), sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, days: [{ exercises: [{ exerciseDefinitionId: f.b.id }] }] })]);
@@ -238,9 +269,9 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     expect(await prisma.salaTrainingRecord.count({ where: { personId: f.person.id } })).toBe(0);
   });
   it('paginates newest dates, loads details separately, and uses the existing read permission', async () => {
-    const f = await fixture(); await create(f).expect(201); await create(f, { ...f.body, date: '2026-10-21' }).expect(201);
+    const f = await fixture(); await create(f).expect(201); await create(f, { ...f.body, date: '2026-10-26' }).expect(201);
     const listed = await request(app.getHttpServer()).get('/api/portal/sala/training-records?pageSize=1').set('Cookie', f.cookie).expect(200);
-    expect(listed.body.meta).toMatchObject({ total: 2, totalPages: 2, page: 1 }); expect(listed.body.data[0].date).toBe('2026-10-21'); expect(listed.body.data[0]).not.toHaveProperty('exercises');
+    expect(listed.body.meta).toMatchObject({ total: 2, totalPages: 2, page: 1 }); expect(listed.body.data[0].date).toBe('2026-10-26'); expect(listed.body.data[0]).not.toHaveProperty('exercises');
     const second = await request(app.getHttpServer()).get('/api/portal/sala/training-records?pageSize=1&page=2').set('Cookie', f.cookie).expect(200); expect(second.body.data[0].date).toBe('2026-10-20');
     for (const role of [Role.PROFESSOR, Role.ADMINISTRATIVE]) {
       const cookie = await internal(role);

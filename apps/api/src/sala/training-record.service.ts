@@ -58,6 +58,13 @@ export class TrainingRecordService {
     this.validateWeights(input, true);
     const date = new Date(`${input.date}T00:00:00Z`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== input.date || input.date > this.today()) throw new BadRequestException({ code: 'TRAINING_DATE_INVALID', message: 'Elegí una fecha válida que no sea futura.' });
+    const weekStart = new Date(date);
+    weekStart.setUTCDate(weekStart.getUTCDate() - (weekStart.getUTCDay() + 6) % 7);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
+    const duplicateWhere = { personId, routineId: input.routineId, routineDayId: input.routineDayId, date: { gte: weekStart, lt: weekEnd } };
+    const duplicateOrder = [{ date: 'desc' as const }, { createdAt: 'desc' as const }, { id: 'desc' as const }];
+    const duplicateError = (recordId?: string) => new ConflictException({ code: 'TRAINING_DUPLICATE', message: 'Ya existe un entrenamiento para esa semana y día. Podés abrirlo para corregirlo.', details: { recordId } });
     try {
       return await this.serialized(async tx => {
         // Same lock as routine replacement. The submitted routine ID is never substituted.
@@ -68,14 +75,16 @@ export class TrainingRecordService {
         const day = routine.days[0];
         if (!day) throw new BadRequestException({ code: 'TRAINING_DAY_INVALID', message: 'Ese día no pertenece a tu rutina activa.' });
         this.assertEntries(input, day.exercises.map(exercise => exercise.id));
+        const duplicate = await tx.salaTrainingRecord.findFirst({ where: duplicateWhere, orderBy: duplicateOrder, select: { id: true } });
+        if (duplicate) throw duplicateError(duplicate.id);
         const weights = new Map(input.exercises.map(exercise => [exercise.id, exercise.weightKg]));
         const record = await tx.salaTrainingRecord.create({ data: { personId, routineId: routine.id, routineDayId: day.id, date, dayName: day.name, dayPosition: day.position, exercises: { create: day.exercises.map(exercise => ({ ...this.snapshot(exercise), routineExerciseId: exercise.id, weightKg: weights.get(exercise.id) ?? null })) } }, include: recordInclude });
         return this.serialize(record);
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        const existing = await this.prisma.salaTrainingRecord.findUnique({ where: { personId_date_routineDayId: { personId, date, routineDayId: input.routineDayId } }, select: { id: true } });
-        throw new ConflictException({ code: 'TRAINING_DUPLICATE', message: 'Ya existe un entrenamiento para esa fecha y día. Podés abrirlo para corregirlo.', details: { recordId: existing?.id } });
+        const existing = await this.prisma.salaTrainingRecord.findFirst({ where: duplicateWhere, orderBy: duplicateOrder, select: { id: true } });
+        throw duplicateError(existing?.id);
       }
       throw error;
     }

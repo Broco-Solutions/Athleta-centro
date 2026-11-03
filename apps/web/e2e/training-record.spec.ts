@@ -57,7 +57,7 @@ test('student records and corrects weights; professor reads the saved history in
     // The last enabled visual week contains today; future weeks remain on screen.
     await evolution.locator('button:not([disabled])').last().click();
     await expect(weights.first()).toBeFocused();
-    const selectedDate = await page.getByLabel('¿Qué día entrenaste?').first().inputValue();
+    await expect(page.getByLabel('¿Qué día entrenaste?')).toHaveCount(0);
     await expect(evolution.getByRole('button', { pressed: true })).toHaveCount(1);
     await expect(weights.first()).toHaveValue(''); await weights.first().fill('32,5');
     await cards.first().click();
@@ -94,41 +94,48 @@ test('student records and corrects weights; professor reads the saved history in
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole('button', { name: 'Guardar entrenamiento', exact: true }).click();
     await expect(page.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
-    await cards.first().click();
-    await expect(page.getByRole('region', { name: /Evolución semanal/ }).first().getByText('32,5 kg', { exact: true })).toBeVisible();
-    await page.getByRole('link', { name: 'Mis entrenamientos', exact: true }).click();
-    await page.getByRole('button', { name: /Ver detalle del/ }).click();
-    await expect(page.getByText('32,5 kg', { exact: true })).toBeVisible(); await expect(page.getByText('60,5 kg', { exact: true })).toBeVisible();
-    await page.getByRole('link', { name: 'Editar registro' }).click(); await page.getByLabel(/Peso utilizado/).first().fill('34,5');
-    await page.getByRole('button', { name: 'Guardar corrección' }).click(); await expect(page.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
-    await page.goto('/portal/sala/rutina');
-    await page.locator('button[aria-expanded][aria-controls]').first().click();
-    await expect(page.getByRole('region', { name: /Evolución semanal/ }).first().getByText('34,5 kg', { exact: true })).toBeVisible();
-    // Register a pending training from a previous month using its week and real date.
-    const previousDate = new Date(`${selectedDate.slice(0, 7)}-01T12:00:00Z`);
-    previousDate.setUTCDate(0);
-    const historicalDate = previousDate.toISOString().slice(0, 10);
-    await page.getByRole('button', { name: 'Mes anterior' }).click();
+    await expect(weights.first()).toHaveValue('32,5');
+    await expect(weights.last()).toHaveValue('60,5');
+    await page.reload();
     await page.locator('button[aria-expanded][aria-controls]').first().click();
     await page.getByRole('region', { name: /Evolución semanal/ }).first().locator('button:not([disabled])').last().click();
+    await expect(weights.first()).toHaveValue('32,5');
+    await weights.first().fill('34,5');
+    await page.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
+    await expect(page.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
+    await page.locator('button[aria-expanded][aria-controls]').last().click();
+    await expect(weights.last()).toHaveValue('60,5');
+    await expect(page.getByRole('region', { name: /Evolución semanal/ }).first().getByText('34,5 kg', { exact: true })).toBeVisible();
+    // Register and correct a previous month by selecting only its week.
+    await page.getByRole('button', { name: 'Mes anterior' }).click();
+    await page.locator('button[aria-expanded][aria-controls]').first().click();
+    // The first available week is separate from today's week even at month boundaries.
+    await page.getByRole('region', { name: /Evolución semanal/ }).first().locator('button:not([disabled])').first().click();
     await expect(page.getByLabel(/Peso utilizado/).first()).toBeFocused();
-    await page.getByLabel('¿Qué día entrenaste?').first().selectOption(historicalDate);
     await page.getByLabel(/Peso utilizado/).first().fill('27,5');
     await page.getByRole('button', { name: 'Guardar entrenamiento', exact: true }).click();
     await expect(page.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
     await expect(page.getByText('Historial · Registro disponible')).toBeVisible();
-    await page.locator('button[aria-expanded][aria-controls]').first().click();
     await expect(page.getByLabel(/Peso utilizado/)).toHaveCount(2);
     await expect(page.getByRole('region', { name: /Evolución semanal/ }).first().getByText('27,5 kg', { exact: true })).toBeVisible();
-    await page.getByRole('link', { name: /Corregir entrenamiento del/ }).first().click();
+    await page.getByRole('region', { name: /Evolución semanal/ }).first().locator('button:not([disabled])').first().click();
     await page.getByLabel(/Peso utilizado/).first().fill('28,5');
-    await page.getByRole('button', { name: 'Guardar corrección' }).click();
+    await page.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
     await expect(page.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
     await page.goto('/portal/sala/rutina');
     await page.getByRole('button', { name: 'Mes anterior' }).click();
     await page.locator('button[aria-expanded][aria-controls]').first().click();
     await expect(page.getByRole('region', { name: /Evolución semanal/ }).first().getByText('28,5 kg', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Volver al mes actual' }).click();
+    await page.locator('button[aria-expanded][aria-controls]').first().click();
+    await expect(page.getByRole('region', { name: /Evolución semanal/ }).first().getByText('34,5 kg', { exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'Mis entrenamientos', exact: true }).click();
+    await page.getByRole('button', { name: /Ver detalle del/ }).first().click();
+    await page.getByRole('link', { name: 'Editar registro' }).click();
+    await expect(page.getByLabel(/Peso utilizado/).first()).toHaveValue('34,5');
+    await page.getByRole('button', { name: 'Guardar corrección' }).click();
+    await expect(page.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
+    await page.goto('/portal/sala/rutina');
     // Stress the day bar with many synthetic day labels while keeping the real session.
     await page.route('**/api/portal/sala/training-context*', async route => {
       const response = await route.fetch();
@@ -162,6 +169,7 @@ test('student records and corrects weights; professor reads the saved history in
       await expect(teacher.getByRole('heading', { name: 'Historial de entrenamientos' })).toBeVisible();
       await teacher.getByRole('button', { name: /Ver detalle del/ }).first().click();
       await expect(teacher.getByText('34,5 kg', { exact: true })).toBeVisible();
+      await expect(teacher.getByText('60,5 kg', { exact: true })).toBeVisible();
       await expect(teacher.getByRole('link', { name: 'Editar registro' })).toHaveCount(0);
       await expect(teacher.getByLabel(/Peso utilizado/)).toHaveCount(0);
       for (const width of [1440, 768, 390]) {
