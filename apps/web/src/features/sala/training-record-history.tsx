@@ -3,9 +3,18 @@ import { groupRoutineBlocks, isGroupedDay, formatRoutineRepetitions, formatRouti
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
+import { trainingMonthWeeks } from './training-month';
 import { Button } from '@athleta/ui';
 import type { TrainingRecordDetailDto } from '@athleta/api-client';
 import { trainingDate, trainingWeight, type TrainingHistoryApi } from './training-record-api';
+
+// A date later than creation is a technical weekly reference, even after that week passes.
+function recordPeriod(record: { date: string; createdAt: string }): string {
+  const createdOn = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(record.createdAt));
+  if (record.date <= createdOn) return trainingDate(record.date);
+  const week = trainingMonthWeeks(record.date.slice(0, 7)).find(week => record.date >= week.start && record.date <= week.end)!;
+  return `Semana ${trainingDate(week.start)} – ${trainingDate(week.end)}`;
+}
 
 export function TrainingRecordDetail({ record }: { record: TrainingRecordDetailDto }): React.JSX.Element {
   const blocks = isGroupedDay(record.exercises) ? groupRoutineBlocks(record.exercises) : [];
@@ -29,7 +38,7 @@ export function TrainingRecordHistory({ api, queryKey, editable = false }: { api
   return <section aria-label="Historial de entrenamientos" className="mt-4 rounded-md border bg-white p-4">
     <h4 className="font-semibold">Historial de entrenamientos</h4>
     {records.isPending ? <p role="status" className="mt-3 text-sm">Cargando entrenamientos…</p> : records.isError ? <div role="alert" className="mt-3"><p>No pudimos cargar los entrenamientos.</p><Button variant="secondary" onClick={() => void records.refetch()}>Reintentar</Button></div> : <>
-      {records.data.data.length === 0 ? <p className="mt-3 text-sm text-muted-foreground">{editable ? 'Todavía no registraste entrenamientos.' : 'No hay entrenamientos registrados.'}</p> : <ul className="mt-2 divide-y">{records.data.data.map(record => <li key={record.id} className="py-3"><div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm"><span className="font-medium tabular-nums">{trainingDate(record.date)}</span> — {record.dayName || `Día ${record.dayPosition}`}</p><Button type="button" variant="secondary" aria-expanded={opened === record.id} aria-controls={`training-${record.id}`} aria-label={`${opened === record.id ? 'Cerrar' : 'Ver'} detalle del ${trainingDate(record.date)} — ${record.dayName || `Día ${record.dayPosition}`}`} onClick={() => setOpened(opened === record.id ? null : record.id)}>{opened === record.id ? 'Cerrar detalle' : 'Ver detalle'}</Button></div>
+      {records.data.data.length === 0 ? <p className="mt-3 text-sm text-muted-foreground">{editable ? 'Todavía no registraste entrenamientos.' : 'No hay entrenamientos registrados.'}</p> : <ul className="mt-2 divide-y">{records.data.data.map(record => <li key={record.id} className="py-3"><div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm"><span className="font-medium tabular-nums">{recordPeriod(record)}</span> — {record.dayName || `Día ${record.dayPosition}`}</p><Button type="button" variant="secondary" aria-expanded={opened === record.id} aria-controls={`training-${record.id}`} aria-label={`${opened === record.id ? 'Cerrar' : 'Ver'} detalle del ${trainingDate(record.date)} — ${record.dayName || `Día ${record.dayPosition}`}`} onClick={() => setOpened(opened === record.id ? null : record.id)}>{opened === record.id ? 'Cerrar detalle' : 'Ver detalle'}</Button></div>
         {opened === record.id ? <div id={`training-${record.id}`}><RecordDetail id={record.id} api={api} queryKey={queryKey} editable={editable}/></div> : null}
       </li>)}</ul>}
       {records.data.meta.totalPages > 1 ? <nav aria-label="Páginas de entrenamientos" className="mt-4 flex flex-wrap items-center justify-between gap-3"><Button variant="secondary" disabled={page <= 1} onClick={() => { setOpened(null); setPage(page - 1); }}>Anterior</Button><span className="text-sm">Página {page} de {records.data.meta.totalPages}</span><Button variant="secondary" disabled={page >= records.data.meta.totalPages} onClick={() => { setOpened(null); setPage(page + 1); }}>Siguiente</Button></nav> : null}

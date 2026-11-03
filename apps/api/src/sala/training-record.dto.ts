@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsDateString, IsInt, IsOptional, IsUUID, Matches, Max, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsDateString, IsInt, IsOptional, IsUUID, Matches, Max, Min, ValidateNested } from 'class-validator';
 
 export const TRAINING_WEIGHT_PATTERN = /^\d{1,35}(?:[.,]\d{1,30})?$/;
 export class TrainingWeightDto {
@@ -18,6 +18,7 @@ export class CreateTrainingRecordDto extends CorrectTrainingRecordDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() routineId!: string;
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() routineDayId!: string;
   @ApiProperty({ type: String, format: 'date' }) @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) date!: string;
+  @ApiPropertyOptional({ type: Boolean, description: 'Allows future week references for portal weekly training only.' }) @IsOptional() @IsBoolean() allowFuture?: boolean;
 }
 export class TrainingMonthQueryDto {
   @ApiProperty({ type: String, pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$', example: '2026-10' })

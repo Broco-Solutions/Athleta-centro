@@ -20,15 +20,15 @@ function ExerciseEvolution({ day, exerciseId, month, period }: { day: TrainingMo
       const weight = (record: typeof entries[number]) => record.exercises.find(exercise => exercise.routineExerciseId === sourceId)?.weightKg ?? null;
       const reference = entries[0];
       const current = period?.weekStart === week.start;
-      const available = period?.available(week) ?? false;
       const summary = <><span className="min-w-0"><span className="block text-sm font-medium">Semana {week.number}{current ? <span className="ml-2 text-xs text-muted-foreground">Seleccionada</span> : null}</span><span className="mt-1 block text-xs text-muted-foreground tabular-nums">{trainingDate(week.start).slice(0, 5)} – {trainingDate(week.end).slice(0, 5)}</span></span><span className={`shrink-0 text-right tabular-nums ${reference ? 'font-semibold' : 'text-sm text-muted-foreground'}`}>{trainingWeight(reference ? weight(reference) : null)}</span></>;
       return <li key={week.start} aria-current={current ? 'date' : undefined} className={`rounded-md border bg-white p-3 ${current ? 'border-primary!' : ''}`}>
-        {period ? <button type="button" aria-label={`Semana ${week.number}`} aria-pressed={current} disabled={!available} onClick={() => period.selectWeek(week)} className="flex min-h-11 w-full items-center justify-between gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60">{summary}</button> : <div className="flex items-center justify-between gap-3">{summary}</div>}
-        {period && !available ? <p className="mt-1 text-xs text-muted-foreground">{week.start > period.today ? 'Todavía no disponible.' : 'Sin fechas disponibles para esta rutina.'}</p> : null}
+        {period ? <button type="button" aria-label={`Semana ${week.number}`} aria-pressed={current} onClick={() => period.selectWeek(week)} className="flex min-h-11 w-full items-center justify-between gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60">{summary}</button> : <div className="flex items-center justify-between gap-3">{summary}</div>}
+        {period && current ? <div className="mt-3">{period.controls}</div> : null}
 
         {entries.length > 1 ? <details className="mt-1 text-sm"><summary className="min-h-11 cursor-pointer content-center text-muted-foreground">Ver {entries.length} registros</summary><ul>{entries.map(record => <li key={record.id} className="flex items-center justify-between gap-3"><Link className="inline-flex min-h-11 items-center underline" aria-label={`Corregir entrenamiento del ${trainingDate(record.date)}`} href={`/portal/sala/entrenamientos/registrar?recordId=${record.id}`}>{trainingDate(record.date)}</Link><span className="tabular-nums">{trainingWeight(weight(record))}</span></li>)}</ul></details> : null}
       </li>;
     })}</ul>
+      {!period?.weekStart ? <div hidden>{period?.controls}</div> : null}
   </section>;
 }
 
@@ -46,7 +46,7 @@ export default function PortalRoutine(): React.JSX.Element {
   const currentMonth = (context.data?.today ?? today()).slice(0, 7);
   // Saved snapshots stay separate. Offer the active prescription only if this month has valid dates.
   const active = context.data?.routine;
-  const availableRoutine = active && active.createdOn < `${shiftTrainingMonth(month, 1)}-01` && month <= currentMonth ? active : null;
+  const availableRoutine = active && active.createdOn < `${shiftTrainingMonth(month, 1)}-01` ? active : null;
   const days = trainingMonthDays(monthly.data ?? [], availableRoutine);
   const day = days.find(entry => entry.key === selected) ?? days[0];
   useEffect(() => {
@@ -68,7 +68,7 @@ export default function PortalRoutine(): React.JSX.Element {
       if (event.target instanceof Element && event.target.closest('a') && !canNavigate()) { event.preventDefault(); event.stopPropagation(); }
     }}>
       <section aria-label="Mes de entrenamientos" className="rounded-md border bg-white p-3">
-        <div className="grid grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center gap-2"><Button variant="secondary" className="min-h-11 px-0" aria-label="Mes anterior" disabled={saving || month === '0001-01'} onClick={() => changeMonth(shiftTrainingMonth(month, -1))}><ChevronLeft size={20} aria-hidden="true"/></Button><div className="min-w-0 text-center"><h2 className="font-semibold capitalize" aria-live="polite">{trainingMonthLabel(month)}</h2><p className="mt-1 text-xs text-muted-foreground">{month === currentMonth ? 'Mes actual' : availableRoutine ? 'Historial · Registro disponible' : 'Historial'}</p></div><Button variant="secondary" className="min-h-11 px-0" aria-label="Mes siguiente" disabled={saving || month >= currentMonth} onClick={() => changeMonth(shiftTrainingMonth(month, 1))}><ChevronRight size={20} aria-hidden="true"/></Button></div>
+        <div className="grid grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center gap-2"><Button variant="secondary" className="min-h-11 px-0" aria-label="Mes anterior" disabled={saving || month === '0001-01'} onClick={() => changeMonth(shiftTrainingMonth(month, -1))}><ChevronLeft size={20} aria-hidden="true"/></Button><div className="min-w-0 text-center"><h2 className="font-semibold capitalize" aria-live="polite">{trainingMonthLabel(month)}</h2><p className="mt-1 text-xs text-muted-foreground">{month === currentMonth ? 'Mes actual' : availableRoutine ? 'Historial · Registro disponible' : 'Historial'}</p></div><Button variant="secondary" className="min-h-11 px-0" aria-label="Mes siguiente" disabled={saving} onClick={() => changeMonth(shiftTrainingMonth(month, 1))}><ChevronRight size={20} aria-hidden="true"/></Button></div>
         {month !== currentMonth ? <button type="button" className="mx-auto mt-2 block min-h-11 text-sm text-muted-foreground underline disabled:opacity-50" disabled={saving} onClick={() => changeMonth(currentMonth)}>Volver al mes actual</button> : null}
       </section>
       {context.isPending ? <p role="status">Cargando rutina…</p> : context.isError ? <p role="alert">No pudimos cargar tu rutina. Intentá nuevamente.</p> : null}

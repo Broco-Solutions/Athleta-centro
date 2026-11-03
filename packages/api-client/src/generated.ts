@@ -2096,6 +2096,8 @@ export interface CreateTrainingRecordDto {
   routineId: string;
   routineDayId: string;
   date: string;
+  /** Allows future week references for portal weekly training only. */
+  allowFuture?: boolean;
 }
 
 export interface CorrectTrainingRecordDto {

@@ -69,9 +69,9 @@ export function trainingMonthDays(records: TrainingRecordDetailDto[], routine: T
 
 /** A reference date is technical: current week uses the backend's operational today. */
 export function trainingWeekReference(week: { start: string; end: string }, month: string, createdOn: string, today: string): string | null {
-  const dates = trainingWeekDates(week, month, createdOn, today);
+  const dates = trainingWeekDates(week, month, createdOn, week.end);
   if (!dates.length) return null;
-  return today >= week.start && today <= week.end ? today : dates[0]!;
+  return today >= week.start && today <= week.end && today >= createdOn ? today : (createdOn > week.start ? createdOn : week.start);
 }
 
 // One principal record for the entire day; never pick different records per exercise.
@@ -81,6 +81,7 @@ export function weeklyTrainingRecords(records: TrainingRecordDetailDto[], week: 
 }
 
 export function trainingViewMonths(month: string, today: string): string[] {
+  void today; // Kept for existing callers; future months are intentionally included.
   const weeks = trainingMonthWeeks(month);
-  return [...new Set([weeks[0]!.start.slice(0, 7), month, weeks.at(-1)!.end.slice(0, 7)])].filter(value => value >= '0001-01' && value <= today.slice(0, 7));
+  return [...new Set([weeks[0]!.start.slice(0, 7), month, weeks.at(-1)!.end.slice(0, 7)])].filter(value => value >= '0001-01');
 }

@@ -71,6 +71,19 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200);
     return login.headers['set-cookie'][0] as string;
   }
+  it('accepts weekly future references, preserves traditional limits and prevents duplicates across months', async () => {
+    const f = await fixture();
+    const body = { ...f.body, date: '2026-11-30', allowFuture: true };
+    await create(f, { ...f.body, date: body.date }).expect(400);
+    const saved = await create(f, body).expect(201);
+    await create(f, { ...body, date: '2026-12-01' }).expect(409);
+    expect((await training.listMonth(f.person.id, '2026-11')).map(r => r.id)).toEqual([saved.body.data.id]);
+    const exercises = saved.body.data.exercises.map((e: { id: string; weightKg: string | null }, i: number) => ({ id: e.id, weightKg: i === 0 ? '45' : e.weightKg }));
+    const corrected = await training.correct(f.person.id, saved.body.data.id, { exercises });
+    expect(corrected.exercises.map(e => e.weightKg)).toEqual(['45', '22', null]);
+    expect(corrected.exercises[0]!.exerciseName).toBe(saved.body.data.exercises[0].exerciseName);
+    expect(await prisma.salaTrainingRecord.count({ where: { personId: f.person.id } })).toBe(1);
+  });
   it('stores distinct decimal/null/zero weights and immutable prescriptions without changing Sala operations', async () => {
     const f = await fixture();
     const before = await Promise.all([prisma.salaOccurrence.findMany(), prisma.oneOffReservation.findMany(), prisma.fixedSalaBooking.findMany(), prisma.salaPayment.findMany(), prisma.salaParticipation.findUnique({ where: { id: f.participation.id } }), prisma.salaConfiguration.findMany()]);
@@ -263,7 +276,7 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     const empty = await request(app.getHttpServer()).get('/api/portal/sala/training-records/month?month=2026-08').set('Cookie', f.cookie).expect(200);
     expect(empty.body.data).toEqual([]);
   });
-  it.each(['', '2026-00', '2026-13', '26-10', '2026-1', '0000-01', '2026-10-01', '2026-11'])('rejects invalid/future monthly query %s', async month => {
+  it.each(['', '2026-00', '2026-13', '26-10', '2026-1', '0000-01', '2026-10-01'])('rejects invalid monthly query %s', async month => {
     const f = await fixture();
     await request(app.getHttpServer()).get(`/api/portal/sala/training-records/month?month=${month}`).set('Cookie', f.cookie).expect(400);
     expect(await prisma.salaTrainingRecord.count({ where: { personId: f.person.id } })).toBe(0);

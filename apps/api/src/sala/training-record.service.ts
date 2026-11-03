@@ -34,11 +34,11 @@ export class TrainingRecordService {
     return { data: records.map(record => this.summary(record)), meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } };
   }
   async listMonth(personId: string, month: string) {
-    if (!/^(?!0000)\d{4}-(0[1-9]|1[0-2])$/.test(month) || month > this.today().slice(0, 7)) {
-      throw new BadRequestException({ code: 'TRAINING_MONTH_INVALID', message: 'Elegí un mes válido que no sea futuro.' });
+    if (!/^(?!0000)\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      throw new BadRequestException({ code: 'TRAINING_MONTH_INVALID', message: 'Elegí un mes válido.' });
     }
     // Training dates are PostgreSQL DATEs, represented as UTC containers, not instants.
-    // The future-month limit uses the operational date, never the server timezone.
+    // Future months also contain weekly reference records.
     const start = new Date(`${month}-01T00:00:00Z`);
     const end = new Date(start);
     end.setUTCMonth(end.getUTCMonth() + 1);
@@ -57,7 +57,7 @@ export class TrainingRecordService {
   async create(personId: string, input: CreateTrainingRecordDto) {
     this.validateWeights(input, true);
     const date = new Date(`${input.date}T00:00:00Z`);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== input.date || input.date > this.today()) throw new BadRequestException({ code: 'TRAINING_DATE_INVALID', message: 'Elegí una fecha válida que no sea futura.' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== input.date || (input.date > this.today() && input.allowFuture !== true)) throw new BadRequestException({ code: 'TRAINING_DATE_INVALID', message: 'Elegí una fecha válida.' });
     const weekStart = new Date(date);
     weekStart.setUTCDate(weekStart.getUTCDate() - (weekStart.getUTCDay() + 6) % 7);
     const weekEnd = new Date(weekStart);

@@ -41,10 +41,10 @@ it('chooses deterministic references within assignment/month bounds and today fo
   expect(trainingWeekReference(weeks[0]!, '2026-10', '2026-10-03', '2026-10-28')).toBe('2026-10-03');
   expect(trainingWeekReference(weeks[1]!, '2026-10', '2026-10-01', '2026-10-28')).toBe('2026-10-05');
   expect(trainingWeekReference(weeks[4]!, '2026-10', '2026-10-01', '2026-10-28')).toBe('2026-10-28');
-  expect(trainingWeekReference(weeks[4]!, '2026-10', '2026-10-01', '2026-10-14')).toBeNull();
+  expect(trainingWeekReference(weeks[4]!, '2026-10', '2026-10-01', '2026-10-14')).toBe('2026-10-26');
   expect(trainingWeekReference(weeks[4]!, '2026-10', '2026-10-01', '2026-11-01')).toBe('2026-11-01');
 });
-it('retrieves only adjacent months intersecting visual weeks, including year boundaries and no future queries', () => {
+it('retrieves only adjacent months intersecting visual weeks, including future months and year boundaries', () => {
   expect(trainingViewMonths('2026-12', '2027-02-01')).toEqual(['2026-11', '2026-12', '2027-01']);
   expect(trainingViewMonths('2027-01', '2027-01-03')).toEqual(['2026-12', '2027-01']);
   expect(trainingViewMonths('2021-02', '2027-01-03')).toEqual(['2021-02']);
@@ -53,4 +53,10 @@ it('identifies the same principal record from either side of a cross-year week, 
   const records = [{ id: 'first', date: '2026-12-31', createdAt: 'a' }, { id: 'second', date: '2027-01-02', createdAt: 'b' }] as TrainingRecordDetailDto[];
   expect(weeklyTrainingRecords(records, trainingMonthWeeks('2026-12').at(-1)!)).toEqual([records[1], records[0]]);
   expect(weeklyTrainingRecords(records, trainingMonthWeeks('2027-01')[0]!)).toEqual([records[1], records[0]]);
+});
+
+it('allows November future weeks and queries both sides of shared weeks', () => {
+  const week = trainingMonthWeeks('2026-11').find(w => w.start === '2026-11-23')!;
+  expect(trainingWeekReference(week, '2026-11', '2026-10-01', '2026-11-03')).toBe('2026-11-23');
+  expect(trainingViewMonths('2026-11', '2026-11-03')).toEqual(['2026-10', '2026-11', '2026-12']);
 });

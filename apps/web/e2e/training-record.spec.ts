@@ -41,7 +41,7 @@ test('student records and corrects weights; professor reads the saved history in
     await expect(page.getByLabel(/Peso utilizado/)).toHaveCount(1);
     await days.getByRole('button', { name: 'Fuerza', exact: true }).click();
     const monthTitle = await page.getByRole('region', { name: 'Mes de entrenamientos' }).getByRole('heading').textContent();
-    await expect(page.getByRole('button', { name: 'Mes siguiente' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Mes siguiente' })).toBeEnabled();
     await page.getByRole('button', { name: 'Mes anterior' }).click();
     await expect(page.getByText('Historial · Registro disponible')).toBeVisible();
     await page.getByRole('button', { name: 'Volver al mes actual' }).click();
@@ -54,9 +54,13 @@ test('student records and corrects weights; professor reads the saved history in
     const weights = page.getByLabel(/Peso utilizado/); await expect(weights).toHaveCount(2);
     await expect(weights.first()).not.toBeFocused();
     const evolution = page.getByRole('region', { name: /Evolución semanal/ }).first();
-    // The last enabled visual week contains today; future weeks remain on screen.
-    await evolution.locator('button:not([disabled])').last().click();
+    // Select the last week, including future references.
+    await evolution.locator('button[aria-pressed]').last().click();
     await expect(weights.first()).toBeFocused();
+    const selectedRow = evolution.locator('li[aria-current="date"]');
+    await expect(selectedRow.getByLabel(/Peso utilizado/)).toBeVisible();
+    await expect(selectedRow.getByRole('button', { name: 'Guardar entrenamiento', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Guardar entrenamiento', exact: true })).toHaveCount(1);
     await expect(page.getByLabel('¿Qué día entrenaste?')).toHaveCount(0);
     await expect(evolution.getByRole('button', { pressed: true })).toHaveCount(1);
     await expect(weights.first()).toHaveValue(''); await weights.first().fill('32,5');
@@ -98,7 +102,7 @@ test('student records and corrects weights; professor reads the saved history in
     await expect(weights.last()).toHaveValue('60,5');
     await page.reload();
     await page.locator('button[aria-expanded][aria-controls]').first().click();
-    await page.getByRole('region', { name: /Evolución semanal/ }).first().locator('button:not([disabled])').last().click();
+    await page.getByRole('region', { name: /Evolución semanal/ }).first().locator('button[aria-pressed]').last().click();
     await expect(weights.first()).toHaveValue('32,5');
     await weights.first().fill('34,5');
     await page.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
@@ -110,7 +114,7 @@ test('student records and corrects weights; professor reads the saved history in
     await page.getByRole('button', { name: 'Mes anterior' }).click();
     await page.locator('button[aria-expanded][aria-controls]').first().click();
     // The first available week is separate from today's week even at month boundaries.
-    await page.getByRole('region', { name: /Evolución semanal/ }).first().locator('button:not([disabled])').first().click();
+    await page.getByRole('region', { name: /Evolución semanal/ }).first().locator('button[aria-pressed]').first().click();
     await expect(page.getByLabel(/Peso utilizado/).first()).toBeFocused();
     await page.getByLabel(/Peso utilizado/).first().fill('27,5');
     await page.getByRole('button', { name: 'Guardar entrenamiento', exact: true }).click();
@@ -118,7 +122,7 @@ test('student records and corrects weights; professor reads the saved history in
     await expect(page.getByText('Historial · Registro disponible')).toBeVisible();
     await expect(page.getByLabel(/Peso utilizado/)).toHaveCount(2);
     await expect(page.getByRole('region', { name: /Evolución semanal/ }).first().getByText('27,5 kg', { exact: true })).toBeVisible();
-    await page.getByRole('region', { name: /Evolución semanal/ }).first().locator('button:not([disabled])').first().click();
+    await page.getByRole('region', { name: /Evolución semanal/ }).first().locator('button[aria-pressed]').first().click();
     await page.getByLabel(/Peso utilizado/).first().fill('28,5');
     await page.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
     await expect(page.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
