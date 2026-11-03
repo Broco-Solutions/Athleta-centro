@@ -143,6 +143,8 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     const old = await training.detail(f.person.id, saved.id);
     const correction = await request(app.getHttpServer()).post(`/api/portal/sala/training-records/${old.id}/correct`).set('Cookie', f.cookie).set('x-csrf-token', f.csrf).send({ exercises: old.exercises.map(e => ({ id: e.id, weightKg: '42' })) }).expect(200);
     expect(correction.body.data.exercises).toEqual(saved.exercises.map((e: object) => ({ ...e, weightKg: '42' })));
+    const month = await training.listMonth(f.person.id, '2026-10');
+    expect(month).toEqual([correction.body.data]);
     const legacy = await prisma.routineExercise.findMany({ where: { routineDayId: f.routine.days[0]!.id } });
     expect(legacy.every(e => e.blockPosition === null)).toBe(true);
   });
@@ -195,6 +197,45 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     await prisma.routine.updateMany({ where: { personId: f.person.id }, data: { status: 'HISTORICAL' } });
     await create(f, { ...f.body, date: '2026-10-21' }).expect(409);
     expect((await training.context(f.person.id)).routine).toBeNull();
+  });
+  it('returns every monthly snapshot, including different versions and repeated entries, without pagination or other owners', async () => {
+    const f = await fixture(), other = await fixture();
+    const saved = (await create(f).expect(201)).body.data;
+    await create(other).expect(201);
+    // More than the maximum page size. The existing DATE is a UTC container:
+    // October 1 must remain October 1, even though its UTC midnight is September in Argentina.
+    for (let index = 0; index < 61; index++) {
+      await prisma.salaTrainingRecord.create({ data: {
+        personId: f.person.id, routineId: f.routine.id, routineDayId: randomUUID(),
+        date: new Date(`2026-10-${String(index % 31 + 1).padStart(2, '0')}T00:00:00Z`),
+        dayPosition: index + 2, dayName: 'Histórico sintético',
+        exercises: { create: [{ routineExerciseId: randomUUID(), exerciseDefinitionId: f.a.id, exerciseName: 'Nombre histórico', position: 1, blockPosition: 2, notes: 'Indicación original', weightKg: '12.5' }] },
+      } });
+    }
+    for (const date of ['2026-09-30', '2026-11-01']) {
+      await prisma.salaTrainingRecord.create({ data: { personId: f.person.id, routineId: f.routine.id, routineDayId: randomUUID(), date: new Date(date), dayPosition: 1 } });
+    }
+    await prisma.routine.updateMany({ where: { personId: f.person.id }, data: { status: 'HISTORICAL' } });
+    const before = await prisma.salaTrainingRecord.findMany({ where: { personId: f.person.id }, include: { exercises: true }, orderBy: { id: 'asc' } });
+    const response = await request(app.getHttpServer()).get('/api/portal/sala/training-records/month?month=2026-10').set('Cookie', f.cookie).expect(200);
+    expect(response.body.data).toHaveLength(62);
+    expect(response.body.data.find((r: { id: string }) => r.id === saved.id)).toEqual(saved);
+    expect(response.body.data[0].date).toBe('2026-10-01');
+    expect(response.body.data.at(-1).date).toBe('2026-10-31');
+    expect(response.body.data[0].exercises[0]).toMatchObject({ exerciseName: 'Nombre histórico', blockPosition: 2, notes: 'Indicación original', weightKg: '12.5' });
+    expect(response.body).not.toHaveProperty('meta');
+    expect(await prisma.salaTrainingRecord.findMany({ where: { personId: f.person.id }, include: { exercises: true }, orderBy: { id: 'asc' } })).toEqual(before);
+    const own = await request(app.getHttpServer()).get('/api/portal/sala/training-records/month?month=2026-10').set('Cookie', other.cookie).expect(200);
+    expect(own.body.data).toHaveLength(1);
+    await request(app.getHttpServer()).get('/api/portal/sala/training-records/month?month=2026-10').expect(401);
+    await request(app.getHttpServer()).get(`/api/portal/sala/training-records/month?month=2026-10&personId=${f.person.id}`).set('Cookie', other.cookie).expect(400);
+    const empty = await request(app.getHttpServer()).get('/api/portal/sala/training-records/month?month=2026-08').set('Cookie', f.cookie).expect(200);
+    expect(empty.body.data).toEqual([]);
+  });
+  it.each(['', '2026-00', '2026-13', '26-10', '2026-1', '0000-01', '2026-10-01', '2026-11'])('rejects invalid/future monthly query %s', async month => {
+    const f = await fixture();
+    await request(app.getHttpServer()).get(`/api/portal/sala/training-records/month?month=${month}`).set('Cookie', f.cookie).expect(400);
+    expect(await prisma.salaTrainingRecord.count({ where: { personId: f.person.id } })).toBe(0);
   });
   it('paginates newest dates, loads details separately, and uses the existing read permission', async () => {
     const f = await fixture(); await create(f).expect(201); await create(f, { ...f.body, date: '2026-10-21' }).expect(201);

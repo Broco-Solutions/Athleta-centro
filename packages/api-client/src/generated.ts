@@ -2077,6 +2077,10 @@ export interface TrainingContextEnvelopeDto {
   data: TrainingContextDto;
 }
 
+export interface TrainingRecordMonthEnvelopeDto {
+  data: TrainingRecordDetailDto[];
+}
+
 export interface TrainingWeightDto {
   /** Routine entry ID on creation; saved training entry ID on correction */
   id: string;
@@ -2365,6 +2369,10 @@ date?: string;
 export type ListPortalTrainingRecordsParams = {
 pageSize?: number;
 page?: number;
+};
+
+export type ListPortalTrainingRecordsMonthParams = {
+month: string;
 };
 
 export type CancelPortalFixedOccurrence200DataStatus = typeof CancelPortalFixedOccurrence200DataStatus[keyof typeof CancelPortalFixedOccurrence200DataStatus];
@@ -10317,6 +10325,52 @@ export const createPortalTrainingRecord = async (createTrainingRecordDto: Create
 
   const data: createPortalTrainingRecordResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createPortalTrainingRecordResponse
+}
+
+
+
+export type listPortalTrainingRecordsMonthResponse200 = {
+  data: TrainingRecordMonthEnvelopeDto
+  status: 200
+}
+
+export type listPortalTrainingRecordsMonthResponseSuccess = (listPortalTrainingRecordsMonthResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPortalTrainingRecordsMonthResponse = (listPortalTrainingRecordsMonthResponseSuccess)
+
+export const getListPortalTrainingRecordsMonthUrl = (params: ListPortalTrainingRecordsMonthParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/portal/sala/training-records/month?${stringifiedParams}` : `/api/portal/sala/training-records/month`
+}
+
+export const listPortalTrainingRecordsMonth = async (params: ListPortalTrainingRecordsMonthParams, options?: RequestInit): Promise<listPortalTrainingRecordsMonthResponse> => {
+
+  const res = await fetch(getListPortalTrainingRecordsMonthUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listPortalTrainingRecordsMonthResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPortalTrainingRecordsMonthResponse
 }
 
 

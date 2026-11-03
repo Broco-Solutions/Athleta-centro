@@ -1,4 +1,4 @@
-import { listPortalTrainingRecords, getPortalTrainingRecord, listPersonTrainingRecords, getPersonTrainingRecord, type TrainingRecordListEnvelopeDto, type TrainingRecordDetailDto } from '@athleta/api-client';
+import { listPortalTrainingRecordsMonth, listPortalTrainingRecords, getPortalTrainingRecord, listPersonTrainingRecords, getPersonTrainingRecord, type TrainingRecordListEnvelopeDto, type TrainingRecordDetailDto } from '@athleta/api-client';
 
 export class TrainingRequestError extends Error {
   constructor(message: string, public readonly code?: string, public readonly recordId?: string) { super(message); }
@@ -24,3 +24,5 @@ export function personTrainingApi(personId: string): TrainingHistoryApi {
 }
 export const trainingDate = (date: string): string => date.split('-').reverse().join('/');
 export const trainingWeight = (weight: string | null): string => weight === null ? 'Sin registro' : `${weight.replace('.', ',')} kg`;
+
+export const portalTrainingMonth = async (month: string): Promise<TrainingRecordDetailDto[]> => trainingResponse(await listPortalTrainingRecordsMonth({ month }, { credentials: 'include' })).data;

@@ -31,27 +31,67 @@ test('student records and corrects weights; professor reads the saved history in
     await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
     await expect(page.getByRole('link', { name: 'Registrar entrenamiento', exact: true })).toBeVisible();
     await page.getByRole('link', { name: 'Ver rutina', exact: true }).click();
-    await page.getByRole('link', { name: 'Registrar este día: Fuerza', exact: true }).click();
-    await expect(page.getByLabel('Día de la rutina').locator('option:checked')).toHaveText('Fuerza');
+    await expect(page.getByRole('heading', { name: 'Fuerza', exact: true })).toBeVisible();
+    const days = page.getByRole('navigation', { name: 'Días de la rutina' });
+    await expect(days.getByRole('button', { name: 'Fuerza', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await days.getByRole('button', { name: 'Movilidad', exact: true }).click();
+    await expect(page.getByLabel(/Peso utilizado/)).toHaveCount(1);
+    await days.getByRole('button', { name: 'Fuerza', exact: true }).click();
+    const monthTitle = await page.getByRole('region', { name: 'Mes de entrenamientos' }).getByRole('heading').textContent();
+    await expect(page.getByRole('button', { name: 'Mes siguiente' })).toBeDisabled();
+    await page.getByRole('button', { name: 'Mes anterior' }).click();
+    await expect(page.getByText('No hay entrenamientos registrados en este mes.')).toBeVisible();
+    await page.getByRole('button', { name: 'Volver al mes actual' }).click();
+    await expect(page.getByRole('region', { name: 'Mes de entrenamientos' }).getByRole('heading')).toHaveText(monthTitle!);
     const weights = page.getByLabel(/Peso utilizado/); await expect(weights).toHaveCount(2);
     await expect(weights.first()).toHaveValue(''); await weights.first().fill('32,5');
+    page.once('dialog', dialog => dialog.dismiss());
+    await page.getByRole('button', { name: 'Mes anterior' }).click();
+    await expect(weights.first()).toHaveValue('32,5');
     for (const width of [1440, 768, 390]) {
       await page.setViewportSize({ width, height: 900 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await page.screenshot({ path: `/tmp/athleta-training-form-${width}.png`, fullPage: true });
+      await expect(days).toBeInViewport();
       if (width === 1440) await captureMarkup(page, 'form');
     }
     await page.getByRole('button', { name: 'Guardar entrenamiento', exact: true }).click();
     await expect(page.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
-    await page.getByRole('link', { name: 'Ver mi historial' }).click();
+    await expect(page.getByRole('table').first().getByText('32,5 kg', { exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'Mis entrenamientos', exact: true }).click();
     await page.getByRole('button', { name: /Ver detalle del/ }).click();
     await expect(page.getByText('32,5 kg', { exact: true })).toBeVisible(); await expect(page.getByText('Sin registro', { exact: true })).toBeVisible();
     await page.getByRole('link', { name: 'Editar registro' }).click(); await page.getByLabel(/Peso utilizado/).first().fill('34,5');
     await page.getByRole('button', { name: 'Guardar corrección' }).click(); await expect(page.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
+    await page.goto('/portal/sala/rutina');
+    await expect(page.getByRole('table').first().getByText('34,5 kg', { exact: true })).toBeVisible();
+    // Stress the day bar with many synthetic day labels while keeping the real session.
+    await page.route('**/api/portal/sala/training-context*', async route => {
+      const response = await route.fetch();
+      const body = await response.json() as { data: { routine: { days: { id: string; position: number; name: string }[] } } };
+      const day = body.data.routine.days[0]!;
+      body.data.routine.days.push(...Array.from({ length: 12 }, (_, index) => ({ ...day, id: `synthetic-day-${index}`, position: index + 3, name: `Entrenamiento complementario ${index + 3}` })));
+      await route.fulfill({ response, json: body });
+    });
+    await page.reload(); await page.setViewportSize({ width: 390, height: 844 });
+    await expect(days.getByRole('button')).toHaveCount(14);
+    expect(await days.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
+    await days.getByRole('button').last().scrollIntoViewIfNeeded();
+    await expect(days.getByRole('button').last()).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.unroute('**/api/portal/sala/training-context*');
+    // The original registration route and selected-day links remain usable.
+    const mobilityId = await page.evaluate(async () => {
+      const response = await fetch('/api/portal/sala/training-context');
+      const body = await response.json() as { data: { routine: { days: { id: string; name: string }[] } } };
+      return body.data.routine.days.find(day => day.name === 'Movilidad')!.id;
+    });
+    await page.goto(`/portal/sala/entrenamientos/registrar?dayId=${mobilityId}`);
+    await expect(page.getByLabel('Día de la rutina').locator('option:checked')).toHaveText('Movilidad');
     const staff = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     const teacher = await staff.newPage();
     try {
-      await teacher.goto('/login'); await teacher.getByLabel('Email').fill(fixture.email); await teacher.getByLabel('Contraseña').fill('Synthetic-test-password1!'); await teacher.getByRole('button', { name: 'Ingresar', exact: true }).click();
+      await teacher.goto('/login'); await teacher.getByLabel('Email').fill(fixture.email); await teacher.getByLabel('Contraseña', { exact: true }).fill('Synthetic-test-password1!'); await teacher.getByRole('button', { name: 'Ingresar', exact: true }).click();
       await expect(teacher).toHaveURL('/');
       await teacher.goto(`/sala/people/${fixture.personId}?tab=routine`);
       await expect(teacher.getByRole('heading', { name: 'Historial de entrenamientos' })).toBeVisible();

@@ -63,6 +63,7 @@ export class PortalService {
   async me(token?: string) { const { person } = await this.current(token); return this.profile(person); }
   async trainingContext(token: string | undefined, date?: string) { const { person } = await this.ready(token); return this.training.context(person.id, date); }
   async trainingList(token: string | undefined, query: TrainingRecordQueryDto) { const { person } = await this.ready(token); return this.training.list(person.id, query); }
+  async trainingMonth(token: string | undefined, month: string) { const { person } = await this.ready(token); return this.training.listMonth(person.id, month); }
   async trainingDetail(token: string | undefined, id: string) { const { person } = await this.ready(token); return this.training.detail(person.id, id); }
   async trainingCreate(token: string | undefined, input: CreateTrainingRecordDto) { const { person } = await this.ready(token); return this.training.create(person.id, input); }
   async trainingCorrect(token: string | undefined, id: string, input: CorrectTrainingRecordDto) { const { person } = await this.ready(token); return this.training.correct(person.id, id, input); }

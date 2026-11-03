@@ -33,6 +33,22 @@ export class TrainingRecordService {
     ], { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
     return { data: records.map(record => this.summary(record)), meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } };
   }
+  async listMonth(personId: string, month: string) {
+    if (!/^(?!0000)\d{4}-(0[1-9]|1[0-2])$/.test(month) || month > this.today().slice(0, 7)) {
+      throw new BadRequestException({ code: 'TRAINING_MONTH_INVALID', message: 'Elegí un mes válido que no sea futuro.' });
+    }
+    // Training dates are PostgreSQL DATEs, represented as UTC containers, not instants.
+    // The future-month limit uses the operational date, never the server timezone.
+    const start = new Date(`${month}-01T00:00:00Z`);
+    const end = new Date(start);
+    end.setUTCMonth(end.getUTCMonth() + 1);
+    const records = await this.prisma.salaTrainingRecord.findMany({
+      where: { personId, date: { gte: start, lt: end } },
+      include: recordInclude,
+      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+    });
+    return records.map(record => this.serialize(record));
+  }
   async detail(personId: string, id: string) {
     const record = await this.prisma.salaTrainingRecord.findFirst({ where: { id, personId }, include: recordInclude });
     if (!record) throw this.notFound();

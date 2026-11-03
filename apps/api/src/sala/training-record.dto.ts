@@ -19,6 +19,13 @@ export class CreateTrainingRecordDto extends CorrectTrainingRecordDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() routineDayId!: string;
   @ApiProperty({ type: String, format: 'date' }) @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) date!: string;
 }
+export class TrainingMonthQueryDto {
+  @ApiProperty({ type: String, pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$', example: '2026-10' })
+  @Matches(/^(?!0000)\d{4}-(0[1-9]|1[0-2])$/) month!: string;
+}
+export class TrainingRecordMonthEnvelopeDto {
+  @ApiProperty({ type: () => [TrainingRecordDetailDto] }) data!: TrainingRecordDetailDto[];
+}
 export class TrainingRecordQueryDto {
   @ApiPropertyOptional({ type: Number, default: 1, minimum: 1 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) page = 1;
   @ApiPropertyOptional({ type: Number, default: 20, minimum: 1, maximum: 50 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(50) pageSize = 20;
