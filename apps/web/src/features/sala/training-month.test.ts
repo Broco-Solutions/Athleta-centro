@@ -1,4 +1,4 @@
-import { shiftTrainingMonth, trainingMonthDays, trainingMonthWeeks } from './training-month';
+import { shiftTrainingMonth, trainingMonthDays, trainingMonthWeeks, trainingWeekDates } from './training-month';
 import type { TrainingRecordDetailDto } from '@athleta/api-client';
 
 it.each([['2021-02', 4], ['2026-10', 5], ['2026-03', 6]])('calculates real Monday-Sunday weeks for %s', (month, count) => {
@@ -26,4 +26,12 @@ it('groups only identical prescriptions and keeps routine versions, day names an
   expect(groups[0]?.records.map(r => r.id)).toEqual(['one', 'two']);
   expect(groups[0]?.exercises.map(e => 'routineExerciseId' in e ? e.routineExerciseId : e.id)).toEqual(['entry', 'entry2']);
   expect(groups.every(g => !g.active)).toBe(true);
+});
+
+it('intersects weeks with the viewed month, routine assignment and today', () => {
+  const weeks = trainingMonthWeeks('2026-10');
+  expect(trainingWeekDates(weeks[0]!, '2026-10', '2026-10-03', '2026-10-28')).toEqual(['2026-10-03', '2026-10-04']);
+  expect(trainingWeekDates(weeks[4]!, '2026-10', '2026-09-01', '2026-11-03')).toEqual(['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31']);
+  expect(trainingWeekDates(weeks[4]!, '2026-10', '2026-10-01', '2026-10-28')).toEqual(['2026-10-26', '2026-10-27', '2026-10-28']);
+  expect(trainingWeekDates(weeks[4]!, '2026-10', '2026-10-01', '2026-10-14')).toEqual([]);
 });

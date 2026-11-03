@@ -19,6 +19,17 @@ export function trainingMonthWeeks(month: string): { number: number; start: stri
   }
   return weeks;
 }
+// Intersect the visual week with the viewed month and the active routine's real dates.
+export function trainingWeekDates(week: { start: string; end: string }, month: string, createdOn: string, today: string): string[] {
+  const dates: string[] = [];
+  const cursor = new Date(`${week.start}T00:00:00Z`);
+  while (cursor.toISOString().slice(0, 10) <= week.end) {
+    const date = cursor.toISOString().slice(0, 10);
+    if (date.startsWith(month) && date >= createdOn && date <= today) dates.push(date);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
 export const trainingMonthLabel = (month: string): string => new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${month}-01T00:00:00Z`));
 
 type Exercise = TrainingContextExerciseDto | TrainingRecordExerciseDto;

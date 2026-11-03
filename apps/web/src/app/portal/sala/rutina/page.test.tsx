@@ -21,6 +21,12 @@ let records: TrainingRecordDetailDto[];
 let requestedMonths: string[];
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
+async function selectWeek(number = 5, exercise = /A1 — Press/) {
+  const card = await screen.findByRole('button', { name: exercise });
+  if (card.getAttribute('aria-expanded') === 'false') fireEvent.click(card);
+  const evolution = screen.getAllByRole('region', { name: /Evolución semanal/ })[0]!;
+  fireEvent.click(within(evolution).getByRole('button', { name: `Semana ${number}` }));
+}
 function renderRoutine() {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><PortalRoutine/></QueryClientProvider>);
 }
@@ -95,7 +101,7 @@ it('keeps history accessible even if no routine is currently active', async () =
 it('saves weights through the existing flow, refreshes monthly records and clears only the saved inputs', async () => {
   let payload: unknown;
   server.use(http.post(`${base}/sala/training-records`, async ({ request }) => { expect(request.headers.get('x-csrf-token')).toBe('csrf'); payload = await request.json(); const record = saved('new', '2026-10-26'); records.push(record); return HttpResponse.json({ data: record }, { status: 201 }); }));
-  renderRoutine(); const input = (await screen.findAllByLabelText(/Peso utilizado/))[0]!;
+  renderRoutine(); await selectWeek(); const input = (await screen.findAllByLabelText(/Peso utilizado/))[0]!;
   await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar entrenamiento' })).toBeEnabled());
   fireEvent.change(input, { target: { value: '32,5' } }); fireEvent.click(screen.getByRole('button', { name: 'Guardar entrenamiento' }));
   expect(await screen.findByText('Entrenamiento guardado correctamente.')).toBeInTheDocument();
@@ -106,7 +112,7 @@ it('saves weights through the existing flow, refreshes monthly records and clear
 });
 it('requires explicit discard before changing day or month with unsaved weights', async () => {
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-  renderRoutine(); const input = (await screen.findAllByLabelText(/Peso utilizado/))[0]!;
+  renderRoutine(); await selectWeek(); const input = (await screen.findAllByLabelText(/Peso utilizado/))[0]!;
   fireEvent.change(input, { target: { value: '35' } });
   fireEvent.click(screen.getByRole('button', { name: 'Movilidad' }));
   expect(confirm).toHaveBeenCalledOnce(); expect(input).toHaveValue('35');
@@ -117,7 +123,7 @@ it('requires explicit discard before changing day or month with unsaved weights'
 });
 it('keeps entered weights on duplicate errors and links to the existing correction route', async () => {
   server.use(http.post(`${base}/sala/training-records`, () => HttpResponse.json({ code: 'TRAINING_DUPLICATE', message: 'Ya existe.', details: { recordId: 'existing' } }, { status: 409 })));
-  renderRoutine(); const input = (await screen.findAllByLabelText(/Peso utilizado/))[0]!;
+  renderRoutine(); await selectWeek(); const input = (await screen.findAllByLabelText(/Peso utilizado/))[0]!;
   await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar entrenamiento' })).toBeEnabled());
   fireEvent.change(input, { target: { value: '35' } }); fireEvent.click(screen.getByRole('button', { name: 'Guardar entrenamiento' }));
   expect(await screen.findByText('Ya existe.')).toBeInTheDocument(); expect(input).toHaveValue('35');
@@ -159,6 +165,7 @@ it('starts all cards collapsed and preserves exact values and other cards while 
   expect(first.getAttribute('aria-controls')).not.toBe(second.getAttribute('aria-controls'));
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   fireEvent.click(first);
+  await selectWeek();
   const input = screen.getByRole('textbox', { name: /ejercicio 1/ });
   fireEvent.change(input, { target: { value: '42,5' } });
   fireEvent.click(second);
@@ -179,6 +186,7 @@ it('opens a collapsed card on validation errors and preserves negative-weight va
   renderRoutine();
   const toggle = await screen.findByRole('button', { name: /A1 — Press/ });
   fireEvent.click(toggle);
+  await selectWeek();
   fireEvent.change(screen.getByRole('textbox'), { target: { value: '-5' } });
   fireEvent.click(toggle);
   fireEvent.click(screen.getByRole('button', { name: 'Guardar entrenamiento' }));
@@ -197,8 +205,9 @@ it('uses the latest actual weight in a week, including zero, with all correction
   expect(within(week).getAllByText('0 kg').filter(element => !element.closest('details'))).toHaveLength(1);
   expect(within(week).getByText('Ver 3 registros')).toBeInTheDocument();
   expect(within(week).getAllByRole('link', { hidden: true })).toHaveLength(3);
+  await selectWeek();
   expect(within(evolution).getByText('26/10 – 01/11').closest('li')).toHaveAttribute('aria-current', 'date');
-  fireEvent.change(screen.getByLabelText('Fecha del entrenamiento'), { target: { value: '2026-10-02' } });
+  fireEvent.click(within(evolution).getByRole('button', { name: 'Semana 1' }));
   expect(within(evolution).getByText('28/09 – 04/10').closest('li')).toHaveAttribute('aria-current', 'date');
   expect(screen.queryByText(/^Hoy ·/)).not.toBeInTheDocument();
 });
@@ -219,6 +228,7 @@ it.each([['2027-02', 4], ['2026-11', 6], ['2026-09', 5]])('renders %s as %i real
 
 it('requires at least one weight even when all cards are collapsed', async () => {
   renderRoutine();
+  await selectWeek();
   const save = await screen.findByRole('button', { name: 'Guardar entrenamiento' });
   await waitFor(() => expect(save).toBeEnabled());
   fireEvent.click(save);
@@ -231,16 +241,147 @@ it('locks the month, days, date and submission while saving, then unlocks them',
   server.use(http.post(`${base}/sala/training-records`, async () => { await waiting; return HttpResponse.json({ data: saved('new', '2026-10-26') }, { status: 201 }); }));
   renderRoutine();
   fireEvent.click(await screen.findByRole('button', { name: /A1 — Press/ }));
+  await selectWeek();
   fireEvent.change(screen.getByRole('textbox'), { target: { value: '35' } });
   fireEvent.click(screen.getByRole('button', { name: 'Guardar entrenamiento' }));
   await waitFor(() => {
     expect(screen.getByRole('button', { name: 'Guardando…' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Mes anterior' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Movilidad' })).toBeDisabled();
-    expect(screen.getByLabelText('Fecha del entrenamiento')).toBeDisabled();
+    expect(screen.getAllByLabelText('¿Qué día entrenaste?')[0]).toBeDisabled();
   });
   finish();
   await screen.findByText('Entrenamiento guardado correctamente.');
   await waitFor(() => expect(screen.getByRole('button', { name: 'Mes anterior' })).toBeEnabled());
   expect(screen.getByRole('button', { name: 'Movilidad' })).toBeEnabled();
+});
+
+
+it('selects one shared week, focuses only after interaction, and retains drafts in the same week', async () => {
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  renderRoutine();
+  const card = await screen.findByRole('button', { name: /A1 — Press/ });
+  expect(screen.queryByLabelText('Fecha del entrenamiento')).not.toBeInTheDocument();
+  expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  fireEvent.click(card);
+  const input = screen.getByRole('textbox');
+  expect(input).not.toHaveFocus(); expect(input).toBeDisabled();
+  await selectWeek();
+  expect(input).toHaveFocus(); expect(input).toHaveAttribute('inputmode', 'decimal');
+  expect(screen.getAllByLabelText('¿Qué día entrenaste?')[0]).toHaveValue(context.today);
+  fireEvent.change(input, { target: { value: '45' } });
+  fireEvent.click(screen.getByRole('button', { name: /B1 — Press/ }));
+  const other = screen.getAllByRole('region', { name: /Evolución semanal/ })[1]!;
+  expect(within(other).getByRole('button', { name: 'Semana 5' })).toHaveAttribute('aria-pressed', 'true');
+  fireEvent.click(within(other).getByRole('button', { name: 'Semana 5' }));
+  expect(screen.getByRole('textbox', { name: /ejercicio 2/ })).toHaveFocus();
+  expect(input).toHaveValue('45'); expect(confirm).not.toHaveBeenCalled();
+  fireEvent.click(within(other).getByRole('button', { name: 'Semana 2' }));
+  expect(confirm).toHaveBeenCalledOnce(); expect(input).toHaveValue('45');
+  expect(within(other).getByRole('button', { name: 'Semana 5' })).toHaveAttribute('aria-pressed', 'true');
+  confirm.mockReturnValue(true);
+  fireEvent.click(within(other).getByRole('button', { name: 'Semana 2' }));
+  expect(input).toHaveValue('');
+  expect(within(other).getByRole('button', { name: 'Semana 2' }).closest('li')).toHaveClass('border-primary!');
+  expect(screen.getByRole('button', { name: 'Guardar entrenamiento' })).toBeDisabled();
+});
+
+it('requires a real past date, preserves weights while defining it, then saves all exercises together', async () => {
+  let payload: unknown;
+  server.use(http.post(`${base}/sala/training-records`, async ({ request }) => { payload = await request.json(); return HttpResponse.json({ data: saved('pending', '2026-10-07') }, { status: 201 }); }));
+  renderRoutine(); await selectWeek(2);
+  const first = screen.getByRole('textbox');
+  expect(first).toHaveFocus();
+  fireEvent.change(first, { target: { value: '45,5' } });
+  expect(screen.getByRole('button', { name: 'Guardar entrenamiento' })).toBeDisabled();
+  fireEvent.change(screen.getAllByLabelText('¿Qué día entrenaste?')[0]!, { target: { value: '2026-10-07' } });
+  expect(first).toHaveValue('45,5');
+  fireEvent.click(screen.getByRole('button', { name: /B1 — Press/ }));
+  fireEvent.change(screen.getByRole('textbox', { name: /ejercicio 2/ }), { target: { value: '60' } });
+  expect(screen.getAllByLabelText('¿Qué día entrenaste?')[1]).toHaveValue('2026-10-07');
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar entrenamiento' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar entrenamiento' }));
+  await screen.findByText('Entrenamiento guardado correctamente.');
+  expect(payload).toEqual({ routineId: 'routine', routineDayId: 'day-1', date: '2026-10-07', exercises: [{ id: 'entry-1', weightKg: '45.5' }, { id: 'entry-2', weightKg: '60' }] });
+});
+
+it('bounds dates to assignment, today and viewed month, leaving future weeks visible but disabled', async () => {
+  server.use(http.get(`${base}/sala/training-context`, () => HttpResponse.json({ data: { ...context, today: '2026-10-14', routine: { ...context.routine!, createdOn: '2026-10-03' } } })));
+  renderRoutine(); await selectWeek(1);
+  const date = screen.getAllByLabelText('¿Qué día entrenaste?')[0]!;
+  expect(within(date).getAllByRole('option').map(option => option.getAttribute('value'))).toEqual(['', '2026-10-03', '2026-10-04']);
+  expect(screen.getByRole('button', { name: 'Semana 4' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Semana 5' })).toBeDisabled();
+  expect(screen.getAllByText('Todavía no disponible.').filter(element => !element.closest('[hidden]'))).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Semana 3' }));
+  const currentDate = screen.getAllByLabelText('¿Qué día entrenaste?')[0]!;
+  expect(currentDate).toHaveValue('2026-10-14');
+  expect(within(currentDate).getAllByRole('option').map(option => option.getAttribute('value'))).toEqual(['', '2026-10-12', '2026-10-13', '2026-10-14']);
+});
+
+it('offers correction for a known duplicate and another real date without overwriting saved weights', async () => {
+  records = [saved('today', context.today)];
+  renderRoutine(); await selectWeek();
+  const input = screen.getByRole('textbox'); expect(input).toHaveValue('');
+  expect(screen.getByRole('button', { name: 'Guardar entrenamiento' })).toBeDisabled();
+  expect(screen.getByRole('link', { name: 'Editar registro existente' })).toHaveAttribute('href', '/portal/sala/entrenamientos/registrar?recordId=today');
+  fireEvent.click(screen.getByRole('button', { name: 'Semana 1' }));
+  fireEvent.change(screen.getAllByLabelText('¿Qué día entrenaste?')[0]!, { target: { value: '2026-10-02' } });
+  expect(screen.getByRole('button', { name: 'Guardar entrenamiento' })).toBeEnabled();
+  expect(screen.queryByRole('link', { name: 'Editar registro existente' })).not.toBeInTheDocument();
+});
+
+it('allows active-routine drafts in valid previous months and keeps replaced snapshots read-only', async () => {
+  server.use(http.get(`${base}/sala/training-context`, () => HttpResponse.json({ data: { ...context, routine: { ...context.routine!, createdOn: '2026-09-20' } } })));
+  records = [{ ...saved('old', '2026-09-10'), routineId: 'replaced' }];
+  renderRoutine(); await screen.findByRole('heading', { name: 'Fuerza' });
+  fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }));
+  await screen.findByText('Historial · Registro disponible');
+  await selectWeek(5);
+  const date = screen.getAllByLabelText('¿Qué día entrenaste?')[0]!;
+  expect(within(date).getAllByRole('option').map(option => option.getAttribute('value'))).toEqual(['', '2026-09-28', '2026-09-29', '2026-09-30']);
+  expect(screen.getByRole('button', { name: 'Semana 1' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Semana 2' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: /Histórica/ }));
+  expect(screen.queryByLabelText(/Peso utilizado/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /A1 — Press/ }));
+  expect(screen.queryByRole('button', { name: /Semana/ })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /Corregir entrenamiento del/ })).toHaveAttribute('href', '/portal/sala/entrenamientos/registrar?recordId=old');
+});
+
+
+it('allows another training in the same week, confirming before moving already dated weights', async () => {
+  records = [saved('existing', '2026-10-06')];
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  renderRoutine(); await selectWeek(2);
+  const date = screen.getAllByLabelText('¿Qué día entrenaste?')[0]!;
+  fireEvent.change(date, { target: { value: '2026-10-06' } });
+  expect(screen.getByRole('link', { name: 'Editar registro existente' })).toHaveAttribute('href', '/portal/sala/entrenamientos/registrar?recordId=existing');
+  expect(screen.getByRole('button', { name: 'Guardar entrenamiento' })).toBeDisabled();
+  fireEvent.change(date, { target: { value: '2026-10-07' } });
+  const input = screen.getByRole('textbox');
+  fireEvent.change(input, { target: { value: '40' } });
+  expect(screen.getByRole('button', { name: 'Guardar entrenamiento' })).toBeEnabled();
+  fireEvent.change(date, { target: { value: '2026-10-08' } });
+  expect(confirm).toHaveBeenCalledOnce(); expect(date).toHaveValue('2026-10-07'); expect(input).toHaveValue('40');
+  confirm.mockReturnValue(true);
+  fireEvent.change(date, { target: { value: '2026-10-08' } });
+  expect(date).toHaveValue('2026-10-08'); expect(input).toHaveValue('');
+});
+
+it('keeps the focused weight visible when the keyboard changes the visual viewport', async () => {
+  const viewport = new EventTarget();
+  vi.stubGlobal('visualViewport', viewport);
+  try {
+    renderRoutine(); await selectWeek();
+    const input = screen.getByRole('textbox');
+    const scroll = vi.fn();
+    input.scrollIntoView = scroll;
+    viewport.dispatchEvent(new Event('resize'));
+    expect(scroll).toHaveBeenLastCalledWith({ block: 'center', behavior: 'instant' });
+    window.dispatchEvent(new Event('resize'));
+    expect(scroll).toHaveBeenCalledTimes(2);
+    input.blur(); viewport.dispatchEvent(new Event('resize'));
+    expect(scroll).toHaveBeenCalledTimes(2);
+  } finally { cleanup(); vi.unstubAllGlobals(); }
 });
