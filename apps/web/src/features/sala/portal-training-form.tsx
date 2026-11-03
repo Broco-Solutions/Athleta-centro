@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createPortalTrainingRecord, getPortalTrainingContext, type TrainingContextDto, type TrainingWeightDto } from '@athleta/api-client';
@@ -22,11 +22,13 @@ export function useTrainingSave() {
   const refresh = async () => { await Promise.all([client.invalidateQueries({ queryKey: ['portal', 'training-records'] }), client.invalidateQueries({ queryKey: ['portal', 'training-context'], predicate: query => query.queryKey[2] !== 'initial' })]); };
   return { options, refresh, session };
 }
-export function NewTraining({ initial, selectedDay, embedded = false, renderHistory, onDirtyChange, onPendingChange }: { initial: TrainingContextDto; selectedDay: string | null; embedded?: boolean; renderHistory?: (exerciseId: string) => React.ReactNode; onDirtyChange?: (dirty: boolean) => void; onPendingChange?: (pending: boolean) => void }): React.JSX.Element {
+export function NewTraining({ initial, selectedDay, embedded = false, renderHistory, onDirtyChange, onPendingChange, collapsible = false }: { initial: TrainingContextDto; selectedDay: string | null; embedded?: boolean; collapsible?: boolean; renderHistory?: (exerciseId: string, date: string) => React.ReactNode; onDirtyChange?: (dirty: boolean) => void; onPendingChange?: (pending: boolean) => void }): React.JSX.Element {
   // Keep the routine that opened this form, including its ID, for the entire edit.
   // A later routine assignment must be an explicit server conflict at save time.
   const [routine] = useState(initial.routine);
   const [revision, setRevision] = useState(0);
+  const [dirty, setDirty] = useState(false);
+  const reportDirty = useCallback((value: boolean) => { setDirty(value); onDirtyChange?.(value); }, [onDirtyChange]);
   const [date, setDate] = useState(initial.today);
   const [dayId, setDayId] = useState(selectedDay ?? routine?.days[0]?.id ?? '');
   const { options, refresh, session } = useTrainingSave();
@@ -42,10 +44,11 @@ export function NewTraining({ initial, selectedDay, embedded = false, renderHist
   const latest = previous.data?.routine?.id === routine.id ? previous.data.routine.days.find(entry => entry.id === dayId) : null;
   const exercises = day?.exercises.map(exercise => ({ ...exercise, lastWeightKg: latest?.exercises.find(entry => entry.id === exercise.id)?.lastWeightKg ?? null })) ?? [];
   return <div className="space-y-5">{mutation.isSuccess ? <p role="status">Entrenamiento guardado correctamente.</p> : null}
-    <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Fecha del entrenamiento<input className="mt-2 block min-h-11 w-full rounded-md border bg-white px-3 text-base" type="date" min={routine.createdOn} max={initial.today} value={date} disabled={mutation.isPending} onChange={event => setDate(event.target.value)}/></label>
+    {embedded ? <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-medium capitalize">{date === initial.today ? 'Hoy · ' : ''}{/^\d{4}-\d{2}-\d{2}$/.test(date) ? new Intl.DateTimeFormat('es-AR', { weekday: 'long', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`)) + ` ${trainingDate(date).slice(0, 5)}` : 'Elegí una fecha'}</p><span role="status" className="text-sm text-muted-foreground">{mutation.isPending ? 'Guardando…' : dirty ? 'Sin guardar' : mutation.isSuccess ? 'Guardado' : ''}</span></div> : null}
+    <div className={embedded ? 'max-w-xs' : 'grid gap-4 sm:grid-cols-2'}><label className="text-sm font-medium">Fecha del entrenamiento<input className="mt-2 block min-h-11 w-full rounded-md border bg-white px-3 text-base" type="date" min={routine.createdOn} max={initial.today} value={date} disabled={mutation.isPending} onChange={event => setDate(event.target.value)}/></label>
       {!embedded ? <label className="text-sm font-medium">Día de la rutina<select className="mt-2 block min-h-11 w-full rounded-md border bg-white px-3 text-base" value={dayId} disabled={mutation.isPending} onChange={event => setDayId(event.target.value)}><option value="">Seleccioná un día</option>{routine.days.map(entry => <option key={entry.id} value={entry.id}>{entry.name || `Día ${entry.position}`}</option>)}</select></label> : null}</div>
     <p className="text-sm text-muted-foreground">Podés registrar desde el {trainingDate(routine.createdOn)} hasta hoy.</p>
     {previous.isError ? <p className="text-sm">No pudimos consultar los últimos pesos. Podés ingresar los utilizados.</p> : null}
-    {day ? <TrainingWeightsForm key={`${day.id}-${revision}`} renderHistory={renderHistory} onDirtyChange={onDirtyChange} exercises={exercises} pending={mutation.isPending || !session.data?.csrfToken} onSave={async weights => { try { await mutation.mutateAsync(weights); } catch { /* Keep the form and its entered values; mutation.error is shown below. */ } }}><SaveError error={mutation.error}/></TrainingWeightsForm> : <p>Seleccioná un día de tu rutina.</p>}
+    {day ? <TrainingWeightsForm key={`${day.id}-${revision}`} renderHistory={renderHistory ? id => renderHistory(id, date) : undefined} onDirtyChange={reportDirty} collapsible={collapsible} exercises={exercises} pending={mutation.isPending || !session.data?.csrfToken} onSave={async weights => { try { await mutation.mutateAsync(weights); } catch { /* Keep the form and its entered values; mutation.error is shown below. */ } }}><SaveError error={mutation.error}/></TrainingWeightsForm> : <p>Seleccioná un día de tu rutina.</p>}
   </div>;
 }
