@@ -2025,6 +2025,52 @@ export interface SubmitHealthDeclarationDto {
   confirmed: boolean;
 }
 
+export interface TrainingExerciseSnapshotDto {
+  /** @nullable */
+  blockPosition: number | null;
+  id: string;
+  exerciseDefinitionId: string;
+  exerciseName: string;
+  position: number;
+  /** @nullable */
+  series: string | null;
+  /** @nullable */
+  repetitions: string | null;
+  /** @nullable */
+  duration: string | null;
+  /** @nullable */
+  load: string | null;
+  /** @nullable */
+  rest: string | null;
+  /** @nullable */
+  notes: string | null;
+}
+
+export interface TrainingRoutineDayDto {
+  id: string;
+  /** @nullable */
+  name: string | null;
+  position: number;
+  exercises: TrainingExerciseSnapshotDto[];
+}
+
+export type TrainingRoutineVersionDtoStatus = typeof TrainingRoutineVersionDtoStatus[keyof typeof TrainingRoutineVersionDtoStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const TrainingRoutineVersionDtoStatus = {
+  ACTIVE: 'ACTIVE',
+  HISTORICAL: 'HISTORICAL',
+} as const;
+
+export interface TrainingRoutineVersionDto {
+  id: string;
+  version: number;
+  status: TrainingRoutineVersionDtoStatus;
+  createdOn: string;
+  days: TrainingRoutineDayDto[];
+}
+
 export interface TrainingContextExerciseDto {
   /** @nullable */
   blockPosition: number | null;
@@ -2068,6 +2114,7 @@ export interface TrainingContextRoutineDto {
 export type TrainingContextDtoRoutine = TrainingContextRoutineDto | null;
 
 export interface TrainingContextDto {
+  routines: TrainingRoutineVersionDto[];
   today: string;
   /** @nullable */
   routine: TrainingContextDtoRoutine;

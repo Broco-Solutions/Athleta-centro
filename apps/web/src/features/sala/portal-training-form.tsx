@@ -13,6 +13,7 @@ export type TrainingPeriod = {
   controls?: React.ReactNode;
   today: string;
   weekStart: string;
+  canSelectWeek: (week: { start: string; end: string }) => boolean;
   selectWeek: (week: { start: string; end: string }) => void;
 };
 
@@ -53,7 +54,7 @@ export function WeeklyTraining({ day, month, today, createdOn, renderHistory, on
       const exercises = record.exercises.map(entry => ({ id: entry.id, weightKg: values.has(entry.routineExerciseId) ? values.get(entry.routineExerciseId)! : entry.weightKg }));
       return trainingResponse(await correctPortalTrainingRecord(record.id, { exercises }, options())).data;
     }
-    if (!day.active || !date) throw new Error('Elegí una semana válida.');
+    if (!day.canCreate || !date) throw new Error('Elegí una semana válida.');
     return trainingResponse(await createPortalTrainingRecord({ routineId: day.routineId, routineDayId: day.routineDayId, date, allowFuture: true, exercises: weights }, options())).data;
   }, onSuccess: async saved => {
     setRecord(saved);
@@ -63,12 +64,12 @@ export function WeeklyTraining({ day, month, today, createdOn, renderHistory, on
   } });
   useEffect(() => { onPendingChange(mutation.isPending); }, [mutation.isPending, onPendingChange]);
   const savedIn = (week: { start: string; end: string }) => weeklyTrainingRecords(day.records, week)[0] ?? null;
-  const reference = (week: { start: string; end: string }) => day.active ? trainingWeekReference(week, month, createdOn, today) : null;
+  const reference = (week: { start: string; end: string }) => day.canCreate ? trainingWeekReference(week, month, day.validFrom ?? createdOn, today, day.validUntil) : null;
   return <div className="space-y-5">
     {mutation.isSuccess ? <p role="status">Entrenamiento guardado correctamente.</p> : null}
     <TrainingWeightsForm exercises={day.exercises} collapsible correction={Boolean(record)} correctionLabel="Guardar cambios" pending={mutation.isPending || !session.data?.csrfToken} weightsEnabled={Boolean(date || record)} saveEnabled={Boolean(date || record)} onDirtyChange={reportDirty} onSave={async weights => { try { await mutation.mutateAsync(weights); } catch { /* Keep the draft; display the error below. */ } }} renderHistory={(id, actions) => {
-      return renderHistory(id, { controls: actions.controls, today, weekStart, selectWeek: week => {
-        if (mutation.isPending) return;
+      return renderHistory(id, { controls: actions.controls, today, weekStart, canSelectWeek: week => Boolean(savedIn(week) || reference(week)), selectWeek: week => {
+        if (mutation.isPending || (!savedIn(week) && !reference(week))) return;
         const saved = savedIn(week), nextDate = saved?.date ?? reference(week);
         if (weekStart !== week.start) {
           if (dirty && !window.confirm('Tenés pesos sin guardar. Cambiar de semana descartará los valores del entrenamiento actual. ¿Querés continuar?')) return;

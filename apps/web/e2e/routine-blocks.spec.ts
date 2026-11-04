@@ -76,8 +76,12 @@ test('blocks survive template editing, assignment, portal weights, replacement, 
     await print(page, 'template');
     await page.goto(`/sala/people/${fixture.personId}?tab=routine`); await page.getByRole('button', { name: 'Usar preestablecida', exact: true }).click(); await page.getByRole('button', { name: templateName, exact: true }).click(); await page.getByRole('button', { name: 'Asignar rutina', exact: true }).click();
     await expect(page.getByText('Rutina asignada correctamente.')).toBeVisible(); await print(page, 'assigned');
-    const portal = await student.newPage(); await portal.goto('/portal/login'); await portal.getByLabel('DNI', { exact: true }).fill(fixture.dni); await portal.getByLabel('PIN', { exact: true }).fill('1111'); await portal.getByRole('button', { name: 'Ingresar', exact: true }).click(); await expect(portal.getByRole('link', { name: 'Ver rutina', exact: true })).toBeVisible();
+    const portal = await student.newPage(); await portal.goto('/portal/login'); await portal.getByLabel('DNI', { exact: true }).fill(fixture.dni); await portal.getByLabel('PIN', { exact: true }).fill('1111'); await portal.getByRole('button', { name: 'Ingresar', exact: true }).click(); await expect(portal.getByRole('link', { name: 'Registrar entrenamiento', exact: true })).toBeVisible();
     await portal.goto('/portal/sala/rutina'); await expect(portal.getByText('Bloque A — 4 series')).toBeVisible(); await expect(portal.getByRole('button', { name: 'Imprimir / PDF' })).toHaveCount(0); await capture(portal, 'portal');
+    const cards = portal.locator('button[aria-expanded][aria-controls]');
+    await cards.nth(0).click();
+    await portal.getByRole('region', { name: /Evolución semanal/ }).first().locator('button[aria-pressed]').last().click();
+    await cards.nth(1).click();
     const weights = portal.getByLabel(/Peso utilizado/); await expect(weights).toHaveCount(5); await weights.nth(0).fill('32,5'); await weights.nth(1).fill('22');
     await portal.getByRole('button', { name: 'Guardar entrenamiento', exact: true }).click(); await expect(portal.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
     await page.getByRole('button', { name: 'Editar rutina' }).click(); await page.getByRole('button', { name: 'Aumentar series del bloque A' }).click(); await page.getByRole('button', { name: 'Aumentar series del bloque A' }).click(); await page.getByRole('button', { name: 'Guardar cambios' }).click(); await expect(page.getByText('Rutina guardada correctamente.')).toBeVisible();

@@ -10,10 +10,11 @@ vi.mock('next/navigation', () => ({ usePathname: () => '/portal/sala/rutina' }))
 vi.mock('../../portal-ui', async importOriginal => ({ ...await importOriginal<typeof import('../../portal-ui')>(), today: () => '2026-10-26' }));
 const base = 'http://localhost:3000/api/portal';
 const exercise = { id: 'entry-1', exerciseDefinitionId: 'press', exerciseName: 'Press', position: 1, blockPosition: 1, series: '4', repetitions: '10', duration: null, load: '30', rest: '60 s', notes: 'Controlado', lastWeightKg: '31.5' };
-const context: TrainingContextDto = { today: '2026-10-26', routine: { id: 'routine', createdOn: '2026-10-01', days: [
+const context: TrainingContextDto = { routines: [], today: '2026-10-26', routine: { id: 'routine', createdOn: '2026-10-01', days: [
   { id: 'day-1', position: 1, name: 'Fuerza', exercises: [exercise, { ...exercise, id: 'entry-2', position: 2, blockPosition: 2, lastWeightKg: null }] },
   { id: 'day-2', position: 2, name: 'Movilidad', exercises: [{ ...exercise, id: 'entry-3', exerciseName: 'Remo' }] },
 ] } };
+context.routines = [{ ...context.routine!, version: 1, status: 'ACTIVE' }];
 function saved(id = 'record', date = '2026-10-03'): TrainingRecordDetailDto {
   return { id, routineId: 'routine', routineDayId: 'day-1', date, dayName: 'Fuerza', dayPosition: 1, createdAt: `${date}T12:00:00Z`, updatedAt: `${date}T12:00:00Z`, exercises: context.routine!.days[0]!.exercises.map((e, i) => ({ ...e, id: `${id}-${i}`, routineExerciseId: e.id, weightKg: i ? '15' : '32.5' })) };
 }
@@ -291,7 +292,7 @@ it('selects one shared week, focuses only after interaction, and retains drafts 
   expect(screen.getByRole('button', { name: 'Guardar entrenamiento' })).toBeEnabled();
 });
 
-it.each([[1, '2026-10-01'], [2, '2026-10-05'], [4, '2026-10-19'], [5, '2026-10-26']])('registers week %i directly with reference %s and all exercises', async (week, date) => {
+it.each([[1, '2026-09-28'], [2, '2026-10-05'], [4, '2026-10-19'], [5, '2026-10-26']])('registers week %i directly with reference %s and all exercises', async (week, date) => {
   let payload: unknown;
   server.use(http.post(`${base}/sala/training-records`, async ({ request }) => { payload = await request.json(); return HttpResponse.json({ data: saved('new', date) }, { status: 201 }); }));
   renderRoutine(); await selectWeek(week);
@@ -305,7 +306,7 @@ it.each([[1, '2026-10-01'], [2, '2026-10-05'], [4, '2026-10-19'], [5, '2026-10-2
   expect(payload).toEqual({ allowFuture: true, routineId: 'routine', routineDayId: 'day-1', date, exercises: [{ id: 'entry-1', weightKg: '45.5' }, { id: 'entry-2', weightKg: '60' }] });
 });
 
-it('allows future weeks and uses assignment as the first available reference', async () => {
+it('allows future weeks and permits retrospective references before the first assignment', async () => {
   let payload: unknown;
   server.use(http.get(`${base}/sala/training-context`, () => HttpResponse.json({ data: { ...context, today: '2026-10-14', routine: { ...context.routine!, createdOn: '2026-10-03' } } })),
     http.post(`${base}/sala/training-records`, async ({ request }) => { payload = await request.json(); return HttpResponse.json({ data: saved('new') }, { status: 201 }); }));
@@ -315,7 +316,7 @@ it('allows future weeks and uses assignment as the first available reference', a
   fireEvent.change(screen.getByRole('textbox'), { target: { value: '35' } });
   fireEvent.click(screen.getByRole('button', { name: 'Guardar entrenamiento' }));
   await screen.findByText('Entrenamiento guardado correctamente.');
-  expect(payload).toMatchObject({ date: '2026-10-03' });
+  expect(payload).toMatchObject({ date: '2026-09-28' });
 });
 
 it.each([false, true])('corrects a saved week inline, retaining untouched weights and saved IDs (historical: %s)', async historical => {
@@ -355,7 +356,7 @@ it('loads the same cross-month record from either month and discards only on con
   confirm.mockReturnValue(true); fireEvent.click(screen.getByRole('button', { name: 'Semana 2' }));
   expect(screen.getByRole('textbox')).toHaveValue('');
   fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }));
-  await screen.findByRole('heading', { name: /Histórica/ });
+  await screen.findByRole('heading', { name: 'septiembre de 2026' });
   await selectWeek(5);
   expect(screen.getByRole('textbox')).toHaveValue('32,5');
   expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled();
@@ -417,4 +418,69 @@ it('saves a November future week with controls inside its row and exactly one sa
   await screen.findByText('Entrenamiento guardado correctamente.');
   expect(payload).toMatchObject({ allowFuture: true, date: '2026-11-23' });
   expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeInTheDocument();
+});
+
+it('creates and corrects a retrospective week before the first assignment with enabled, focused inline controls', async () => {
+  const first = { ...context.routines[0]!, createdOn: '2026-11-03' };
+  server.use(http.get(`${base}/sala/training-context`, () => HttpResponse.json({ data: { today: '2026-11-03', routine: { ...context.routine!, createdOn: first.createdOn }, routines: [first] } })));
+  let payload: unknown;
+  server.use(http.post(`${base}/sala/training-records`, async ({ request }) => {
+    payload = await request.json(); records = [saved('retro', '2026-10-26')]; return HttpResponse.json({ data: records[0] }, { status: 201 });
+  }), http.post(`${base}/sala/training-records/retro/correct`, async ({ request }) => {
+    payload = await request.json(); records = [{ ...records[0]!, exercises: records[0]!.exercises.map((e, i) => i ? e : { ...e, weightKg: '40' }) }]; return HttpResponse.json({ data: records[0] });
+  }));
+  renderRoutine(); await selectWeek(5);
+  expect(screen.getByRole('textbox')).toBeEnabled(); expect(screen.getByRole('textbox')).toHaveFocus();
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: '32,5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar entrenamiento' }));
+  await screen.findByText('Entrenamiento guardado correctamente.');
+  expect(payload).toMatchObject({ routineId: 'routine', date: '2026-10-26' });
+  fireEvent.click(screen.getByRole('button', { name: 'Volver al mes actual' }));
+  await selectWeek(1);
+  expect(screen.getByRole('textbox')).toHaveValue('32,5');
+  fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }));
+  await selectWeek(5); fireEvent.change(screen.getByRole('textbox'), { target: { value: '40' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+  await screen.findByText('Entrenamiento guardado correctamente.');
+  expect(payload).toEqual({ exercises: [{ id: 'retro-0', weightKg: '40' }, { id: 'retro-1', weightKg: '15' }] });
+});
+it('shows three assigned prescriptions in their own months without any training records', async () => {
+  const routines = ['2026-09-01', '2026-10-01', '2026-11-01'].map((createdOn, i) => ({ ...context.routines[0]!, id: `version-${i}`, version: i + 1, createdOn, status: i === 2 ? 'ACTIVE' : 'HISTORICAL', days: [{ ...context.routine!.days[0]!, id: `day-${i}`, exercises: [{ ...exercise, id: `entry-${i}`, exerciseName: `Ejercicio ${i + 1}` }] }] }));
+  server.use(http.get(`${base}/sala/training-context`, () => HttpResponse.json({ data: { today: '2026-11-03', routine: routines[2], routines } })));
+  renderRoutine();
+  expect(await screen.findByRole('button', { name: /A1 — Ejercicio 2/ })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /A1 — Ejercicio 3/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }));
+  expect(await screen.findByRole('button', { name: /A1 — Ejercicio 1/ })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /Rutina 1 · Histórica/ })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Volver al mes actual' }));
+  expect(await screen.findByRole('button', { name: /A1 — Ejercicio 3/ })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /Rutina 3 · Actual/ })).toBeInTheDocument();
+});
+it('separates a midmonth change and discards version drafts only with confirmation', async () => {
+  const routines = [
+    { ...context.routines[0]!, status: 'HISTORICAL', createdOn: '2026-09-01' },
+    { ...context.routines[0]!, id: 'second', version: 2, createdOn: '2026-10-15', days: [{ ...context.routine!.days[0]!, id: 'second-day', exercises: [{ ...exercise, id: 'second-entry', exerciseName: 'Remo nuevo' }] }] },
+  ];
+  server.use(http.get(`${base}/sala/training-context`, () => HttpResponse.json({ data: { ...context, routine: routines[1], routines } })));
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  let payload: unknown;
+  server.use(http.post(`${base}/sala/training-records`, async ({ request }) => {
+    payload = await request.json(); return HttpResponse.json({ data: saved('transition', '2026-10-12') }, { status: 201 });
+  }));
+  renderRoutine();
+  expect(await screen.findByRole('heading', { name: /Rutina 2 · Actual/ })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /Fuerza · Rutina 1 · Histórica/ }));
+  await selectWeek(3);
+  expect(screen.getByRole('button', { name: 'Semana 4' })).toBeDisabled();
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: '45' } });
+  const next = screen.getByRole('button', { name: /Fuerza · Rutina 2 · Actual/ });
+  fireEvent.click(next); expect(confirm).toHaveBeenCalledOnce(); expect(screen.getByRole('textbox')).toHaveValue('45');
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar entrenamiento' }));
+  await screen.findByText('Entrenamiento guardado correctamente.');
+  expect(payload).toMatchObject({ routineId: 'routine', date: '2026-10-12' });
+  fireEvent.click(next);
+  await selectWeek(3, /A1 — Remo nuevo/);
+  expect(screen.getByRole('textbox')).toHaveValue(''); expect(screen.getByRole('textbox')).toHaveFocus();
+  expect(screen.getByRole('button', { name: 'Semana 2' })).toBeDisabled();
 });

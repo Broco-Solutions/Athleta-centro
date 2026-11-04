@@ -6,13 +6,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@athleta/ui';
-import type { TrainingContextExerciseDto, TrainingRecordExerciseDto, TrainingWeightDto } from '@athleta/api-client';
+import type { TrainingExerciseSnapshotDto, TrainingContextExerciseDto, TrainingRecordExerciseDto, TrainingWeightDto } from '@athleta/api-client';
 import { trainingWeight } from './training-record-api';
 
 const weightSchema = (correction: boolean) => z.object({ weights: z.array(z.string().trim().refine(value => value === '' || /^\d{1,35}(?:[.,]\d{1,30})?$/.test(value), 'Ingresá un peso válido, sin valores negativos.')) }).refine(value => correction || value.weights.some(weight => weight !== ''), { message: 'Informá al menos un peso para guardar el entrenamiento.', path: ['weights'] });
 type Weights = z.infer<ReturnType<typeof weightSchema>>;
 export type WeightFieldActions = { focus: () => void; resetWeights: (weights?: (string | null)[]) => void; controls: React.ReactNode };
-export function TrainingWeightsForm({ exercises, onSave, pending, correction = false, children, readOnly = false, renderHistory, onDirtyChange, collapsible = false, weightsEnabled = true, saveEnabled = true, correctionLabel = 'Guardar corrección' }: { exercises: (TrainingContextExerciseDto | TrainingRecordExerciseDto)[]; onSave: (weights: TrainingWeightDto[]) => Promise<void>; pending: boolean; correction?: boolean; correctionLabel?: string; children?: React.ReactNode; readOnly?: boolean; collapsible?: boolean; weightsEnabled?: boolean; saveEnabled?: boolean; renderHistory?: ((exerciseId: string, actions: WeightFieldActions) => React.ReactNode) | undefined; onDirtyChange?: ((dirty: boolean) => void) | undefined }): React.JSX.Element {
+export function TrainingWeightsForm({ exercises, onSave, pending, correction = false, children, readOnly = false, renderHistory, onDirtyChange, collapsible = false, weightsEnabled = true, saveEnabled = true, correctionLabel = 'Guardar corrección' }: { exercises: (TrainingExerciseSnapshotDto | TrainingContextExerciseDto | TrainingRecordExerciseDto)[]; onSave: (weights: TrainingWeightDto[]) => Promise<void>; pending: boolean; correction?: boolean; correctionLabel?: string; children?: React.ReactNode; readOnly?: boolean; collapsible?: boolean; weightsEnabled?: boolean; saveEnabled?: boolean; renderHistory?: ((exerciseId: string, actions: WeightFieldActions) => React.ReactNode) | undefined; onDirtyChange?: ((dirty: boolean) => void) | undefined }): React.JSX.Element {
   const panelPrefix = useId();
   const [activeExercise, setActiveExercise] = useState('');
   const [open, setOpen] = useState<string[]>([]);

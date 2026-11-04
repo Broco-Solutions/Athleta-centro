@@ -1,5 +1,5 @@
 import { shiftTrainingMonth, trainingMonthDays, trainingMonthWeeks, trainingWeekDates, trainingWeekReference, trainingViewMonths, weeklyTrainingRecords } from './training-month';
-import type { TrainingRecordDetailDto } from '@athleta/api-client';
+import type { TrainingRecordDetailDto, TrainingRoutineVersionDto } from '@athleta/api-client';
 
 it.each([['2021-02', 4], ['2026-10', 5], ['2026-03', 6]])('calculates real Monday-Sunday weeks for %s', (month, count) => {
   const weeks = trainingMonthWeeks(month);
@@ -25,7 +25,7 @@ it('groups only identical prescriptions and keeps routine versions, day names an
   expect(groups).toHaveLength(4);
   expect(groups[0]?.records.map(r => r.id)).toEqual(['one', 'two']);
   expect(groups[0]?.exercises.map(e => 'routineExerciseId' in e ? e.routineExerciseId : e.id)).toEqual(['entry', 'entry2']);
-  expect(groups.every(g => !g.active)).toBe(true);
+  expect(groups.every(g => !g.canCreate)).toBe(true);
 });
 
 it('intersects weeks with the viewed month, routine assignment and today', () => {
@@ -59,4 +59,40 @@ it('allows November future weeks and queries both sides of shared weeks', () => 
   const week = trainingMonthWeeks('2026-11').find(w => w.start === '2026-11-23')!;
   expect(trainingWeekReference(week, '2026-11', '2026-10-01', '2026-11-03')).toBe('2026-11-23');
   expect(trainingViewMonths('2026-11', '2026-11-03')).toEqual(['2026-10', '2026-11', '2026-12']);
+});
+
+const versions: TrainingRoutineVersionDto[] = ['2026-09-01', '2026-10-01', '2026-11-01'].map((createdOn, i) => ({
+  id: `routine-${i + 1}`, version: i + 1, status: i === 2 ? 'ACTIVE' : 'HISTORICAL', createdOn,
+  days: [{ id: `day-${i + 1}`, name: 'Fuerza', position: 1, exercises: [] }],
+}));
+it.each([['2026-08', 1], ['2026-09', 1], ['2026-10', 2], ['2026-11', 3], ['2027-02', 3]])('shows the assigned prescription in %s without requiring any saved record', (month, version) => {
+  const days = trainingMonthDays([], versions, month);
+  expect(days).toHaveLength(1);
+  expect(days[0]).toMatchObject({ routineId: `routine-${version}`, version, canCreate: true, records: [] });
+});
+it('separates two versions in a transition month and references their own portion of a shared week', () => {
+  const routines = [versions[0]!, { ...versions[1]!, createdOn: '2026-09-15' }, versions[2]!];
+  const days = trainingMonthDays([], routines, '2026-09');
+  expect(days.map(day => day.version)).toEqual([1, 2]);
+  const week = { start: '2026-09-14', end: '2026-09-20' };
+  expect(trainingWeekReference(week, '2026-09', days[0]!.validFrom!, '2026-09-17', days[0]!.validUntil)).toBe('2026-09-14');
+  expect(trainingWeekReference(week, '2026-09', days[1]!.validFrom!, '2026-09-17', days[1]!.validUntil)).toBe('2026-09-17');
+  expect(trainingWeekReference({ start: '2026-09-21', end: '2026-09-27' }, '2026-09', days[0]!.validFrom!, '2026-11-03', days[0]!.validUntil)).toBeNull();
+});
+it('uses the first prescription retrospectively and preserves the same reference from either month', () => {
+  const routine = [{ ...versions[0]!, status: 'ACTIVE' as const, createdOn: '2026-11-03' }];
+  const day = trainingMonthDays([], routine, '2026-10')[0]!;
+  const week = { start: '2026-10-26', end: '2026-11-01' };
+  expect(trainingWeekReference(week, '2026-10', day.validFrom!, '2026-11-03')).toBe('2026-10-26');
+  expect(trainingWeekReference(week, '2026-11', day.validFrom!, '2026-11-03')).toBe('2026-10-26');
+});
+
+it('retains out-of-period legacy records and changed snapshots as separate editable groups', () => {
+  const original = { id: 'legacy', routineId: 'routine-3', routineDayId: 'day-3', dayName: 'Fuerza', dayPosition: 1, date: '2026-09-10', createdAt: '2026-11-03T12:00:00Z', updatedAt: '2026-11-03T12:00:00Z', exercises: [{ id: 'saved', routineExerciseId: 'entry', exerciseDefinitionId: 'exercise', exerciseName: 'Original', position: 1, blockPosition: null, series: '3', repetitions: '8', duration: null, load: '20', rest: null, notes: null, weightKg: '30' }] };
+  const changed = { ...original, id: 'changed', exercises: original.exercises.map(e => ({ ...e, id: 'changed-entry', series: '5' })) };
+  const days = trainingMonthDays([original, changed], versions, '2026-09');
+  expect(days).toHaveLength(3);
+  expect(days[0]!.routineId).toBe('routine-1');
+  expect(days.slice(1).map(day => day.records)).toEqual([[original], [changed]]);
+  expect(days.slice(1).every(day => !day.canCreate)).toBe(true);
 });

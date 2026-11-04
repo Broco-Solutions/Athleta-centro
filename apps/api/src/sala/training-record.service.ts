@@ -14,8 +14,10 @@ export class TrainingRecordService {
   constructor(private readonly prisma: PrismaService) {}
   private today() { return trainingOperationalDate(); }
   async context(personId: string, before = this.today()) {
-    const routine = await this.prisma.routine.findFirst({ where: { personId, status: 'ACTIVE' }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } } } });
-    if (!routine) return { today: this.today(), routine: null };
+    const versions = await this.prisma.routine.findMany({ where: { personId }, orderBy: [{ createdAt: 'asc' }, { version: 'asc' }], include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } } } });
+    const routines = versions.map(routine => ({ id: routine.id, version: routine.version, status: routine.status, createdOn: trainingOperationalDate(routine.createdAt), days: routine.days.map(day => ({ id: day.id, name: day.name, position: day.position, exercises: day.exercises.map(exercise => ({ ...this.snapshot(exercise), id: exercise.id })) })) }));
+    const routine = versions.find(version => version.status === 'ACTIVE');
+    if (!routine) return { today: this.today(), routine: null, routines };
     const ids = [...new Set(routine.days.flatMap(day => day.exercises.map(exercise => exercise.exerciseDefinitionId)))];
     // Bounded by current routine size; each lookup retrieves just one previous weight,
     // across all routine versions. Repeated occurrences stay separate in the form.
@@ -23,7 +25,7 @@ export class TrainingRecordService {
       const entry = await this.prisma.salaTrainingRecordExercise.findFirst({ where: { exerciseDefinitionId, weightKg: { not: null }, record: { personId, date: { lte: new Date(`${before}T00:00:00Z`) } } }, orderBy: [{ record: { date: 'desc' } }, { record: { createdAt: 'desc' } }, { position: 'desc' }], select: { weightKg: true } });
       return [exerciseDefinitionId, entry?.weightKg?.toString() ?? null] as const;
     })));
-    return { today: this.today(), routine: { id: routine.id, createdOn: trainingOperationalDate(routine.createdAt), days: routine.days.map(day => ({ id: day.id, name: day.name, position: day.position, exercises: day.exercises.map(exercise => ({ ...this.snapshot(exercise), id: exercise.id, lastWeightKg: latest.get(exercise.exerciseDefinitionId) ?? null })) })) } };
+    return { today: this.today(), routines, routine: { id: routine.id, createdOn: trainingOperationalDate(routine.createdAt), days: routine.days.map(day => ({ id: day.id, name: day.name, position: day.position, exercises: day.exercises.map(exercise => ({ ...this.snapshot(exercise), id: exercise.id, lastWeightKg: latest.get(exercise.exerciseDefinitionId) ?? null })) })) } };
   }
   async list(personId: string, query: TrainingRecordQueryDto) {
     const { page, pageSize } = query;
@@ -69,9 +71,19 @@ export class TrainingRecordService {
       return await this.serialized(async tx => {
         // Same lock as routine replacement. The submitted routine ID is never substituted.
         await tx.$queryRaw`SELECT id FROM people WHERE id = ${personId}::uuid FOR UPDATE`;
-        const routine = await tx.routine.findFirst({ where: { id: input.routineId, personId, status: 'ACTIVE' }, include: { days: { where: { id: input.routineDayId }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } } } });
-        if (!routine) throw new ConflictException({ code: 'TRAINING_ROUTINE_CHANGED', message: 'La rutina activa cambió o no está disponible. Revisala antes de registrar.' });
-        if (input.date < trainingOperationalDate(routine.createdAt)) throw new BadRequestException({ code: 'TRAINING_BEFORE_ROUTINE', message: 'La fecha es anterior a la asignación de esta rutina.' });
+        const routine = await tx.routine.findFirst({ where: { id: input.routineId, personId }, include: { days: { where: { id: input.routineDayId }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } } } });
+        if (!routine || (input.allowFuture !== true && routine.status !== 'ACTIVE')) throw new ConflictException({ code: 'TRAINING_ROUTINE_CHANGED', message: 'La rutina activa cambió o no está disponible. Revisala antes de registrar.' });
+        if (input.allowFuture !== true && input.date < trainingOperationalDate(routine.createdAt)) throw new BadRequestException({ code: 'TRAINING_BEFORE_ROUTINE', message: 'La fecha es anterior a la asignación de esta rutina.' });
+        // Weekly references must lie in this version's portion of the week. Only
+        // the first assignment extends backwards for retrospective entry.
+        const versions = await tx.routine.findMany({ where: { personId }, orderBy: [{ createdAt: 'asc' }, { version: 'asc' }], select: { id: true, createdAt: true } });
+        const index = versions.findIndex(version => version.id === routine.id);
+        const next = versions[index + 1];
+        if ((index > 0 && input.date < trainingOperationalDate(routine.createdAt)) ||
+            (next && input.date >= trainingOperationalDate(next.createdAt)) ||
+            (!next && routine.status !== 'ACTIVE')) {
+          throw new BadRequestException({ code: 'TRAINING_ROUTINE_PERIOD_INVALID', message: 'La fecha de referencia no corresponde al período de esta rutina.' });
+        }
         const day = routine.days[0];
         if (!day) throw new BadRequestException({ code: 'TRAINING_DAY_INVALID', message: 'Ese día no pertenece a tu rutina activa.' });
         this.assertEntries(input, day.exercises.map(exercise => exercise.id));

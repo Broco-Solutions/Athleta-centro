@@ -1,4 +1,4 @@
-import type { TrainingContextDto, TrainingContextExerciseDto, TrainingRecordDetailDto, TrainingRecordExerciseDto } from '@athleta/api-client';
+import type { TrainingExerciseSnapshotDto, TrainingRoutineVersionDto, TrainingRecordDetailDto, TrainingRecordExerciseDto } from '@athleta/api-client';
 
 export function shiftTrainingMonth(month: string, offset: number): string {
   const date = new Date(`${month}-01T00:00:00Z`);
@@ -32,7 +32,7 @@ export function trainingWeekDates(week: { start: string; end: string }, month: s
 }
 export const trainingMonthLabel = (month: string): string => new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${month}-01T00:00:00Z`));
 
-type Exercise = TrainingContextExerciseDto | TrainingRecordExerciseDto;
+type Exercise = TrainingExerciseSnapshotDto | TrainingRecordExerciseDto;
 // Include every saved prescription field, in a fixed order; weights and saved entry IDs
 // do not define a version. Routine entry identity distinguishes repeated exercises.
 function prescription(exercises: Exercise[]): unknown[] {
@@ -44,22 +44,32 @@ export type TrainingMonthDay = {
   position: number;
   routineId: string;
   routineDayId: string;
-  active: boolean;
+  canCreate: boolean;
+  version?: number;
+  status?: 'ACTIVE' | 'HISTORICAL';
+  validFrom?: string;
+  validUntil?: string;
   exercises: Exercise[];
   records: TrainingRecordDetailDto[];
 };
-export function trainingMonthDays(records: TrainingRecordDetailDto[], routine: TrainingContextDto['routine']): TrainingMonthDay[] {
+export function trainingMonthDays(records: TrainingRecordDetailDto[], routines: TrainingRoutineVersionDto[] | null, month?: string): TrainingMonthDay[] {
   const groups = new Map<string, TrainingMonthDay>();
   const key = (routineId: string, dayId: string, name: string | null, position: number, exercises: Exercise[]) => JSON.stringify([routineId, dayId, name, position, prescription(exercises)]);
-  for (const day of routine?.days ?? []) {
-    const id = key(routine!.id, day.id, day.name, day.position, day.exercises);
-    groups.set(id, { key: id, name: day.name, position: day.position, routineId: routine!.id, routineDayId: day.id, active: true, exercises: day.exercises, records: [] });
+  for (const [index, version] of (routines ?? []).entries()) {
+    const validFrom = index === 0 ? '0001-01-01' : version.createdOn;
+    const validUntil = routines?.[index + 1]?.createdOn;
+    if (month && (validFrom >= `${shiftTrainingMonth(month, 1)}-01` || (validUntil && validUntil <= `${month}-01`))) continue;
+    for (const day of version.days) {
+      const id = key(version.id, day.id, day.name, day.position, day.exercises);
+      groups.set(id, { key: id, name: day.name, position: day.position, routineId: version.id, routineDayId: day.id, canCreate: version.status === 'ACTIVE' || Boolean(validUntil), version: version.version, status: version.status, validFrom, ...(validUntil ? { validUntil } : {}), exercises: day.exercises, records: [] });
+    }
   }
   for (const record of records) {
     const id = key(record.routineId, record.routineDayId, record.dayName, record.dayPosition, record.exercises);
     let group = groups.get(id);
     if (!group) {
-      group = { key: id, name: record.dayName, position: record.dayPosition, routineId: record.routineId, routineDayId: record.routineDayId, active: false, exercises: record.exercises, records: [] };
+      const version = routines?.find(routine => routine.id === record.routineId);
+      group = { key: id, name: record.dayName, position: record.dayPosition, routineId: record.routineId, routineDayId: record.routineDayId, canCreate: false, ...(version ? { version: version.version, status: version.status } : {}), exercises: record.exercises, records: [] };
       groups.set(id, group);
     }
     group.records.push(record);
@@ -68,10 +78,12 @@ export function trainingMonthDays(records: TrainingRecordDetailDto[], routine: T
 }
 
 /** A reference date is technical: current week uses the backend's operational today. */
-export function trainingWeekReference(week: { start: string; end: string }, month: string, createdOn: string, today: string): string | null {
-  const dates = trainingWeekDates(week, month, createdOn, week.end);
-  if (!dates.length) return null;
-  return today >= week.start && today <= week.end && today >= createdOn ? today : (createdOn > week.start ? createdOn : week.start);
+export function trainingWeekReference(week: { start: string; end: string }, month: string, validFrom: string, today: string, validUntil?: string): string | null {
+  // Identity is the whole Monday-Sunday week, independent of the viewed month.
+  void month;
+  const start = validFrom > week.start ? validFrom : week.start;
+  if (start > week.end || (validUntil && start >= validUntil)) return null;
+  return today >= start && today <= week.end && (!validUntil || today < validUntil) ? today : start;
 }
 
 // One principal record for the entire day; never pick different records per exercise.

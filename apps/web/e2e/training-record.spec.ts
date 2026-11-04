@@ -143,9 +143,9 @@ test('student records and corrects weights; professor reads the saved history in
     // Stress the day bar with many synthetic day labels while keeping the real session.
     await page.route('**/api/portal/sala/training-context*', async route => {
       const response = await route.fetch();
-      const body = await response.json() as { data: { routine: { days: { id: string; position: number; name: string }[] } } };
-      const day = body.data.routine.days[0]!;
-      body.data.routine.days.push(...Array.from({ length: 12 }, (_, index) => ({ ...day, id: `synthetic-day-${index}`, position: index + 3, name: `Entrenamiento complementario ${index + 3}` })));
+      const body = await response.json() as { data: { routines: { days: { id: string; position: number; name: string }[] }[] } };
+      const day = body.data.routines[0]!.days[0]!;
+      body.data.routines[0]!.days.push(...Array.from({ length: 12 }, (_, index) => ({ ...day, id: `synthetic-day-${index}`, position: index + 3, name: `Entrenamiento complementario ${index + 3}` })));
       await route.fulfill({ response, json: body });
     });
     await page.reload(); await page.setViewportSize({ width: 390, height: 844 });
@@ -186,6 +186,73 @@ test('student records and corrects weights; professor reads the saved history in
       }
       await teacher.getByRole('button', { name: /Cerrar detalle del/ }).click(); await expect(teacher.getByText('34,5 kg', { exact: true })).toHaveCount(0);
     } finally { await staff.close(); }
+  } finally {
+    execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts', 'cleanup', fixture.personId, fixture.professorId, fixture.planId, fixture.exerciseId], { cwd: '../..', stdio: 'pipe' });
+  }
+});
+
+
+test('historical prescriptions without records, midweek replacement and retrospective weeks stay distinct', async ({ page }) => {
+  test.setTimeout(120000);
+  await page.clock.setFixedTime(new Date('2026-11-03T12:00:00Z'));
+  const fixture = JSON.parse(execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts', 'history'], { cwd: '../..', encoding: 'utf8' }).trim()) as { personId: string; professorId: string; planId: string; exerciseId: string; dni: string };
+  const capture = async (state: string) => {
+    for (const width of [1440, 390, 360]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await page.screenshot({ path: `/tmp/athleta-history-${state}-${width}.png`, fullPage: true });
+    }
+  };
+  try {
+    await page.goto('/portal/login');
+    await page.getByLabel('DNI', { exact: true }).fill(fixture.dni); await page.getByLabel('PIN', { exact: true }).fill('1111');
+    await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
+    await expect(page).toHaveURL('/portal');
+    await page.goto('/portal/sala/rutina');
+    await expect(page.getByRole('heading', { name: /Rutina 3 · Actual/ })).toBeVisible();
+    await page.getByRole('button', { name: 'Mes anterior' }).click();
+    await expect(page.getByRole('heading', { name: /Rutina 1 · Histórica/ })).toBeVisible();
+    const days = page.getByRole('navigation', { name: 'Días de la rutina' });
+    await expect(days.getByRole('button', { name: /Rutina 2 · Histórica/ })).toBeVisible();
+    await capture('two-versions');
+    await page.locator('button[aria-expanded][aria-controls]').first().click();
+    const evolution = page.getByRole('region', { name: /Evolución semanal/ }).first();
+    // October 12–18 intersects both real assignments. Each saves a different context.
+    await evolution.getByRole('button', { name: 'Semana 3', exact: true }).click();
+    await expect(page.getByRole('textbox')).toBeEnabled(); await expect(page.getByRole('textbox')).toBeFocused();
+    await page.getByRole('textbox').fill('25');
+    await page.getByRole('button', { name: 'Guardar entrenamiento', exact: true }).click();
+    await expect(page.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
+    await days.getByRole('button', { name: /Rutina 2 · Histórica/ }).click();
+    await page.locator('button[aria-expanded][aria-controls]').first().click();
+    await evolution.getByRole('button', { name: 'Semana 3', exact: true }).click();
+    await expect(page.getByRole('textbox')).toHaveValue('');
+    await page.getByRole('textbox').fill('35');
+    await page.getByRole('button', { name: 'Guardar entrenamiento', exact: true }).click();
+    await expect(page.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
+    await capture('transition-saved');
+    await page.reload();
+    await page.getByRole('button', { name: 'Mes anterior' }).click();
+    await days.getByRole('button', { name: /Rutina 2 · Histórica/ }).click();
+    await page.locator('button[aria-expanded][aria-controls]').first().click();
+    await evolution.getByRole('button', { name: 'Semana 3', exact: true }).click();
+    await expect(page.getByRole('textbox')).toHaveValue('35');
+    await page.getByRole('button', { name: 'Mes anterior' }).click();
+    await expect(page.getByRole('heading', { name: /Rutina 1 · Histórica/ })).toBeVisible();
+    await expect(days.getByRole('button', { name: /Rutina 2/ })).toHaveCount(0);
+    await page.locator('button[aria-expanded][aria-controls]').first().click();
+    await evolution.getByRole('button', { name: 'Semana 1', exact: true }).click();
+    await expect(page.getByRole('textbox')).toBeEnabled(); await expect(page.getByRole('textbox')).toBeFocused();
+    await capture('historical-no-records');
+    await page.getByRole('textbox').fill('20');
+    await page.getByRole('button', { name: 'Guardar entrenamiento', exact: true }).click();
+    await expect(page.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
+    await page.getByRole('button', { name: 'Mes anterior' }).click();
+    await expect(page.getByRole('heading', { name: /Rutina 1 · Histórica/ })).toBeVisible();
+    await page.locator('button[aria-expanded][aria-controls]').first().click();
+    await evolution.getByRole('button', { name: 'Semana 1', exact: true }).click();
+    await expect(page.getByRole('textbox')).toBeEnabled(); await expect(page.getByRole('textbox')).toBeFocused();
+    await capture('before-first-assignment');
   } finally {
     execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts', 'cleanup', fixture.personId, fixture.professorId, fixture.planId, fixture.exerciseId], { cwd: '../..', stdio: 'pipe' });
   }

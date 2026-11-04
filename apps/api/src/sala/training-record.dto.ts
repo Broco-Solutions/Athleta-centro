@@ -90,7 +90,21 @@ export class TrainingContextRoutineDto {
   @ApiProperty({ type: String, format: 'date' }) createdOn!: string;
   @ApiProperty({ type: () => [TrainingContextDayDto] }) days!: TrainingContextDayDto[];
 }
+export class TrainingRoutineDayDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: String, nullable: true }) name!: string | null;
+  @ApiProperty({ type: Number }) position!: number;
+  @ApiProperty({ type: () => [TrainingExerciseSnapshotDto] }) exercises!: TrainingExerciseSnapshotDto[];
+}
+export class TrainingRoutineVersionDto {
+  @ApiProperty({ type: String }) id!: string;
+  @ApiProperty({ type: Number }) version!: number;
+  @ApiProperty({ enum: ['ACTIVE', 'HISTORICAL'] }) status!: 'ACTIVE' | 'HISTORICAL';
+  @ApiProperty({ type: String, format: 'date' }) createdOn!: string;
+  @ApiProperty({ type: () => [TrainingRoutineDayDto] }) days!: TrainingRoutineDayDto[];
+}
 export class TrainingContextDto {
+  @ApiProperty({ type: () => [TrainingRoutineVersionDto] }) routines!: TrainingRoutineVersionDto[];
   @ApiProperty({ type: String, format: 'date' }) today!: string;
   @ApiProperty({ type: () => TrainingContextRoutineDto, nullable: true }) routine!: TrainingContextRoutineDto | null;
 }

@@ -10,6 +10,7 @@ import { InternalUserService } from '../src/team/internal-user.service';
 import { SalaService } from '../src/sala/sala.service';
 import { TrainingRecordService, trainingOperationalDate } from '../src/sala/training-record.service';
 import { HealthDeclarationService } from '../src/sala/health-declaration/health-declaration.service';
+import type { CreateTrainingRecordDto } from '../src/sala/training-record.dto';
 import { AuthService } from '../src/auth/auth.service';
 
 describe('Sala training history (isolated PostgreSQL)', () => {
@@ -63,7 +64,7 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     const cookie = `athleta_portal_session=${token}`;
     return { person, participation, user, routine, a, b, body, csrf, cookie };
   }
-  function create(f: Awaited<ReturnType<typeof fixture>>, body = f.body) { return request(app.getHttpServer()).post('/api/portal/sala/training-records').set('Cookie', f.cookie).set('x-csrf-token', f.csrf).send(body); }
+  function create(f: Awaited<ReturnType<typeof fixture>>, body: CreateTrainingRecordDto = f.body) { return request(app.getHttpServer()).post('/api/portal/sala/training-records').set('Cookie', f.cookie).set('x-csrf-token', f.csrf).send(body); }
   async function internal(role: Role) {
     const user = await app.get(InternalUserService).create({ firstName: 'Lector', lastName: 'Sintético', email: `${randomUUID()}@training.test`, roles: [role] }); users.push(user.id);
     const auth = app.get(AuthService); await auth.provisionCredential(user.id, 'ValidPass1!');
@@ -83,6 +84,49 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     expect(corrected.exercises.map(e => e.weightKg)).toEqual(['45', '22', null]);
     expect(corrected.exercises[0]!.exerciseName).toBe(saved.body.data.exercises[0].exerciseName);
     expect(await prisma.salaTrainingRecord.count({ where: { personId: f.person.id } })).toBe(1);
+  });
+  it('recovers and repeatedly corrects a retrospective shared week without altering assignment or snapshots', async () => {
+    const f = await fixture();
+    const assigned = new Date('2026-11-03T12:00:00Z');
+    await prisma.routine.update({ where: { id: f.routine.id }, data: { createdAt: assigned } });
+    const saved = (await create(f, { ...f.body, date: '2026-10-26', allowFuture: true }).expect(201)).body.data;
+    expect((await training.listMonth(f.person.id, '2026-10'))[0]!.id).toBe(saved.id);
+    await create(f, { ...f.body, date: '2026-11-01', allowFuture: true }).expect(409);
+    for (const weight of ['45', '48']) {
+      const corrected = await training.correct(f.person.id, saved.id, { exercises: saved.exercises.map((e: { id: string; weightKg: string | null }, i: number) => ({ id: e.id, weightKg: i ? e.weightKg : weight })) });
+      expect(corrected).toEqual({ ...saved, updatedAt: corrected.updatedAt, exercises: saved.exercises.map((e: object, i: number) => i ? e : { ...e, weightKg: weight }) });
+    }
+    expect((await prisma.routine.findUniqueOrThrow({ where: { id: f.routine.id } })).createdAt).toEqual(assigned);
+    expect(await prisma.salaTrainingRecord.count({ where: { personId: f.person.id } })).toBe(1);
+  });
+  it('returns all owned versions without records and validates historical periods including midweek transitions', async () => {
+    const f = await fixture(), other = await fixture();
+    await prisma.routine.update({ where: { id: f.routine.id }, data: { createdAt: new Date('2026-09-01T12:00:00Z') } });
+    const second = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, days: [{ name: 'Segunda', exercises: [{ exerciseDefinitionId: f.b.id }] }] });
+    await prisma.routine.update({ where: { id: second.id }, data: { createdAt: new Date('2026-10-15T12:00:00Z') } });
+    const third = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, days: [{ name: 'Tercera', exercises: [{ exerciseDefinitionId: f.a.id }] }] });
+    await prisma.routine.update({ where: { id: third.id }, data: { createdAt: new Date('2026-11-01T12:00:00Z') } });
+    const response = await request(app.getHttpServer()).get('/api/portal/sala/training-context').set('Cookie', f.cookie).expect(200);
+    expect(response.body.data.routines.map((r: { id: string; version: number; createdOn: string }) => [r.id, r.version, r.createdOn])).toEqual([[f.routine.id, 1, '2026-09-01'], [second.id, 2, '2026-10-15'], [third.id, 3, '2026-11-01']]);
+    expect(response.body.data.routines[0]).not.toHaveProperty('personId');
+    expect(response.body.data.routines[0]).not.toHaveProperty('salaParticipationId');
+    expect(await prisma.salaTrainingRecord.count({ where: { personId: f.person.id } })).toBe(0);
+    const own = await request(app.getHttpServer()).get('/api/portal/sala/training-context').set('Cookie', other.cookie).expect(200);
+    expect(own.body.data.routines.map((r: { id: string }) => r.id)).toEqual([other.routine.id]);
+    await request(app.getHttpServer()).get(`/api/portal/sala/training-context?personId=${f.person.id}`).set('Cookie', other.cookie).expect(400);
+    const weekly = { ...f.body, allowFuture: true };
+    await create(f, { ...weekly, date: '2026-09-07' }).expect(201);
+    await create(f, { ...weekly, date: '2026-10-12' }).expect(201);
+    await create(f, { ...weekly, date: '2026-10-15' }).expect(400);
+    await create(f, { ...weekly, date: '2026-11-09' }).expect(400);
+    const body = { ...weekly, routineId: second.id, routineDayId: second.days[0]!.id, exercises: second.days[0]!.exercises.map(e => ({ id: e.id, weightKg: '35' })) };
+    await create(f, { ...body, date: '2026-10-14' }).expect(400);
+    await create(f, { ...body, date: '2026-10-15' }).expect(201);
+    await create(f, { ...body, date: '2026-11-01' }).expect(400);
+    await create(other, { ...body, date: '2026-10-15' }).expect(409);
+    const simultaneous = await Promise.all([create(f, { ...body, date: '2026-10-19' }), create(f, { ...body, date: '2026-10-20' })]);
+    expect(simultaneous.map(r => r.status).sort()).toEqual([201, 409]);
+    expect(await prisma.salaTrainingRecord.count({ where: { personId: f.person.id } })).toBe(4);
   });
   it('stores distinct decimal/null/zero weights and immutable prescriptions without changing Sala operations', async () => {
     const f = await fixture();
