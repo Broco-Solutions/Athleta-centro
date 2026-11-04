@@ -725,10 +725,12 @@ model RoutineTemplateExercise {
 }
 
 model Routine {
+  cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz(6)
   id                  String            @id @default(uuid()) @db.Uuid
   personId            String            @map("person_id") @db.Uuid
   salaParticipationId String            @map("sala_participation_id") @db.Uuid
   status              RoutineStatus
+  effectiveFrom       DateTime          @map("effective_from") @db.Date
   version             Int
   createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -736,6 +738,7 @@ model Routine {
   salaParticipation   SalaParticipation @relation(fields: [salaParticipationId], references: [id], onDelete: Restrict)
   days                RoutineDay[]
 
+  @@index([personId, effectiveFrom, version])
   @@unique([personId, version])
   @@index([salaParticipationId])
   @@map("routines")
@@ -1267,7 +1270,9 @@ model SalaTrainingRecord {
   personId String @map("person_id") @db.Uuid
   routineId String @map("routine_id") @db.Uuid
   routineDayId String @map("routine_day_id") @db.Uuid
-  date DateTime @db.Date
+  date DateTime? @db.Date
+  month String? @db.VarChar(7)
+  weekNumber Int? @map("week_number")
   dayName String? @map("day_name") @db.VarChar(120)
   dayPosition Int @map("day_position")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1276,6 +1281,7 @@ model SalaTrainingRecord {
   routine Routine @relation(fields: [routineId], references: [id], onDelete: Restrict)
   exercises SalaTrainingRecordExercise[]
 
+  @@unique([personId, routineId, routineDayId, month, weekNumber], map: "sala_training_records_monthly_key")
   @@unique([personId, date, routineDayId])
   @@index([personId, date, id])
   @@map("sala_training_records")

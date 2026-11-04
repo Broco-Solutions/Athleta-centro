@@ -1,18 +1,18 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { TrainingRecordHistory } from './training-record-history';
+import { MonthlyRoutineHistory, TrainingRecordHistory } from './training-record-history';
 import type { TrainingHistoryApi } from './training-record-api';
 
-export const savedTraining = { id: 'record', routineId: 'routine', routineDayId: 'day', date: '2026-10-26', dayName: 'Fuerza', dayPosition: 1, createdAt: '2026-10-26T10:00:00Z', updatedAt: '2026-10-26T10:00:00Z', exercises: [{ id: 'saved-entry', routineExerciseId: 'source', exerciseDefinitionId: 'definition', exerciseName: 'Press de banca', blockPosition: null, position: 1, series: '3', repetitions: '10', duration: null, load: '30 kg', rest: '60 s', notes: null, weightKg: '32.5' }, { id: 'saved-entry-2', routineExerciseId: 'source2', exerciseDefinitionId: 'definition2', exerciseName: 'Remo', blockPosition: null, position: 2, series: null, repetitions: null, duration: '30 s', load: null, rest: null, notes: null, weightKg: null }] };
-function renderHistory(editable = false) {
-  const api = { list: vi.fn<TrainingHistoryApi['list']>().mockResolvedValue({ data: [savedTraining], meta: { page: 1, pageSize: 1, total: 2, totalPages: 2 } }), detail: vi.fn<TrainingHistoryApi['detail']>().mockResolvedValue(savedTraining) };
+export const savedTraining = { id: 'record', routineId: 'routine', routineDayId: 'day', date: '2026-10-26', month: null, weekNumber: null, dayName: 'Fuerza', dayPosition: 1, createdAt: '2026-10-26T10:00:00Z', updatedAt: '2026-10-26T10:00:00Z', exercises: [{ id: 'saved-entry', routineExerciseId: 'source', exerciseDefinitionId: 'definition', exerciseName: 'Press de banca', blockPosition: null, position: 1, series: '3', repetitions: '10', duration: null, load: '30 kg', rest: '60 s', notes: null, weightKg: '32.5' }, { id: 'saved-entry-2', routineExerciseId: 'source2', exerciseDefinitionId: 'definition2', exerciseName: 'Remo', blockPosition: null, position: 2, series: null, repetitions: null, duration: '30 s', load: null, rest: null, notes: null, weightKg: null }] };
+function renderHistory(editable = false, record = savedTraining) {
+  const api = { list: vi.fn<TrainingHistoryApi['list']>().mockResolvedValue({ data: [record], meta: { page: 1, pageSize: 1, total: 2, totalPages: 2 } }), detail: vi.fn<TrainingHistoryApi['detail']>().mockResolvedValue(record) };
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TrainingRecordHistory api={api} queryKey={['training-test']} editable={editable}/></QueryClientProvider>);
   return api;
 }
 afterEach(cleanup);
 it('loads a paginated list, opens details only on demand and closes in place for staff', async () => {
-  const api = renderHistory(); await screen.findByText('26/10/2026'); expect(api.detail).not.toHaveBeenCalled();
+  const api = renderHistory(); await screen.findByText('Registro anterior · 26/10/2026'); expect(api.detail).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: /Ver detalle del/ }));
   expect(await screen.findByText('Press de banca')).toBeInTheDocument(); expect(api.detail).toHaveBeenCalledWith('record'); expect(screen.getByText('30 kg')).toBeInTheDocument(); expect(screen.getByText('32,5 kg')).toBeInTheDocument(); expect(screen.getByText('Sin registro')).toBeInTheDocument(); expect(screen.getByText('Tiempo 30 s')).toBeInTheDocument(); expect(screen.getByText('3 series · 10 rep. · Descanso 60 s')).toBeInTheDocument();
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument(); expect(screen.queryByText('Editar registro')).not.toBeInTheDocument();
@@ -31,4 +31,28 @@ it('renders grouping exclusively from the historical snapshot', async () => {
   expect(screen.queryByText(/Descanso/)).not.toBeInTheDocument(); expect(screen.getAllByText('Observación sintética')).toHaveLength(2);
   expect(screen.getByText('A1 — Press de banca')).toBeInTheDocument(); expect(screen.getByText('A2 — Remo')).toBeInTheDocument();
   expect(screen.getByText('32,5 kg')).toBeInTheDocument(); expect(screen.getByText('30 kg')).toBeInTheDocument();
+});
+
+it.each(['2026-10-19T12:00:00Z', '2026-10-26T12:00:00Z', '2026-11-03T12:00:00Z'])('shows a weekly period regardless of creation date %s', async createdAt => {
+  renderHistory(false, { ...savedTraining, createdAt });
+  expect(await screen.findByText('Registro anterior · 26/10/2026')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Ver detalle del período Registro anterior · 26/10/2026 — Fuerza' })).toBeInTheDocument();
+});
+
+it('labels monthly records without inventing a calendar range', async () => {
+  renderHistory(true, { ...savedTraining, date: null, month: '2026-11', weekNumber: 3 } as unknown as typeof savedTraining);
+  expect(await screen.findByText('noviembre de 2026 · Semana 3')).toBeInTheDocument();
+  expect(screen.queryByText(/26\/10/)).not.toBeInTheDocument();
+});
+
+it('separates retired occurrences while retaining all six historical weights', async () => {
+  const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0,7);
+  const saved = { ...savedTraining, date: null, month, weekNumber: 1 };
+  const api = { list: vi.fn(), detail: vi.fn(), month: vi.fn().mockResolvedValue([saved]) };
+  const routine = { id: saved.routineId, personId: 'person', salaParticipationId: 'participation', status: 'ACTIVE' as const, version: 3, effectiveFrom: month + '-01', effectiveUntil: null, days: [{ id: saved.routineDayId, position: 1, name: 'Fuerza', exercises: [{ id: 'new-occurrence', exerciseDefinitionId: 'catalog', exerciseName: 'Nuevo' }] }] };
+  render(<QueryClientProvider client={new QueryClient()}><MonthlyRoutineHistory routine={routine} api={api}/></QueryClientProvider>);
+  expect(await screen.findByText('Ejercicios retirados')).toBeInTheDocument();
+  expect(screen.getByText('Press de banca')).toBeInTheDocument();
+  expect(screen.getByText('32,5 kg')).toBeInTheDocument();
+  expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
 });

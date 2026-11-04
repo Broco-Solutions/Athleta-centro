@@ -144,7 +144,7 @@ describe('Portal Sala services from the current plan', () => {
     exerciseDefinitionIds.push(plank.id);
     const timed = { exerciseDefinitionId: plank.id, series: '3', duration: '45 s', rest: '30 s' };
     const repetitions = { exerciseDefinitionId: squat.id, series: '3', repetitions: '10', load: '40 kg', rest: '60 s', notes: 'Controlar técnica' };
-    const routine = await sala.replaceRoutine({ personId, salaParticipationId: f.participation.id, days: [
+    const routine = await sala.replaceRoutine({ effectiveFrom: '2026-10-16', personId, salaParticipationId: f.participation.id, days: [
       { name: 'Día 2', exercises: [timed] },
       { name: 'Día 1', exercises: [timed, repetitions] },
     ] });

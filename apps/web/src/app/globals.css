@@ -13,60 +13,47 @@ body { margin: 0; background: var(--background); color: var(--foreground); font-
 }
 
 @media print {
-  @page {
-    size: A4 portrait;
-    margin: 12mm;
-  }
+  @page { size: A4 portrait; margin: 12mm; }
+  @page athleta-routine { size: A4 landscape; margin: 8mm; }
 
-  body:has(> #athleta-routine-print-root) {
-    margin: 0;
-    background: white;
-  }
-
-  body:has(> #athleta-routine-print-root) > :not(#athleta-routine-print-root) {
-    display: none !important;
-  }
+  body:has(> #athleta-routine-print-root) { margin: 0; background: white; }
+  body:has(> #athleta-routine-print-root) > :not(#athleta-routine-print-root) { display: none !important; }
 
   #athleta-routine-print-root {
+    page: athleta-routine;
     display: block !important;
-    color: #171717;
+    color: #111;
     background: white;
     font-family: Arial, sans-serif;
-    font-size: 9pt;
-    line-height: 1.2;
+    font-size: 8.5pt;
+    line-height: 1.15;
     overflow-wrap: anywhere;
+    print-color-adjust: exact;
   }
 
-  #athleta-routine-print-root header {
-    border-bottom: 0.5pt solid #171717;
-    border-top: 3pt solid #FCCC05;
-    padding: 5pt 0;
-    margin-bottom: 6pt;
-  }
-
-  #athleta-routine-print-root h1 { font-size: 16pt; font-weight: bold; margin: 0; }
+  #athleta-routine-print-root header { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1pt solid #111; padding-bottom: 3pt; margin-bottom: 4pt; }
+  #athleta-routine-print-root h1 { font-size: 15pt; font-weight: bold; margin: 0; }
   #athleta-routine-print-root p { margin: 0; white-space: pre-wrap; }
-  #athleta-routine-print-root header p { font-weight: bold; margin-top: 2pt; }
-  #athleta-routine-print-root .routine-print-identification { margin-bottom: 7pt; }
-  #athleta-routine-print-root section { margin-bottom: 7pt; break-inside: auto; }
-  #athleta-routine-print-root h2 { font-size: 11pt; font-weight: bold; margin: 0 0 3pt; break-after: avoid; }
+  #athleta-routine-print-root header p { font-size: 11pt; font-weight: bold; }
+  #athleta-routine-print-root .routine-print-identification { display: flex; flex-wrap: wrap; gap: 4pt 12pt; margin-bottom: 4pt; }
+  #athleta-routine-print-root .routine-print-identification p { display: flex; gap: 3pt; min-width: 28mm; }
+  #athleta-routine-print-root .routine-print-identification .routine-print-wide { min-width: 65mm; }
+  #athleta-routine-print-root .routine-print-blank { display: inline-block; flex: 1; min-width: 20mm; border-bottom: 0.5pt solid #777; }
+  #athleta-routine-print-root .routine-print-legend { font-size: 8pt; margin-bottom: 4pt; }
+  #athleta-routine-print-root .routine-print-day-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4mm; align-items: start; margin-bottom: 4mm; break-inside: avoid; }
+  #athleta-routine-print-root .routine-print-days[data-columns="1"] .routine-print-day-row { grid-template-columns: minmax(0, 1fr); }
+  #athleta-routine-print-root .routine-print-days[data-columns="2"] .routine-print-day-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #athleta-routine-print-root section { min-width: 0; }
+  #athleta-routine-print-root h2 { font-size: 10pt; font-weight: bold; margin: 0; padding: 3pt; border: 0.5pt solid #444; background: #ddd; break-after: avoid; }
   #athleta-routine-print-root table { table-layout: fixed; width: 100%; border-collapse: collapse; break-inside: auto; }
-  #athleta-routine-print-root thead { display: table-header-group; }
+  #athleta-routine-print-root thead { display: table-header-group; break-after: avoid; }
   #athleta-routine-print-root tr { break-inside: avoid; }
   #athleta-routine-print-root th,
-  #athleta-routine-print-root td { border: 0.5pt solid #999; padding: 3pt; vertical-align: top; text-align: left; white-space: pre-wrap; }
-  #athleta-routine-print-root th { font-size: 8pt; font-weight: bold; }
-  #athleta-routine-print-root .routine-print-description { color: #555; font-size: 8pt; margin-top: 2pt; }
-}
-
-@media print {
-  #athleta-routine-print-root .routine-print-block h3 {
-    margin: 4mm 0 2mm;
-    font-size: 10pt;
-    text-transform: uppercase;
-    break-after: avoid;
-    page-break-after: avoid;
-  }
-  #athleta-routine-print-root .routine-print-block table { break-before: avoid; }
-  #athleta-routine-print-root .routine-print-block tr { break-inside: avoid; }
+  #athleta-routine-print-root td { border: 0.5pt solid #777; padding: 2pt; vertical-align: top; text-align: left; white-space: pre-wrap; }
+  #athleta-routine-print-root th { font-size: 7.5pt; font-weight: bold; }
+  #athleta-routine-print-root h3 { font-size: 8.5pt; font-weight: bold; margin: 0; }
+  #athleta-routine-print-root .routine-print-block-title { background: #eee; padding: 3pt; }
+  #athleta-routine-print-root .routine-print-prescription { width: 21mm; }
+  #athleta-routine-print-root .routine-print-week { width: 8mm; }
+  #athleta-routine-print-root .routine-print-weight { height: 6mm; background: white; }
 }

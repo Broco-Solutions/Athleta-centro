@@ -467,6 +467,24 @@ No debe existir un estado persistente válido con:
 
 para la misma Persona.
 
+
+La unicidad persistida `ACTIVE` identifica la última asignación; la vigencia se
+resuelve por `effectiveFrom` y `version`, incluyendo asignaciones futuras. Bajo
+el bloqueo de Persona, `ReplaceRoutine` valida que la nueva fecha no preceda la
+última asignada. No cambia `createdAt` ni las prescripciones anteriores.
+
+Los pesos admiten exactamente una de dos identidades (CHECK en PostgreSQL):
+
+- Anterior: `date` presente, `month` y `weekNumber` nulos.
+- Mensual: `date` nula, mes válido `YYYY-MM` y semana entera 1..6 presentes.
+
+Se conservan la unicidad anterior y el CHECK de peso no negativo. Una nueva
+unicidad protege Persona + rutina + día + mes + semana. El guardado de las seis
+semanas usa transacción serializable y bloqueo de Persona, conserva snapshots y
+registros vaciados, y no crea registros nuevos completamente vacíos. La migración
+no traduce fechas anteriores a semanas; únicamente deriva `effectiveFrom` de
+`createdAt` usando `America/Argentina/Buenos_Aires` para las rutinas preexistentes.
+
 ---
 
 ## 21. SalaPayment — renovación y cobertura
@@ -1956,3 +1974,21 @@ use both
 ```
 
 No sacrificar integridad por simplicidad de código, pero tampoco forzar dentro de SQL reglas contextuales que pertenecen al dominio.
+
+## Edición vigente y cancelación de programaciones (2026-11-04)
+
+Editar ejercicios vigentes agrega o retira ocurrencias sin crear versión ni
+cambiar ID, inicio o días. Los ejercicios conservados mantienen sus IDs e
+indicaciones. Los retirados conservan snapshots y pesos históricos; agregarlos
+otra vez crea otra identidad, con seis semanas vacías. Agregar ejercicios no
+reinicia el mes ni altera semanas previas. Una próxima programación independiente
+no bloquea la edición vigente ni recibe sus cambios.
+
+Las programaciones pueden cambiar fecha o cancelarse antes de comenzar. Su
+contenido solo puede cambiar si no tiene registros. La fecha debe mantener el
+orden y los períodos de los registros existentes. Cancelar establece
+`cancelledAt`, conserva el historial y excluye la versión de la vigencia;
+la anterior continúa hasta la siguiente asignación no cancelada. El enum
+persistido no cambia. La nueva versión usa el máximo histórico incluso tras
+cancelaciones. Todas las escrituras coordinan por bloqueo de Persona; los
+snapshots mensuales nuevos usan posiciones libres, sin borrar los retirados.

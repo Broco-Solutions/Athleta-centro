@@ -151,7 +151,7 @@ async function findBookingOption(options: { name: string }) {
   return waitFor(() => booking().getByRole('option', options));
 }
 
-const workspaceRoutine = { id: 'routine', personId, salaParticipationId: 'participation', status: 'ACTIVE', version: 1, days: [{ position: 1, name: 'Día de fuerza', exercises: [{ exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla' }, series: null }] }] };
+const workspaceRoutine = { id: 'routine', personId, salaParticipationId: 'participation', status: 'ACTIVE', version: 1, effectiveFrom: '2026-10-01', effectiveUntil: null, days: [{ position: 1, name: 'Día de fuerza', exercises: [{ exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla' }, series: null }] }] };
 function routineSession(permissions: string[], roles = ['PROFESSOR']) {
   server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor', firstName: 'Profesor', lastName: 'Sintético' }, roles, permissions, csrfToken: 'csrf', mustChangePassword: false } })));
 }
@@ -169,7 +169,7 @@ it('allows routine read permission to access the tab and see the routine without
   expect(await screen.findByRole('link', { name: 'Rutina' })).toHaveAttribute('href', `/sala/people/${personId}?tab=routine`);
   expect(await screen.findByText('Día de fuerza')).toBeInTheDocument();
   expect(screen.getByText('Sentadilla')).toBeInTheDocument(); expect(reads()).toBe(1);
-  for (const name of ['Crear desde cero', 'Crear rutina', 'Editar rutina', 'Usar nuevamente', 'Duplicar rutina']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  for (const name of ['Crear desde cero', 'Crear rutina', 'Asignar nueva rutina', 'Editar ejercicios', 'Usar nuevamente', 'Duplicar rutina']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
   expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument();
 });
 it.each(['summary', 'routine'])('hides routine access without read permission and avoids routine requests on %s', async (tab) => {
@@ -183,7 +183,7 @@ it('treats an Orval HTTP 409 as a mutation error and preserves the editor withou
   navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); const reads = routineHandlers();
   let writes = 0;
   server.use(http.post('http://localhost:3000/api/sala/routines', () => { writes++; return HttpResponse.json({ code: 'SALA_EXERCISE_INVALID', message: 'El ejercicio fue retirado.' }, { status: 409 }); }));
-  renderWorkspace(); await screen.findByText('Día de fuerza'); fireEvent.click(screen.getByRole('button', { name: 'Editar rutina' }));
+  renderWorkspace(); await screen.findByText('Día de fuerza'); fireEvent.click(screen.getByRole('button', { name: 'Asignar nueva rutina' }));
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('El ejercicio fue retirado.');
   expect(writes).toBe(1); expect(reads()).toBe(1);
@@ -193,7 +193,7 @@ it('treats an Orval HTTP 409 as a mutation error and preserves the editor withou
 it('uses existing exercise search in the student workspace without catalog administration', async () => {
   navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); routineHandlers();
   renderWorkspace(); await screen.findByText('Día de fuerza');
-  fireEvent.click(screen.getByRole('button', { name: 'Editar rutina' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Asignar nueva rutina' }));
   expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: '+ Crear nuevo ejercicio' })).not.toBeInTheDocument();
   const catalog = within(screen.getByRole('region', { name: 'Agregar ejercicios' }));
@@ -219,7 +219,7 @@ it.each([false, true])('uses the generated template list and routine replacement
   expect(screen.queryByRole('button', { name: 'Guardar cambios' })).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Asignar rutina' }));
   if (reject) { expect(await screen.findByRole('alert')).toHaveTextContent('Ejercicio retirado'); expect(screen.queryByText('Rutina asignada correctamente.')).not.toBeInTheDocument(); expect(reads()).toBe(1); }
   else { await screen.findByText('Rutina asignada correctamente.'); await waitFor(() => expect(reads()).toBe(2)); }
-  expect(templateReads).toBe(1); expect(writes).toEqual([{ personId, salaParticipationId: 'participation', days: [{ name: 'Modelo', exercises: [{ exerciseDefinitionId: 'squat', series: '4', repetitions: '10', duration: null, load: null, rest: null, notes: null }] }] }]);
+  expect(templateReads).toBe(1); expect(writes).toEqual([{ personId, salaParticipationId: 'participation', effectiveFrom: expect.any(String), days: [{ name: 'Modelo', exercises: [{ exerciseDefinitionId: 'squat', series: '4', repetitions: '10', duration: null, load: null, rest: null, notes: null }] }] }]);
 });
 
 it('integrates pure Professor student detail into Alumnos without the administrative Person link', async () => {

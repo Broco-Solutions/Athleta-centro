@@ -34,7 +34,7 @@ afterEach(() => { server.resetHandlers(); vi.restoreAllMocks(); });
 afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 function renderPortalHome(): void { render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><PortalHome /></QueryClientProvider>); }
 
-it('shows a routine summary and links to its read-only detail page', async () => {
+it('shows the routine summary with a single registration link', async () => {
   server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: {
     reservations: [], fixed: [], evaluations: [], replacementWeeks: availableWeeks(), validity: { hasValidAccess: true, validUntil: '2026-11-20' },
     routine: { days: [{ id: 'day-1', position: 1, name: null, exercises: [
@@ -44,12 +44,14 @@ it('shows a routine summary and links to its read-only detail page', async () =>
     ] }, { id: 'day-2', position: 2, name: 'Día 2', exercises: [{ exerciseDefinitionId: 'row', exerciseDefinition: { name: 'Remo', description: null }, series: '4', repetitions: '8' }] }] },
   } })));
   renderPortalHome();
-  await screen.findByRole('link', { name: 'Ver rutina' });
+  await screen.findByRole('link', { name: 'Registrar entrenamiento' });
   const routine = within(document.getElementById('rutina')!);
   expect(routine.getByRole('heading', { name: 'Mi rutina' })).toBeInTheDocument();
   expect(routine.getByText('2 días · 4 ejercicios')).toBeInTheDocument();
-  expect(routine.getByRole('link', { name: 'Registrar entrenamiento' })).toHaveAttribute('href', '/portal/sala/entrenamientos/registrar');
-  expect(routine.getByRole('link', { name: 'Ver rutina' })).toHaveAttribute('href', '/portal/sala/rutina');
+  expect(routine.getByRole('link', { name: 'Registrar entrenamiento' })).toHaveAttribute('href', '/portal/sala/rutina');
+  expect(routine.queryByRole('link', { name: 'Ver rutina' })).not.toBeInTheDocument();
+  expect(routine.getAllByRole('link')).toHaveLength(1);
+  expect(routine.getByRole('link', { name: 'Registrar entrenamiento' })).toHaveClass('bg-primary');
   expect(routine.queryByText('Sentadilla')).not.toBeInTheDocument();
   expect(routine.queryByText('Controlar técnica')).not.toBeInTheDocument();
   expect(routine.queryByRole('list')).not.toBeInTheDocument();

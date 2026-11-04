@@ -9,7 +9,7 @@ const navigation = vi.hoisted(() => ({ search: '' }));
 vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(navigation.search), usePathname: () => '/portal/sala/entrenamientos/registrar' }));
 const base = 'http://localhost:3000/api/portal';
 const entry = { id: 'entry-1', exerciseDefinitionId: 'press', exerciseName: 'Press', position: 1, series: '3', repetitions: '10', duration: null, load: '30 kg', rest: '60 s', notes: 'Controlado', lastWeightKg: '31.5' };
-const context = { today: '2026-10-26', routine: { id: 'routine', createdOn: '2026-10-20', days: [{ id: 'day-1', position: 1, name: 'Fuerza', exercises: [entry, { ...entry, id: 'entry-2', position: 2, lastWeightKg: null }] }, { id: 'day-2', position: 2, name: 'Movilidad', exercises: [{ ...entry, id: 'entry-3', exerciseName: 'Remo' }] }] } };
+const context = { today: '2026-10-26', routine: { id: 'routine', createdOn: '2026-10-20', effectiveFrom: '2026-10-20', days: [{ id: 'day-1', position: 1, name: 'Fuerza', exercises: [entry, { ...entry, id: 'entry-2', position: 2, lastWeightKg: null }] }, { id: 'day-2', position: 2, name: 'Movilidad', exercises: [{ ...entry, id: 'entry-3', exerciseName: 'Remo' }] }] } };
 const server = setupServer(); const nativeFetch = globalThis.fetch;
 beforeAll(() => { globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch; server.listen({ onUnhandledRequest: 'error' }); });
 beforeEach(() => { navigation.search = ''; server.use(http.get(`${base}/auth/session`, () => HttpResponse.json({ data: { csrfToken: 'csrf' } })), http.get(`${base}/sala/training-context`, () => HttpResponse.json({ data: context }))); });
@@ -54,8 +54,8 @@ it('validates an empty training and invalid/negative weights without sending the
 });
 it('corrects historical snapshot weights even with no active routine, preserving the original date and entries', async () => {
   navigation.search = 'recordId=old'; let payload: unknown;
-  server.use(http.get(`${base}/sala/training-records/old`, () => HttpResponse.json({ data: { id: 'old', date: '2026-09-15', dayName: 'Fuerza anterior', dayPosition: 1, exercises: [{ ...entry, id: 'saved-entry', exerciseName: 'Press anterior', weightKg: '32.5', load: '25 kg' }] } })), http.post(`${base}/sala/training-records/old/correct`, async ({ request }) => { payload = await request.json(); return HttpResponse.json({ data: {} }); }));
-  renderPage(); expect(await screen.findByText('15/09/2026 — Fuerza anterior')).toBeInTheDocument(); expect(screen.getByText('Press anterior')).toBeInTheDocument(); expect(screen.getByText('25 kg')).toBeInTheDocument();
+  server.use(http.get(`${base}/sala/training-records/old`, () => HttpResponse.json({ data: { id: 'old', date: '2026-09-15', month: null, weekNumber: null, dayName: 'Fuerza anterior', dayPosition: 1, exercises: [{ ...entry, id: 'saved-entry', exerciseName: 'Press anterior', weightKg: '32.5', load: '25 kg' }] } })), http.post(`${base}/sala/training-records/old/correct`, async ({ request }) => { payload = await request.json(); return HttpResponse.json({ data: {} }); }));
+  renderPage(); expect(await screen.findByText('Registro anterior · 15/09/2026 — Fuerza anterior')).toBeInTheDocument(); expect(screen.getByText('Press anterior')).toBeInTheDocument(); expect(screen.getByText('25 kg')).toBeInTheDocument();
   expect(weights()[0]).toHaveValue('32,5'); expect(screen.queryByLabelText('Fecha del entrenamiento')).not.toBeInTheDocument();
   fireEvent.change(weights()[0]!, { target: { value: '34' } }); fireEvent.click(screen.getByRole('button', { name: 'Guardar corrección' }));
   await screen.findByText('Entrenamiento guardado correctamente.'); expect(payload).toEqual({ exercises: [{ id: 'saved-entry', weightKg: '34' }] });
@@ -80,4 +80,13 @@ it('shows blocks without changing form order or exercise IDs in the weight paylo
   fireEvent.click(screen.getByRole('button', { name: 'Guardar entrenamiento' })); await screen.findByText('Entrenamiento guardado correctamente.');
   expect(payload).toEqual({ routineId: 'routine', routineDayId: 'day-1', date: '2026-10-26', exercises: [{ id: 'b', weightKg: '32.5' }, { id: 'a', weightKg: '22' }, { id: 'c', weightKg: null }] });
   expect(screen.queryByRole('button', { name: 'Imprimir / PDF' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Eliminar bloque' })).not.toBeInTheDocument();
+});
+
+it('corrects a monthly record by saved entry ID without formatting a null date', async () => {
+  navigation.search = 'recordId=monthly'; let payload: unknown;
+  server.use(http.get(`${base}/sala/training-records/monthly`, () => HttpResponse.json({ data: { id: 'monthly', date: null, month: '2026-11', weekNumber: 3, dayName: 'Fuerza', dayPosition: 1, exercises: [{ ...entry, id: 'monthly-entry', weightKg: '40' }] } })), http.post(`${base}/sala/training-records/monthly/correct`, async ({ request }) => { payload = await request.json(); return HttpResponse.json({ data: {} }); }));
+  renderPage(); await screen.findByText('noviembre de 2026 · Semana 3 — Fuerza');
+  fireEvent.change(screen.getByLabelText(/Peso utilizado/), { target: { value: '47,5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar corrección' })); await screen.findByText('Entrenamiento guardado correctamente.');
+  expect(payload).toEqual({ exercises: [{ id: 'monthly-entry', weightKg: '47.5' }] });
 });

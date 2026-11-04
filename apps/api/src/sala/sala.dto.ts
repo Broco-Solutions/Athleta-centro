@@ -1,3 +1,4 @@
+import { PartialType } from '@nestjs/swagger';
 import { CreatePersonDto, PersonResponseDto } from '../people/person.dto';
 import { Type } from 'class-transformer';
 import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Max, Min, MinLength, ValidateNested } from 'class-validator';
@@ -126,6 +127,20 @@ export class RoutineExerciseDto {
   @ApiPropertyOptional({ type: String, maxLength: 80, nullable: true }) @IsOptional() @IsString() @MaxLength(80) rest?: string | null;
   @ApiPropertyOptional({ type: String, maxLength: 500, nullable: true }) @IsOptional() @IsString() @MaxLength(500) notes?: string | null;
 }
+export class ActiveRoutineExerciseDto extends PartialType(RoutineExerciseDto) {
+  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() id?: string;
+}
+export class ActiveRoutineDayDto {
+  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() id!: string;
+  @ApiProperty({ type: () => [ActiveRoutineExerciseDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => ActiveRoutineExerciseDto) exercises!: ActiveRoutineExerciseDto[];
+}
+export class UpdateActiveRoutineExercisesDto {
+  @ApiProperty({ type: () => [ActiveRoutineDayDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => ActiveRoutineDayDto) days!: ActiveRoutineDayDto[];
+}
+export class UpdateScheduledRoutineDto {
+  @ApiProperty({ type: String, format: 'date' }) @Matches(/^(?!0000)\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) effectiveFrom!: string;
+  @ApiPropertyOptional({ type: () => [RoutineDayDto] }) @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => RoutineDayDto) days?: RoutineDayDto[];
+}
 export class RoutineDayDto {
   @ApiPropertyOptional({ type: String, maxLength: 120, nullable: true }) @IsOptional() @IsString() @MaxLength(120) name?: string | null;
   @ApiProperty({ type: () => [RoutineExerciseDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RoutineExerciseDto) exercises!: RoutineExerciseDto[];
@@ -134,7 +149,10 @@ export class RoutineTemplateDto {
   @ApiProperty({ type: String, maxLength: 120 }) @IsString() @MinLength(1) @MaxLength(120) name!: string;
   @ApiProperty({ type: () => [RoutineDayDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RoutineDayDto) days!: RoutineDayDto[];
 }
-export class ReplaceRoutineDto {
+export class DuplicateRoutineDto {
+  @ApiPropertyOptional({ type: String, format: 'date' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) effectiveFrom?: string;
+}
+export class ReplaceRoutineDto extends DuplicateRoutineDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string;
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() salaParticipationId!: string;
   @ApiProperty({ type: () => [RoutineDayDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RoutineDayDto) days!: RoutineDayDto[];
@@ -301,10 +319,14 @@ export class RoutineTemplateListEnvelopeDto {
   @ApiProperty({ type: () => [RoutineTemplateResponseDto] }) data!: RoutineTemplateResponseDto[];
 }
 export class SalaRoutineResponseDto {
+  @ApiPropertyOptional({ type: String, nullable: true }) cancelledAt?: string | null;
+  @ApiPropertyOptional({ type: Boolean }) hasTrainingRecords?: boolean;
   @ApiProperty({ type: String }) id!: string;
   @ApiProperty({ type: String }) personId!: string;
   @ApiProperty({ type: String }) salaParticipationId!: string;
-  @ApiProperty({ type: String, enum: ['ACTIVE', 'HISTORICAL'] }) status!: 'ACTIVE' | 'HISTORICAL';
+  @ApiProperty({ type: String, enum: ['ACTIVE', 'HISTORICAL', 'SCHEDULED'] }) status!: 'ACTIVE' | 'HISTORICAL' | 'SCHEDULED';
+  @ApiProperty({ type: String, format: 'date' }) effectiveFrom!: string;
+  @ApiProperty({ type: String, format: 'date', nullable: true }) effectiveUntil!: string | null;
   @ApiProperty({ type: Number }) version!: number;
   @ApiProperty({ type: String }) createdAt!: string;
   @ApiProperty({ type: () => [RoutineDayResponseDto] }) days!: RoutineDayResponseDto[];

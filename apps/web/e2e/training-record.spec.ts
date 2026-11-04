@@ -1,75 +1,152 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
-import type { Page } from '@playwright/test';
 
-// Capture rendered, synthetic UI for offline visual inspection after the isolated runner stops.
-async function captureMarkup(page: Page, name: string) {
-  const markup = await page.evaluate(async () => {
-    const clone = document.documentElement.cloneNode(true) as HTMLElement;
-    clone.querySelectorAll('script, link, nextjs-portal').forEach(element => element.remove());
-    const css = [...document.styleSheets].flatMap(sheet => { try { return [...sheet.cssRules].map(rule => rule.cssText); } catch { return []; } }).join('\n');
-    const style = document.createElement('style'); style.textContent = css; clone.querySelector('head')!.append(style);
-    for (const img of clone.querySelectorAll('img')) {
-      const source = await fetch(img.src).then(response => response.blob());
-      img.removeAttribute('srcset');
-      img.src = await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsDataURL(source); });
-    }
-    return '<!doctype html>' + clone.outerHTML;
-  });
-  writeFileSync(`/tmp/athleta-training-${name}.html`, markup);
+type Fixture = { personId: string; professorId: string; planId: string; exerciseId: string; dni: string; email: string };
+function fixture(history = false): Fixture {
+  return JSON.parse(execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts', ...(history ? ['history'] : [])], { cwd: '../..', encoding: 'utf8' }).trim()) as Fixture;
+}
+function cleanup(f: Fixture) {
+  execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts', 'cleanup', f.personId, f.professorId, f.planId, f.exerciseId], { cwd: '../..', stdio: 'pipe' });
+}
+async function login(page: Page, f: Fixture) {
+  await page.goto('/portal/login'); await page.getByLabel('DNI', { exact: true }).fill(f.dni); await page.getByLabel('PIN', { exact: true }).fill('1111'); await page.getByRole('button', { name: 'Ingresar', exact: true }).click(); await expect(page).toHaveURL('/portal');
+  await page.goto('/portal/sala/rutina');
+}
+async function capture(page: Page, state: string) {
+  for (const width of [1440, 768, 390, 360]) {
+    await page.setViewportSize({ width, height: 900 });
+    // Responsive shell and fonts settle before measuring the document.
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: `/tmp/athleta-monthly-${state}-${width}.png`, fullPage: true });
+  }
 }
 
-
-test('student records and corrects weights; professor reads the saved history in the routine workspace', async ({ page, browser }) => {
-  test.setTimeout(120000);
-  const fixture = JSON.parse(execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts'], { cwd: '../..', encoding: 'utf8' }).trim()) as { personId: string; professorId: string; planId: string; exerciseId: string; dni: string; email: string };
+test('monthly Portal save, repeated correction, retrospective months and read-only Management', async ({ page, browser }) => {
+  test.setTimeout(180000); const f = fixture();
   try {
+    await page.setViewportSize({ width: 390, height: 844 }); await login(page, f);
+    const cards = page.locator('button[aria-expanded][aria-controls]');
+    await expect(cards).toHaveCount(2); await expect(cards.first()).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByRole('region', { name: 'Períodos de rutina' })).toHaveCount(0);
+    await capture(page, 'one-routine-closed');
+    await cards.first().click(); await expect(page.getByRole('textbox')).toHaveCount(6);
+    await capture(page, 'six-empty');
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/portal/login');
-    await page.getByLabel('DNI', { exact: true }).fill(fixture.dni); await page.getByLabel('PIN', { exact: true }).fill('1111');
-    await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
-    await expect(page.getByRole('link', { name: 'Registrar entrenamiento', exact: true })).toBeVisible();
-    await page.getByRole('link', { name: 'Ver rutina', exact: true }).click();
-    await page.getByRole('link', { name: 'Registrar este día: Fuerza', exact: true }).click();
-    await expect(page.getByLabel('Día de la rutina').locator('option:checked')).toHaveText('Fuerza');
-    const weights = page.getByLabel(/Peso utilizado/); await expect(weights).toHaveCount(2);
-    await expect(weights.first()).toHaveValue(''); await weights.first().fill('32,5');
-    for (const width of [1440, 768, 390]) {
-      await page.setViewportSize({ width, height: 900 });
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      await page.screenshot({ path: `/tmp/athleta-training-form-${width}.png`, fullPage: true });
-      if (width === 1440) await captureMarkup(page, 'form');
-    }
-    await page.getByRole('button', { name: 'Guardar entrenamiento', exact: true }).click();
-    await expect(page.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
-    await page.getByRole('link', { name: 'Ver mi historial' }).click();
-    await page.getByRole('button', { name: /Ver detalle del/ }).click();
-    await expect(page.getByText('32,5 kg', { exact: true })).toBeVisible(); await expect(page.getByText('Sin registro', { exact: true })).toBeVisible();
-    await page.getByRole('link', { name: 'Editar registro' }).click(); await page.getByLabel(/Peso utilizado/).first().fill('34,5');
-    await page.getByRole('button', { name: 'Guardar corrección' }).click(); await expect(page.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
-    const staff = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
-    const teacher = await staff.newPage();
+    await page.getByRole('textbox').nth(1).fill('42,5'); await page.getByRole('textbox').nth(5).fill('0');
+    await cards.last().click(); await page.getByRole('textbox').nth(6).fill('60');
+    page.once('dialog', dialog => dialog.dismiss()); await page.getByRole('button', { name: 'Mes anterior', exact: true }).click(); await expect(page.getByRole('textbox').nth(1)).toHaveValue('42,5');
+    const requests: string[] = []; page.on('request', req => { if (req.method() === 'PUT' && req.url().endsWith('/training-records/monthly')) requests.push(req.url()); });
+    const save = page.getByRole('button', { name: 'Guardar pesos', exact: true }); await expect(save).toHaveCount(1);
+    await expect(save).toBeInViewport();
+    const days = page.getByRole('navigation', { name: 'Días de la rutina' }); await expect(days).toBeInViewport();
+    expect((await save.boundingBox())!.y + (await save.boundingBox())!.height).toBeLessThanOrEqual((await days.boundingBox())!.y);
+    await page.screenshot({ path: '/tmp/athleta-monthly-mobile-save-390.png', fullPage: true });
+    await page.setViewportSize({ width: 390, height: 460 });
+    await page.getByRole('textbox').nth(1).focus();
+    await expect(page.getByRole('textbox').nth(1)).toBeInViewport();
+    expect((await page.getByRole('textbox').nth(1).boundingBox())!.y + (await page.getByRole('textbox').nth(1).boundingBox())!.height).toBeLessThanOrEqual((await save.boundingBox())!.y);
+    await page.screenshot({ path: '/tmp/athleta-monthly-keyboard-viewport-390.png' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await save.click(); await expect(page.getByText('Pesos guardados correctamente.')).toBeVisible(); expect(requests).toHaveLength(1);
+    await expect(cards.first()).toHaveAttribute('aria-expanded', 'true'); await expect(page.getByRole('textbox').nth(1)).toHaveValue('42,5');
+    await capture(page, 'saved-weights');
+    await page.reload(); await cards.first().click(); await expect(page.getByRole('textbox').nth(1)).toHaveValue('42,5');
+    await page.getByRole('textbox').nth(1).fill('47,5'); await page.getByRole('button', { name: 'Guardar pesos', exact: true }).click(); await expect(page.getByText('Pesos guardados correctamente.')).toBeVisible();
+    await page.getByRole('button', { name: 'Mes siguiente', exact: true }).click(); await cards.first().click(); await expect(page.getByRole('textbox').nth(1)).toHaveValue('');
+    await page.getByRole('button', { name: 'Mes anterior', exact: true }).click(); await cards.first().click(); await expect(page.getByRole('textbox').nth(1)).toHaveValue('47,5');
+    await page.getByRole('button', { name: 'Mes anterior', exact: true }).click(); await expect(page.getByText('Carga de historial anterior')).toBeVisible(); await cards.first().click();
+    await page.getByRole('textbox').first().fill('27,5'); await page.getByRole('button', { name: 'Guardar pesos', exact: true }).click(); await expect(page.getByText('Pesos guardados correctamente.')).toBeVisible();
+    await page.getByRole('link', { name: 'Mis entrenamientos', exact: true }).click(); await page.getByRole('button', { name: /Ver detalle del/ }).first().click(); await page.getByRole('link', { name: 'Editar registro' }).click();
+    await expect(page.getByRole('heading', { name: 'Editar registro', exact: true })).toBeVisible(); await expect(page.locator('p.font-medium').filter({ hasText: /Semana \d — Fuerza/ })).toBeVisible(); await expect(page.getByLabel(/Peso utilizado/).first()).toHaveValue('27,5');
+    await page.getByLabel(/Peso utilizado/).first().fill('28,5'); await page.getByRole('button', { name: 'Guardar corrección' }).click(); await expect(page.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
+    const staff = await browser.newContext({ viewport: { width: 1440, height: 1000 } }); const teacher = await staff.newPage();
     try {
-      await teacher.goto('/login'); await teacher.getByLabel('Email').fill(fixture.email); await teacher.getByLabel('Contraseña').fill('Synthetic-test-password1!'); await teacher.getByRole('button', { name: 'Ingresar', exact: true }).click();
-      await expect(teacher).toHaveURL('/');
-      await teacher.goto(`/sala/people/${fixture.personId}?tab=routine`);
-      await expect(teacher.getByRole('heading', { name: 'Historial de entrenamientos' })).toBeVisible();
-      await teacher.getByRole('button', { name: /Ver detalle del/ }).click();
-      await expect(teacher.getByText('34,5 kg', { exact: true })).toBeVisible();
-      await expect(teacher.getByRole('link', { name: 'Editar registro' })).toHaveCount(0);
-      await expect(teacher.getByLabel(/Peso utilizado/)).toHaveCount(0);
-      for (const width of [1440, 768, 390]) {
-        await teacher.setViewportSize({ width, height: 1000 });
-        await expect.poll(() => teacher.locator('main').evaluate(element => getComputedStyle(element).marginLeft)).toBe(width >= 768 ? '240px' : '0px');
-        await teacher.screenshot({ path: `/tmp/athleta-training-professor-${width}.png`, fullPage: true });
-        if (width === 1440) await captureMarkup(teacher, 'professor');
-        const overflow = await teacher.evaluate(() => [...document.querySelectorAll('main *')].filter(element => element.getBoundingClientRect().right > window.innerWidth + 1).map(element => ({ tag: element.tagName, className: element.className, width: element.getBoundingClientRect().width, text: element.textContent?.slice(0, 45) })));
-        expect(await teacher.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `Overflow at ${width}px: ${JSON.stringify(overflow)}`).toBe(true);
-      }
-      await teacher.getByRole('button', { name: /Cerrar detalle del/ }).click(); await expect(teacher.getByText('34,5 kg', { exact: true })).toHaveCount(0);
+      await teacher.goto('/login'); await teacher.getByLabel('Email').fill(f.email); await teacher.getByLabel('Contraseña', { exact: true }).fill('Synthetic-test-password1!'); await teacher.getByRole('button', { name: 'Ingresar', exact: true }).click(); await expect(teacher).toHaveURL('/');
+      await teacher.goto(`/sala/people/${f.personId}?tab=routine`); await expect(teacher.getByText('Rutina 1', { exact: true })).toBeVisible();
+      await teacher.getByRole('button', { name: 'Ver pesos' }).click(); await expect(teacher.getByText('47,5 kg', { exact: true })).toBeVisible(); await expect(teacher.getByText('60 kg', { exact: true })).toBeVisible();
+      await expect(teacher.getByRole('textbox')).toHaveCount(0); await expect(teacher.getByRole('link', { name: 'Editar registro' })).toHaveCount(0);
+      await capture(teacher, 'management-weights');
+      // Assign a same-day replacement, then reuse the historical version for a future date.
+      await teacher.getByRole('button', { name: 'Asignar nueva rutina', exact: true }).click(); await teacher.getByRole('button', { name: 'Guardar cambios', exact: true }).click(); await expect(teacher.getByText('Rutina asignada correctamente.')).toBeVisible();
+      await teacher.getByText('Rutinas históricas (1)', { exact: true }).click();
+      await teacher.getByRole('button', { name: 'Usar nuevamente', exact: true }).click();
+      await teacher.getByLabel('Fecha de inicio').fill('2099-12-01'); await teacher.getByRole('alertdialog').getByRole('button', { name: 'Usar nuevamente', exact: true }).click(); await expect(teacher.getByText('Rutina programada desde el 01/12/2099.')).toBeVisible();
+      await expect(teacher.getByText('Vigente', { exact: true })).toBeVisible(); await expect(teacher.getByText('Comienza el 01/12/2099')).toBeVisible();
+      await capture(teacher, 'management-current-history-scheduled');
+      // Same-day replaced routine is absent from the Portal day bar; saved weights stay in history.
+      await page.goto('/portal/sala/rutina'); await expect(page.getByRole('heading', { name: 'Rutina 2 · Período vigente' })).toBeVisible(); await expect(page.getByRole('region', { name: 'Períodos de rutina' })).toHaveCount(0);
+      await expect(page.getByRole('navigation', { name: 'Días de la rutina' }).getByRole('button')).toHaveCount(2);
     } finally { await staff.close(); }
-  } finally {
-    execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts', 'cleanup', fixture.personId, fixture.professorId, fixture.planId, fixture.exerciseId], { cwd: '../..', stdio: 'pipe' });
-  }
+  } finally { cleanup(f); }
+});
+
+test('two periods have separate days and monthly slots, and select the routine for the backend date', async ({ page }) => {
+  test.setTimeout(180000); const f = fixture(true);
+  try {
+    await login(page, f);
+    await page.getByRole('button', { name: 'Mes anterior', exact: true }).click();
+    const periods = page.getByRole('region', { name: 'Períodos de rutina' }); await expect(periods.getByRole('button')).toHaveCount(2);
+    await expect(page.getByRole('heading', { name: 'Versión 2', exact: true })).toBeVisible();
+    await capture(page, 'two-periods-latest');
+    const cards = page.locator('button[aria-expanded][aria-controls]'); await cards.first().click(); await expect(page.getByRole('textbox')).toHaveCount(6); await page.getByRole('textbox').nth(3).fill('35'); await page.getByRole('button', { name: 'Guardar pesos', exact: true }).click(); await expect(page.getByText('Pesos guardados correctamente.')).toBeVisible();
+    await periods.getByRole('button', { name: /Rutina 1$/ }).click();
+    const days = page.getByRole('navigation', { name: 'Días de la rutina' }); await expect(days.getByRole('button')).toHaveCount(2); await expect(days).not.toContainText('Versión 2');
+    await cards.first().click(); await expect(page.getByRole('textbox')).toHaveCount(6); await expect(page.getByRole('textbox').nth(3)).toHaveValue('');
+    await page.getByRole('textbox').nth(3).fill('25'); await page.getByRole('button', { name: 'Guardar pesos', exact: true }).click(); await expect(page.getByText('Pesos guardados correctamente.')).toBeVisible(); await capture(page, 'two-periods-historical-manual');
+    await periods.getByRole('button', { name: /Rutina 2$/ }).click(); await cards.first().click(); await expect(page.getByRole('textbox').nth(3)).toHaveValue('35');
+    for (const [today, heading] of [['2026-10-03', 'Fuerza'], ['2026-10-16', 'Versión 2']]) {
+      await page.route('**/api/portal/sala/training-context*', async route => { const response = await route.fetch(); const body = await response.json(); body.data.today = today; await route.fulfill({ response, json: body }); });
+      await page.reload(); await expect(page.getByRole('heading', { name: heading!, exact: true })).toBeVisible(); await capture(page, `automatic-${today}`); await page.unroute('**/api/portal/sala/training-context*');
+    }
+  } finally { cleanup(f); }
+});
+
+test('edits current exercises with a future routine and preserves monthly weights', async ({ page, browser }) => {
+  test.setTimeout(180000);
+  const f = fixture();
+  const staff = await browser.newContext();
+  try {
+    await login(page, f);
+    const cards = page.locator('button[aria-expanded][aria-controls]');
+    await cards.first().click();
+    await page.getByRole('textbox').first().fill('40');
+    await cards.last().click();
+    await page.getByRole('textbox').nth(6).fill('60');
+    await page.getByRole('button', { name: 'Guardar pesos', exact: true }).click();
+    await expect(page.getByText('Pesos guardados correctamente.')).toBeVisible();
+    const teacher = await staff.newPage();
+    await teacher.goto('/login');
+    await teacher.getByLabel('Email').fill(f.email);
+    await teacher.getByLabel('Contraseña', { exact: true }).fill('Synthetic-test-password1!');
+    await teacher.getByRole('button', { name: 'Ingresar', exact: true }).click();
+    await expect(teacher).toHaveURL('/');
+    await teacher.goto('/sala/people/' + f.personId + '?tab=routine');
+    await teacher.getByRole('button', { name: 'Asignar nueva rutina', exact: true }).click();
+    await teacher.getByLabel('Fecha de inicio').fill('2099-12-01');
+    await teacher.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
+    await expect(teacher.getByText('Rutina programada desde el 01/12/2099.')).toBeVisible();
+    await teacher.getByRole('button', { name: 'Editar ejercicios', exact: true }).click();
+    const editor = teacher.getByRole('region', { name: 'Editar ejercicios', exact: true });
+    await expect(editor.getByLabel('Fecha de inicio')).toHaveCount(0);
+    await editor.getByRole('button', { name: 'Quitar', exact: true }).nth(1).click();
+    await editor.getByRole('button', { name: /^\+ Agregar ejercicio/ }).first().click();
+    await editor.getByRole('button', { name: /^Agregar / }).first().click();
+    await capture(teacher, 'active-exercises-editor');
+    await editor.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
+    await expect(teacher.getByText('Ejercicios actualizados correctamente. Los pesos registrados se conservaron.')).toBeVisible();
+    await expect(teacher.getByText('Comienza el 01/12/2099')).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Rutina 1 · Período vigente' })).toBeVisible();
+    await cards.first().click();
+    await expect(page.getByRole('textbox').first()).toHaveValue('40');
+    await cards.last().click();
+    await expect(page.getByRole('textbox').nth(6)).toHaveValue('');
+    await page.getByRole('textbox').nth(6).fill('25');
+    await page.getByRole('button', { name: 'Guardar pesos', exact: true }).click();
+    await expect(page.getByText('Pesos guardados correctamente.')).toBeVisible();
+    await teacher.getByRole('button', { name: 'Ver pesos', exact: true }).first().click();
+    await expect(teacher.getByText('Ejercicios retirados')).toBeVisible();
+    await expect(teacher.getByText('60 kg', { exact: true })).toBeVisible();
+    await capture(teacher, 'retired-exercise-history');
+  } finally { await staff.close(); cleanup(f); }
 });

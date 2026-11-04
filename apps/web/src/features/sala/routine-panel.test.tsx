@@ -8,7 +8,7 @@ const definitions = [
   { id: 'plank', name: 'Plancha', primaryMuscle: 'Core', isActive: true },
 ];
 const routine: Routine = {
-  id: 'routine', personId: 'person', salaParticipationId: 'participation', status: 'ACTIVE', version: 2,
+  id: 'routine', personId: 'person', salaParticipationId: 'participation', status: 'ACTIVE', version: 2, effectiveFrom: '2026-10-01', effectiveUntil: null,
   days: [
     { position: 1, name: 'Fuerza', exercises: [{ exerciseDefinitionId: 'squat', series: '4', repetitions: '10', load: '40 kg', rest: '30 s', notes: 'Controlar técnica' }] },
     { position: 2, name: 'Core', exercises: [{ exerciseDefinitionId: 'plank', series: null, duration: '45 s' }] },
@@ -16,6 +16,7 @@ const routine: Routine = {
 };
 function renderPanel(rows: Routine[] = [routine], canManage = true, catalog: RoutineApi['exercises'] = async () => definitions) {
   const api = {
+    updateActiveExercises: vi.fn().mockResolvedValue({}), updateScheduled: vi.fn().mockResolvedValue({}), cancelScheduled: vi.fn().mockResolvedValue({}),
     training: { list: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }), detail: vi.fn() },
     list: vi.fn<RoutineApi['list']>().mockResolvedValue(rows), exercises: vi.fn<RoutineApi['exercises']>().mockImplementation(catalog), patterns: vi.fn<RoutineApi['patterns']>().mockResolvedValue([{ id: 'push', name: 'Empuje' }]),
     templates: vi.fn<RoutineApi['templates']>().mockResolvedValue([]),
@@ -23,7 +24,7 @@ function renderPanel(rows: Routine[] = [routine], canManage = true, catalog: Rou
     duplicate: vi.fn<RoutineApi['duplicate']>().mockResolvedValue({}),
   };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(<QueryClientProvider client={client}><RoutinePanel personName="Alumno Prueba" personId="person" participationId="participation" csrfToken="csrf" api={api} canManage={canManage}/></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><RoutinePanel printPerson={{ birthDate: "2000-01-01", sport: "Hockey" }} printParticipations={[{ id: "participation", objective: "Fuerza general" }, { id: "old-participation", objective: "Objetivo anterior" }]} personName="Alumno Prueba" personId="person" participationId="participation" csrfToken="csrf" api={api} canManage={canManage}/></QueryClientProvider>);
   return { api, client };
 }
 afterEach(cleanup);
@@ -62,8 +63,8 @@ it('paginates the student routine exercise picker and preserves the edited day w
   expect(day(1).getByLabelText('Series del bloque A')).toHaveTextContent('3');
 });
 async function startEditing() {
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Editar rutina' })).toBeEnabled());
-  fireEvent.click(screen.getByRole('button', { name: 'Editar rutina' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Asignar nueva rutina' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Asignar nueva rutina' }));
   await screen.findByRole('region', { name: 'Agregar ejercicios' });
 }
 function day(index: number) { fireEvent.click(screen.getByRole('button', { name: new RegExp(`^Día ${index}:`) })); return within(screen.getByRole('group', { name: `Día ${index}` })); }
@@ -113,8 +114,8 @@ it('mounts only the active day, retains inline changes and saves every day in or
   fireEvent.click(screen.getByRole('button', { name: '+ Agregar día' }));
   change(day(3), 'Nombre del día 3', 'Movilidad'); await add(day(3), 'plank');
   expect(api.replace).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' })); await screen.findByText('Rutina guardada correctamente.');
-  expect(api.replace).toHaveBeenCalledWith('routine', { personId: 'person', salaParticipationId: 'participation', days: [
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' })); await screen.findByText('Rutina asignada correctamente.');
+  expect(api.replace).toHaveBeenCalledWith('routine', { personId: 'person', salaParticipationId: 'participation', effectiveFrom: expect.any(String), days: [
     { name: 'Fuerza', exercises: [
       { exerciseDefinitionId: 'squat', series: '5', repetitions: '10', duration: null, load: 'Banda roja', rest: '1 min', notes: 'Controlar técnica' },
       { exerciseDefinitionId: 'plank', series: null, repetitions: null, duration: null, load: null, rest: null, notes: null },
@@ -167,8 +168,8 @@ it.each(['repetitions', 'duration'])('maps the inline %s selector to the existin
 
 it('keeps the active routine editable without a reuse action', async () => {
   renderPanel(); await screen.findByText('Fuerza');
-  const activeArticle = screen.getByRole('heading', { name: 'Rutina v2' }).closest('article')!;
-  expect(screen.getByRole('button', { name: 'Editar rutina' })).toBeInTheDocument();
+  const activeArticle = screen.getByRole('heading', { name: 'Rutina 2' }).closest('article')!;
+  expect(screen.getByRole('button', { name: 'Asignar nueva rutina' })).toBeInTheDocument();
   expect(within(activeArticle).queryByRole('button', { name: 'Usar nuevamente' })).not.toBeInTheDocument();
   expect(within(activeArticle).queryByRole('button', { name: 'Duplicar rutina' })).not.toBeInTheDocument();
 });
@@ -176,17 +177,17 @@ it('asks before reusing a historical routine, then activates it and refreshes', 
   const historical = { ...routine, id: 'historical', status: 'HISTORICAL' as const, version: 1 };
   const { api } = renderPanel([routine, historical]); await screen.findAllByText('Fuerza');
   fireEvent.click(screen.getByText('Rutinas históricas (1)'));
-  const historicalArticle = screen.getByRole('heading', { name: 'Rutina v1' }).closest('article')!;
+  const historicalArticle = screen.getByRole('heading', { name: 'Rutina 1' }).closest('article')!;
   expect(within(historicalArticle).getByRole('button', { name: 'Usar nuevamente' })).toBeInTheDocument();
   expect(within(historicalArticle).queryByRole('button', { name: 'Duplicar rutina' })).not.toBeInTheDocument();
   fireEvent.click(within(historicalArticle).getByRole('button', { name: 'Usar nuevamente' }));
   const dialog = await screen.findByRole('alertdialog', { name: 'Usar nuevamente esta rutina' });
-  expect(dialog).toHaveTextContent('Esta rutina pasará a ser la rutina activa del alumno.');
-  expect(dialog).toHaveTextContent('La rutina actual quedará en el historial.');
+  expect(dialog).toHaveTextContent('Se creará una nueva versión utilizando estos ejercicios.');
+  expect(within(dialog).getByLabelText('Fecha de inicio')).toBeInTheDocument();
   expect(api.duplicate).not.toHaveBeenCalled();
   fireEvent.click(within(dialog).getByRole('button', { name: 'Usar nuevamente' }));
-  expect(await screen.findByText('Rutina activada correctamente.')).toBeInTheDocument();
-  expect(api.duplicate).toHaveBeenCalledWith('historical', expect.any(Object));
+  expect(await screen.findByText('Rutina asignada correctamente.')).toBeInTheDocument();
+  expect(api.duplicate).toHaveBeenCalledWith('historical', expect.any(String), expect.any(Object));
   await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2));
 });
 it('omits the active routine notice when reusing history without an active routine', async () => {
@@ -194,10 +195,10 @@ it('omits the active routine notice when reusing history without an active routi
   const { api } = renderPanel([historical]); await screen.findByText('Fuerza'); fireEvent.click(screen.getByText('Rutinas históricas (1)'));
   fireEvent.click(screen.getByRole('button', { name: 'Usar nuevamente' }));
   const dialog = await screen.findByRole('alertdialog');
-  expect(dialog).toHaveTextContent('Esta rutina pasará a ser la rutina activa del alumno.');
+  expect(dialog).toHaveTextContent('Se creará una nueva versión utilizando estos ejercicios.');
   expect(dialog).not.toHaveTextContent('La rutina actual quedará en el historial.');
   fireEvent.click(within(dialog).getByRole('button', { name: 'Usar nuevamente' }));
-  await screen.findByText('Rutina activada correctamente.'); expect(api.duplicate).toHaveBeenCalledWith('historical', expect.any(Object));
+  await screen.findByText('Rutina asignada correctamente.'); expect(api.duplicate).toHaveBeenCalledWith('historical', expect.any(String), expect.any(Object));
 });
 it('cancels historical reuse without calling the API or showing success', async () => {
   const historical = { ...routine, id: 'historical', status: 'HISTORICAL' as const, version: 1 };
@@ -205,8 +206,8 @@ it('cancels historical reuse without calling the API or showing success', async 
   fireEvent.click(screen.getByRole('button', { name: 'Usar nuevamente' }));
   const dialog = await screen.findByRole('alertdialog'); fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
   expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Rutina v1' })).toBeInTheDocument();
-  expect(api.duplicate).not.toHaveBeenCalled(); expect(screen.queryByText('Rutina activada correctamente.')).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Rutina 1' })).toBeInTheDocument();
+  expect(api.duplicate).not.toHaveBeenCalled(); expect(screen.queryByText('Rutina asignada correctamente.')).not.toBeInTheDocument();
 });
 it('preserves the confirmation context and reports reuse errors without success or invalidation', async () => {
   const historical = { ...routine, id: 'historical', status: 'HISTORICAL' as const, version: 1 };
@@ -216,15 +217,15 @@ it('preserves the confirmation context and reports reuse errors without success 
   const dialog = await screen.findByRole('alertdialog'); fireEvent.click(within(dialog).getByRole('button', { name: 'Usar nuevamente' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Participación activa requerida');
   expect(screen.getByRole('alertdialog')).toBeInTheDocument();
-  expect(screen.queryByText('Rutina activada correctamente.')).not.toBeInTheDocument();
+  expect(screen.queryByText('Rutina asignada correctamente.')).not.toBeInTheDocument();
   expect(api.list).toHaveBeenCalledTimes(1);
   fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancelar' }));
 });
 it('allows read-only users to see active and historical routines without management or catalog requests', async () => {
   const { api } = renderPanel([routine, { ...routine, id: 'old', version: 1, status: 'HISTORICAL' }], false);
   await screen.findAllByText('Fuerza'); fireEvent.click(screen.getByText('Rutinas históricas (1)'));
-  expect(screen.getByText('Rutina v1')).toBeInTheDocument();
-  for (const name of ['Crear desde cero', 'Usar preestablecida', 'Editar rutina', 'Usar nuevamente', 'Duplicar rutina', '+ Crear nuevo ejercicio']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  expect(screen.getByText('Rutina 1')).toBeInTheDocument();
+  for (const name of ['Crear desde cero', 'Usar preestablecida', 'Asignar nueva rutina', 'Editar ejercicios', 'Usar nuevamente', 'Duplicar rutina', '+ Crear nuevo ejercicio']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
   expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument(); expect(api.exercises).not.toHaveBeenCalled();
 });
 
@@ -299,7 +300,7 @@ it.each([false, true])('previews all content and assigns an independent copy wit
   fireEvent.click(screen.getByRole('button', { name: 'Asignar rutina' }));
   await screen.findByText('Rutina asignada correctamente.');
   const payload = hasActive ? api.replace.mock.calls[0]![1] : api.create.mock.calls[0]![0];
-  expect(payload).toEqual({ personId: 'person', salaParticipationId: 'participation', days: [
+  expect(payload).toEqual({ personId: 'person', salaParticipationId: 'participation', effectiveFrom: expect.any(String), days: [
     { name: 'Modelo fuerza', exercises: [{ exerciseDefinitionId: 'squat', series: '4', repetitions: '10', duration: null, load: '60 kg', rest: '90 s', notes: 'Técnica' }] },
     { name: 'Modelo core', exercises: [{ exerciseDefinitionId: 'plank', series: null, repetitions: null, duration: '45 s', load: null, rest: null, notes: null }] },
   ] });
@@ -320,7 +321,7 @@ it('personalizes every template day without changing the original template', asy
   change(day(1), 'Series', '3'); change(day(1), 'Valor', '8');
   expect(row().getByLabelText('Series')).toHaveValue('3');
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
-  await screen.findByText('Rutina guardada correctamente.');
+  await screen.findByText('Rutina asignada correctamente.');
   expect(api.replace.mock.calls[0]![1].days[0]?.exercises[0]).toMatchObject({ series: '3', repetitions: '8' });
   expect(api.replace.mock.calls[0]![1].days).toHaveLength(2);
   expect(template).toEqual(original);
@@ -379,22 +380,26 @@ it('preserves an empty time selection across tabs and keeps it out of the payloa
 
 it('places training history between the active routine and historical routines', async () => {
   renderPanel([routine, { ...routine, id: 'old', status: 'HISTORICAL', version: 1 }], false);
-  await screen.findByText('Rutina v2');
+  await screen.findByText('Rutina 2');
   const training = screen.getByRole('region', { name: 'Historial de entrenamientos' });
-  const active = screen.getByText('Rutina v2'); const historical = screen.getByText('Rutinas históricas (1)');
+  const active = screen.getByText('Rutina 2'); const historical = screen.getByText('Rutinas históricas (1)');
   expect(active.compareDocumentPosition(training) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(training.compareDocumentPosition(historical) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Editar rutina' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Asignar nueva rutina' })).not.toBeInTheDocument();
 });
 
 it.each([true, false])('prints active and specific historical routines without writes (manage=%s)', async canManage => {
   const print = vi.spyOn(window, 'print').mockImplementation(() => {});
   try {
-    const { api } = renderPanel([routine, { ...routine, id: 'old', status: 'HISTORICAL', version: 1, days: [{ position: 1, name: 'Histórico exclusivo', exercises: [] }] }], canManage);
-    await screen.findByText('Rutina v2');
+    const { api } = renderPanel([routine, { ...routine, id: 'old', salaParticipationId: 'old-participation', effectiveUntil: '2026-10-01', status: 'HISTORICAL', version: 1, days: [{ position: 1, name: 'Histórico exclusivo', exercises: [] }] }], canManage);
+    await screen.findByText('Rutina 2');
     fireEvent.click(screen.getAllByRole('button', { name: 'Imprimir / PDF' })[0]!);
     let root = document.getElementById('athleta-routine-print-root')!;
     expect(root).toHaveTextContent('Alumno: Alumno Prueba');
+    expect(root).toHaveTextContent('Deporte: Hockey');
+    expect(root).toHaveTextContent('Objetivo: Fuerza general');
+    expect(root).toHaveTextContent('Inicio: 01/10/2026');
+    expect(root.querySelectorAll('.routine-print-weight')).toHaveLength(10);
     expect(root).toHaveTextContent('Estado: Activa · Versión: 2');
     expect(root).not.toHaveTextContent('Histórico exclusivo');
     expect(root).not.toHaveTextContent('Historial de entrenamientos');
@@ -404,6 +409,8 @@ it.each([true, false])('prints active and specific historical routines without w
     root = document.getElementById('athleta-routine-print-root')!;
     expect(root).toHaveTextContent('Estado: Histórica · Versión: 1');
     expect(root).toHaveTextContent('Histórico exclusivo');
+    expect(root).toHaveTextContent('Objetivo: Objetivo anterior');
+    expect(root).toHaveTextContent('Cambio: 01/10/2026');
     expect(root).not.toHaveTextContent('Controlar técnica');
     for (const write of [api.create, api.replace, api.duplicate]) expect(write).not.toHaveBeenCalled();
   } finally { print.mockRestore(); }
@@ -421,7 +428,9 @@ it('prints the selected template preview without assignment', async () => {
     expect(preview.getAllByRole('button').map(button => button.textContent)).toEqual(['Asignar rutina', 'Imprimir / PDF', 'Editar', 'Volver']);
     fireEvent.click(preview.getByRole('button', { name: 'Imprimir / PDF' }));
     expect(document.getElementById('athleta-routine-print-root')).toHaveTextContent('Rutina: Modelo previo');
-    expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('Alumno:');
+    expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('Alumno Prueba');
+    expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('Hockey');
+    expect(document.querySelectorAll('.routine-print-weight')).toHaveLength(10);
     for (const write of [api.create, api.replace, api.duplicate]) expect(write).not.toHaveBeenCalled();
   } finally { print.mockRestore(); }
 });
@@ -457,4 +466,63 @@ it('shows grouped units outside editable values, rejects new letters and preserv
     expect.objectContaining({ series: '4', repetitions: null, duration: '45', load: '12,5', rest: null }),
     expect.objectContaining({ series: '4', repetitions: '10+10', duration: null, rest: null }),
   ]);
+});
+
+it('preserves the chosen start date on validation and request errors, and resets it on a new assignment', async () => {
+  const { api } = renderPanel(); await screen.findByText('Rutina 2');
+  fireEvent.click(screen.getByRole('button', { name: 'Asignar nueva rutina' }));
+  const date = screen.getByLabelText('Fecha de inicio');
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  expect(date).toHaveValue(today);
+  fireEvent.change(date, { target: { value: '2099-12-01' } });
+  api.replace.mockRejectedValueOnce(new Error('Error de asignación'));
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+  await screen.findByText('Error de asignación'); expect(date).toHaveValue('2099-12-01');
+  expect(api.replace.mock.calls[0]?.[1].effectiveFrom).toBe('2099-12-01');
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar' })); fireEvent.click(screen.getByRole('button', { name: 'Asignar nueva rutina' }));
+  expect(screen.getByLabelText('Fecha de inicio')).toHaveValue(today);
+});
+it('shows scheduled routines alongside the current one and queries monthly weights read-only in place', async () => {
+  const current = { ...routine, days: [{ ...routine.days[0]!, id: 'day', exercises: [{ ...routine.days[0]!.exercises[0]!, id: 'entry', exerciseDefinition: { name: 'Sentadilla' } }] }] };
+  const { api } = renderPanel([current, { ...routine, id: 'future', version: 3, status: 'SCHEDULED', effectiveFrom: '2099-12-01' }]);
+  const monthly = vi.fn().mockResolvedValue([{ routineId: 'routine', routineDayId: 'day', month: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit' }).format(new Date()), weekNumber: 2, exercises: [{ routineExerciseId: 'entry', exerciseName: 'Sentadilla', weightKg: '42.5' }, { routineExerciseId: 'retired-entry', exerciseName: 'Ejercicio anterior retirado', weightKg: '18' }] }]);
+  Object.assign(api.training, { month: monthly });
+  await screen.findByText('Rutina 2'); expect(screen.getByText('Próxima rutina')).toBeInTheDocument(); expect(screen.getByText('Comienza el 01/12/2099')).toBeInTheDocument();
+  fireEvent.click(within(screen.getByText('Rutina 2').closest('article')!).getByRole('button', { name: 'Ver pesos' }));
+  await screen.findByText('42,5 kg'); expect(screen.getByText('Ejercicio anterior retirado')).toBeInTheDocument(); expect(screen.getByText('18 kg')).toBeInTheDocument(); expect(monthly).toHaveBeenCalled(); expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+});
+
+it('prints the scheduled version with its actual start date', async () => {
+  const print = vi.spyOn(window, 'print').mockImplementation(() => {});
+  try {
+    renderPanel([{ ...routine, status: 'SCHEDULED', effectiveFrom: '2099-12-01' }]);
+    await screen.findByText('Rutina 2');
+    fireEvent.click(screen.getByRole('button', { name: 'Imprimir / PDF' }));
+    expect(document.getElementById('athleta-routine-print-root')).toHaveTextContent('Inicio: 01/12/2099');
+    expect(document.getElementById('athleta-routine-print-root')).toHaveTextContent('Estado: Programada · Versión: 2');
+  } finally { print.mockRestore(); }
+});
+
+it('edits current occurrences by ID with a future assignment, without a date or new version', async () => {
+  const current: Routine = { ...routine, days: [{ id: 'day', position: 1, name: 'Fuerza', exercises: [{ id: 'kept', exerciseDefinitionId: 'squat', series: '4', repetitions: '10' }, { id: 'removed', exerciseDefinitionId: 'plank' }] }] };
+  const future: Routine = { ...routine, id: 'future', version: 3, status: 'SCHEDULED', effectiveFrom: '2099-11-15' };
+  const { api } = renderPanel([current, future]);
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar ejercicios' }));
+  const editor = screen.getByRole('region', { name: 'Editar ejercicios' });
+  expect(within(editor).queryByLabelText('Fecha de inicio')).not.toBeInTheDocument();
+  fireEvent.click(within(editor).getAllByRole('button', { name: 'Quitar' })[1]!);
+  fireEvent.click(within(editor).getByRole('button', { name: 'Guardar cambios' }));
+  await waitFor(() => expect(api.updateActiveExercises).toHaveBeenCalledWith('routine', { days: [{ id: 'day', exercises: [{ id: 'kept' }] }] }, expect.objectContaining({ credentials: 'include' })));
+  expect(api.replace).not.toHaveBeenCalled();
+  expect(await screen.findByText('Ejercicios actualizados correctamente. Los pesos registrados se conservaron.')).toBeInTheDocument();
+});
+it('requires confirmation before cancelling a future assignment', async () => {
+  const future: Routine = { ...routine, id: 'future', version: 3, status: 'SCHEDULED', effectiveFrom: '2099-11-15', hasTrainingRecords: true };
+  const { api } = renderPanel([routine, future]);
+  fireEvent.click(await screen.findByRole('button', { name: 'Eliminar programación' }));
+  expect(api.cancelScheduled).not.toHaveBeenCalled();
+  const confirmation = screen.getByRole('alertdialog');
+  expect(within(confirmation).getByText('Los pesos registrados se conservarán en el historial.')).toBeInTheDocument();
+  fireEvent.click(within(confirmation).getByRole('button', { name: 'Eliminar programación' }));
+  await waitFor(() => expect(api.cancelScheduled).toHaveBeenCalledWith('future', expect.any(Object)));
 });

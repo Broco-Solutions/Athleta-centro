@@ -1,5 +1,5 @@
 import { TrainingRecordService } from '../sala/training-record.service';
-import type { CreateTrainingRecordDto, CorrectTrainingRecordDto, TrainingRecordQueryDto } from '../sala/training-record.dto';
+import type { SaveMonthlyTrainingWeightsDto, CreateTrainingRecordDto, CorrectTrainingRecordDto, TrainingRecordQueryDto } from '../sala/training-record.dto';
 import { HealthDeclarationService } from '../sala/health-declaration/health-declaration.service';
 import type { SubmitHealthDeclarationDto } from '../sala/health-declaration/health-declaration.dto';
 import { PORTAL_SESSION_TTL_MS } from './portal-session';
@@ -63,8 +63,10 @@ export class PortalService {
   async me(token?: string) { const { person } = await this.current(token); return this.profile(person); }
   async trainingContext(token: string | undefined, date?: string) { const { person } = await this.ready(token); return this.training.context(person.id, date); }
   async trainingList(token: string | undefined, query: TrainingRecordQueryDto) { const { person } = await this.ready(token); return this.training.list(person.id, query); }
+  async trainingMonth(token: string | undefined, month: string) { const { person } = await this.ready(token); return this.training.listMonth(person.id, month); }
   async trainingDetail(token: string | undefined, id: string) { const { person } = await this.ready(token); return this.training.detail(person.id, id); }
   async trainingCreate(token: string | undefined, input: CreateTrainingRecordDto) { const { person } = await this.ready(token); return this.training.create(person.id, input); }
+  async trainingMonthlySave(token: string | undefined, input: SaveMonthlyTrainingWeightsDto) { const { person } = await this.ready(token); return this.training.saveMonthlyWeights(person.id, input); }
   async trainingCorrect(token: string | undefined, id: string, input: CorrectTrainingRecordDto) { const { person } = await this.ready(token); return this.training.correct(person.id, id, input); }
   async sala(token?: string) {
     const { person } = await this.ready(token);
@@ -78,7 +80,8 @@ export class PortalService {
     const dates = Array.from({ length: 31 }, (_, index) => { const day = new Date(`${today}T00:00:00.000Z`); day.setUTCDate(day.getUTCDate() + index); return day.toISOString().slice(0, 10); });
     const fixedOccurrences = (await this.salaService.fixedOccurrenceStates(person.id, dates)).filter(item => this.salaService.operationalStart(item.date, new Date(`1970-01-01T${item.startTime}:00Z`)) > now);
     const routine = await this.prisma.routine.findFirst({
-      where: { personId: person.id, status: 'ACTIVE' },
+      where: { personId: person.id, cancelledAt: null, effectiveFrom: { lte: new Date(`${today}T00:00:00Z`) } },
+      orderBy: [{ effectiveFrom: 'desc' }, { version: 'desc' }],
       include: {
         days: {
           orderBy: { position: 'asc' },
@@ -94,7 +97,7 @@ export class PortalService {
     const evaluations = await this.prisma.physicalEvaluation.findMany({ where: { personId: person.id }, select: { id: true, evaluationDate: true, results: { select: { resultText: true, testDefinition: { select: { id: true, name: true } } }, orderBy: { id: 'asc' } } }, orderBy: [{ evaluationDate: 'asc' }, { id: 'asc' }] });
     const validity = await this.salaService.validity(person.id, today);
     const replacementWeeks = await this.salaService.listPortalReplacementWeeks(person.id, today);
-    return { reservations, fixed, fixedOccurrences, routine, evaluations, validity, replacementWeeks };
+    return { reservations, fixed, fixedOccurrences, routine: routine ? { ...routine, status: 'ACTIVE' as const } : null, evaluations, validity, replacementWeeks };
   }
   async salaServices(token?: string) { const { person } = await this.ready(token); return this.salaService.listPersonServiceTypes(person.id); }
   async salaAvailability(token: string|undefined, date: string, excludeFixedBookingId?: string) { const { person } = await this.ready(token); if (date < this.todayOperational()) throw new BadRequestException({ code: 'PORTAL_DATE_OUT_OF_RANGE', message: 'No podés consultar fechas pasadas.' }); if (excludeFixedBookingId) { const owned = await this.prisma.fixedSalaBooking.findFirst({ where: { id: excludeFixedBookingId, personId: person.id }, select: { id: true } }); if (!owned) throw new ForbiddenException({ code: 'PORTAL_RESOURCE_FORBIDDEN', message: 'No podés consultar este turno.' }); } return (await this.salaService.availability(date, this.prisma, excludeFixedBookingId)).map(slot => ({ scheduleSlotId: slot.scheduleSlotId, startTime: slot.startTime, endTime: slot.endTime, available: slot.available > 0 && !slot.isClosed, date: slot.date })); }

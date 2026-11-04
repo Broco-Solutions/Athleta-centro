@@ -736,6 +736,28 @@ Routine B
 
 No se sobrescribe la rutina anterior.
 
+
+## Vigencia y pesos mensuales (definición aprobada 2026-11-04)
+
+`status` conserva la última versión asignada por compatibilidad; no determina la
+rutina utilizada hoy. `createdAt` conserva el instante de creación y
+`effectiveFrom` es una fecha operativa independiente, elegida por el profesor
+(hoy por defecto). Cada versión ocupa `[effectiveFrom, siguiente effectiveFrom)`;
+a igual fecha prevalece la mayor `version`. El fin se deriva, sin cron ni duración
+mensual fija. Una nueva asignación no puede comenzar antes de la última creada.
+Las respuestas calculan `ACTIVE`, `HISTORICAL` o `SCHEDULED`; este último no se
+persiste. Una versión sin período efectivo permanece en Management y conserva
+sus registros, pero no genera un período ni admite nuevas cargas mensuales.
+
+Los nuevos pesos se identifican por Persona + rutina + día + mes `YYYY-MM` +
+semana 1..6. Cada ejercicio tiene seis espacios libres por mes, independientes de
+las semanas calendario y de otros meses/versiones. Un solo guardado transaccional
+abarca todas las semanas y ejercicios de un día. Las correcciones conservan IDs,
+fecha de creación y snapshots. Dejar todos los pesos vacíos no elimina un registro.
+La primera rutina permite cargar meses anteriores a su asignación sin cambiar su
+fecha ni crear versiones ficticias. Los registros anteriores por fecha conservan
+su identidad, sus snapshots y la corrección por ID; no se convierten en casilleros.
+
 ---
 
 # 28. RoutineDay
@@ -2317,3 +2339,21 @@ El modelo debe conservar estas reglas durante toda la implementación:
 15. Código técnico en inglés; interfaz en español.
 16. Las dudas funcionales pendientes no se resuelven mediante inferencia técnica.
 17. El diseño de base de datos debe derivarse de este modelo, y no al revés.
+
+## Edición vigente y cancelación de programaciones (2026-11-04)
+
+Editar ejercicios vigentes agrega o retira ocurrencias sin crear versión ni
+cambiar ID, inicio o días. Los ejercicios conservados mantienen sus IDs e
+indicaciones. Los retirados conservan snapshots y pesos históricos; agregarlos
+otra vez crea otra identidad, con seis semanas vacías. Agregar ejercicios no
+reinicia el mes ni altera semanas previas. Una próxima programación independiente
+no bloquea la edición vigente ni recibe sus cambios.
+
+Las programaciones pueden cambiar fecha o cancelarse antes de comenzar. Su
+contenido solo puede cambiar si no tiene registros. La fecha debe mantener el
+orden y los períodos de los registros existentes. Cancelar establece
+`cancelledAt`, conserva el historial y excluye la versión de la vigencia;
+la anterior continúa hasta la siguiente asignación no cancelada. El enum
+persistido no cambia. La nueva versión usa el máximo histórico incluso tras
+cancelaciones. Todas las escrituras coordinan por bloqueo de Persona; los
+snapshots mensuales nuevos usan posiciones libres, sin borrar los retirados.

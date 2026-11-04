@@ -994,6 +994,102 @@ export interface SpontaneousOccurrenceDto {
   confirmOverbooking?: boolean;
 }
 
+export interface ActiveRoutineExerciseDto {
+  /** @nullable */
+  blockPosition?: number | null;
+  exerciseDefinitionId?: string;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  series?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  repetitions?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  duration?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  load?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  rest?: string | null;
+  /**
+   * @maxLength 500
+   * @nullable
+   */
+  notes?: string | null;
+  id?: string;
+}
+
+export interface ActiveRoutineDayDto {
+  id: string;
+  exercises: ActiveRoutineExerciseDto[];
+}
+
+export interface UpdateActiveRoutineExercisesDto {
+  days: ActiveRoutineDayDto[];
+}
+
+export interface RoutineExerciseDto {
+  /** @nullable */
+  blockPosition?: number | null;
+  exerciseDefinitionId: string;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  series?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  repetitions?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  duration?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  load?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  rest?: string | null;
+  /**
+   * @maxLength 500
+   * @nullable
+   */
+  notes?: string | null;
+}
+
+export interface RoutineDayDto {
+  /**
+   * @maxLength 120
+   * @nullable
+   */
+  name?: string | null;
+  exercises: RoutineExerciseDto[];
+}
+
+export interface UpdateScheduledRoutineDto {
+  effectiveFrom: string;
+  days?: RoutineDayDto[];
+}
+
 export interface ExerciseDefinitionResponseDto {
   /** @nullable */
   movementPatternId?: string | null;
@@ -1045,51 +1141,6 @@ export interface RoutineTemplateListEnvelopeDto {
   data: RoutineTemplateResponseDto[];
 }
 
-export interface RoutineExerciseDto {
-  /** @nullable */
-  blockPosition?: number | null;
-  exerciseDefinitionId: string;
-  /**
-   * @maxLength 80
-   * @nullable
-   */
-  series?: string | null;
-  /**
-   * @maxLength 80
-   * @nullable
-   */
-  repetitions?: string | null;
-  /**
-   * @maxLength 80
-   * @nullable
-   */
-  duration?: string | null;
-  /**
-   * @maxLength 80
-   * @nullable
-   */
-  load?: string | null;
-  /**
-   * @maxLength 80
-   * @nullable
-   */
-  rest?: string | null;
-  /**
-   * @maxLength 500
-   * @nullable
-   */
-  notes?: string | null;
-}
-
-export interface RoutineDayDto {
-  /**
-   * @maxLength 120
-   * @nullable
-   */
-  name?: string | null;
-  exercises: RoutineExerciseDto[];
-}
-
 export interface RoutineTemplateDto {
   /** @maxLength 120 */
   name: string;
@@ -1100,7 +1151,12 @@ export interface TrainingRecordSummaryDto {
   id: string;
   routineId: string;
   routineDayId: string;
-  date: string;
+  /** @nullable */
+  date: string | null;
+  /** @nullable */
+  month: string | null;
+  /** @nullable */
+  weekNumber: number | null;
   /** @nullable */
   dayName: string | null;
   dayPosition: number;
@@ -1148,13 +1204,22 @@ export interface TrainingRecordDetailDto {
   id: string;
   routineId: string;
   routineDayId: string;
-  date: string;
+  /** @nullable */
+  date: string | null;
+  /** @nullable */
+  month: string | null;
+  /** @nullable */
+  weekNumber: number | null;
   /** @nullable */
   dayName: string | null;
   dayPosition: number;
   createdAt: string;
   updatedAt: string;
   exercises: TrainingRecordExerciseDto[];
+}
+
+export interface TrainingRecordMonthEnvelopeDto {
+  data: TrainingRecordDetailDto[];
 }
 
 export interface TrainingRecordEnvelopeDto {
@@ -1168,13 +1233,20 @@ export type SalaRoutineResponseDtoStatus = typeof SalaRoutineResponseDtoStatus[k
 export const SalaRoutineResponseDtoStatus = {
   ACTIVE: 'ACTIVE',
   HISTORICAL: 'HISTORICAL',
+  SCHEDULED: 'SCHEDULED',
 } as const;
 
 export interface SalaRoutineResponseDto {
+  /** @nullable */
+  cancelledAt?: string | null;
+  hasTrainingRecords?: boolean;
   id: string;
   personId: string;
   salaParticipationId: string;
   status: SalaRoutineResponseDtoStatus;
+  effectiveFrom: string;
+  /** @nullable */
+  effectiveUntil: string | null;
   version: number;
   createdAt: string;
   days: RoutineDayResponseDto[];
@@ -1185,9 +1257,14 @@ export interface SalaRoutineListEnvelopeDto {
 }
 
 export interface ReplaceRoutineDto {
+  effectiveFrom?: string;
   personId: string;
   salaParticipationId: string;
   days: RoutineDayDto[];
+}
+
+export interface DuplicateRoutineDto {
+  effectiveFrom?: string;
 }
 
 export interface MovementPatternResponseDto {
@@ -2025,6 +2102,56 @@ export interface SubmitHealthDeclarationDto {
   confirmed: boolean;
 }
 
+export interface TrainingExerciseSnapshotDto {
+  /** @nullable */
+  blockPosition: number | null;
+  id: string;
+  exerciseDefinitionId: string;
+  exerciseName: string;
+  position: number;
+  /** @nullable */
+  series: string | null;
+  /** @nullable */
+  repetitions: string | null;
+  /** @nullable */
+  duration: string | null;
+  /** @nullable */
+  load: string | null;
+  /** @nullable */
+  rest: string | null;
+  /** @nullable */
+  notes: string | null;
+}
+
+export interface TrainingRoutineDayDto {
+  id: string;
+  /** @nullable */
+  name: string | null;
+  position: number;
+  exercises: TrainingExerciseSnapshotDto[];
+}
+
+export type TrainingRoutineVersionDtoStatus = typeof TrainingRoutineVersionDtoStatus[keyof typeof TrainingRoutineVersionDtoStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const TrainingRoutineVersionDtoStatus = {
+  ACTIVE: 'ACTIVE',
+  HISTORICAL: 'HISTORICAL',
+  SCHEDULED: 'SCHEDULED',
+} as const;
+
+export interface TrainingRoutineVersionDto {
+  id: string;
+  version: number;
+  status: TrainingRoutineVersionDtoStatus;
+  effectiveFrom: string;
+  /** @nullable */
+  effectiveUntil: string | null;
+  createdOn: string;
+  days: TrainingRoutineDayDto[];
+}
+
 export interface TrainingContextExerciseDto {
   /** @nullable */
   blockPosition: number | null;
@@ -2059,6 +2186,7 @@ export interface TrainingContextDayDto {
 export interface TrainingContextRoutineDto {
   id: string;
   createdOn: string;
+  effectiveFrom: string;
   days: TrainingContextDayDto[];
 }
 
@@ -2068,6 +2196,7 @@ export interface TrainingContextRoutineDto {
 export type TrainingContextDtoRoutine = TrainingContextRoutineDto | null;
 
 export interface TrainingContextDto {
+  routines: TrainingRoutineVersionDto[];
   today: string;
   /** @nullable */
   routine: TrainingContextDtoRoutine;
@@ -2087,11 +2216,33 @@ export interface TrainingWeightDto {
   weightKg: string | null;
 }
 
+export interface MonthlyTrainingWeekDto {
+  exercises: TrainingWeightDto[];
+  /**
+   * @minimum 1
+   * @maximum 6
+   */
+  weekNumber: number;
+}
+
+export interface SaveMonthlyTrainingWeightsDto {
+  routineId: string;
+  routineDayId: string;
+  month: string;
+  /**
+   * @minItems 6
+   * @maxItems 6
+   */
+  weeks: MonthlyTrainingWeekDto[];
+}
+
 export interface CreateTrainingRecordDto {
   exercises: TrainingWeightDto[];
   routineId: string;
   routineDayId: string;
   date: string;
+  /** Allows future week references for portal weekly training only. */
+  allowFuture?: boolean;
 }
 
 export interface CorrectTrainingRecordDto {
@@ -2261,6 +2412,10 @@ pageSize?: number;
 page?: number;
 };
 
+export type ListPersonTrainingRecordsMonthParams = {
+month: string;
+};
+
 export type ListSalaPlans200DataItem = { [key: string]: unknown };
 
 export type ListSalaPlans200 = {
@@ -2365,6 +2520,10 @@ date?: string;
 export type ListPortalTrainingRecordsParams = {
 pageSize?: number;
 page?: number;
+};
+
+export type ListPortalTrainingRecordsMonthParams = {
+month: string;
 };
 
 export type CancelPortalFixedOccurrence200DataStatus = typeof CancelPortalFixedOccurrence200DataStatus[keyof typeof CancelPortalFixedOccurrence200DataStatus];
@@ -4737,6 +4896,127 @@ export const createSpontaneousSalaOccurrence = async (spontaneousOccurrenceDto: 
 
 
 
+export type updateActiveSalaRoutineExercisesResponse200 = {
+  data: void
+  status: 200
+}
+
+export type updateActiveSalaRoutineExercisesResponseSuccess = (updateActiveSalaRoutineExercisesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateActiveSalaRoutineExercisesResponse = (updateActiveSalaRoutineExercisesResponseSuccess)
+
+export const getUpdateActiveSalaRoutineExercisesUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/routines/${id}/active-exercises`
+}
+
+export const updateActiveSalaRoutineExercises = async (id: string,
+    updateActiveRoutineExercisesDto: UpdateActiveRoutineExercisesDto, options?: RequestInit): Promise<updateActiveSalaRoutineExercisesResponse> => {
+
+  const res = await fetch(getUpdateActiveSalaRoutineExercisesUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateActiveRoutineExercisesDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateActiveSalaRoutineExercisesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateActiveSalaRoutineExercisesResponse
+}
+
+
+
+export type updateScheduledSalaRoutineResponse200 = {
+  data: void
+  status: 200
+}
+
+export type updateScheduledSalaRoutineResponseSuccess = (updateScheduledSalaRoutineResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateScheduledSalaRoutineResponse = (updateScheduledSalaRoutineResponseSuccess)
+
+export const getUpdateScheduledSalaRoutineUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/routines/${id}/scheduled`
+}
+
+export const updateScheduledSalaRoutine = async (id: string,
+    updateScheduledRoutineDto: UpdateScheduledRoutineDto, options?: RequestInit): Promise<updateScheduledSalaRoutineResponse> => {
+
+  const res = await fetch(getUpdateScheduledSalaRoutineUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateScheduledRoutineDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateScheduledSalaRoutineResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateScheduledSalaRoutineResponse
+}
+
+
+
+export type cancelScheduledSalaRoutineResponse200 = {
+  data: void
+  status: 200
+}
+
+export type cancelScheduledSalaRoutineResponseSuccess = (cancelScheduledSalaRoutineResponse200) & {
+  headers: Headers;
+};
+;
+
+export type cancelScheduledSalaRoutineResponse = (cancelScheduledSalaRoutineResponseSuccess)
+
+export const getCancelScheduledSalaRoutineUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/routines/${id}/scheduled`
+}
+
+export const cancelScheduledSalaRoutine = async (id: string, options?: RequestInit): Promise<cancelScheduledSalaRoutineResponse> => {
+
+  const res = await fetch(getCancelScheduledSalaRoutineUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: cancelScheduledSalaRoutineResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as cancelScheduledSalaRoutineResponse
+}
+
+
+
 export type listSalaRoutineTemplatesResponse200 = {
   data: RoutineTemplateListEnvelopeDto
   status: 200
@@ -4944,6 +5224,54 @@ export const listPersonTrainingRecords = async (personId: string,
 
 
 
+export type listPersonTrainingRecordsMonthResponse200 = {
+  data: TrainingRecordMonthEnvelopeDto
+  status: 200
+}
+
+export type listPersonTrainingRecordsMonthResponseSuccess = (listPersonTrainingRecordsMonthResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPersonTrainingRecordsMonthResponse = (listPersonTrainingRecordsMonthResponseSuccess)
+
+export const getListPersonTrainingRecordsMonthUrl = (personId: string,
+    params: ListPersonTrainingRecordsMonthParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/sala/people/${personId}/training-records/month?${stringifiedParams}` : `/api/sala/people/${personId}/training-records/month`
+}
+
+export const listPersonTrainingRecordsMonth = async (personId: string,
+    params: ListPersonTrainingRecordsMonthParams, options?: RequestInit): Promise<listPersonTrainingRecordsMonthResponse> => {
+
+  const res = await fetch(getListPersonTrainingRecordsMonthUrl(personId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listPersonTrainingRecordsMonthResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPersonTrainingRecordsMonthResponse
+}
+
+
+
 export type getPersonTrainingRecordResponse200 = {
   data: TrainingRecordEnvelopeDto
   status: 200
@@ -5084,14 +5412,16 @@ export const getDuplicateSalaRoutineUrl = (id: string,) => {
   return `/api/sala/routines/${id}/duplicate`
 }
 
-export const duplicateSalaRoutine = async (id: string, options?: RequestInit): Promise<duplicateSalaRoutineResponse> => {
+export const duplicateSalaRoutine = async (id: string,
+    duplicateRoutineDto?: DuplicateRoutineDto, options?: RequestInit): Promise<duplicateSalaRoutineResponse> => {
 
   const res = await fetch(getDuplicateSalaRoutineUrl(id),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      duplicateRoutineDto,)
   }
 )
 
@@ -10321,6 +10651,52 @@ export const createPortalTrainingRecord = async (createTrainingRecordDto: Create
 
 
 
+export type listPortalTrainingRecordsMonthResponse200 = {
+  data: TrainingRecordMonthEnvelopeDto
+  status: 200
+}
+
+export type listPortalTrainingRecordsMonthResponseSuccess = (listPortalTrainingRecordsMonthResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPortalTrainingRecordsMonthResponse = (listPortalTrainingRecordsMonthResponseSuccess)
+
+export const getListPortalTrainingRecordsMonthUrl = (params: ListPortalTrainingRecordsMonthParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/portal/sala/training-records/month?${stringifiedParams}` : `/api/portal/sala/training-records/month`
+}
+
+export const listPortalTrainingRecordsMonth = async (params: ListPortalTrainingRecordsMonthParams, options?: RequestInit): Promise<listPortalTrainingRecordsMonthResponse> => {
+
+  const res = await fetch(getListPortalTrainingRecordsMonthUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listPortalTrainingRecordsMonthResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPortalTrainingRecordsMonthResponse
+}
+
+
+
 export type getPortalTrainingRecordResponse200 = {
   data: TrainingRecordEnvelopeDto
   status: 200
@@ -10356,6 +10732,46 @@ export const getPortalTrainingRecord = async (id: string, options?: RequestInit)
 
   const data: getPortalTrainingRecordResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getPortalTrainingRecordResponse
+}
+
+
+
+export type savePortalMonthlyTrainingWeightsResponse200 = {
+  data: TrainingRecordMonthEnvelopeDto
+  status: 200
+}
+
+export type savePortalMonthlyTrainingWeightsResponseSuccess = (savePortalMonthlyTrainingWeightsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type savePortalMonthlyTrainingWeightsResponse = (savePortalMonthlyTrainingWeightsResponseSuccess)
+
+export const getSavePortalMonthlyTrainingWeightsUrl = () => {
+
+
+
+
+  return `/api/portal/sala/training-records/monthly`
+}
+
+export const savePortalMonthlyTrainingWeights = async (saveMonthlyTrainingWeightsDto: SaveMonthlyTrainingWeightsDto, options?: RequestInit): Promise<savePortalMonthlyTrainingWeightsResponse> => {
+
+  const res = await fetch(getSavePortalMonthlyTrainingWeightsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      saveMonthlyTrainingWeightsDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: savePortalMonthlyTrainingWeightsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as savePortalMonthlyTrainingWeightsResponse
 }
 
 
