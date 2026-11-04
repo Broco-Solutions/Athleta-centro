@@ -736,6 +736,28 @@ Routine B
 
 No se sobrescribe la rutina anterior.
 
+
+## Vigencia y pesos mensuales (definición aprobada 2026-11-04)
+
+`status` conserva la última versión asignada por compatibilidad; no determina la
+rutina utilizada hoy. `createdAt` conserva el instante de creación y
+`effectiveFrom` es una fecha operativa independiente, elegida por el profesor
+(hoy por defecto). Cada versión ocupa `[effectiveFrom, siguiente effectiveFrom)`;
+a igual fecha prevalece la mayor `version`. El fin se deriva, sin cron ni duración
+mensual fija. Una nueva asignación no puede comenzar antes de la última creada.
+Las respuestas calculan `ACTIVE`, `HISTORICAL` o `SCHEDULED`; este último no se
+persiste. Una versión sin período efectivo permanece en Management y conserva
+sus registros, pero no genera un período ni admite nuevas cargas mensuales.
+
+Los nuevos pesos se identifican por Persona + rutina + día + mes `YYYY-MM` +
+semana 1..6. Cada ejercicio tiene seis espacios libres por mes, independientes de
+las semanas calendario y de otros meses/versiones. Un solo guardado transaccional
+abarca todas las semanas y ejercicios de un día. Las correcciones conservan IDs,
+fecha de creación y snapshots. Dejar todos los pesos vacíos no elimina un registro.
+La primera rutina permite cargar meses anteriores a su asignación sin cambiar su
+fecha ni crear versiones ficticias. Los registros anteriores por fecha conservan
+su identidad, sus snapshots y la corrección por ID; no se convierten en casilleros.
+
 ---
 
 # 28. RoutineDay

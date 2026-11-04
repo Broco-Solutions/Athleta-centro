@@ -151,7 +151,7 @@ async function findBookingOption(options: { name: string }) {
   return waitFor(() => booking().getByRole('option', options));
 }
 
-const workspaceRoutine = { id: 'routine', personId, salaParticipationId: 'participation', status: 'ACTIVE', version: 1, days: [{ position: 1, name: 'Día de fuerza', exercises: [{ exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla' }, series: null }] }] };
+const workspaceRoutine = { id: 'routine', personId, salaParticipationId: 'participation', status: 'ACTIVE', version: 1, effectiveFrom: '2026-10-01', effectiveUntil: null, days: [{ position: 1, name: 'Día de fuerza', exercises: [{ exerciseDefinitionId: 'squat', exerciseDefinition: { name: 'Sentadilla' }, series: null }] }] };
 function routineSession(permissions: string[], roles = ['PROFESSOR']) {
   server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor', firstName: 'Profesor', lastName: 'Sintético' }, roles, permissions, csrfToken: 'csrf', mustChangePassword: false } })));
 }
@@ -219,7 +219,7 @@ it.each([false, true])('uses the generated template list and routine replacement
   expect(screen.queryByRole('button', { name: 'Guardar cambios' })).not.toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Asignar rutina' }));
   if (reject) { expect(await screen.findByRole('alert')).toHaveTextContent('Ejercicio retirado'); expect(screen.queryByText('Rutina asignada correctamente.')).not.toBeInTheDocument(); expect(reads()).toBe(1); }
   else { await screen.findByText('Rutina asignada correctamente.'); await waitFor(() => expect(reads()).toBe(2)); }
-  expect(templateReads).toBe(1); expect(writes).toEqual([{ personId, salaParticipationId: 'participation', days: [{ name: 'Modelo', exercises: [{ exerciseDefinitionId: 'squat', series: '4', repetitions: '10', duration: null, load: null, rest: null, notes: null }] }] }]);
+  expect(templateReads).toBe(1); expect(writes).toEqual([{ personId, salaParticipationId: 'participation', effectiveFrom: expect.any(String), days: [{ name: 'Modelo', exercises: [{ exerciseDefinitionId: 'squat', series: '4', repetitions: '10', duration: null, load: null, rest: null, notes: null }] }] }]);
 });
 
 it('integrates pure Professor student detail into Alumnos without the administrative Person link', async () => {

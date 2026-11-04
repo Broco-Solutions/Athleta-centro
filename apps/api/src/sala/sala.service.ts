@@ -1,3 +1,4 @@
+import { routinePresentation } from './routine-periods';
 import { HealthDeclarationService } from './health-declaration/health-declaration.service';
 import { BadRequestException, ForbiddenException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { FinancialAdjustmentKind, Prisma, Role, RoutineStatus, SalaChargeKind, SalaOccurrenceOrigin, SalaOccurrenceStatus, SalaScheduleExceptionType, InternalUserStatus, SalaWeekday } from '@prisma/client';
@@ -397,7 +398,7 @@ export class SalaService {
       const [fixedBookings, reservations, activeRoutines, activeClinicalIndications] = await Promise.all([
         tx.fixedSalaBooking.count({ where: { salaParticipationId: participationId, OR: [{ endDate: null }, { endDate: { gt: today } }] } }),
         tx.oneOffReservation.findMany({ where: { salaParticipationId: participationId, date: { gte: today }, cancelledAt: null }, include: { scheduleSlot: true } }),
-        tx.routine.count({ where: { salaParticipationId: participationId, status: RoutineStatus.ACTIVE } }),
+        this.currentAndScheduledRoutineIds(tx, { salaParticipationId: participationId }).then(ids => ids.length),
         tx.salaClinicalIndication.count({ where: { personId: current.personId, status: 'ACTIVE' } }),
       ]);
       const futureReservations = reservations.filter(item => this.operationalStart(item.date.toISOString().slice(0, 10), item.startTime ?? item.scheduleSlot.startTime) > now).length;
@@ -647,10 +648,11 @@ export class SalaService {
       if (!exercise || !exercise.isActive) throw new NotFoundException({ code: 'SALA_EXERCISE_NOT_FOUND', message: 'Exercise not found' });
       const templateReference = await tx.routineTemplateExercise.findFirst({ where: { exerciseDefinitionId: id }, select: { id: true } });
       if (templateReference) throw new ConflictException({ code: 'SALA_EXERCISE_IN_ROUTINE_TEMPLATE', message: 'No se puede retirar el ejercicio porque está incluido en una rutina preestablecida. Primero quitá el ejercicio de esa rutina para poder retirarlo.' });
-      const affectedDays = await tx.routineDay.findMany({ where: { routine: { status: RoutineStatus.ACTIVE }, exercises: { some: { exerciseDefinitionId: id } } }, select: { routineId: true }, distinct: ['routineId'] });
+      const protectedIds = await this.currentAndScheduledRoutineIds(tx, { salaParticipation: { endDate: null } });
+      const affectedDays = await tx.routineDay.findMany({ where: { routineId: { in: protectedIds }, exercises: { some: { exerciseDefinitionId: id } } }, select: { routineId: true }, distinct: ['routineId'] });
       const activeRoutines = affectedDays.length;
       if (activeRoutines > 0 && !confirmActiveRoutineImpact) throw new ConflictException({ code: 'SALA_EXERCISE_RETIRE_CONFIRMATION_REQUIRED', message: 'Confirmation is required because active routines are affected', details: { activeRoutines } });
-      if (activeRoutines > 0) await tx.routineExercise.deleteMany({ where: { exerciseDefinitionId: id, routineDay: { routine: { status: RoutineStatus.ACTIVE } } } });
+      if (activeRoutines > 0) await tx.routineExercise.deleteMany({ where: { exerciseDefinitionId: id, routineDay: { routineId: { in: protectedIds } } } });
       const retired = await tx.exerciseDefinition.update({ where: { id }, data: { isActive: false } });
       return { exercise: retired, affectedActiveRoutines: activeRoutines };
     });
@@ -712,26 +714,36 @@ export class SalaService {
   private routineContent(days: RoutineDayDto[]) {
     return days.map((day, dayIndex) => ({ position: dayIndex + 1, name: this.optionalText(day.name), exercises: { create: day.exercises.map((exercise, exerciseIndex) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, blockPosition: exercise.blockPosition ?? null, position: exerciseIndex + 1, series: this.optionalText(exercise.series), repetitions: this.optionalText(exercise.repetitions), duration: this.optionalText(exercise.duration), load: this.optionalText(exercise.load), rest: this.optionalText(exercise.rest), notes: this.optionalText(exercise.notes) })) } }));
   }
-  async listRoutines(personId: string) { return this.prisma.routine.findMany({ where: { personId }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } }, salaParticipation: { select: { id: true, startDate: true, endDate: true } } }, orderBy: { version: 'desc' } }); }
+  private async currentAndScheduledRoutineIds(tx: Prisma.TransactionClient, where: Prisma.RoutineWhereInput): Promise<string[]> {
+    const routines = await tx.routine.findMany({ where });
+    const people = new Set(routines.map(r => r.personId));
+    return [...people].flatMap(personId => routinePresentation(routines.filter(r => r.personId === personId), this.todayOperational()).filter(r => r.status !== 'HISTORICAL').map(r => r.id));
+  }
+  async listRoutines(personId: string) { const routines = await this.prisma.routine.findMany({ where: { personId }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } }, salaParticipation: { select: { id: true, startDate: true, endDate: true } } }, orderBy: { version: 'desc' } }); return routinePresentation(routines, this.todayOperational()).sort((a, b) => b.version - a.version); }
   async replaceRoutine(input: ReplaceRoutineDto, failureAfterArchive = false) {
     this.validateRoutine(input);
+    const date = input.effectiveFrom ?? this.todayOperational();
+    const effectiveFrom = new Date(`${date}T00:00:00Z`);
+    if (!/^(?!0000)\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(effectiveFrom.getTime()) || effectiveFrom.toISOString().slice(0, 10) !== date) throw new BadRequestException({ code: 'SALA_ROUTINE_DATE_INVALID', message: 'Elegí una fecha de inicio válida.' });
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM people WHERE id = ${input.personId}::uuid FOR UPDATE`;
       const participation = await tx.salaParticipation.findFirst({ where: { id: input.salaParticipationId, personId: input.personId, endDate: null }, select: { id: true } });
       if (!participation) throw new BadRequestException({ code: 'SALA_ACTIVE_PARTICIPATION_REQUIRED', message: 'An active Sala participation is required' });
       await this.validateRoutineExercises(tx, input);
+      const latest = await tx.routine.findFirst({ where: { personId: input.personId }, orderBy: { version: 'desc' } });
+      if (latest && effectiveFrom < latest.effectiveFrom) throw new BadRequestException({ code: 'SALA_ROUTINE_DATE_ORDER', message: 'La nueva rutina no puede comenzar antes de la última rutina asignada.' });
       const currentVersion = await tx.routine.aggregate({ where: { personId: input.personId }, _max: { version: true } });
       await tx.routine.updateMany({ where: { personId: input.personId, status: RoutineStatus.ACTIVE }, data: { status: RoutineStatus.HISTORICAL } });
       if (failureAfterArchive) throw new Error('SIMULATED_ROUTINE_REPLACEMENT_FAILURE');
-      return tx.routine.create({ data: { personId: input.personId, salaParticipationId: input.salaParticipationId, status: RoutineStatus.ACTIVE, version: (currentVersion._max.version ?? 0) + 1, days: { create: input.days.map((day, dayIndex) => ({ position: dayIndex + 1, name: this.optionalText(day.name), exercises: { create: day.exercises.map((exercise, exerciseIndex) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, blockPosition: exercise.blockPosition ?? null, position: exerciseIndex + 1, series: this.optionalText(exercise.series), repetitions: this.optionalText(exercise.repetitions), duration: this.optionalText(exercise.duration), load: this.optionalText(exercise.load), rest: this.optionalText(exercise.rest), notes: this.optionalText(exercise.notes) })) } })) } }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } } } });
+      return tx.routine.create({ data: { personId: input.personId, salaParticipationId: input.salaParticipationId, effectiveFrom, status: RoutineStatus.ACTIVE, version: (currentVersion._max.version ?? 0) + 1, days: { create: input.days.map((day, dayIndex) => ({ position: dayIndex + 1, name: this.optionalText(day.name), exercises: { create: day.exercises.map((exercise, exerciseIndex) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, blockPosition: exercise.blockPosition ?? null, position: exerciseIndex + 1, series: this.optionalText(exercise.series), repetitions: this.optionalText(exercise.repetitions), duration: this.optionalText(exercise.duration), load: this.optionalText(exercise.load), rest: this.optionalText(exercise.rest), notes: this.optionalText(exercise.notes) })) } })) } }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } } } });
     });
   }
-  async duplicateRoutine(id: string) {
+  async duplicateRoutine(id: string, effectiveFrom?: string) {
     const source = await this.prisma.routine.findUnique({ where: { id }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' } } } } } });
     if (!source) throw new NotFoundException({ code: 'SALA_ROUTINE_NOT_FOUND', message: 'Routine not found' });
     const participation = await this.prisma.salaParticipation.findFirst({ where: { personId: source.personId, endDate: null }, select: { id: true } });
     if (!participation) throw new BadRequestException({ code: 'SALA_ACTIVE_PARTICIPATION_REQUIRED', message: 'An active Sala participation is required' });
-    return this.replaceRoutine({ personId: source.personId, salaParticipationId: participation.id, days: source.days.map((day) => ({ name: day.name, exercises: day.exercises.map((exercise) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, blockPosition: exercise.blockPosition ?? null, series: exercise.series, repetitions: exercise.repetitions, duration: exercise.duration, load: exercise.load, rest: exercise.rest, notes: exercise.notes })) })) });
+    return this.replaceRoutine({ ...(effectiveFrom ? { effectiveFrom } : {}), personId: source.personId, salaParticipationId: participation.id, days: source.days.map((day) => ({ name: day.name, exercises: day.exercises.map((exercise) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, blockPosition: exercise.blockPosition ?? null, series: exercise.series, repetitions: exercise.repetitions, duration: exercise.duration, load: exercise.load, rest: exercise.rest, notes: exercise.notes })) })) });
   }
   async listPhysicalTests() {
     return this.prisma.physicalTestDefinition.findMany({ where: { isActive: true }, select: physicalTestSelect, orderBy: { name: 'asc' } });
@@ -807,7 +819,7 @@ export class SalaService {
         } },
         plan: { select: { id: true, name: true } },
         mainProfessor: { select: { id: true, firstName: true, lastName: true } },
-        routines: { where: { status: RoutineStatus.ACTIVE }, select: { id: true }, take: 1 },
+        routines: { where: { effectiveFrom: { lte: today } }, select: { id: true }, take: 1 },
       },
     });
     const payments = await this.prisma.salaPayment.findMany({
@@ -841,7 +853,7 @@ export class SalaService {
     const now = new Date();
     const [withoutRoutine, withoutValidity] = await Promise.all([
       this.prisma.salaParticipation.findMany({
-        where: { endDate: null, person: { routines: { none: { status: RoutineStatus.ACTIVE } } } },
+        where: { endDate: null, routines: { none: { effectiveFrom: { lte: this.date(today) } } } },
         select: { personId: true }, orderBy: { personId: 'asc' },
       }),
       this.prisma.salaParticipation.findMany({

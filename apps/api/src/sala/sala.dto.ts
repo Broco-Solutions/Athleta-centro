@@ -134,7 +134,10 @@ export class RoutineTemplateDto {
   @ApiProperty({ type: String, maxLength: 120 }) @IsString() @MinLength(1) @MaxLength(120) name!: string;
   @ApiProperty({ type: () => [RoutineDayDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RoutineDayDto) days!: RoutineDayDto[];
 }
-export class ReplaceRoutineDto {
+export class DuplicateRoutineDto {
+  @ApiPropertyOptional({ type: String, format: 'date' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) effectiveFrom?: string;
+}
+export class ReplaceRoutineDto extends DuplicateRoutineDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string;
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() salaParticipationId!: string;
   @ApiProperty({ type: () => [RoutineDayDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RoutineDayDto) days!: RoutineDayDto[];
@@ -304,7 +307,9 @@ export class SalaRoutineResponseDto {
   @ApiProperty({ type: String }) id!: string;
   @ApiProperty({ type: String }) personId!: string;
   @ApiProperty({ type: String }) salaParticipationId!: string;
-  @ApiProperty({ type: String, enum: ['ACTIVE', 'HISTORICAL'] }) status!: 'ACTIVE' | 'HISTORICAL';
+  @ApiProperty({ type: String, enum: ['ACTIVE', 'HISTORICAL', 'SCHEDULED'] }) status!: 'ACTIVE' | 'HISTORICAL' | 'SCHEDULED';
+  @ApiProperty({ type: String, format: 'date' }) effectiveFrom!: string;
+  @ApiProperty({ type: String, format: 'date', nullable: true }) effectiveUntil!: string | null;
   @ApiProperty({ type: Number }) version!: number;
   @ApiProperty({ type: String }) createdAt!: string;
   @ApiProperty({ type: () => [RoutineDayResponseDto] }) days!: RoutineDayResponseDto[];

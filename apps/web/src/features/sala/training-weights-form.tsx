@@ -63,3 +63,52 @@ export function TrainingWeightsForm({ exercises, onSave, pending, correction = f
     {!readOnly && !collapsible ? <Button type="submit" className="min-h-11 w-full scroll-mb-32 sm:w-auto" disabled={busy || !saveEnabled || exercises.length === 0}>{busy ? 'Guardando…' : correction ? correctionLabel : 'Guardar entrenamiento'}</Button> : null}
   </form>;
 }
+
+const monthlyWeightSchema = z.object({ weights: z.array(z.array(z.string().trim().refine(value => value === '' || /^\d{1,35}(?:[.,]\d{1,30})?$/.test(value), 'Ingresá un peso válido, sin valores negativos.')).length(6)) });
+type MonthlyWeights = z.infer<typeof monthlyWeightSchema>;
+export function MonthlyTrainingWeightsForm({ exercises, slots, onSave, pending, onDirtyChange, children }: {
+  exercises: TrainingExerciseSnapshotDto[];
+  slots: (import('@athleta/api-client').TrainingRecordDetailDto | null)[];
+  onSave: (weeks: import('@athleta/api-client').MonthlyTrainingWeekDto[]) => Promise<void>;
+  pending: boolean; onDirtyChange: (dirty: boolean) => void; children?: React.ReactNode;
+}): React.JSX.Element {
+  const prefix = useId();
+  const formRef = useRef<HTMLFormElement>(null);
+  const [open, setOpen] = useState<string[]>([]);
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  const { register, handleSubmit, reset, formState: { errors, isDirty, isSubmitting } } = useForm<MonthlyWeights>({ resolver: zodResolver(monthlyWeightSchema), shouldFocusError: false, defaultValues: { weights: exercises.map(exercise => Array.from({ length: 6 }, (_, i) => slots[i]?.exercises.find(e => e.routineExerciseId === exercise.id)?.weightKg?.replace('.', ',') ?? '')) } });
+  useEffect(() => { onDirtyChange(isDirty); }, [isDirty, onDirtyChange]);
+  useEffect(() => {
+    const resize = () => { const viewport = window.visualViewport; setKeyboardInset(viewport ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop) : 0);
+      const focused = document.activeElement;
+      if (focused instanceof HTMLInputElement && formRef.current?.contains(focused)) focused.scrollIntoView?.({ block: 'center', behavior: 'instant' }); };
+    window.addEventListener('resize', resize);
+    window.visualViewport?.addEventListener('resize', resize);
+    window.visualViewport?.addEventListener('scroll', resize);
+    return () => { window.removeEventListener('resize', resize); window.visualViewport?.removeEventListener('resize', resize); window.visualViewport?.removeEventListener('scroll', resize); };
+  }, []);
+  const busy = pending || isSubmitting;
+  const blocks = isGroupedDay(exercises) ? groupRoutineBlocks(exercises) : [];
+  return <form ref={formRef} noValidate className="min-w-0 space-y-4" onSubmit={handleSubmit(async values => {
+    const weeks = Array.from({ length: 6 }, (_, i) => ({ weekNumber: i + 1, exercises: exercises.map((exercise, index) => ({ id: exercise.id, weightKg: values.weights[index]![i] === '' ? null : values.weights[index]![i]!.replace(',', '.') })) }));
+    try { await onSave(weeks); reset(values); onDirtyChange(false); } catch { /* Keep draft and open exercises; parent renders the request error. */ }
+  }, invalid => setOpen(current => [...new Set([...current, ...exercises.filter((_, index) => invalid.weights?.[index]).map(e => e.id)])]))}>
+    <fieldset disabled={busy} className="min-w-0 space-y-3"><legend className="sr-only">Pesos del día por mes y semana</legend>{exercises.map((exercise, index) => {
+      const expanded = open.includes(exercise.id);
+      const panel = `${prefix}-${index}`;
+      const block = blocks.find(b => b.exercises.includes(exercise));
+      return <React.Fragment key={exercise.id}>{block?.exercises[0] === exercise ? <h3 className="pt-3 font-semibold">Bloque {block.label}{block.series ? ` — ${block.series} series` : ''}</h3> : null}<article className="min-w-0 overflow-hidden rounded-md border bg-white">
+        <h3><button type="button" aria-expanded={expanded} aria-controls={panel} className="flex min-h-16 w-full items-start justify-between gap-3 p-4 text-left focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" onClick={() => setOpen(current => expanded ? current.filter(id => id !== exercise.id) : [...current, exercise.id])}>
+          <span className="min-w-0 break-words"><span className="block font-semibold">{exercise.exerciseName}</span><span className="mt-1 block text-sm text-muted-foreground">{[exercise.series && `${exercise.series} series`, exercise.repetitions && `${exercise.repetitions} rep.`, exercise.duration && `Tiempo ${formatRoutineDuration(exercise.duration)}`, exercise.load && `Carga ${formatRoutineLoad(exercise.load)}`, exercise.rest && `Descanso ${exercise.rest}`].filter(Boolean).join(' · ')}</span>{errors.weights?.[index] ? <span className="block text-sm text-red-700">Revisá los pesos ingresados</span> : null}</span>{expanded ? <ChevronUp size={20} className="shrink-0" aria-hidden="true"/> : <ChevronDown size={20} className="shrink-0" aria-hidden="true"/>}
+        </button></h3>
+        <div id={panel} hidden={!expanded} className="space-y-3 px-4 pb-4">{exercise.notes ? <p className="text-sm">{exercise.notes}</p> : null}<h4 className="text-sm font-medium">Registro de pesos</h4>{Array.from({ length: 6 }, (_, week) => {
+          const id = `${panel}-week-${week}`; const error = errors.weights?.[index]?.[week];
+          return <div key={week} className="border-t pt-3"><div className="flex min-w-0 items-center justify-between gap-3"><label htmlFor={id} className="shrink-0 text-sm">Semana {week + 1}<span className="sr-only"> — {exercise.exerciseName}, ejercicio {index + 1}</span></label><div className="flex min-w-0 items-center gap-2"><input {...register(`weights.${index}.${week}`)} id={id} onFocus={event => event.currentTarget.scrollIntoView?.({ block: 'center', behavior: 'instant' })} type="text" inputMode="decimal" autoComplete="off" aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} className="min-h-11 w-28 scroll-mb-44 min-w-0 rounded-md border bg-white px-3 text-right text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-ring sm:w-36"/><span className="text-sm text-muted-foreground">kg</span></div></div>{error ? <p id={`${id}-error`} role="alert" className="mt-1 text-sm text-red-700">{error.message}</p> : null}</div>;
+        })}</div>
+      </article></React.Fragment>;
+    })}</fieldset>
+    {children}
+    <div className="hidden sm:block"><Button type="submit" disabled={busy || !isDirty || !exercises.length}>{busy ? 'Guardando…' : 'Guardar pesos'}</Button></div>
+    {isDirty ? <div className="fixed inset-x-0 z-30 mx-auto max-w-3xl border-t bg-white p-3 sm:hidden" style={{ bottom: keyboardInset > 0 ? `${keyboardInset}px` : 'calc(5rem + env(safe-area-inset-bottom))' }}><Button type="submit" className="min-h-11 w-full" disabled={busy}>{busy ? 'Guardando…' : 'Guardar pesos'}</Button></div> : null}
+  </form>;
+}

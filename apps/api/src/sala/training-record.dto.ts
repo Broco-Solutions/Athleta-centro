@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsBoolean, IsDateString, IsInt, IsOptional, IsUUID, Matches, Max, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, ArrayMaxSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsInt, IsOptional, IsUUID, Matches, Max, Min, ValidateNested } from 'class-validator';
 
 export const TRAINING_WEIGHT_PATTERN = /^\d{1,35}(?:[.,]\d{1,30})?$/;
 export class TrainingWeightDto {
@@ -19,6 +19,17 @@ export class CreateTrainingRecordDto extends CorrectTrainingRecordDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() routineDayId!: string;
   @ApiProperty({ type: String, format: 'date' }) @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) date!: string;
   @ApiPropertyOptional({ type: Boolean, description: 'Allows future week references for portal weekly training only.' }) @IsOptional() @IsBoolean() allowFuture?: boolean;
+}
+export class MonthlyTrainingWeekDto extends CorrectTrainingRecordDto {
+  @ApiProperty({ type: Number, minimum: 1, maximum: 6 }) @IsInt() @Min(1) @Max(6) weekNumber!: number;
+}
+export class SaveMonthlyTrainingWeightsDto {
+  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() routineId!: string;
+  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() routineDayId!: string;
+  @ApiProperty({ type: String, example: '2026-11' }) @Matches(/^(?!0000)\d{4}-(0[1-9]|1[0-2])$/) month!: string;
+  @ApiProperty({ type: () => [MonthlyTrainingWeekDto], minItems: 6, maxItems: 6 })
+  @IsArray() @ArrayMinSize(6) @ArrayMaxSize(6) @ArrayUnique((week: MonthlyTrainingWeekDto) => week.weekNumber)
+  @ValidateNested({ each: true }) @Type(() => MonthlyTrainingWeekDto) weeks!: MonthlyTrainingWeekDto[];
 }
 export class TrainingMonthQueryDto {
   @ApiProperty({ type: String, pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$', example: '2026-10' })
@@ -56,7 +67,9 @@ export class TrainingRecordSummaryDto {
   @ApiProperty({ type: String }) id!: string;
   @ApiProperty({ type: String }) routineId!: string;
   @ApiProperty({ type: String }) routineDayId!: string;
-  @ApiProperty({ type: String, format: 'date' }) date!: string;
+  @ApiProperty({ type: String, format: 'date', nullable: true }) date!: string | null;
+  @ApiProperty({ type: String, nullable: true }) month!: string | null;
+  @ApiProperty({ type: Number, nullable: true }) weekNumber!: number | null;
   @ApiProperty({ type: String, nullable: true }) dayName!: string | null;
   @ApiProperty({ type: Number }) dayPosition!: number;
   @ApiProperty({ type: String, format: 'date-time' }) createdAt!: string;
@@ -88,6 +101,7 @@ export class TrainingContextDayDto {
 export class TrainingContextRoutineDto {
   @ApiProperty({ type: String }) id!: string;
   @ApiProperty({ type: String, format: 'date' }) createdOn!: string;
+  @ApiProperty({ type: String, format: 'date' }) effectiveFrom!: string;
   @ApiProperty({ type: () => [TrainingContextDayDto] }) days!: TrainingContextDayDto[];
 }
 export class TrainingRoutineDayDto {
@@ -99,7 +113,9 @@ export class TrainingRoutineDayDto {
 export class TrainingRoutineVersionDto {
   @ApiProperty({ type: String }) id!: string;
   @ApiProperty({ type: Number }) version!: number;
-  @ApiProperty({ enum: ['ACTIVE', 'HISTORICAL'] }) status!: 'ACTIVE' | 'HISTORICAL';
+  @ApiProperty({ enum: ['ACTIVE', 'HISTORICAL', 'SCHEDULED'] }) status!: 'ACTIVE' | 'HISTORICAL' | 'SCHEDULED';
+  @ApiProperty({ type: String, format: 'date' }) effectiveFrom!: string;
+  @ApiProperty({ type: String, format: 'date', nullable: true }) effectiveUntil!: string | null;
   @ApiProperty({ type: String, format: 'date' }) createdOn!: string;
   @ApiProperty({ type: () => [TrainingRoutineDayDto] }) days!: TrainingRoutineDayDto[];
 }

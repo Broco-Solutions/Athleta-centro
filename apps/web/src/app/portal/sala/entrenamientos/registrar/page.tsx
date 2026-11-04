@@ -6,8 +6,9 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { correctPortalTrainingRecord, getPortalTrainingContext, getPortalTrainingRecord, type TrainingWeightDto } from '@athleta/api-client';
 import { PortalFrame } from '../../../portal-ui';
 import { NewTraining, Saved, SaveError, useTrainingSave } from '../../../../../features/sala/portal-training-form';
+import { recordPeriod } from '../../../../../features/sala/training-record-history';
 import { TrainingWeightsForm } from '../../../../../features/sala/training-weights-form';
-import { trainingDate, trainingResponse } from '../../../../../features/sala/training-record-api';
+import { trainingResponse } from '../../../../../features/sala/training-record-api';
 
 const linkClass = 'inline-flex min-h-11 items-center rounded-md border bg-white px-3 text-sm font-medium';
 function CorrectTraining({ id }: { id: string }): React.JSX.Element {
@@ -17,7 +18,7 @@ function CorrectTraining({ id }: { id: string }): React.JSX.Element {
   if (mutation.isSuccess) return <Saved/>;
   if (detail.isPending) return <p role="status">Cargando entrenamiento…</p>;
   if (detail.isError) return <p role="alert">No pudimos cargar ese entrenamiento.</p>;
-  return <div className="space-y-4"><p className="font-medium">{trainingDate(detail.data.date)} — {detail.data.dayName || `Día ${detail.data.dayPosition}`}</p><p className="text-sm text-muted-foreground">Corregí los pesos utilizados. Se conserva la planificación original de este entrenamiento.</p><TrainingWeightsForm key={id} correction exercises={detail.data.exercises} pending={mutation.isPending || !session.data?.csrfToken} onSave={async weights => { try { await mutation.mutateAsync(weights); } catch { /* Preserve entered values on error. */ } }}><SaveError error={mutation.error}/></TrainingWeightsForm></div>;
+  return <div className="space-y-4"><p className="font-medium">{recordPeriod(detail.data)} — {detail.data.dayName || `Día ${detail.data.dayPosition}`}</p><p className="text-sm text-muted-foreground">Corregí los pesos utilizados. Se conserva la planificación original de este entrenamiento.</p><TrainingWeightsForm key={id} correction exercises={detail.data.exercises} pending={mutation.isPending || !session.data?.csrfToken} onSave={async weights => { try { await mutation.mutateAsync(weights); } catch { /* Preserve entered values on error. */ } }}><SaveError error={mutation.error}/></TrainingWeightsForm></div>;
 }
 function Registration(): React.JSX.Element {
   const params = useSearchParams();

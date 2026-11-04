@@ -11,7 +11,7 @@ type Props = {
   definitions?: ExerciseDefinition[];
   templateName?: string;
   studentName?: string;
-  status?: 'ACTIVE' | 'HISTORICAL';
+  status?: 'ACTIVE' | 'HISTORICAL' | 'SCHEDULED';
   version?: number;
   disabled?: boolean;
 };
@@ -48,7 +48,7 @@ export function RoutinePrintButton({ days, definitions = [], templateName, stude
     {printing ? createPortal(<main id="athleta-routine-print-root">
       <header><h1>ATHLETA CENTRO</h1><p>RUTINA DE ENTRENAMIENTO</p></header>
       <div className="routine-print-identification">
-        {templateName ? <p>Rutina: {templateName}</p> : studentName ? <><p>Alumno: {studentName}</p>{status && version !== undefined ? <p>Estado: {status === 'ACTIVE' ? 'Activa' : 'Histórica'} · Versión: {version}</p> : null}</> : null}
+        {templateName ? <p>Rutina: {templateName}</p> : studentName ? <><p>Alumno: {studentName}</p>{status && version !== undefined ? <p>Estado: {status === 'ACTIVE' ? 'Activa' : status === 'SCHEDULED' ? 'Programada' : 'Histórica'} · Versión: {version}</p> : null}</> : null}
       </div>
       {[...days].sort((a, b) => a.position - b.position).map((day, dayIndex) => <section key={dayIndex}>
         <h2>{day.name || `Día ${day.position}`}</h2>

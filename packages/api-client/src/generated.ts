@@ -1100,7 +1100,12 @@ export interface TrainingRecordSummaryDto {
   id: string;
   routineId: string;
   routineDayId: string;
-  date: string;
+  /** @nullable */
+  date: string | null;
+  /** @nullable */
+  month: string | null;
+  /** @nullable */
+  weekNumber: number | null;
   /** @nullable */
   dayName: string | null;
   dayPosition: number;
@@ -1148,13 +1153,22 @@ export interface TrainingRecordDetailDto {
   id: string;
   routineId: string;
   routineDayId: string;
-  date: string;
+  /** @nullable */
+  date: string | null;
+  /** @nullable */
+  month: string | null;
+  /** @nullable */
+  weekNumber: number | null;
   /** @nullable */
   dayName: string | null;
   dayPosition: number;
   createdAt: string;
   updatedAt: string;
   exercises: TrainingRecordExerciseDto[];
+}
+
+export interface TrainingRecordMonthEnvelopeDto {
+  data: TrainingRecordDetailDto[];
 }
 
 export interface TrainingRecordEnvelopeDto {
@@ -1168,6 +1182,7 @@ export type SalaRoutineResponseDtoStatus = typeof SalaRoutineResponseDtoStatus[k
 export const SalaRoutineResponseDtoStatus = {
   ACTIVE: 'ACTIVE',
   HISTORICAL: 'HISTORICAL',
+  SCHEDULED: 'SCHEDULED',
 } as const;
 
 export interface SalaRoutineResponseDto {
@@ -1175,6 +1190,9 @@ export interface SalaRoutineResponseDto {
   personId: string;
   salaParticipationId: string;
   status: SalaRoutineResponseDtoStatus;
+  effectiveFrom: string;
+  /** @nullable */
+  effectiveUntil: string | null;
   version: number;
   createdAt: string;
   days: RoutineDayResponseDto[];
@@ -1185,9 +1203,14 @@ export interface SalaRoutineListEnvelopeDto {
 }
 
 export interface ReplaceRoutineDto {
+  effectiveFrom?: string;
   personId: string;
   salaParticipationId: string;
   days: RoutineDayDto[];
+}
+
+export interface DuplicateRoutineDto {
+  effectiveFrom?: string;
 }
 
 export interface MovementPatternResponseDto {
@@ -2061,12 +2084,16 @@ export type TrainingRoutineVersionDtoStatus = typeof TrainingRoutineVersionDtoSt
 export const TrainingRoutineVersionDtoStatus = {
   ACTIVE: 'ACTIVE',
   HISTORICAL: 'HISTORICAL',
+  SCHEDULED: 'SCHEDULED',
 } as const;
 
 export interface TrainingRoutineVersionDto {
   id: string;
   version: number;
   status: TrainingRoutineVersionDtoStatus;
+  effectiveFrom: string;
+  /** @nullable */
+  effectiveUntil: string | null;
   createdOn: string;
   days: TrainingRoutineDayDto[];
 }
@@ -2105,6 +2132,7 @@ export interface TrainingContextDayDto {
 export interface TrainingContextRoutineDto {
   id: string;
   createdOn: string;
+  effectiveFrom: string;
   days: TrainingContextDayDto[];
 }
 
@@ -2124,10 +2152,6 @@ export interface TrainingContextEnvelopeDto {
   data: TrainingContextDto;
 }
 
-export interface TrainingRecordMonthEnvelopeDto {
-  data: TrainingRecordDetailDto[];
-}
-
 export interface TrainingWeightDto {
   /** Routine entry ID on creation; saved training entry ID on correction */
   id: string;
@@ -2136,6 +2160,26 @@ export interface TrainingWeightDto {
    * @nullable
    */
   weightKg: string | null;
+}
+
+export interface MonthlyTrainingWeekDto {
+  exercises: TrainingWeightDto[];
+  /**
+   * @minimum 1
+   * @maximum 6
+   */
+  weekNumber: number;
+}
+
+export interface SaveMonthlyTrainingWeightsDto {
+  routineId: string;
+  routineDayId: string;
+  month: string;
+  /**
+   * @minItems 6
+   * @maxItems 6
+   */
+  weeks: MonthlyTrainingWeekDto[];
 }
 
 export interface CreateTrainingRecordDto {
@@ -2312,6 +2356,10 @@ date: string;
 export type ListPersonTrainingRecordsParams = {
 pageSize?: number;
 page?: number;
+};
+
+export type ListPersonTrainingRecordsMonthParams = {
+month: string;
 };
 
 export type ListSalaPlans200DataItem = { [key: string]: unknown };
@@ -5001,6 +5049,54 @@ export const listPersonTrainingRecords = async (personId: string,
 
 
 
+export type listPersonTrainingRecordsMonthResponse200 = {
+  data: TrainingRecordMonthEnvelopeDto
+  status: 200
+}
+
+export type listPersonTrainingRecordsMonthResponseSuccess = (listPersonTrainingRecordsMonthResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPersonTrainingRecordsMonthResponse = (listPersonTrainingRecordsMonthResponseSuccess)
+
+export const getListPersonTrainingRecordsMonthUrl = (personId: string,
+    params: ListPersonTrainingRecordsMonthParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/sala/people/${personId}/training-records/month?${stringifiedParams}` : `/api/sala/people/${personId}/training-records/month`
+}
+
+export const listPersonTrainingRecordsMonth = async (personId: string,
+    params: ListPersonTrainingRecordsMonthParams, options?: RequestInit): Promise<listPersonTrainingRecordsMonthResponse> => {
+
+  const res = await fetch(getListPersonTrainingRecordsMonthUrl(personId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listPersonTrainingRecordsMonthResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPersonTrainingRecordsMonthResponse
+}
+
+
+
 export type getPersonTrainingRecordResponse200 = {
   data: TrainingRecordEnvelopeDto
   status: 200
@@ -5141,14 +5237,16 @@ export const getDuplicateSalaRoutineUrl = (id: string,) => {
   return `/api/sala/routines/${id}/duplicate`
 }
 
-export const duplicateSalaRoutine = async (id: string, options?: RequestInit): Promise<duplicateSalaRoutineResponse> => {
+export const duplicateSalaRoutine = async (id: string,
+    duplicateRoutineDto?: DuplicateRoutineDto, options?: RequestInit): Promise<duplicateSalaRoutineResponse> => {
 
   const res = await fetch(getDuplicateSalaRoutineUrl(id),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      duplicateRoutineDto,)
   }
 )
 
@@ -10459,6 +10557,46 @@ export const getPortalTrainingRecord = async (id: string, options?: RequestInit)
 
   const data: getPortalTrainingRecordResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getPortalTrainingRecordResponse
+}
+
+
+
+export type savePortalMonthlyTrainingWeightsResponse200 = {
+  data: TrainingRecordMonthEnvelopeDto
+  status: 200
+}
+
+export type savePortalMonthlyTrainingWeightsResponseSuccess = (savePortalMonthlyTrainingWeightsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type savePortalMonthlyTrainingWeightsResponse = (savePortalMonthlyTrainingWeightsResponseSuccess)
+
+export const getSavePortalMonthlyTrainingWeightsUrl = () => {
+
+
+
+
+  return `/api/portal/sala/training-records/monthly`
+}
+
+export const savePortalMonthlyTrainingWeights = async (saveMonthlyTrainingWeightsDto: SaveMonthlyTrainingWeightsDto, options?: RequestInit): Promise<savePortalMonthlyTrainingWeightsResponse> => {
+
+  const res = await fetch(getSavePortalMonthlyTrainingWeightsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      saveMonthlyTrainingWeightsDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: savePortalMonthlyTrainingWeightsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as savePortalMonthlyTrainingWeightsResponse
 }
 
 

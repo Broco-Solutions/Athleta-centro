@@ -1,4 +1,4 @@
-import { listPortalTrainingRecordsMonth, listPortalTrainingRecords, getPortalTrainingRecord, listPersonTrainingRecords, getPersonTrainingRecord, type TrainingRecordListEnvelopeDto, type TrainingRecordDetailDto } from '@athleta/api-client';
+import { listPersonTrainingRecordsMonth, listPortalTrainingRecordsMonth, listPortalTrainingRecords, getPortalTrainingRecord, listPersonTrainingRecords, getPersonTrainingRecord, type TrainingRecordListEnvelopeDto, type TrainingRecordDetailDto } from '@athleta/api-client';
 
 export class TrainingRequestError extends Error {
   constructor(message: string, public readonly code?: string, public readonly recordId?: string) { super(message); }
@@ -9,6 +9,7 @@ export function trainingResponse<T>(response: { status: number; data: T }): T {
   throw new TrainingRequestError(body.message ?? 'No pudimos completar la operación. Intentá nuevamente.', body.code, body.details?.recordId);
 }
 export type TrainingHistoryApi = {
+  month?: (month: string) => Promise<TrainingRecordDetailDto[]>;
   list: (page: number) => Promise<TrainingRecordListEnvelopeDto>;
   detail: (id: string) => Promise<TrainingRecordDetailDto>;
 };
@@ -18,6 +19,7 @@ export const portalTrainingApi: TrainingHistoryApi = {
 };
 export function personTrainingApi(personId: string): TrainingHistoryApi {
   return {
+    month: async month => trainingResponse(await listPersonTrainingRecordsMonth(personId, { month }, { credentials: 'include' })).data,
     list: async page => trainingResponse(await listPersonTrainingRecords(personId, { page, pageSize: 20 }, { credentials: 'include' })),
     detail: async id => trainingResponse(await getPersonTrainingRecord(personId, id, { credentials: 'include' })).data,
   };

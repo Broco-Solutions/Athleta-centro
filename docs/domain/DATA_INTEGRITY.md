@@ -467,6 +467,24 @@ No debe existir un estado persistente válido con:
 
 para la misma Persona.
 
+
+La unicidad persistida `ACTIVE` identifica la última asignación; la vigencia se
+resuelve por `effectiveFrom` y `version`, incluyendo asignaciones futuras. Bajo
+el bloqueo de Persona, `ReplaceRoutine` valida que la nueva fecha no preceda la
+última asignada. No cambia `createdAt` ni las prescripciones anteriores.
+
+Los pesos admiten exactamente una de dos identidades (CHECK en PostgreSQL):
+
+- Anterior: `date` presente, `month` y `weekNumber` nulos.
+- Mensual: `date` nula, mes válido `YYYY-MM` y semana entera 1..6 presentes.
+
+Se conservan la unicidad anterior y el CHECK de peso no negativo. Una nueva
+unicidad protege Persona + rutina + día + mes + semana. El guardado de las seis
+semanas usa transacción serializable y bloqueo de Persona, conserva snapshots y
+registros vaciados, y no crea registros nuevos completamente vacíos. La migración
+no traduce fechas anteriores a semanas; únicamente deriva `effectiveFrom` de
+`createdAt` usando `America/Argentina/Buenos_Aires` para las rutinas preexistentes.
+
 ---
 
 ## 21. SalaPayment — renovación y cobertura

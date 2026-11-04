@@ -1749,8 +1749,8 @@ describe('Sala configuration API', () => {
         }
       }
       await prisma.salaOccurrence.create({ data: { personId: students[0]!.person.id, scheduleSlotId: slot.id, date: new Date('2026-10-13'), startTime: new Date('1970-01-01T09:15:00Z'), serviceTypeId: service.id, serviceDurationMinutes: 30, origin: 'SPONTANEOUS', status: 'ATTENDED' } });
-      await prisma.routine.create({ data: { personId: students[0]!.person.id, salaParticipationId: students[0]!.participation.id, version: 1, status: 'ACTIVE' } });
-      await prisma.routine.create({ data: { personId: students[1]!.person.id, salaParticipationId: students[1]!.participation.id, version: 1, status: 'HISTORICAL' } });
+      await prisma.routine.create({ data: { effectiveFrom: new Date('2026-10-01T00:00:00Z'), personId: students[0]!.person.id, salaParticipationId: students[0]!.participation.id, version: 1, status: 'ACTIVE' } });
+      await prisma.routine.create({ data: { effectiveFrom: new Date('2099-12-01T00:00:00Z'), personId: students[1]!.person.id, salaParticipationId: students[1]!.participation.id, version: 1, status: 'HISTORICAL' } });
       const method = await prisma.paymentMethod.create({ data: { name: `Dashboard ${randomUUID()}` } });
       const pay = (index: number, month: number) => prisma.salaPayment.create({ data: { personId: students[index]!.person.id, year: 2026, month, coverageStartDate: new Date(Date.UTC(2026, month - 1, 1)), coverageEndDate: new Date(Date.UTC(2026, month, 0)), paidAt: new Date('2026-09-30'), amount: 1000, paymentMethodId: method.id, registeredById: professor.id, operationId: randomUUID() } });
       const payment = await pay(0, 10);
@@ -1759,6 +1759,8 @@ describe('Sala configuration API', () => {
     }
     it('authorizes Professor and derives all counters, three upcoming times and minimal personal data from the agenda', async () => {
       const f = await dashboardFixture();
+      const previous = await prisma.salaParticipation.create({ data: { personId: f.students[2]!.person.id, mainProfessorId: f.professor.id, planId: f.students[2]!.participation.planId, startDate: new Date('2025-01-01'), endDate: new Date('2025-12-31') } });
+      await prisma.routine.create({ data: { personId: f.students[2]!.person.id, salaParticipationId: previous.id, effectiveFrom: new Date('2025-01-01'), status: 'HISTORICAL', version: 1 } });
       const result = await request(app.getHttpServer()).get('/api/sala/dashboard?date=2026-10-13').set('Cookie', f.authn.cookie).expect(200);
       expect(result.body.data).toMatchObject({ date: '2026-10-13', expected: 6, attended: 2, cancelledOrAbsent: 2, withoutRoutine: { count: 5 }, withoutValidity: { count: 5 } });
       expect(result.body.data.upcoming.map((slot: { startTime: string }) => slot.startTime)).toEqual(['09:00', '10:00', '11:00']);
@@ -1844,8 +1846,8 @@ describe('Sala configuration API', () => {
         const participation = await prisma.salaParticipation.create({ data: { personId: person.id, mainProfessorId: index % 2 ? other.id : professor.id, planId: plan.id, startDate: new Date('2026-01-01'), ...(index === 4 ? { endDate: new Date('2026-10-01') } : {}) } });
         students.push({ person, participation });
       }
-      await prisma.routine.create({ data: { personId: students[0]!.person.id, salaParticipationId: students[0]!.participation.id, version: 1, status: 'ACTIVE' } });
-      await prisma.routine.create({ data: { personId: students[1]!.person.id, salaParticipationId: students[1]!.participation.id, version: 1, status: 'HISTORICAL' } });
+      await prisma.routine.create({ data: { effectiveFrom: new Date('2026-10-01T00:00:00Z'), personId: students[0]!.person.id, salaParticipationId: students[0]!.participation.id, version: 1, status: 'ACTIVE' } });
+      await prisma.routine.create({ data: { effectiveFrom: new Date('2099-12-01T00:00:00Z'), personId: students[1]!.person.id, salaParticipationId: students[1]!.participation.id, version: 1, status: 'HISTORICAL' } });
       const method = await prisma.paymentMethod.create({ data: { name: `Students ${randomUUID()}` } });
       const pay = (index: number, month: number) => prisma.salaPayment.create({ data: { personId: students[index]!.person.id, year: 2026, month, coverageStartDate: new Date(Date.UTC(2026, month - 1, 1)), coverageEndDate: new Date(Date.UTC(2026, month, 0)), amount: 1000, paidAt: new Date('2026-10-01'), registeredById: professor.id, paymentMethodId: method.id, operationId: randomUUID() } });
       await pay(0, 10);
@@ -1875,7 +1877,7 @@ describe('Sala configuration API', () => {
       }
       expect(Object.keys(result.body)).toEqual(['data']);
     });
-    it('counts only ACTIVE routines of that participation and current non-reversed coverage', async () => {
+    it('counts only effective routines of that participation and current non-reversed coverage', async () => {
       const f = await studentsFixture();
       const result = await request(app.getHttpServer()).get('/api/sala/students').set('Cookie', f.authn.cookie).expect(200);
       const statuses = new Map<string, { routineStatus: string; hasValidAccess: boolean }>(result.body.data.map((row: { id: string; routineStatus: string; hasValidAccess: boolean }) => [row.id, row]));
@@ -1883,7 +1885,7 @@ describe('Sala configuration API', () => {
       for (const index of [1, 2, 3]) expect(statuses.get(f.students[index]!.person.id)).toMatchObject({ routineStatus: 'MISSING', hasValidAccess: false, lastPaymentPaidAt: index === 3 ? '2026-10-01' : null });
       // An ACTIVE routine tied to a former participation cannot make the current participation active.
       const previous = await prisma.salaParticipation.create({ data: { personId: f.students[2]!.person.id, mainProfessorId: f.professor.id, planId: f.plan.id, startDate: new Date('2025-01-01'), endDate: new Date('2025-12-31') } });
-      await prisma.routine.create({ data: { personId: f.students[2]!.person.id, salaParticipationId: previous.id, version: 1, status: 'ACTIVE' } });
+      await prisma.routine.create({ data: { effectiveFrom: new Date('2026-10-01T00:00:00Z'), personId: f.students[2]!.person.id, salaParticipationId: previous.id, version: 1, status: 'ACTIVE' } });
       const after = await request(app.getHttpServer()).get('/api/sala/students').set('Cookie', f.authn.cookie).expect(200);
       expect(after.body.data.find((row: { id: string }) => row.id === f.students[2]!.person.id).routineStatus).toBe('MISSING');
     });
@@ -1925,7 +1927,7 @@ describe('Sala configuration API', () => {
       const base = { personId: student.person.id, salaParticipationId: student.participation.id, scheduleSlotId: slot.id };
       const fixed = await prisma.fixedSalaBooking.create({ data: { ...base, startDate: new Date('2026-10-01') } });
       const reservation = await prisma.oneOffReservation.create({ data: { ...base, date: new Date('2026-11-02') } });
-      const routine = await prisma.routine.create({ data: { personId: student.person.id, salaParticipationId: student.participation.id, status: 'ACTIVE', version: 1 } });
+      const routine = await prisma.routine.create({ data: { effectiveFrom: new Date('2026-10-01T00:00:00Z'), personId: student.person.id, salaParticipationId: student.participation.id, status: 'ACTIVE', version: 1 } });
       const indication = await prisma.salaClinicalIndication.create({ data: { personId: student.person.id, responsibleProfessionalId: f.actor.id, trainingCondition: 'RESTRICTED', affectedArea: 'Dato privado sintético', instructions: 'Instrucción privada sintética' } });
       return { fixed, reservation, routine, indication };
     }

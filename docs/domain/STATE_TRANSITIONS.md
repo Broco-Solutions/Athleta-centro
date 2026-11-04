@@ -591,6 +591,14 @@ ARCHIVED
 
 como estados funcionales.
 
+Desde la definición de períodos del 2026-11-04, estos dos valores persistidos
+conservan la última asignación como mecanismo de compatibilidad. La presentación
+operativa se deriva de `effectiveFrom` y `version`: vigente hoy (`ACTIVE`), período
+finalizado (`HISTORICAL`) o inicio futuro (`SCHEDULED`). No se agrega un estado a
+Prisma ni una transición programada: al llegar la fecha, la lectura selecciona
+la versión correspondiente. A igual inicio prevalece la mayor versión y las
+anteriores no generan períodos de duración cero en el Portal.
+
 ---
 
 # 24. Creación de Routine

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
@@ -57,7 +58,7 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     await prisma.session.create({ data: { personId: person.id, kind: 'PORTAL', secretHash: createHash('sha256').update(token).digest('hex'), csrfToken: csrf, expiresAt: new Date(Date.now() + 86_400_000) } });
     const a = await sala.createExerciseDefinition({ name: `Press ${suffix}`, description: 'Original' }); definitions.push(a.id);
     const b = await sala.createExerciseDefinition({ name: `Remo ${suffix}` }); definitions.push(b.id);
-    const routine = await sala.replaceRoutine({ personId: person.id, salaParticipationId: participation.id, days: [{ name: 'Fuerza', exercises: [{ exerciseDefinitionId: a.id, series: '3', repetitions: '10', load: '30 kg', rest: '60 s', notes: 'Controlado' }, { exerciseDefinitionId: b.id, duration: '30 s' }, { exerciseDefinitionId: a.id, load: '15 kg' }] }] });
+    const routine = await sala.replaceRoutine({ effectiveFrom: '2026-10-19', personId: person.id, salaParticipationId: participation.id, days: [{ name: 'Fuerza', exercises: [{ exerciseDefinitionId: a.id, series: '3', repetitions: '10', load: '30 kg', rest: '60 s', notes: 'Controlado' }, { exerciseDefinitionId: b.id, duration: '30 s' }, { exerciseDefinitionId: a.id, load: '15 kg' }] }] });
     // 02:00 UTC is still the previous day in Argentina.
     await prisma.routine.update({ where: { id: routine.id }, data: { createdAt: new Date('2026-10-20T02:00:00Z') } });
     const body = { routineId: routine.id, routineDayId: routine.days[0]!.id, date: '2026-10-20', exercises: routine.days[0]!.exercises.map((exercise, i) => ({ id: exercise.id, weightKg: ['32.5', '22', null][i] as string | null })) };
@@ -72,6 +73,157 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200);
     return login.headers['set-cookie'][0] as string;
   }
+  function monthly(f: Awaited<ReturnType<typeof fixture>>, month = '2026-10') {
+    return { routineId: f.routine.id, routineDayId: f.routine.days[0]!.id, month, weeks: Array.from({ length: 6 }, (_, i) => ({ weekNumber: i + 1, exercises: f.body.exercises.map(e => ({ id: e.id, weightKg: i === 0 ? e.weightKg : null })) })) };
+  }
+  function saveMonth(f: Awaited<ReturnType<typeof fixture>>, body = monthly(f)) {
+    return request(app.getHttpServer()).put('/api/portal/sala/training-records/monthly').set('Cookie', f.cookie).set('x-csrf-token', f.csrf).send(body);
+  }
+  it('keeps months independent and repeatedly updates the same record, preserving null, zero and snapshots', async () => {
+    const f = await fixture();
+    const ids: string[] = [];
+    for (const [month, weight] of [['2026-10', '40'], ['2026-11', '45'], ['2026-12', '50']]) {
+      const body = monthly(f, month); body.weeks[0]!.exercises[0]!.weightKg = weight!;
+      const response = await saveMonth(f, body).expect(200); ids.push(response.body.data[0].id);
+      expect(response.body.data).toHaveLength(1);
+      expect(response.body.data[0]).toMatchObject({ date: null, month, weekNumber: 1 });
+    }
+    expect(new Set(ids).size).toBe(3);
+    const original = (await training.listMonth(f.person.id, '2026-10'))[0]!;
+    for (const weight of ['45', '47,5', '0']) {
+      const body = monthly(f); body.weeks[0]!.exercises[0]!.weightKg = weight;
+      const record = (await saveMonth(f, body).expect(200)).body.data[0];
+      expect(record.id).toBe(original.id); expect(record.createdAt).toBe(original.createdAt);
+      expect(record.exercises[0]).toMatchObject({ ...original.exercises[0], weightKg: weight.replace(',', '.') });
+    }
+    const empty = monthly(f); empty.weeks.forEach(w => w.exercises.forEach(e => { e.weightKg = null; }));
+    expect((await saveMonth(f, empty).expect(200)).body.data).toHaveLength(1);
+    expect(await prisma.routine.count({ where: { personId: f.person.id } })).toBe(1);
+    expect((await training.listMonth(f.person.id, '2026-11'))[0]!.exercises[0]!.weightKg).toBe('45');
+  });
+  it('saves multiple weeks atomically, rejects invalid entries, ownership, month and weeks, and prevents concurrent duplicates', async () => {
+    const f = await fixture(); const body = monthly(f);
+    body.weeks[3]!.exercises[1]!.weightKg = '60';
+    const results = await Promise.all([saveMonth(f, body), saveMonth(f, body)]);
+    expect(results.map(r => r.status)).toEqual([200, 200]);
+    expect(await prisma.salaTrainingRecord.count({ where: { personId: f.person.id } })).toBe(2);
+    const before = await training.listMonth(f.person.id, '2026-10');
+    for (const invalid of [
+      { ...body, month: '2026-13' }, { ...body, routineId: randomUUID() }, { ...body, routineDayId: randomUUID() },
+      { ...body, weeks: body.weeks.map((w, i) => i === 5 ? { ...w, weekNumber: 0 } : w) },
+      { ...body, weeks: body.weeks.map((w, i) => i === 5 ? { ...w, weekNumber: 7 } : w) },
+      { ...body, weeks: body.weeks.map((w, i) => i === 5 ? { ...w, weekNumber: 1 } : w) },
+      { ...body, weeks: body.weeks.map((w, i) => i === 5 ? { ...w, exercises: w.exercises.map((e, j) => j === 0 ? { ...e, id: randomUUID() } : e) } : w) },
+    ]) await saveMonth(f, invalid).expect(400);
+    expect(await training.listMonth(f.person.id, '2026-10')).toEqual(before);
+    await request(app.getHttpServer()).put('/api/portal/sala/training-records/monthly').set('Cookie', f.cookie).send(body).expect(403);
+    const other = await fixture(); await saveMonth(other, body).expect(400);
+    // An invalid final week causes rollback even when the first week changed.
+    const bad = monthly(f); bad.weeks[0]!.exercises[0]!.weightKg = '99'; bad.weeks[5]!.exercises[0]!.id = randomUUID();
+    await expect(training.saveMonthlyWeights(f.person.id, bad)).rejects.toThrow();
+    expect(await training.listMonth(f.person.id, '2026-10')).toEqual(before);
+  });
+  it('resolves scheduled assignments, rejects backwards assignments, preserves zero-period versions and allows retrospective first months', async () => {
+    const f = await fixture();
+    await saveMonth(f, monthly(f, '2026-09')).expect(200);
+    const future = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, effectiveFrom: '2026-12-01', days: [{ exercises: [{ exerciseDefinitionId: f.a.id }] }] });
+    expect((await training.context(f.person.id)).routine?.id).toBe(f.routine.id);
+    expect((await sala.listRoutines(f.person.id)).find(r => r.id === future.id)?.status).toBe('SCHEDULED');
+    await expect(sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, effectiveFrom: '2026-11-30', days: [] })).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_DATE_ORDER', message: 'La nueva rutina no puede comenzar antes de la última rutina asignada.' } });
+    const replacement = await sala.duplicateRoutine(future.id, '2026-12-01');
+    const saved = { ...monthly(f, '2026-12'), routineId: future.id, routineDayId: future.days[0]!.id, weeks: monthly(f).weeks.map(w => ({ ...w, exercises: future.days[0]!.exercises.map(e => ({ id: e.id, weightKg: '20' })) })) };
+    await saveMonth(f, saved).expect(400);
+    jest.spyOn(training as unknown as { today(): string }, 'today').mockReturnValue('2026-12-01');
+    expect((await training.context(f.person.id)).routine?.id).toBe(replacement.id);
+    jest.spyOn(training as unknown as { today(): string }, 'today').mockReturnValue('2026-10-26');
+    expect(await prisma.routine.count({ where: { personId: f.person.id } })).toBe(3);
+  });
+  it('keeps legacy records separate, correctable and unchanged after monthly saves', async () => {
+    const f = await fixture(); const legacy = (await create(f).expect(201)).body.data;
+    await saveMonth(f).expect(200);
+    const records = await training.listMonth(f.person.id, '2026-10'); expect(records).toHaveLength(2);
+    expect(records.find(r => r.id === legacy.id)).toEqual(legacy);
+    const corrected = await training.correct(f.person.id, legacy.id, { exercises: legacy.exercises.map((e: { id: string }) => ({ id: e.id, weightKg: '0' })) });
+    expect(corrected).toMatchObject({ id: legacy.id, date: legacy.date, month: null, weekNumber: null });
+    const monthlyRecord = records.find(r => r.date === null)!;
+    expect((await training.correct(f.person.id, monthlyRecord.id, { exercises: monthlyRecord.exercises.map(e => ({ id: e.id, weightKg: '42.5' })) })).month).toBe('2026-10');
+  });
+  it('keeps no-op saves unchanged and uses monthly weights as previous references without leaking future months', async () => {
+    const f = await fixture(); const body = monthly(f);
+    const saved = (await saveMonth(f, body).expect(200)).body.data;
+    expect((await saveMonth(f, body).expect(200)).body.data).toEqual(saved);
+    const future = monthly(f, '2026-12'); future.weeks[0]!.exercises[0]!.weightKg = '99'; await saveMonth(f, future).expect(200);
+    expect((await training.context(f.person.id, '2026-10-26')).routine?.days[0]?.exercises[0]?.lastWeightKg).toBe('32.5');
+    expect((await training.context(f.person.id, '2026-12-01')).routine?.days[0]?.exercises[0]?.lastWeightKg).toBe('99');
+  });
+  it('keeps six slots of two mid-month prescriptions separate, including advance entries', async () => {
+    const f = await fixture();
+    const next = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, effectiveFrom: '2026-11-15', days: [{ name: 'Segunda', exercises: [{ exerciseDefinitionId: f.a.id }] }] });
+    const firstBody = monthly(f, '2026-11'); firstBody.weeks[5]!.exercises[0]!.weightKg = '25';
+    await saveMonth(f, firstBody).expect(200);
+    const nextBody = { routineId: next.id, routineDayId: next.days[0]!.id, month: '2026-11', weeks: Array.from({ length: 6 }, (_, i) => ({ weekNumber: i + 1, exercises: next.days[0]!.exercises.map(e => ({ id: e.id, weightKg: i === 5 ? '35' : null })) })) };
+    await saveMonth(f, nextBody).expect(200);
+    const records = await training.listMonth(f.person.id, '2026-11');
+    expect(records.filter(r => r.weekNumber === 6).map(r => [r.routineId, r.exercises[0]?.weightKg])).toEqual(expect.arrayContaining([[f.routine.id, '25'], [next.id, '35']]));
+    await saveMonth(f, monthly(f, '2026-12')).expect(400);
+    const context = (await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200)).body.data;
+    expect(context.routine).toMatchObject({ id: f.routine.id, status: 'ACTIVE' });
+  });
+  it('preserves and corrects monthly records of a same-day superseded routine without admitting new monthly writes', async () => {
+    const f = await fixture(); const saved = (await saveMonth(f).expect(200)).body.data[0];
+    const latest = await sala.duplicateRoutine(f.routine.id, '2026-10-19');
+    await saveMonth(f).expect(400);
+    expect(await training.detail(f.person.id, saved.id)).toEqual(saved);
+    expect((await training.context(f.person.id)).routine?.id).toBe(latest.id);
+    expect((await sala.listRoutines(f.person.id)).find(r => r.id === f.routine.id)?.status).toBe('HISTORICAL');
+    const corrected = await training.correct(f.person.id, saved.id, { exercises: saved.exercises.map((e: { id: string }) => ({ id: e.id, weightKg: '45' })) });
+    expect(corrected).toMatchObject({ id: saved.id, month: '2026-10', weekNumber: 1, date: null });
+  });
+  it('protects both current and scheduled prescriptions in retirement and participation leave impact', async () => {
+    const f = await fixture(); const saved = (await saveMonth(f).expect(200)).body.data[0];
+    const future = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, effectiveFrom: '2099-12-01', days: [{ exercises: [{ exerciseDefinitionId: f.a.id }] }] });
+    expect((await sala.leaveImpact(f.participation.id)).activeRoutines).toBe(2);
+    await expect(sala.retireExerciseDefinition(f.a.id, false)).rejects.toMatchObject({ response: { details: { activeRoutines: 2 } } });
+    expect((await sala.retireExerciseDefinition(f.a.id, true)).affectedActiveRoutines).toBe(2);
+    expect(await training.detail(f.person.id, saved.id)).toEqual(saved);
+    expect(await prisma.routineExercise.count({ where: { routineDay: { routineId: future.id } } })).toBe(0);
+  });
+  it('rolls back every weekly write when persistence fails on the final week', async () => {
+    const f = await fixture(); const body = monthly(f); body.weeks[5]!.exercises[0]!.weightKg = '99';
+    const name = `training_rollback_${randomUUID().replaceAll('-', '')}`;
+    await prisma.$executeRawUnsafe(`CREATE FUNCTION ${name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.person_id = '${f.person.id}'::uuid AND NEW.week_number = 6 THEN RAISE EXCEPTION 'synthetic final week failure'; END IF; RETURN NEW; END $$`);
+    await prisma.$executeRawUnsafe(`CREATE TRIGGER ${name} BEFORE INSERT ON sala_training_records FOR EACH ROW EXECUTE FUNCTION ${name}()`);
+    try {
+      await expect(training.saveMonthlyWeights(f.person.id, body)).rejects.toThrow();
+      expect(await prisma.salaTrainingRecord.count({ where: { personId: f.person.id } })).toBe(0);
+      expect(await prisma.salaTrainingRecordExercise.count({ where: { record: { personId: f.person.id } } })).toBe(0);
+    } finally {
+      await prisma.$executeRawUnsafe(`DROP TRIGGER ${name} ON sala_training_records`);
+      await prisma.$executeRawUnsafe(`DROP FUNCTION ${name}()`);
+    }
+  });
+  it('backfills operational effective dates and preserves legacy IDs, dates, weights and snapshots through the migration SQL', async () => {
+    const f = await fixture(); await create(f).expect(201);
+    const sql = readFileSync('prisma/migrations/20261104120000_routine_periods_monthly_weights/migration.sql', 'utf8');
+    await prisma.$transaction(async tx => {
+      // Recreate the pre-migration shape in transaction-local tables. PostgreSQL
+      // resolves these before public tables; production and other suites are untouched.
+      await tx.$executeRaw`CREATE TEMP TABLE routines ON COMMIT DROP AS SELECT * FROM public.routines`;
+      await tx.$executeRaw`ALTER TABLE routines DROP COLUMN effective_from`;
+      await tx.$executeRaw`CREATE TEMP TABLE sala_training_records ON COMMIT DROP AS SELECT * FROM public.sala_training_records WHERE date IS NOT NULL`;
+      await tx.$executeRaw`ALTER TABLE sala_training_records DROP COLUMN month, DROP COLUMN week_number, ALTER COLUMN date SET NOT NULL`;
+      await tx.$executeRaw`CREATE TEMP TABLE sala_training_record_exercises ON COMMIT DROP AS SELECT * FROM public.sala_training_record_exercises`;
+      const before = await tx.$queryRaw`SELECT to_jsonb(r) AS data FROM sala_training_records r ORDER BY id`;
+      const snapshots = await tx.$queryRaw`SELECT to_jsonb(e) AS data FROM sala_training_record_exercises e ORDER BY id`;
+      const routines = await tx.$queryRaw`SELECT to_jsonb(r) AS data FROM routines r ORDER BY id`;
+      for (const statement of sql.split(';').filter(statement => statement.trim())) await tx.$executeRawUnsafe(statement);
+      expect(await tx.$queryRaw`SELECT to_jsonb(r) - 'month' - 'week_number' AS data FROM sala_training_records r ORDER BY id`).toEqual(before);
+      expect(await tx.$queryRaw`SELECT to_jsonb(e) AS data FROM sala_training_record_exercises e ORDER BY id`).toEqual(snapshots);
+      expect(await tx.$queryRaw`SELECT to_jsonb(r) - 'effective_from' AS data FROM routines r ORDER BY id`).toEqual(routines);
+      const dates = await tx.$queryRaw<{ date: string }[]>`SELECT effective_from::text AS date FROM routines WHERE id = ${f.routine.id}::uuid`;
+      expect(dates[0]?.date).toBe('2026-10-19');
+    });
+  });
   it('accepts weekly future references, preserves traditional limits and prevents duplicates across months', async () => {
     const f = await fixture();
     const body = { ...f.body, date: '2026-11-30', allowFuture: true };
@@ -88,7 +240,7 @@ describe('Sala training history (isolated PostgreSQL)', () => {
   it('recovers and repeatedly corrects a retrospective shared week without altering assignment or snapshots', async () => {
     const f = await fixture();
     const assigned = new Date('2026-11-03T12:00:00Z');
-    await prisma.routine.update({ where: { id: f.routine.id }, data: { createdAt: assigned } });
+    await prisma.routine.update({ where: { id: f.routine.id }, data: { createdAt: assigned, effectiveFrom: new Date('2026-11-03') } });
     const saved = (await create(f, { ...f.body, date: '2026-10-26', allowFuture: true }).expect(201)).body.data;
     expect((await training.listMonth(f.person.id, '2026-10'))[0]!.id).toBe(saved.id);
     await create(f, { ...f.body, date: '2026-11-01', allowFuture: true }).expect(409);
@@ -101,10 +253,10 @@ describe('Sala training history (isolated PostgreSQL)', () => {
   });
   it('returns all owned versions without records and validates historical periods including midweek transitions', async () => {
     const f = await fixture(), other = await fixture();
-    await prisma.routine.update({ where: { id: f.routine.id }, data: { createdAt: new Date('2026-09-01T12:00:00Z') } });
-    const second = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, days: [{ name: 'Segunda', exercises: [{ exerciseDefinitionId: f.b.id }] }] });
+    await prisma.routine.update({ where: { id: f.routine.id }, data: { createdAt: new Date('2026-09-01T12:00:00Z'), effectiveFrom: new Date('2026-09-01') } });
+    const second = await sala.replaceRoutine({ effectiveFrom: '2026-10-15', personId: f.person.id, salaParticipationId: f.participation.id, days: [{ name: 'Segunda', exercises: [{ exerciseDefinitionId: f.b.id }] }] });
     await prisma.routine.update({ where: { id: second.id }, data: { createdAt: new Date('2026-10-15T12:00:00Z') } });
-    const third = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, days: [{ name: 'Tercera', exercises: [{ exerciseDefinitionId: f.a.id }] }] });
+    const third = await sala.replaceRoutine({ effectiveFrom: '2026-11-01', personId: f.person.id, salaParticipationId: f.participation.id, days: [{ name: 'Tercera', exercises: [{ exerciseDefinitionId: f.a.id }] }] });
     await prisma.routine.update({ where: { id: third.id }, data: { createdAt: new Date('2026-11-01T12:00:00Z') } });
     const response = await request(app.getHttpServer()).get('/api/portal/sala/training-context').set('Cookie', f.cookie).expect(200);
     expect(response.body.data.routines.map((r: { id: string; version: number; createdOn: string }) => [r.id, r.version, r.createdOn])).toEqual([[f.routine.id, 1, '2026-09-01'], [second.id, 2, '2026-10-15'], [third.id, 3, '2026-11-01']]);
@@ -159,7 +311,7 @@ describe('Sala training history (isolated PostgreSQL)', () => {
   });
   it('uses one calendar week across month/year boundaries and allows the next week', async () => {
     const f = await fixture();
-    await prisma.routine.update({ where: { id: f.routine.id }, data: { createdAt: new Date('2025-12-01T12:00:00Z') } });
+    await prisma.routine.update({ where: { id: f.routine.id }, data: { createdAt: new Date('2025-12-01T12:00:00Z'), effectiveFrom: new Date('2025-12-01') } });
     const saved = (await create(f, { ...f.body, date: '2025-12-31' }).expect(201)).body.data;
     const duplicate = await create(f, { ...f.body, date: '2026-01-04' }).expect(409);
     expect(duplicate.body).toMatchObject({ code: 'TRAINING_DUPLICATE', details: { recordId: saved.id } });
@@ -200,14 +352,14 @@ describe('Sala training history (isolated PostgreSQL)', () => {
   });
   it('snapshots blocks and preserves them after replacement and weight correction', async () => {
     const f = await fixture();
-    const grouped = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, days: [{ name: 'Bloques', exercises: [1, 1, 2].map((blockPosition, i) => ({ exerciseDefinitionId: i === 1 ? f.b.id : f.a.id, blockPosition, series: blockPosition === 1 ? '4' : '3', load: '20 kg' })) }] });
+    const grouped = await sala.replaceRoutine({ effectiveFrom: '2026-10-19', personId: f.person.id, salaParticipationId: f.participation.id, days: [{ name: 'Bloques', exercises: [1, 1, 2].map((blockPosition, i) => ({ exerciseDefinitionId: i === 1 ? f.b.id : f.a.id, blockPosition, series: blockPosition === 1 ? '4' : '3', load: '20 kg' })) }] });
     await prisma.routine.update({ where: { id: grouped.id }, data: { createdAt: new Date('2026-10-20T02:00:00Z') } });
     const context = await training.context(f.person.id, f.body.date);
     expect(context.routine!.days[0]!.exercises.map(e => e.blockPosition)).toEqual([1, 1, 2]);
     const body = { ...f.body, routineId: grouped.id, routineDayId: grouped.days[0]!.id, exercises: grouped.days[0]!.exercises.map((e, i) => ({ id: e.id, weightKg: i === 2 ? null : '30' })) };
     const saved = (await create(f, body).expect(201)).body.data;
     expect(saved.exercises.map((e: { blockPosition: number }) => e.blockPosition)).toEqual([1, 1, 2]);
-    await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, days: [{ exercises: [{ exerciseDefinitionId: f.b.id }] }] });
+    await sala.replaceRoutine({ effectiveFrom: '2026-10-19', personId: f.person.id, salaParticipationId: f.participation.id, days: [{ exercises: [{ exerciseDefinitionId: f.b.id }] }] });
     expect(await training.detail(f.person.id, saved.id)).toEqual(saved);
     const old = await training.detail(f.person.id, saved.id);
     const correction = await request(app.getHttpServer()).post(`/api/portal/sala/training-records/${old.id}/correct`).set('Cookie', f.cookie).set('x-csrf-token', f.csrf).send({ exercises: old.exercises.map(e => ({ id: e.id, weightKg: '42' })) }).expect(200);
@@ -221,7 +373,7 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     const f = await fixture(); const saved = (await create(f).expect(201)).body.data;
     await sala.updateExerciseDefinition(f.a.id, { name: 'Press actualizado' });
     await sala.retireExerciseDefinition(f.a.id, true);
-    const replacement = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, days: [{ exercises: [{ exerciseDefinitionId: f.b.id, load: '35 kg' }] }] });
+    const replacement = await sala.replaceRoutine({ effectiveFrom: '2026-10-19', personId: f.person.id, salaParticipationId: f.participation.id, days: [{ exercises: [{ exerciseDefinitionId: f.b.id, load: '35 kg' }] }] });
     await create(f, { ...f.body, date: '2026-10-21' }).expect(409);
     const old = await training.detail(f.person.id, saved.id); expect(old).toEqual(saved);
     const correction = { exercises: old.exercises.map(e => ({ id: e.id, weightKg: e.position === 1 ? '40.25' : e.weightKg })) };
@@ -275,16 +427,17 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     expect(await prisma.salaTrainingRecord.findUnique({ where: { id: legacy.id }, include: { exercises: true } })).toEqual(legacy);
     expect(await prisma.salaTrainingRecord.count({ where: { personId: f.person.id } })).toBe(2);
   });
-  it('rejects creation when no active routine exists and serializes replacement races', async () => {
+  it('resolves operational validity independently of compatibility status and serializes replacement races', async () => {
     const f = await fixture();
-    const race = await Promise.allSettled([training.create(f.person.id, f.body), sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, days: [{ exercises: [{ exerciseDefinitionId: f.b.id }] }] })]);
+    const race = await Promise.allSettled([training.create(f.person.id, f.body), sala.replaceRoutine({ effectiveFrom: '2026-10-19', personId: f.person.id, salaParticipationId: f.participation.id, days: [{ exercises: [{ exerciseDefinitionId: f.b.id }] }] })]);
     expect(race[1]!.status).toBe('fulfilled');
     if (race[0]!.status === 'rejected') expect(race[0]!.reason.getResponse()).toMatchObject({ code: 'TRAINING_ROUTINE_CHANGED' });
     const records = await prisma.salaTrainingRecord.findMany({ where: { personId: f.person.id }, include: { exercises: true } });
     for (const record of records) { expect(record.routineId).toBe(f.routine.id); expect(record.exercises).toHaveLength(3); }
     await prisma.routine.updateMany({ where: { personId: f.person.id }, data: { status: 'HISTORICAL' } });
-    await create(f, { ...f.body, date: '2026-10-21' }).expect(409);
-    expect((await training.context(f.person.id)).routine).toBeNull();
+    const latest = await prisma.routine.findFirstOrThrow({ where: { personId: f.person.id }, orderBy: { version: 'desc' } });
+    expect(latest.version).toBe(2);
+    expect((await training.context(f.person.id)).routine?.id).toBe(latest.id); // Compatibility status does not determine operational validity.
   });
   it('returns every monthly snapshot, including different versions and repeated entries, without pagination or other owners', async () => {
     const f = await fixture(), other = await fixture();
@@ -333,10 +486,12 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     for (const role of [Role.PROFESSOR, Role.ADMINISTRATIVE]) {
       const cookie = await internal(role);
       await request(app.getHttpServer()).get(`/api/sala/people/${f.person.id}/training-records`).set('Cookie', cookie).expect(200);
+      await request(app.getHttpServer()).get(`/api/sala/people/${f.person.id}/training-records/month?month=2026-10`).set('Cookie', cookie).expect(200);
       await request(app.getHttpServer()).get(`/api/sala/people/${f.person.id}/training-records/${listed.body.data[0].id}`).set('Cookie', cookie).expect(200);
     }
     const denied = await internal(Role.KINESIOLOGIST);
     await request(app.getHttpServer()).get(`/api/sala/people/${f.person.id}/training-records`).set('Cookie', denied).expect(403);
+    await request(app.getHttpServer()).get(`/api/sala/people/${f.person.id}/training-records/month?month=2026-10`).set('Cookie', denied).expect(403);
     await request(app.getHttpServer()).get(`/api/sala/people/${f.person.id}/training-records/${listed.body.data[0].id}`).set('Cookie', denied).expect(403);
   });
 });

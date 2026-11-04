@@ -80,17 +80,17 @@ test('blocks survive template editing, assignment, portal weights, replacement, 
     await portal.goto('/portal/sala/rutina'); await expect(portal.getByText('Bloque A — 4 series')).toBeVisible(); await expect(portal.getByRole('button', { name: 'Imprimir / PDF' })).toHaveCount(0); await capture(portal, 'portal');
     const cards = portal.locator('button[aria-expanded][aria-controls]');
     await cards.nth(0).click();
-    await portal.getByRole('region', { name: /Evolución semanal/ }).first().locator('button[aria-pressed]').last().click();
     await cards.nth(1).click();
-    const weights = portal.getByLabel(/Peso utilizado/); await expect(weights).toHaveCount(5); await weights.nth(0).fill('32,5'); await weights.nth(1).fill('22');
-    await portal.getByRole('button', { name: 'Guardar entrenamiento', exact: true }).click(); await expect(portal.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
-    await page.getByRole('button', { name: 'Editar rutina' }).click(); await page.getByRole('button', { name: 'Aumentar series del bloque A' }).click(); await page.getByRole('button', { name: 'Aumentar series del bloque A' }).click(); await page.getByRole('button', { name: 'Guardar cambios' }).click(); await expect(page.getByText('Rutina guardada correctamente.')).toBeVisible();
+    const weights = portal.getByLabel(/Semana 6/); await expect(weights).toHaveCount(5); await weights.nth(0).fill('32,5'); await weights.nth(1).fill('22');
+    await portal.getByRole('button', { name: 'Guardar pesos', exact: true }).click(); await expect(portal.getByText('Pesos guardados correctamente.')).toBeVisible();
+    await page.getByRole('button', { name: 'Editar rutina' }).click(); await page.getByRole('button', { name: 'Aumentar series del bloque A' }).click(); await page.getByRole('button', { name: 'Aumentar series del bloque A' }).click(); await page.getByRole('button', { name: 'Guardar cambios' }).click(); await expect(page.getByText('Rutina asignada correctamente.')).toBeVisible();
     await portal.getByRole('link', { name: 'Mis entrenamientos', exact: true }).click(); await portal.getByRole('button', { name: /Ver detalle del/ }).click(); await expect(portal.getByText('Bloque A — 4 series')).toBeVisible(); await expect(portal.getByText('32,5 kg', { exact: true })).toBeVisible(); await capture(portal, 'history');
     await portal.getByRole('link', { name: 'Editar registro', exact: true }).click(); await portal.getByLabel(/Peso utilizado/).first().fill('34,5'); await portal.getByRole('button', { name: 'Guardar corrección', exact: true }).click(); await expect(portal.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
     await page.locator('summary').filter({ hasText: 'Rutinas históricas' }).click();
     await print(page, 'historical', false, true);
-    const reuse = page.getByRole('button', { name: 'Usar nuevamente', exact: true }).first(); await reuse.click(); await page.getByRole('alertdialog').getByRole('button', { name: 'Usar nuevamente', exact: true }).click(); await expect(page.getByText('Rutina activada correctamente.')).toBeVisible();
-    const active = page.getByRole('article').filter({ has: page.getByRole('heading', { name: 'Rutina v4', exact: true }) });
+    const reuse = page.getByRole('button', { name: 'Usar nuevamente', exact: true }).first(); await reuse.click(); await page.getByRole('alertdialog').getByRole('button', { name: 'Usar nuevamente', exact: true }).click(); await expect(page.getByText('Rutina asignada correctamente.')).toBeVisible();
+    const active = page.getByRole('article').filter({ has: page.getByRole('heading', { name: 'Rutina 4', exact: true }) });
+    await active.getByText('Ver ejercicios', { exact: true }).click();
     await expect(active.getByText('Bloque A — 4 series')).toBeVisible();
   } finally {
     await student.close();

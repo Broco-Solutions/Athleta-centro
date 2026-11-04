@@ -113,7 +113,7 @@ export function SalaPersonWorkspace({ personId }: { personId: string }): React.J
     patterns: async (requestOptions) => { const response = await listSalaMovementPatterns(requestOptions); assertRoutineResponse(response); return response.data.data; },
     create: async (input, requestOptions) => assertRoutineResponse(await replaceSalaRoutine(input, requestOptions)),
     replace: async (_id, input, requestOptions) => assertRoutineResponse(await replaceSalaRoutine(input, requestOptions)),
-    duplicate: async (id, requestOptions) => assertRoutineResponse(await duplicateSalaRoutine(id, requestOptions)),
+    duplicate: async (id, effectiveFrom, requestOptions) => assertRoutineResponse(await duplicateSalaRoutine(id, { effectiveFrom }, requestOptions)),
 
   };
   const permissions = session.data?.permissions ?? [];

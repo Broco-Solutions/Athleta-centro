@@ -260,7 +260,7 @@ describe('People API', () => {
       for (const [slot, time, date] of [[morning, '09:30', '2026-10-13'], [evening, '17:30', '2026-10-13'], [morning, '09:30', '2026-10-14'], [morning, '12:00', '2026-10-13']] as const) reservations.push(await prisma.oneOffReservation.create({ data: { ...base, scheduleSlotId: slot.id, date: new Date(date), startTime: new Date(`1970-01-01T${time}:00Z`) } }));
       const occurrences = [];
       for (const [slot, time, date] of [[morning, '10:00', '2026-10-13'], [evening, '18:00', '2026-10-13'], [morning, '10:00', '2026-10-14'], [morning, '12:00', '2026-10-13']] as const) occurrences.push(await prisma.salaOccurrence.create({ data: { personId, scheduleSlotId: slot.id, date: new Date(date), startTime: new Date(`1970-01-01T${time}:00Z`), origin: 'SPONTANEOUS', status: 'RESERVED' } }));
-      const routine = await prisma.routine.create({ data: { ...base, status: 'ACTIVE', version: 1 } });
+      const routine = await prisma.routine.create({ data: { effectiveFrom: new Date('2026-10-01T00:00:00Z'), ...base, status: 'ACTIVE', version: 1 } });
       const indication = await prisma.salaClinicalIndication.create({ data: { personId, responsibleProfessionalId: actor.id, trainingCondition: 'RESTRICTED' } });
       await prisma.clinicalPatient.create({ data: { personId, registeredById: actor.id } });
       const treatment = await prisma.treatment.create({ data: { personId, responsibleProfessionalId: actor.id, consultationReason: 'Sintético', bodyAreaOrInjury: 'Sintético', startDate: new Date('2026-10-01') } });
@@ -304,7 +304,7 @@ describe('People API', () => {
       const base = { personId, salaParticipationId: participation.id, scheduleSlotId: slot.id };
       const fixed = await prisma.fixedSalaBooking.create({ data: { ...base, startDate: new Date('2026-10-01') } });
       const reservation = await prisma.oneOffReservation.create({ data: { ...base, date: new Date('2026-10-14') } });
-      const routine = await prisma.routine.create({ data: { personId, salaParticipationId: participation.id, status: 'ACTIVE', version: 1 } });
+      const routine = await prisma.routine.create({ data: { effectiveFrom: new Date('2026-10-01T00:00:00Z'), personId, salaParticipationId: participation.id, status: 'ACTIVE', version: 1 } });
       const occurrence = await prisma.salaOccurrence.create({ data: { personId, scheduleSlotId: slot.id, date: new Date('2026-10-14'), origin: 'FIXED', fixedSalaBookingId: fixed.id, status: 'RESERVED' } });
       // The missing internal actor fails the occurrence FK after booking, routine and participation mutations.
       await expect(app.get(PeopleService).inactivate(personId, crypto.randomUUID())).rejects.toMatchObject({ code: 'P2003' });
