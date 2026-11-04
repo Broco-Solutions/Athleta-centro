@@ -23,7 +23,7 @@ function renderPanel(rows: Routine[] = [routine], canManage = true, catalog: Rou
     duplicate: vi.fn<RoutineApi['duplicate']>().mockResolvedValue({}),
   };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(<QueryClientProvider client={client}><RoutinePanel personName="Alumno Prueba" personId="person" participationId="participation" csrfToken="csrf" api={api} canManage={canManage}/></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><RoutinePanel printPerson={{ birthDate: "2000-01-01", sport: "Hockey" }} printParticipations={[{ id: "participation", objective: "Fuerza general" }, { id: "old-participation", objective: "Objetivo anterior" }]} personName="Alumno Prueba" personId="person" participationId="participation" csrfToken="csrf" api={api} canManage={canManage}/></QueryClientProvider>);
   return { api, client };
 }
 afterEach(cleanup);
@@ -390,11 +390,15 @@ it('places training history between the active routine and historical routines',
 it.each([true, false])('prints active and specific historical routines without writes (manage=%s)', async canManage => {
   const print = vi.spyOn(window, 'print').mockImplementation(() => {});
   try {
-    const { api } = renderPanel([routine, { ...routine, id: 'old', status: 'HISTORICAL', version: 1, days: [{ position: 1, name: 'Histórico exclusivo', exercises: [] }] }], canManage);
+    const { api } = renderPanel([routine, { ...routine, id: 'old', salaParticipationId: 'old-participation', effectiveUntil: '2026-10-01', status: 'HISTORICAL', version: 1, days: [{ position: 1, name: 'Histórico exclusivo', exercises: [] }] }], canManage);
     await screen.findByText('Rutina 2');
     fireEvent.click(screen.getAllByRole('button', { name: 'Imprimir / PDF' })[0]!);
     let root = document.getElementById('athleta-routine-print-root')!;
     expect(root).toHaveTextContent('Alumno: Alumno Prueba');
+    expect(root).toHaveTextContent('Deporte: Hockey');
+    expect(root).toHaveTextContent('Objetivo: Fuerza general');
+    expect(root).toHaveTextContent('Inicio: 01/10/2026');
+    expect(root.querySelectorAll('.routine-print-weight')).toHaveLength(10);
     expect(root).toHaveTextContent('Estado: Activa · Versión: 2');
     expect(root).not.toHaveTextContent('Histórico exclusivo');
     expect(root).not.toHaveTextContent('Historial de entrenamientos');
@@ -404,6 +408,8 @@ it.each([true, false])('prints active and specific historical routines without w
     root = document.getElementById('athleta-routine-print-root')!;
     expect(root).toHaveTextContent('Estado: Histórica · Versión: 1');
     expect(root).toHaveTextContent('Histórico exclusivo');
+    expect(root).toHaveTextContent('Objetivo: Objetivo anterior');
+    expect(root).toHaveTextContent('Cambio: 01/10/2026');
     expect(root).not.toHaveTextContent('Controlar técnica');
     for (const write of [api.create, api.replace, api.duplicate]) expect(write).not.toHaveBeenCalled();
   } finally { print.mockRestore(); }
@@ -421,7 +427,9 @@ it('prints the selected template preview without assignment', async () => {
     expect(preview.getAllByRole('button').map(button => button.textContent)).toEqual(['Asignar rutina', 'Imprimir / PDF', 'Editar', 'Volver']);
     fireEvent.click(preview.getByRole('button', { name: 'Imprimir / PDF' }));
     expect(document.getElementById('athleta-routine-print-root')).toHaveTextContent('Rutina: Modelo previo');
-    expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('Alumno:');
+    expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('Alumno Prueba');
+    expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('Hockey');
+    expect(document.querySelectorAll('.routine-print-weight')).toHaveLength(10);
     for (const write of [api.create, api.replace, api.duplicate]) expect(write).not.toHaveBeenCalled();
   } finally { print.mockRestore(); }
 });
@@ -481,4 +489,15 @@ it('shows scheduled routines alongside the current one and queries monthly weigh
   await screen.findByText('Rutina 2'); expect(screen.getByText('Próxima rutina')).toBeInTheDocument(); expect(screen.getByText('Comienza el 01/12/2099')).toBeInTheDocument();
   fireEvent.click(within(screen.getByText('Rutina 2').closest('article')!).getByRole('button', { name: 'Ver pesos' }));
   await screen.findByText('42,5 kg'); expect(screen.getByText('Ejercicio anterior retirado')).toBeInTheDocument(); expect(screen.getByText('18 kg')).toBeInTheDocument(); expect(monthly).toHaveBeenCalled(); expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+});
+
+it('prints the scheduled version with its actual start date', async () => {
+  const print = vi.spyOn(window, 'print').mockImplementation(() => {});
+  try {
+    renderPanel([{ ...routine, status: 'SCHEDULED', effectiveFrom: '2099-12-01' }]);
+    await screen.findByText('Rutina 2');
+    fireEvent.click(screen.getByRole('button', { name: 'Imprimir / PDF' }));
+    expect(document.getElementById('athleta-routine-print-root')).toHaveTextContent('Inicio: 01/12/2099');
+    expect(document.getElementById('athleta-routine-print-root')).toHaveTextContent('Estado: Programada · Versión: 2');
+  } finally { print.mockRestore(); }
 });

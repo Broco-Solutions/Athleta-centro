@@ -35,7 +35,11 @@ test('blocks survive template editing, assignment, portal weights, replacement, 
     const root = target.locator('#athleta-routine-print-root');
     await expect(root).toBeAttached();
     await target.emulateMedia({ media: 'print' });
-    await expect(root.getByRole('columnheader', { name: 'Series', exact: true })).toHaveCount(legacy ? 2 : 0);
+    await expect(root.locator('tbody .routine-print-weight')).toHaveCount(legacy ? 15 : 25);
+    for (const table of await root.locator('table').all()) {
+      await expect(table.locator('thead tr:last-child th')).toHaveText(['Ejercicio', 'Rep./Tiempo', 'S1', 'S2', 'S3', 'S4', 'S5']);
+    }
+    if (legacy) await expect(root.getByText('Series: 3', { exact: true })).toBeVisible();
     if (!legacy) await expect(root.getByRole('heading', { name: 'Bloque A — 4 series', exact: true })).toBeVisible();
     await target.screenshot({ path: `/tmp/athleta-blocks-print-${name}.png`, fullPage: true });
     await target.pdf({ path: `/tmp/athleta-blocks-${name}.pdf`, preferCSSPageSize: true });
@@ -95,6 +99,63 @@ test('blocks survive template editing, assignment, portal weights, replacement, 
   } finally {
     await student.close();
     if (templateId) await page.request.delete(`${api}/sala/routine-templates/${templateId}`, { headers: { 'x-csrf-token': csrf } });
+    execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts', 'cleanup', fixture.personId, fixture.professorId, fixture.planId, fixture.exerciseId], { cwd: '../..', stdio: 'pipe' });
+  }
+});
+
+
+test('prints complete 3, 4 and 5 day sheets in landscape with empty weekly cells and no requests', async ({ page }) => {
+  test.setTimeout(180000);
+  const fixture = JSON.parse(execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts'], { cwd: '../..', encoding: 'utf8' }).trim()) as { personId: string; professorId: string; planId: string; exerciseId: string; email: string };
+  try {
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(fixture.email);
+    await page.getByLabel('Contraseña', { exact: true }).fill('Synthetic-test-password1!');
+    await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
+    await expect(page).toHaveURL('/');
+    for (const count of [3, 4, 5, 7]) {
+      const days = Array.from({ length: count }, (_, d) => ({ position: d + 1, name: `Día ${d + 1} — ${['Tren inferior', 'Tren superior', 'Full body'][d % 3]}`, exercises: Array.from({ length: 9 }, (_, e) => ({
+        exerciseDefinitionId: fixture.exerciseId, position: e + 1, blockPosition: Math.floor(e / 3) + 1, series: String(4 - Math.floor(e / 3)),
+        exerciseName: ['Sentadilla con barra', 'Estocadas alternadas', 'Plancha lateral con apoyo de antebrazo'][e % 3],
+        repetitions: e % 3 === 2 ? null : e % 3 === 1 ? '10+10' : '8', duration: e % 3 === 2 ? '45' : null,
+        load: e === 0 ? '42,5' : null, rest: e === 0 ? '60 seg.' : null, notes: e === 1 ? 'Controlar la técnica' : null,
+      })) }));
+      await page.route('**/api/sala/routine-templates', route => route.fulfill({ json: { data: [{ id: 'print-fixture', name: `Ficha de ${count} días`, days }] } }));
+      await page.goto('/routines');
+      await page.evaluate(() => { window.print = () => {}; });
+      const requests: string[] = [];
+      const captureRequest = (request: import('@playwright/test').Request) => { if (request.url().includes('/api/')) requests.push(request.method() + ' ' + request.url()); };
+      await expect(page.getByRole('button', { name: 'Imprimir / PDF', exact: true })).toBeEnabled();
+      page.on('request', captureRequest);
+      await page.getByRole('button', { name: 'Imprimir / PDF', exact: true }).click();
+      const root = page.locator('#athleta-routine-print-root');
+      await page.emulateMedia({ media: 'print' });
+      await expect(root.locator('h2')).toHaveCount(count);
+      await expect(root.locator('tbody tr')).toHaveCount(count * 9);
+      await expect(root.locator('.routine-print-weight')).toHaveCount(count * 9 * 5);
+      for (const row of await root.locator('.routine-print-day-row').all()) {
+        const positions = await row.locator('section').evaluateAll(nodes => nodes.map(node => ({ x: node.getBoundingClientRect().x, y: node.getBoundingClientRect().y })));
+        expect(new Set(positions.map(p => p.y)).size).toBe(1);
+        expect(new Set(positions.map(p => p.x)).size).toBe(positions.length);
+      }
+      expect(await root.locator('.routine-print-day-row').evaluateAll(rows => rows.map(row => row.children.length))).toEqual(count === 4 ? [2, 2] : count === 5 ? [3, 2] : count === 7 ? [3, 3, 1] : [3]);
+      expect(await root.locator('.routine-print-weight').evaluateAll(cells => cells.every(cell => cell.textContent === '' && cell.getBoundingClientRect().width >= 29))).toBe(true);
+      const pdf = await page.pdf({ path: `/tmp/athleta-print-${count}-days.pdf`, preferCSSPageSize: true, printBackground: true });
+      const raw = pdf.toString('latin1');
+      const pages = [...raw.matchAll(/\/Type \/Page\b/g)].length;
+      expect(pages).toBeGreaterThan(0);
+      if (count <= 5) expect(pages).toBeLessThanOrEqual(2);
+      const boxes = [...raw.matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)];
+      expect(boxes.length).toBeGreaterThan(0);
+      for (const box of boxes) { expect(Number(box[1])).toBeCloseTo(842, -1); expect(Number(box[2])).toBeCloseTo(595, -1); }
+      expect(requests).toEqual([]);
+      page.off('request', captureRequest);
+      await page.emulateMedia({ media: 'screen' });
+      await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+      await expect(root).toHaveCount(0);
+      await page.unroute('**/api/sala/routine-templates');
+    }
+  } finally {
     execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts', 'cleanup', fixture.personId, fixture.professorId, fixture.planId, fixture.exerciseId], { cwd: '../..', stdio: 'pipe' });
   }
 });
