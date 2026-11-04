@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { Button } from '@athleta/ui';
 import { formatOperationalDate, todayOperational } from '../../lib/operational-date';
-import { formatRoutineDuration, formatRoutineLoad, formatRoutineRepetitions, groupRoutineBlocks, isGroupedDay } from './routine-blocks';
+import { formatRoutineDuration, formatRoutineRepetitions, groupRoutineBlocks, isGroupedDay } from './routine-blocks';
 import type { RoutineDay, RoutineExercise, ExerciseDefinition } from './routine-editor';
 
 type Props = {
@@ -89,12 +89,8 @@ export function RoutinePrintButton({ days, definitions = [], templateName, stude
             <tr>{['Ejercicio', 'Rep./Tiempo', ...weeks].map(label => <th scope="col" key={label}>{label}</th>)}</tr>
           </thead>
           <tbody>{block.exercises.map((exercise, index) => <tr key={index}>
-            <td>{block.position ? `${block.label}${index + 1} — ` : ''}{exercise.exerciseDefinition?.name || exercise.exerciseName || definitions.find(entry => entry.id === exercise.exerciseDefinitionId)?.name || 'Ejercicio'}
-              {!block.position ? <p className="routine-print-instructions">Series: {exercise.series || '—'}</p> : null}
-              {exercise.exerciseDefinition?.description?.trim() ? <p className="routine-print-instructions">{exercise.exerciseDefinition.description}</p> : null}
-              {[exercise.load ? `Carga indicada: ${formatRoutineLoad(exercise.load)}` : '', exercise.rest ? `Descanso: ${exercise.rest}` : '', exercise.notes].filter(Boolean).map((text, noteIndex) => <p key={noteIndex} className="routine-print-instructions">{text}</p>)}
-            </td>
-            <td>{[formatRoutineRepetitions(exercise.repetitions), formatRoutineDuration(exercise.duration)].filter(Boolean).join(' / ') || '—'}</td>
+            <td>{block.position ? `${block.label}${index + 1} — ` : ''}{exercise.exerciseDefinition?.name || exercise.exerciseName || definitions.find(entry => entry.id === exercise.exerciseDefinitionId)?.name || 'Ejercicio'}</td>
+            <td>{!block.position ? `${exercise.series || '—'} series · ` : ''}{[formatRoutineRepetitions(exercise.repetitions), formatRoutineDuration(exercise.duration)].filter(Boolean).join(' / ') || '—'}</td>
             {weeks.map(week => <td key={week} className="routine-print-weight" aria-label={`${week}: peso utilizado`}/>)}
           </tr>)}</tbody>
         </table></div>)}

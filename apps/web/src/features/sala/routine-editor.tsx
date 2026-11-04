@@ -228,3 +228,34 @@ export function RoutineContentSummary({ days, definitions = [], dayAction }: { d
     {dayAction ? <div className="px-3 py-3">{dayAction(day)}</div> : null}
   </section>)}</div>;
 }
+
+/** Separate identity-preserving draft for the current prescription. */
+export type ActiveExerciseDraft = { key: string; original?: RoutineExercise; exercise: ExerciseForm; blockPosition: number | null };
+export type ActiveDayDraft = { id: string; name: string; entries: ActiveExerciseDraft[]; blocks: { position: number; series: string }[] };
+export function activeRoutineDraft(days: RoutineDay[]): ActiveDayDraft[] {
+  return days.map(day => {
+    if (!day.id || day.exercises.some(e => !e.id)) throw new Error('Actualizá la ficha para editar los ejercicios.');
+    return { id: day.id, name: day.name || `Día ${day.position}`, blocks: groupRoutineBlocks(day.exercises).filter(b => b.position > 0).map(b => ({ position: b.position, series: b.series ?? '' })), entries: day.exercises.map(e => ({ key: e.id!, original: e, exercise: exerciseToForm(e), blockPosition: e.blockPosition ?? null })) };
+  });
+}
+export function activeDraftToInput(days: ActiveDayDraft[]): import('@athleta/api-client').UpdateActiveRoutineExercisesDto {
+  return { days: days.map(day => ({ id: day.id, exercises: day.entries.map(entry => {
+    if (entry.original) return { id: entry.original.id! };
+    const parsed = exerciseSchema.parse(entry.exercise);
+    return { exerciseDefinitionId: parsed.exerciseDefinitionId, blockPosition: entry.blockPosition, series: parsed.series || null, repetitions: parsed.repetitions || null, duration: parsed.duration || null, load: parsed.load || null, rest: parsed.rest || null, notes: parsed.notes || null };
+  }) })) };
+}
+export function ActiveRoutineExercisesEditor({ days, onChange, disabled, ...catalogProps }: ExerciseCatalogProps & { days: ActiveDayDraft[]; onChange: (days: ActiveDayDraft[]) => void; disabled: boolean }): React.JSX.Element {
+  const [target, setTarget] = useState<{ id: string; block: number | null } | null>(null);
+  const update = (id: string, entries: ActiveExerciseDraft[]) => onChange(days.map(d => d.id === id ? { ...d, entries } : d));
+  return <div className="mt-4 min-w-0 space-y-4">{days.map(day => <section key={day.id} className="min-w-0 rounded-md border p-3">
+    <h5 className="font-semibold">{day.name}</h5>
+    {(day.blocks.length ? day.blocks : [{ position: null, series: '' }]).map(block => <section key={block.position ?? 'legacy'} className="mt-3">
+      {block.position ? <h6 className="font-medium">Bloque {blockLabel(block.position)} — {block.series} series</h6> : null}
+      <ul className="divide-y">{day.entries.filter(e => e.blockPosition === block.position).map(entry => entry.original ? <li key={entry.key} className="flex min-w-0 flex-wrap items-center justify-between gap-2 py-3"><div className="min-w-0 break-words"><p className="font-medium">{displayExercise(entry.original, catalogProps.definitions)}</p><p className="text-sm">{[entry.original.series && `${entry.original.series} series`, formatRoutineRepetitions(entry.original.repetitions), formatRoutineDuration(entry.original.duration), entry.original.load, entry.original.rest, entry.original.notes].filter(Boolean).join(' · ')}</p></div><Button type="button" variant="ghost" disabled={disabled} onClick={() => update(day.id, day.entries.filter(e => e.key !== entry.key))}>Quitar</Button></li> :
+        <ExerciseRow key={entry.key} exercise={entry.exercise} definitions={catalogProps.definitions} disabled={disabled} showSeries={block.position === null} onChange={exercise => update(day.id, day.entries.map(e => e.key === entry.key ? { ...e, exercise } : e))} onRemove={() => update(day.id, day.entries.filter(e => e.key !== entry.key))}/>)}</ul>
+      <Button type="button" variant="secondary" disabled={disabled} onClick={() => setTarget({ id: day.id, block: block.position })}>+ Agregar ejercicio{block.position ? ` al bloque ${blockLabel(block.position)}` : ''}</Button>
+      {target?.id === day.id && target.block === block.position ? <div className="@container mt-3"><ExerciseCatalog {...catalogProps} inline disabled={disabled} dayName={day.name} onAdd={definition => update(day.id, [...day.entries, { key: crypto.randomUUID(), exercise: { ...emptyExercise(), exerciseDefinitionId: definition.id, series: block.series }, blockPosition: block.position }])}/></div> : null}
+    </section>)}
+  </section>)}</div>;
+}

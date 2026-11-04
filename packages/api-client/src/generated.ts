@@ -994,6 +994,102 @@ export interface SpontaneousOccurrenceDto {
   confirmOverbooking?: boolean;
 }
 
+export interface ActiveRoutineExerciseDto {
+  /** @nullable */
+  blockPosition?: number | null;
+  exerciseDefinitionId?: string;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  series?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  repetitions?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  duration?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  load?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  rest?: string | null;
+  /**
+   * @maxLength 500
+   * @nullable
+   */
+  notes?: string | null;
+  id?: string;
+}
+
+export interface ActiveRoutineDayDto {
+  id: string;
+  exercises: ActiveRoutineExerciseDto[];
+}
+
+export interface UpdateActiveRoutineExercisesDto {
+  days: ActiveRoutineDayDto[];
+}
+
+export interface RoutineExerciseDto {
+  /** @nullable */
+  blockPosition?: number | null;
+  exerciseDefinitionId: string;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  series?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  repetitions?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  duration?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  load?: string | null;
+  /**
+   * @maxLength 80
+   * @nullable
+   */
+  rest?: string | null;
+  /**
+   * @maxLength 500
+   * @nullable
+   */
+  notes?: string | null;
+}
+
+export interface RoutineDayDto {
+  /**
+   * @maxLength 120
+   * @nullable
+   */
+  name?: string | null;
+  exercises: RoutineExerciseDto[];
+}
+
+export interface UpdateScheduledRoutineDto {
+  effectiveFrom: string;
+  days?: RoutineDayDto[];
+}
+
 export interface ExerciseDefinitionResponseDto {
   /** @nullable */
   movementPatternId?: string | null;
@@ -1043,51 +1139,6 @@ export interface RoutineTemplateResponseDto {
 
 export interface RoutineTemplateListEnvelopeDto {
   data: RoutineTemplateResponseDto[];
-}
-
-export interface RoutineExerciseDto {
-  /** @nullable */
-  blockPosition?: number | null;
-  exerciseDefinitionId: string;
-  /**
-   * @maxLength 80
-   * @nullable
-   */
-  series?: string | null;
-  /**
-   * @maxLength 80
-   * @nullable
-   */
-  repetitions?: string | null;
-  /**
-   * @maxLength 80
-   * @nullable
-   */
-  duration?: string | null;
-  /**
-   * @maxLength 80
-   * @nullable
-   */
-  load?: string | null;
-  /**
-   * @maxLength 80
-   * @nullable
-   */
-  rest?: string | null;
-  /**
-   * @maxLength 500
-   * @nullable
-   */
-  notes?: string | null;
-}
-
-export interface RoutineDayDto {
-  /**
-   * @maxLength 120
-   * @nullable
-   */
-  name?: string | null;
-  exercises: RoutineExerciseDto[];
 }
 
 export interface RoutineTemplateDto {
@@ -1186,6 +1237,9 @@ export const SalaRoutineResponseDtoStatus = {
 } as const;
 
 export interface SalaRoutineResponseDto {
+  /** @nullable */
+  cancelledAt?: string | null;
+  hasTrainingRecords?: boolean;
   id: string;
   personId: string;
   salaParticipationId: string;
@@ -4838,6 +4892,127 @@ export const createSpontaneousSalaOccurrence = async (spontaneousOccurrenceDto: 
 
   const data: createSpontaneousSalaOccurrenceResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createSpontaneousSalaOccurrenceResponse
+}
+
+
+
+export type updateActiveSalaRoutineExercisesResponse200 = {
+  data: void
+  status: 200
+}
+
+export type updateActiveSalaRoutineExercisesResponseSuccess = (updateActiveSalaRoutineExercisesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateActiveSalaRoutineExercisesResponse = (updateActiveSalaRoutineExercisesResponseSuccess)
+
+export const getUpdateActiveSalaRoutineExercisesUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/routines/${id}/active-exercises`
+}
+
+export const updateActiveSalaRoutineExercises = async (id: string,
+    updateActiveRoutineExercisesDto: UpdateActiveRoutineExercisesDto, options?: RequestInit): Promise<updateActiveSalaRoutineExercisesResponse> => {
+
+  const res = await fetch(getUpdateActiveSalaRoutineExercisesUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateActiveRoutineExercisesDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateActiveSalaRoutineExercisesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateActiveSalaRoutineExercisesResponse
+}
+
+
+
+export type updateScheduledSalaRoutineResponse200 = {
+  data: void
+  status: 200
+}
+
+export type updateScheduledSalaRoutineResponseSuccess = (updateScheduledSalaRoutineResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateScheduledSalaRoutineResponse = (updateScheduledSalaRoutineResponseSuccess)
+
+export const getUpdateScheduledSalaRoutineUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/routines/${id}/scheduled`
+}
+
+export const updateScheduledSalaRoutine = async (id: string,
+    updateScheduledRoutineDto: UpdateScheduledRoutineDto, options?: RequestInit): Promise<updateScheduledSalaRoutineResponse> => {
+
+  const res = await fetch(getUpdateScheduledSalaRoutineUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateScheduledRoutineDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateScheduledSalaRoutineResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateScheduledSalaRoutineResponse
+}
+
+
+
+export type cancelScheduledSalaRoutineResponse200 = {
+  data: void
+  status: 200
+}
+
+export type cancelScheduledSalaRoutineResponseSuccess = (cancelScheduledSalaRoutineResponse200) & {
+  headers: Headers;
+};
+;
+
+export type cancelScheduledSalaRoutineResponse = (cancelScheduledSalaRoutineResponseSuccess)
+
+export const getCancelScheduledSalaRoutineUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/routines/${id}/scheduled`
+}
+
+export const cancelScheduledSalaRoutine = async (id: string, options?: RequestInit): Promise<cancelScheduledSalaRoutineResponse> => {
+
+  const res = await fetch(getCancelScheduledSalaRoutineUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: cancelScheduledSalaRoutineResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as cancelScheduledSalaRoutineResponse
 }
 
 

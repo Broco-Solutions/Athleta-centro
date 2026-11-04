@@ -80,7 +80,7 @@ export class PortalService {
     const dates = Array.from({ length: 31 }, (_, index) => { const day = new Date(`${today}T00:00:00.000Z`); day.setUTCDate(day.getUTCDate() + index); return day.toISOString().slice(0, 10); });
     const fixedOccurrences = (await this.salaService.fixedOccurrenceStates(person.id, dates)).filter(item => this.salaService.operationalStart(item.date, new Date(`1970-01-01T${item.startTime}:00Z`)) > now);
     const routine = await this.prisma.routine.findFirst({
-      where: { personId: person.id, effectiveFrom: { lte: new Date(`${today}T00:00:00Z`) } },
+      where: { personId: person.id, cancelledAt: null, effectiveFrom: { lte: new Date(`${today}T00:00:00Z`) } },
       orderBy: [{ effectiveFrom: 'desc' }, { version: 'desc' }],
       include: {
         days: {

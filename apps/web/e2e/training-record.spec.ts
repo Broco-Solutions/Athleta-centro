@@ -67,7 +67,7 @@ test('monthly Portal save, repeated correction, retrospective months and read-on
       await expect(teacher.getByRole('textbox')).toHaveCount(0); await expect(teacher.getByRole('link', { name: 'Editar registro' })).toHaveCount(0);
       await capture(teacher, 'management-weights');
       // Assign a same-day replacement, then reuse the historical version for a future date.
-      await teacher.getByRole('button', { name: 'Editar rutina', exact: true }).click(); await teacher.getByRole('button', { name: 'Guardar cambios', exact: true }).click(); await expect(teacher.getByText('Rutina asignada correctamente.')).toBeVisible();
+      await teacher.getByRole('button', { name: 'Asignar nueva rutina', exact: true }).click(); await teacher.getByRole('button', { name: 'Guardar cambios', exact: true }).click(); await expect(teacher.getByText('Rutina asignada correctamente.')).toBeVisible();
       await teacher.getByText('Rutinas históricas (1)', { exact: true }).click();
       await teacher.getByRole('button', { name: 'Usar nuevamente', exact: true }).click();
       await teacher.getByLabel('Fecha de inicio').fill('2099-12-01'); await teacher.getByRole('alertdialog').getByRole('button', { name: 'Usar nuevamente', exact: true }).click(); await expect(teacher.getByText('Rutina programada desde el 01/12/2099.')).toBeVisible();
@@ -99,4 +99,54 @@ test('two periods have separate days and monthly slots, and select the routine f
       await page.reload(); await expect(page.getByRole('heading', { name: heading!, exact: true })).toBeVisible(); await capture(page, `automatic-${today}`); await page.unroute('**/api/portal/sala/training-context*');
     }
   } finally { cleanup(f); }
+});
+
+test('edits current exercises with a future routine and preserves monthly weights', async ({ page, browser }) => {
+  test.setTimeout(180000);
+  const f = fixture();
+  const staff = await browser.newContext();
+  try {
+    await login(page, f);
+    const cards = page.locator('button[aria-expanded][aria-controls]');
+    await cards.first().click();
+    await page.getByRole('textbox').first().fill('40');
+    await cards.last().click();
+    await page.getByRole('textbox').nth(6).fill('60');
+    await page.getByRole('button', { name: 'Guardar pesos', exact: true }).click();
+    await expect(page.getByText('Pesos guardados correctamente.')).toBeVisible();
+    const teacher = await staff.newPage();
+    await teacher.goto('/login');
+    await teacher.getByLabel('Email').fill(f.email);
+    await teacher.getByLabel('Contraseña', { exact: true }).fill('Synthetic-test-password1!');
+    await teacher.getByRole('button', { name: 'Ingresar', exact: true }).click();
+    await expect(teacher).toHaveURL('/');
+    await teacher.goto('/sala/people/' + f.personId + '?tab=routine');
+    await teacher.getByRole('button', { name: 'Asignar nueva rutina', exact: true }).click();
+    await teacher.getByLabel('Fecha de inicio').fill('2099-12-01');
+    await teacher.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
+    await expect(teacher.getByText('Rutina programada desde el 01/12/2099.')).toBeVisible();
+    await teacher.getByRole('button', { name: 'Editar ejercicios', exact: true }).click();
+    const editor = teacher.getByRole('region', { name: 'Editar ejercicios', exact: true });
+    await expect(editor.getByLabel('Fecha de inicio')).toHaveCount(0);
+    await editor.getByRole('button', { name: 'Quitar', exact: true }).nth(1).click();
+    await editor.getByRole('button', { name: /^\+ Agregar ejercicio/ }).first().click();
+    await editor.getByRole('button', { name: /^Agregar / }).first().click();
+    await capture(teacher, 'active-exercises-editor');
+    await editor.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
+    await expect(teacher.getByText('Ejercicios actualizados correctamente. Los pesos registrados se conservaron.')).toBeVisible();
+    await expect(teacher.getByText('Comienza el 01/12/2099')).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Rutina 1 · Período vigente' })).toBeVisible();
+    await cards.first().click();
+    await expect(page.getByRole('textbox').first()).toHaveValue('40');
+    await cards.last().click();
+    await expect(page.getByRole('textbox').nth(6)).toHaveValue('');
+    await page.getByRole('textbox').nth(6).fill('25');
+    await page.getByRole('button', { name: 'Guardar pesos', exact: true }).click();
+    await expect(page.getByText('Pesos guardados correctamente.')).toBeVisible();
+    await teacher.getByRole('button', { name: 'Ver pesos', exact: true }).first().click();
+    await expect(teacher.getByText('Ejercicios retirados')).toBeVisible();
+    await expect(teacher.getByText('60 kg', { exact: true })).toBeVisible();
+    await capture(teacher, 'retired-exercise-history');
+  } finally { await staff.close(); cleanup(f); }
 });

@@ -82,7 +82,7 @@ export class TrainingRecordService {
         if (input.allowFuture !== true && input.date < routine.effectiveFrom.toISOString().slice(0, 10)) throw new BadRequestException({ code: 'TRAINING_BEFORE_ROUTINE', message: 'La fecha es anterior a la asignación de esta rutina.' });
         // Weekly references must lie in this version's portion of the week. Only
         // the first assignment extends backwards for retrospective entry.
-        const versions = await tx.routine.findMany({ where: { personId }, orderBy: [{ effectiveFrom: 'asc' }, { version: 'asc' }], select: { id: true, effectiveFrom: true } });
+        const versions = await tx.routine.findMany({ where: { personId }, orderBy: [{ effectiveFrom: 'asc' }, { version: 'asc' }], select: { id: true, effectiveFrom: true, version: true, cancelledAt: true } });
         if (input.allowFuture !== true && routineForDate(versions.map((v, i) => ({ ...v, version: i })), this.today())?.id !== routine.id) throw new ConflictException({ code: 'TRAINING_ROUTINE_CHANGED', message: 'La rutina vigente cambió. Revisala antes de registrar.' });
         const index = versions.findIndex(version => version.id === routine.id);
         const next = versions[index + 1];
@@ -136,6 +136,14 @@ export class TrainingRecordService {
               const value = weights.get(entry.routineExerciseId) ?? null;
               if (value === null ? entry.weightKg === null : entry.weightKg?.equals(value)) continue;
               await tx.salaTrainingRecordExercise.update({ where: { id: entry.id }, data: { weightKg: value } });
+              changed = true;
+            }
+            const snapshotIds = new Set(record.exercises.map(e => e.routineExerciseId));
+            let position = Math.max(0, ...record.exercises.map(e => e.position));
+            for (const exercise of day.exercises) {
+              const weightKg = weights.get(exercise.id);
+              if (snapshotIds.has(exercise.id) || weightKg == null) continue;
+              await tx.salaTrainingRecordExercise.create({ data: { ...this.snapshot(exercise), recordId: record.id, routineExerciseId: exercise.id, position: ++position, weightKg } });
               changed = true;
             }
             if (changed) await tx.salaTrainingRecord.update({ where: { id: record.id }, data: { updatedAt: new Date() } });

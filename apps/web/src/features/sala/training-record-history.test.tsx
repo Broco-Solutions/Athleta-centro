@@ -1,7 +1,7 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { TrainingRecordHistory } from './training-record-history';
+import { MonthlyRoutineHistory, TrainingRecordHistory } from './training-record-history';
 import type { TrainingHistoryApi } from './training-record-api';
 
 export const savedTraining = { id: 'record', routineId: 'routine', routineDayId: 'day', date: '2026-10-26', month: null, weekNumber: null, dayName: 'Fuerza', dayPosition: 1, createdAt: '2026-10-26T10:00:00Z', updatedAt: '2026-10-26T10:00:00Z', exercises: [{ id: 'saved-entry', routineExerciseId: 'source', exerciseDefinitionId: 'definition', exerciseName: 'Press de banca', blockPosition: null, position: 1, series: '3', repetitions: '10', duration: null, load: '30 kg', rest: '60 s', notes: null, weightKg: '32.5' }, { id: 'saved-entry-2', routineExerciseId: 'source2', exerciseDefinitionId: 'definition2', exerciseName: 'Remo', blockPosition: null, position: 2, series: null, repetitions: null, duration: '30 s', load: null, rest: null, notes: null, weightKg: null }] };
@@ -43,4 +43,16 @@ it('labels monthly records without inventing a calendar range', async () => {
   renderHistory(true, { ...savedTraining, date: null, month: '2026-11', weekNumber: 3 } as unknown as typeof savedTraining);
   expect(await screen.findByText('noviembre de 2026 · Semana 3')).toBeInTheDocument();
   expect(screen.queryByText(/26\/10/)).not.toBeInTheDocument();
+});
+
+it('separates retired occurrences while retaining all six historical weights', async () => {
+  const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0,7);
+  const saved = { ...savedTraining, date: null, month, weekNumber: 1 };
+  const api = { list: vi.fn(), detail: vi.fn(), month: vi.fn().mockResolvedValue([saved]) };
+  const routine = { id: saved.routineId, personId: 'person', salaParticipationId: 'participation', status: 'ACTIVE' as const, version: 3, effectiveFrom: month + '-01', effectiveUntil: null, days: [{ id: saved.routineDayId, position: 1, name: 'Fuerza', exercises: [{ id: 'new-occurrence', exerciseDefinitionId: 'catalog', exerciseName: 'Nuevo' }] }] };
+  render(<QueryClientProvider client={new QueryClient()}><MonthlyRoutineHistory routine={routine} api={api}/></QueryClientProvider>);
+  expect(await screen.findByText('Ejercicios retirados')).toBeInTheDocument();
+  expect(screen.getByText('Press de banca')).toBeInTheDocument();
+  expect(screen.getByText('32,5 kg')).toBeInTheDocument();
+  expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
 });

@@ -1974,3 +1974,21 @@ use both
 ```
 
 No sacrificar integridad por simplicidad de código, pero tampoco forzar dentro de SQL reglas contextuales que pertenecen al dominio.
+
+## Edición vigente y cancelación de programaciones (2026-11-04)
+
+Editar ejercicios vigentes agrega o retira ocurrencias sin crear versión ni
+cambiar ID, inicio o días. Los ejercicios conservados mantienen sus IDs e
+indicaciones. Los retirados conservan snapshots y pesos históricos; agregarlos
+otra vez crea otra identidad, con seis semanas vacías. Agregar ejercicios no
+reinicia el mes ni altera semanas previas. Una próxima programación independiente
+no bloquea la edición vigente ni recibe sus cambios.
+
+Las programaciones pueden cambiar fecha o cancelarse antes de comenzar. Su
+contenido solo puede cambiar si no tiene registros. La fecha debe mantener el
+orden y los períodos de los registros existentes. Cancelar establece
+`cancelledAt`, conserva el historial y excluye la versión de la vigencia;
+la anterior continúa hasta la siguiente asignación no cancelada. El enum
+persistido no cambia. La nueva versión usa el máximo histórico incluso tras
+cancelaciones. Todas las escrituras coordinan por bloqueo de Persona; los
+snapshots mensuales nuevos usan posiciones libres, sin borrar los retirados.

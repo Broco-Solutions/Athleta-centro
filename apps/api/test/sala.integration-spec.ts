@@ -16,6 +16,16 @@ import { SalaService } from '../src/sala/sala.service';
 
 describe('Sala configuration API', () => {
   let app: INestApplication; let prisma: PrismaService; let users: InternalUserService; let auth: AuthService; let sala: SalaService;
+
+  it('protects scheduled routine mutations with the existing management permission', async () => {
+    const denied = await session(Role.ADMINISTRATIVE);
+    const id = randomUUID();
+    await request(app.getHttpServer()).put('/api/sala/routines/' + id + '/scheduled').set('Cookie', denied.cookie).set('x-csrf-token', denied.csrf).send({ effectiveFrom: '2099-12-01' }).expect(403);
+    await request(app.getHttpServer()).delete('/api/sala/routines/' + id + '/scheduled').set('Cookie', denied.cookie).set('x-csrf-token', denied.csrf).expect(403);
+    const manager = await session(Role.PROFESSOR);
+    await request(app.getHttpServer()).put('/api/sala/routines/' + id + '/scheduled').set('Cookie', manager.cookie).set('x-csrf-token', manager.csrf).send({ effectiveFrom: '2099-02-30' }).expect(400);
+    await request(app.getHttpServer()).delete('/api/sala/routines/not-a-uuid/scheduled').set('Cookie', manager.cookie).set('x-csrf-token', manager.csrf).expect(400);
+  });
   it('persists normalized movement patterns and preserves exercises on rename and reassignment', async () => {
     const sala = app.get(SalaService);
     const legacy = await sala.createExerciseDefinition({ name: 'Legacy exercise' });

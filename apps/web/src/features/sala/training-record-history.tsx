@@ -54,15 +54,15 @@ export function MonthlyRoutineHistory({ routine, api }: { routine: import('./rou
       if (record.routineId !== routine.id || record.routineDayId !== day.id || record.month !== month) continue;
       for (const entry of record.exercises) rows.set(entry.routineExerciseId, { id: entry.routineExerciseId, name: entry.exerciseName });
     }
-    return [...rows.values()];
+    return [...rows.values()].map(row => ({ ...row, retired: !day.exercises.some(e => e.id === row.id) }));
   };
   return <section aria-label={`Historial de pesos — Rutina ${routine.version}`} className="mt-4 min-w-0 space-y-3">
     <h5 className="font-semibold">Historial de pesos — Rutina {routine.version}</h5>
     <nav aria-label="Mes del historial" className="flex items-center justify-between gap-2"><Button variant="secondary" aria-label="Mes anterior de pesos" disabled={month === '0001-01'} onClick={() => setMonth(shiftTrainingMonth(month, -1))}>‹</Button><span className="text-sm capitalize">{trainingMonthLabel(month)}</span><Button variant="secondary" aria-label="Mes siguiente de pesos" onClick={() => setMonth(shiftTrainingMonth(month, 1))}>›</Button></nav>
-    {records.isPending ? <p role="status">Cargando pesos…</p> : records.isError ? <p role="alert">No pudimos cargar los pesos.</p> : routine.days.map(day => <section key={day.id} className="min-w-0"><h6 className="my-2 font-medium">{day.name || `Día ${day.position}`}</h6><div className="max-w-full overflow-x-auto"><table className="w-full text-sm"><thead><tr><th className="p-2 text-left">Ejercicio</th>{Array.from({ length: 6 }, (_, i) => <th key={i} className="p-2 text-right" scope="col">S{i + 1}</th>)}</tr></thead><tbody>{exerciseRows(day).map(exercise => <tr key={exercise.id} className="border-t"><th className="min-w-36 p-2 text-left font-normal" scope="row">{exercise.name}</th>{Array.from({ length: 6 }, (_, i) => {
+    {records.isPending ? <p role="status">Cargando pesos…</p> : records.isError ? <p role="alert">No pudimos cargar los pesos.</p> : routine.days.map(day => <section key={day.id} className="min-w-0"><h6 className="my-2 font-medium">{day.name || `Día ${day.position}`}</h6><div className="max-w-full overflow-x-auto"><table className="w-full text-sm"><thead><tr><th className="p-2 text-left">Ejercicio</th>{Array.from({ length: 6 }, (_, i) => <th key={i} className="p-2 text-right" scope="col">S{i + 1}</th>)}</tr></thead><tbody>{exerciseRows(day).map((exercise, index, rows) => <React.Fragment key={exercise.id}>{exercise.retired && !rows[index - 1]?.retired ? <tr><th colSpan={7} className="pt-4 text-left font-medium">Ejercicios retirados</th></tr> : null}<tr className="border-t"><th className="min-w-36 p-2 text-left font-normal" scope="row">{exercise.name}</th>{Array.from({ length: 6 }, (_, i) => {
       const record = records.data.find(r => r.routineId === routine.id && r.routineDayId === day.id && r.month === month && r.weekNumber === i + 1);
       const weight = record?.exercises.find(e => e.routineExerciseId === exercise.id)?.weightKg;
       return <td key={i} className="whitespace-nowrap p-2 text-right tabular-nums">{weight == null ? '—' : `${weight.replace('.', ',')} kg`}</td>;
-    })}</tr>)}</tbody></table></div></section>)}
+    })}</tr></React.Fragment>)}</tbody></table></div></section>)}
   </section>;
 }

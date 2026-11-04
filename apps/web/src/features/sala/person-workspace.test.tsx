@@ -169,7 +169,7 @@ it('allows routine read permission to access the tab and see the routine without
   expect(await screen.findByRole('link', { name: 'Rutina' })).toHaveAttribute('href', `/sala/people/${personId}?tab=routine`);
   expect(await screen.findByText('Día de fuerza')).toBeInTheDocument();
   expect(screen.getByText('Sentadilla')).toBeInTheDocument(); expect(reads()).toBe(1);
-  for (const name of ['Crear desde cero', 'Crear rutina', 'Editar rutina', 'Usar nuevamente', 'Duplicar rutina']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  for (const name of ['Crear desde cero', 'Crear rutina', 'Asignar nueva rutina', 'Editar ejercicios', 'Usar nuevamente', 'Duplicar rutina']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
   expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument();
 });
 it.each(['summary', 'routine'])('hides routine access without read permission and avoids routine requests on %s', async (tab) => {
@@ -183,7 +183,7 @@ it('treats an Orval HTTP 409 as a mutation error and preserves the editor withou
   navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); const reads = routineHandlers();
   let writes = 0;
   server.use(http.post('http://localhost:3000/api/sala/routines', () => { writes++; return HttpResponse.json({ code: 'SALA_EXERCISE_INVALID', message: 'El ejercicio fue retirado.' }, { status: 409 }); }));
-  renderWorkspace(); await screen.findByText('Día de fuerza'); fireEvent.click(screen.getByRole('button', { name: 'Editar rutina' }));
+  renderWorkspace(); await screen.findByText('Día de fuerza'); fireEvent.click(screen.getByRole('button', { name: 'Asignar nueva rutina' }));
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('El ejercicio fue retirado.');
   expect(writes).toBe(1); expect(reads()).toBe(1);
@@ -193,7 +193,7 @@ it('treats an Orval HTTP 409 as a mutation error and preserves the editor withou
 it('uses existing exercise search in the student workspace without catalog administration', async () => {
   navigation.tab = 'routine'; routineSession(['SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE']); routineHandlers();
   renderWorkspace(); await screen.findByText('Día de fuerza');
-  fireEvent.click(screen.getByRole('button', { name: 'Editar rutina' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Asignar nueva rutina' }));
   expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: '+ Crear nuevo ejercicio' })).not.toBeInTheDocument();
   const catalog = within(screen.getByRole('region', { name: 'Agregar ejercicios' }));

@@ -108,3 +108,11 @@ it('keeps all values and open cards on network error and invalid input', async (
   fireEvent.change(screen.getByLabelText(/Semana 3/), { target: { value: '45' } }); fireEvent.click(screen.getAllByRole('button', { name: 'Guardar pesos' })[0]!);
   await screen.findByText('Error de guardado'); expect(screen.getByLabelText(/Semana 3/)).toHaveValue('45'); expect(screen.getByRole('button', { name: /^Press/ })).toHaveAttribute('aria-expanded', 'true');
 });
+
+it('shows an empty assigned day without an empty weights form', async () => {
+  routines[0]!.days[0]!.exercises = [];
+  renderRoutine();
+  expect(await screen.findByText('No hay ejercicios asignados a este día')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Guardar pesos' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+});

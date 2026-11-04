@@ -39,7 +39,7 @@ test('blocks survive template editing, assignment, portal weights, replacement, 
     for (const table of await root.locator('table').all()) {
       await expect(table.locator('thead tr:last-child th')).toHaveText(['Ejercicio', 'Rep./Tiempo', 'S1', 'S2', 'S3', 'S4', 'S5']);
     }
-    if (legacy) await expect(root.getByText('Series: 3', { exact: true })).toBeVisible();
+    if (legacy) await expect(root.getByRole('cell', { name: /^3 series ·/ }).first()).toBeVisible();
     if (!legacy) await expect(root.getByRole('heading', { name: 'Bloque A — 4 series', exact: true })).toBeVisible();
     await target.screenshot({ path: `/tmp/athleta-blocks-print-${name}.png`, fullPage: true });
     await target.pdf({ path: `/tmp/athleta-blocks-${name}.pdf`, preferCSSPageSize: true });
@@ -53,7 +53,7 @@ test('blocks survive template editing, assignment, portal weights, replacement, 
     const name = catalog.find(e => e.id === fixture.exerciseId)!.name;
     await page.goto(`/sala/people/${fixture.personId}?tab=routine`);
     await print(page, 'legacy', true);
-    await page.getByRole('button', { name: 'Editar rutina' }).click();
+    await page.getByRole('button', { name: 'Asignar nueva rutina' }).click();
     await expect(page.getByRole('group', { name: 'Día 1', exact: true }).getByLabel('Series', { exact: true }).first()).toHaveValue('3');
     await expect(page.getByRole('button', { name: '+ Agregar bloque' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
@@ -87,7 +87,7 @@ test('blocks survive template editing, assignment, portal weights, replacement, 
     await cards.nth(1).click();
     const weights = portal.getByLabel(/Semana 6/); await expect(weights).toHaveCount(5); await weights.nth(0).fill('32,5'); await weights.nth(1).fill('22');
     await portal.getByRole('button', { name: 'Guardar pesos', exact: true }).click(); await expect(portal.getByText('Pesos guardados correctamente.')).toBeVisible();
-    await page.getByRole('button', { name: 'Editar rutina' }).click(); await page.getByRole('button', { name: 'Aumentar series del bloque A' }).click(); await page.getByRole('button', { name: 'Aumentar series del bloque A' }).click(); await page.getByRole('button', { name: 'Guardar cambios' }).click(); await expect(page.getByText('Rutina asignada correctamente.')).toBeVisible();
+    await page.getByRole('button', { name: 'Asignar nueva rutina' }).click(); await page.getByRole('button', { name: 'Aumentar series del bloque A' }).click(); await page.getByRole('button', { name: 'Aumentar series del bloque A' }).click(); await page.getByRole('button', { name: 'Guardar cambios' }).click(); await expect(page.getByText('Rutina asignada correctamente.')).toBeVisible();
     await portal.getByRole('link', { name: 'Mis entrenamientos', exact: true }).click(); await portal.getByRole('button', { name: /Ver detalle del/ }).click(); await expect(portal.getByText('Bloque A — 4 series')).toBeVisible(); await expect(portal.getByText('32,5 kg', { exact: true })).toBeVisible(); await capture(portal, 'history');
     await portal.getByRole('link', { name: 'Editar registro', exact: true }).click(); await portal.getByLabel(/Peso utilizado/).first().fill('34,5'); await portal.getByRole('button', { name: 'Guardar corrección', exact: true }).click(); await expect(portal.getByText('Entrenamiento guardado correctamente.')).toBeVisible();
     await page.locator('summary').filter({ hasText: 'Rutinas históricas' }).click();

@@ -31,8 +31,9 @@ it('prints a semantic template document synchronously without HTTP or input muta
   expect(root.queryByText(/No incluir/)).not.toBeInTheDocument();
   expect(root.getAllByRole('heading', { level: 2 }).map(node => node.textContent)).toEqual(['Fuerza', 'Día 2']);
   expect(root.getAllByRole('row')[1]).toHaveTextContent('Retirado');
-  for (const text of ['Descripción', 'Guardado', 'Series: 4', '10 rep. / 45 s', 'Carga indicada: 40 kg', 'Descanso: 90 s', 'Controlar', 'Catálogo']) expect(root.getByText(text)).toBeInTheDocument();
-  expect(root.getAllByText('—').length).toBeGreaterThan(0);
+  for (const text of ['Guardado', '4 series · 10 rep. / 45 s', 'Catálogo']) expect(root.getByText(text)).toBeInTheDocument();
+  for (const text of ['Descripción', 'Carga indicada: 40 kg', 'Descanso: 90 s', 'Controlar']) expect(root.queryByText(text)).not.toBeInTheDocument();
+  expect(root.getByRole('cell', { name: 'Guardado' })).toHaveTextContent(/^Guardado$/);
   expect(fetch).not.toHaveBeenCalled();
   expect(JSON.stringify(days)).toBe(original);
   expect(screen.getByRole('button', { name: 'Imprimir / PDF' })).toBeDisabled();
@@ -68,7 +69,7 @@ it('respects disabled and falls back to Ejercicio for missing names', () => {
   rerender(<RoutinePrintButton days={[{ position: 1, exercises: [{ exerciseDefinitionId: 'missing' }] }]}/>);
   vi.spyOn(window, 'print').mockImplementation(() => {});
   fireEvent.click(screen.getByRole('button'));
-  expect(within(document.getElementById('athleta-routine-print-root')!).getByRole('cell', { name: 'Ejercicio Series: —' })).toBeInTheDocument();
+  expect(within(document.getElementById('athleta-routine-print-root')!).getByRole('cell', { name: 'Ejercicio' })).toBeInTheDocument();
 });
 
 it.each(['template', 'ACTIVE', 'HISTORICAL', 'SCHEDULED'] as const)('prints grouped %s routines with shared series and five empty weekly cells without writes', kind => {
@@ -76,7 +77,9 @@ it.each(['template', 'ACTIVE', 'HISTORICAL', 'SCHEDULED'] as const)('prints grou
   const grouped: RoutineDay[] = [{ position: 1, name: 'Fuerza', exercises: [{ exerciseDefinitionId: 'a', exerciseName: 'Sentadilla', blockPosition: 1, series: '4', repetitions: '8', load: '60 kg' }, { exerciseDefinitionId: 'b', exerciseName: 'Remo', blockPosition: 1, series: '4', notes: 'Control' }, { exerciseDefinitionId: 'c', exerciseName: 'Press', blockPosition: 2, series: '3' }] }];
   const original = structuredClone(grouped);
   const { root } = start({ days: grouped, ...(kind === 'template' ? { templateName: 'Modelo' } : { studentName: 'Alumno', status: kind, version: 2 }) });
-  for (const text of ['Bloque A — 4 series', 'Bloque B — 3 series', 'A1 — Sentadilla', 'A2 — Remo', 'B1 — Press', 'Carga indicada: 60 kg', 'Control']) expect(root.getByText(text)).toBeInTheDocument();
+  for (const text of ['Bloque A — 4 series', 'Bloque B — 3 series', 'A1 — Sentadilla', 'A2 — Remo', 'B1 — Press', '8 rep.']) expect(root.getByText(text)).toBeInTheDocument();
+  for (const text of ['Carga indicada: 60 kg', 'Control']) expect(root.queryByText(text)).not.toBeInTheDocument();
+  expect(root.getByRole('cell', { name: 'A1 — Sentadilla' })).toHaveTextContent(/^A1 — Sentadilla$/);
   expect(root.queryByRole('columnheader', { name: 'Series' })).not.toBeInTheDocument();
   for (const table of root.getAllByRole('table')) {
     expect(within(table).getAllByRole('columnheader').slice(-5).map(node => node.textContent)).toEqual(['S1', 'S2', 'S3', 'S4', 'S5']);
@@ -112,7 +115,23 @@ it.each([1, 2, 3, 4, 5, 7])('prints all %i days with the automatic panel distrib
   const columns = count === 4 ? 2 : Math.min(3, count);
   expect(container).toHaveAttribute('data-columns', String(columns));
   expect([...container.children].map(row => row.children.length)).toEqual(count === 4 ? [2, 2] : count === 5 ? [3, 2] : count === 7 ? [3, 3, 1] : [count]);
-  expect(root.getAllByText('10+10 rep. / 45 seg.')).toHaveLength(count);
+  expect(root.getAllByText('3 series · 10+10 rep. / 45 seg.')).toHaveLength(count);
   expect(document.querySelectorAll('.routine-print-weight')).toHaveLength(count * 5);
-  expect(root.getAllByText('Series: 3')).toHaveLength(count);
+  expect(root.queryByText('Series: 3')).not.toBeInTheDocument();
+});
+
+it.each(['template', 'ACTIVE', 'HISTORICAL', 'SCHEDULED'] as const)('prints compact legacy %s exercises without instructions or writes', kind => {
+  const fetch = vi.spyOn(globalThis, 'fetch');
+  const original = structuredClone(days);
+  const { root } = start({ ...(kind === 'template' ? { templateName: 'Modelo' } : { studentName: 'Alumno', status: kind, version: 2 }) });
+  expect(root.getByRole('cell', { name: '4 series · 10 rep. / 45 s' })).toBeInTheDocument();
+  for (const text of [/Descripción/, /Carga indicada/, /Descanso/, /Controlar/]) expect(root.queryByText(text)).not.toBeInTheDocument();
+  for (const row of document.querySelectorAll('#athleta-routine-print-root tbody tr')) {
+    const cells = within(row as HTMLElement).getAllByRole('cell');
+    expect(cells).toHaveLength(7);
+    expect(cells[0]?.children).toHaveLength(0);
+    for (const cell of cells.slice(2)) expect(cell).toBeEmptyDOMElement();
+  }
+  expect(days).toEqual(original);
+  expect(fetch).not.toHaveBeenCalled();
 });
