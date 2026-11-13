@@ -29,7 +29,7 @@ function orderedExercises(exercises: RoutineExercise[]): RoutineExercise[] {
 }
 
 export function RoutinePrintButton({ days, definitions = [], templateName, studentName, studentDetails, objective, effectiveFrom, effectiveUntil, status, version, disabled }: Props): React.JSX.Element {
-  const weeks = ['S1', 'S2', 'S3', 'S4', 'S5'];
+  const weeks = ['S1', 'S2', 'S3', 'S4'];
   const sortedDays = [...days].sort((a, b) => a.position - b.position);
   const columns = days.length === 4 ? 2 : Math.min(3, Math.max(1, days.length));
   const dayRows = Array.from({ length: Math.ceil(days.length / columns) }, (_, index) => sortedDays.slice(index * columns, (index + 1) * columns));
@@ -76,7 +76,7 @@ export function RoutinePrintButton({ days, definitions = [], templateName, stude
           {status && version !== undefined ? <p>Estado: {status === 'ACTIVE' ? 'Activa' : status === 'SCHEDULED' ? 'Programada' : 'Histórica'} · Versión: {version}</p> : null}
         </>}
       </div>
-      <p className="routine-print-legend">S1–S5: peso utilizado en kg</p>
+      <p className="routine-print-legend">S1–S4: peso utilizado en kg</p>
       <div className="routine-print-days" data-columns={columns}>
       {dayRows.map((row, rowIndex) => <div className="routine-print-day-row" key={rowIndex}>
       {row.map((day, dayIndex) => <section key={dayIndex} className="routine-print-day">
@@ -85,7 +85,7 @@ export function RoutinePrintButton({ days, definitions = [], templateName, stude
         <table>
           <colgroup><col/><col className="routine-print-prescription"/>{weeks.map(week => <col key={week} className="routine-print-week"/>)}</colgroup>
           <thead>
-            {block.position > 0 ? <tr><th colSpan={7} className="routine-print-block-title"><h3>Bloque {block.label}{block.series ? ` — ${block.series} series` : ''}</h3></th></tr> : null}
+            {block.position > 0 ? <tr><th colSpan={6} className="routine-print-block-title"><h3>Bloque {block.label}{block.series ? ` — ${block.series} series` : ''}</h3></th></tr> : null}
             <tr>{['Ejercicio', 'Rep./Tiempo', ...weeks].map(label => <th scope="col" key={label}>{label}</th>)}</tr>
           </thead>
           <tbody>{block.exercises.map((exercise, index) => <tr key={index}>

@@ -69,7 +69,7 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     expect(await prisma.routine.count({ where: { personId: f.person.id } })).toBe(2);
     expect(await prisma.routine.findUnique({ where: { id: future.id }, include: { days: { include: { exercises: true } } } })).toEqual(futureBefore);
     expect(await training.listMonth(f.person.id, '2026-10')).toEqual(before);
-    const weeks = Array.from({ length: 6 }, (_, index) => ({ weekNumber: index + 1, exercises: [{ id: retained.id, weightKg: before.find(r => r.weekNumber === index + 1)?.exercises.find(e => e.routineExerciseId === retained.id)?.weightKg ?? null }, { id: added.id, weightKg: index === 0 ? '25' : null }] }));
+    const weeks = Array.from({ length: 4 }, (_, index) => ({ weekNumber: index + 1, exercises: [{ id: retained.id, weightKg: before.find(r => r.weekNumber === index + 1)?.exercises.find(e => e.routineExerciseId === retained.id)?.weightKg ?? null }, { id: added.id, weightKg: index === 0 ? '25' : null }] }));
     await training.saveMonthlyWeights(f.person.id, { routineId: f.routine.id, routineDayId: day.id, month: '2026-10', weeks });
     const after = await training.listMonth(f.person.id, '2026-10');
     expect(after.map(r => r.id)).toEqual(before.map(r => r.id));
@@ -136,7 +136,7 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     await sala.updateScheduledRoutine(future.id, { effectiveFrom: '2026-11-14', days: [{ name: 'Corregida', exercises: [{ exerciseDefinitionId: f.a.id, repetitions: '8' }] }] });
     const updated = (await sala.listRoutines(f.person.id)).find(r => r.id === future.id)!;
     const day = updated.days[0]!;
-    await training.saveMonthlyWeights(f.person.id, { routineId: future.id, routineDayId: day.id, month: '2026-11', weeks: Array.from({ length: 6 }, (_, i) => ({ weekNumber: i + 1, exercises: day.exercises.map(e => ({ id: e.id, weightKg: i === 0 ? '42' : null })) })) });
+    await training.saveMonthlyWeights(f.person.id, { routineId: future.id, routineDayId: day.id, month: '2026-11', weeks: Array.from({ length: 4 }, (_, i) => ({ weekNumber: i + 1, exercises: day.exercises.map(e => ({ id: e.id, weightKg: i === 0 ? '42' : null })) })) });
     const records = await training.listMonth(f.person.id, '2026-11');
     await expect(sala.updateScheduledRoutine(future.id, { effectiveFrom: '2026-11-14', days: [] })).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_HAS_RECORDS' } });
     await expect(sala.updateScheduledRoutine(future.id, { effectiveFrom: '2026-12-16' })).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_DATE_ORDER' } });
@@ -200,7 +200,7 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     return login.headers['set-cookie'][0] as string;
   }
   function monthly(f: Awaited<ReturnType<typeof fixture>>, month = '2026-10') {
-    return { routineId: f.routine.id, routineDayId: f.routine.days[0]!.id, month, weeks: Array.from({ length: 6 }, (_, i) => ({ weekNumber: i + 1, exercises: f.body.exercises.map(e => ({ id: e.id, weightKg: i === 0 ? e.weightKg : null })) })) };
+    return { routineId: f.routine.id, routineDayId: f.routine.days[0]!.id, month, weeks: Array.from({ length: 4 }, (_, i) => ({ weekNumber: i + 1, exercises: f.body.exercises.map(e => ({ id: e.id, weightKg: i === 0 ? e.weightKg : null })) })) };
   }
   function saveMonth(f: Awaited<ReturnType<typeof fixture>>, body = monthly(f)) {
     return request(app.getHttpServer()).put('/api/portal/sala/training-records/monthly').set('Cookie', f.cookie).set('x-csrf-token', f.csrf).send(body);
@@ -227,6 +227,34 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     expect(await prisma.routine.count({ where: { personId: f.person.id } })).toBe(1);
     expect((await training.listMonth(f.person.id, '2026-11'))[0]!.exercises[0]!.weightKg).toBe('45');
   });
+  it('saves and corrects four weeks while preserving historical weeks five and six in queries', async () => {
+    const f = await fixture();
+    const body = monthly(f);
+    body.weeks.forEach(week => { week.exercises[0]!.weightKg = String(week.weekNumber * 10); });
+    await saveMonth(f, body).expect(200);
+    const source = await prisma.salaTrainingRecord.findFirstOrThrow({ where: { personId: f.person.id, weekNumber: 1 }, include: { exercises: true } });
+    for (const weekNumber of [5, 6]) {
+      await prisma.salaTrainingRecord.create({ data: {
+        personId: source.personId, routineId: source.routineId, routineDayId: source.routineDayId,
+        month: source.month, date: null, weekNumber, dayName: source.dayName, dayPosition: source.dayPosition,
+        exercises: { create: source.exercises.map(entry => ({
+          routineExerciseId: entry.routineExerciseId, exerciseDefinitionId: entry.exerciseDefinitionId,
+          exerciseName: entry.exerciseName, position: entry.position, blockPosition: entry.blockPosition,
+          series: entry.series, repetitions: entry.repetitions, duration: entry.duration,
+          load: entry.load, rest: entry.rest, notes: entry.notes, weightKg: String(weekNumber * 10),
+        })) },
+      } });
+    }
+    const historical = (await training.listMonth(f.person.id, body.month)).filter(record => record.weekNumber! > 4);
+    expect(historical.map(record => record.weekNumber).sort()).toEqual([5, 6]);
+    body.weeks.forEach(week => { week.exercises[0]!.weightKg = String(week.weekNumber * 10 + 1); });
+    await saveMonth(f, body).expect(200);
+    const records = (await request(app.getHttpServer()).get('/api/portal/sala/training-records/month').query({ month: body.month }).set('Cookie', f.cookie).expect(200)).body.data;
+    expect(records).toHaveLength(6);
+    for (const week of body.weeks) expect(records).toEqual(expect.arrayContaining([expect.objectContaining({ weekNumber: week.weekNumber, exercises: expect.arrayContaining([expect.objectContaining({ routineExerciseId: week.exercises[0]!.id, weightKg: week.exercises[0]!.weightKg })]) })]));
+    expect(records.filter((record: { weekNumber: number }) => record.weekNumber > 4)).toEqual(historical);
+    for (const record of historical) expect(await training.detail(f.person.id, record.id)).toEqual(record);
+  });
   it('saves multiple weeks atomically, rejects invalid entries, ownership, month and weeks, and prevents concurrent duplicates', async () => {
     const f = await fixture(); const body = monthly(f);
     body.weeks[3]!.exercises[1]!.weightKg = '60';
@@ -236,16 +264,19 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     const before = await training.listMonth(f.person.id, '2026-10');
     for (const invalid of [
       { ...body, month: '2026-13' }, { ...body, routineId: randomUUID() }, { ...body, routineDayId: randomUUID() },
-      { ...body, weeks: body.weeks.map((w, i) => i === 5 ? { ...w, weekNumber: 0 } : w) },
-      { ...body, weeks: body.weeks.map((w, i) => i === 5 ? { ...w, weekNumber: 7 } : w) },
-      { ...body, weeks: body.weeks.map((w, i) => i === 5 ? { ...w, weekNumber: 1 } : w) },
-      { ...body, weeks: body.weeks.map((w, i) => i === 5 ? { ...w, exercises: w.exercises.map((e, j) => j === 0 ? { ...e, id: randomUUID() } : e) } : w) },
+      { ...body, weeks: body.weeks.slice(0, 3) },
+      { ...body, weeks: [...body.weeks, { ...body.weeks[0]!, weekNumber: 5 }] },
+      { ...body, weeks: body.weeks.map((w, i) => i === 3 ? { ...w, weekNumber: 1.5 } : w) },
+      { ...body, weeks: body.weeks.map((w, i) => i === 3 ? { ...w, weekNumber: 0 } : w) },
+      { ...body, weeks: body.weeks.map((w, i) => i === 3 ? { ...w, weekNumber: 5 } : w) },
+      { ...body, weeks: body.weeks.map((w, i) => i === 3 ? { ...w, weekNumber: 1 } : w) },
+      { ...body, weeks: body.weeks.map((w, i) => i === 3 ? { ...w, exercises: w.exercises.map((e, j) => j === 0 ? { ...e, id: randomUUID() } : e) } : w) },
     ]) await saveMonth(f, invalid).expect(400);
     expect(await training.listMonth(f.person.id, '2026-10')).toEqual(before);
     await request(app.getHttpServer()).put('/api/portal/sala/training-records/monthly').set('Cookie', f.cookie).send(body).expect(403);
     const other = await fixture(); await saveMonth(other, body).expect(400);
     // An invalid final week causes rollback even when the first week changed.
-    const bad = monthly(f); bad.weeks[0]!.exercises[0]!.weightKg = '99'; bad.weeks[5]!.exercises[0]!.id = randomUUID();
+    const bad = monthly(f); bad.weeks[0]!.exercises[0]!.weightKg = '99'; bad.weeks[3]!.exercises[0]!.id = randomUUID();
     await expect(training.saveMonthlyWeights(f.person.id, bad)).rejects.toThrow();
     expect(await training.listMonth(f.person.id, '2026-10')).toEqual(before);
   });
@@ -282,15 +313,15 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     expect((await training.context(f.person.id, '2026-10-26')).routine?.days[0]?.exercises[0]?.lastWeightKg).toBe('32.5');
     expect((await training.context(f.person.id, '2026-12-01')).routine?.days[0]?.exercises[0]?.lastWeightKg).toBe('99');
   });
-  it('keeps six slots of two mid-month prescriptions separate, including advance entries', async () => {
+  it('keeps four slots of two mid-month prescriptions separate, including advance entries', async () => {
     const f = await fixture();
     const next = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, effectiveFrom: '2026-11-15', days: [{ name: 'Segunda', exercises: [{ exerciseDefinitionId: f.a.id }] }] });
-    const firstBody = monthly(f, '2026-11'); firstBody.weeks[5]!.exercises[0]!.weightKg = '25';
+    const firstBody = monthly(f, '2026-11'); firstBody.weeks[3]!.exercises[0]!.weightKg = '25';
     await saveMonth(f, firstBody).expect(200);
-    const nextBody = { routineId: next.id, routineDayId: next.days[0]!.id, month: '2026-11', weeks: Array.from({ length: 6 }, (_, i) => ({ weekNumber: i + 1, exercises: next.days[0]!.exercises.map(e => ({ id: e.id, weightKg: i === 5 ? '35' : null })) })) };
+    const nextBody = { routineId: next.id, routineDayId: next.days[0]!.id, month: '2026-11', weeks: Array.from({ length: 4 }, (_, i) => ({ weekNumber: i + 1, exercises: next.days[0]!.exercises.map(e => ({ id: e.id, weightKg: i === 3 ? '35' : null })) })) };
     await saveMonth(f, nextBody).expect(200);
     const records = await training.listMonth(f.person.id, '2026-11');
-    expect(records.filter(r => r.weekNumber === 6).map(r => [r.routineId, r.exercises[0]?.weightKg])).toEqual(expect.arrayContaining([[f.routine.id, '25'], [next.id, '35']]));
+    expect(records.filter(r => r.weekNumber === 4).map(r => [r.routineId, r.exercises[0]?.weightKg])).toEqual(expect.arrayContaining([[f.routine.id, '25'], [next.id, '35']]));
     await saveMonth(f, monthly(f, '2026-12')).expect(400);
     const context = (await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200)).body.data;
     expect(context.routine).toMatchObject({ id: f.routine.id, status: 'ACTIVE' });
@@ -315,9 +346,9 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     expect(await prisma.routineExercise.count({ where: { routineDay: { routineId: future.id } } })).toBe(0);
   });
   it('rolls back every weekly write when persistence fails on the final week', async () => {
-    const f = await fixture(); const body = monthly(f); body.weeks[5]!.exercises[0]!.weightKg = '99';
+    const f = await fixture(); const body = monthly(f); body.weeks[3]!.exercises[0]!.weightKg = '99';
     const name = `training_rollback_${randomUUID().replaceAll('-', '')}`;
-    await prisma.$executeRawUnsafe(`CREATE FUNCTION ${name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.person_id = '${f.person.id}'::uuid AND NEW.week_number = 6 THEN RAISE EXCEPTION 'synthetic final week failure'; END IF; RETURN NEW; END $$`);
+    await prisma.$executeRawUnsafe(`CREATE FUNCTION ${name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.person_id = '${f.person.id}'::uuid AND NEW.week_number = 4 THEN RAISE EXCEPTION 'synthetic final week failure'; END IF; RETURN NEW; END $$`);
     await prisma.$executeRawUnsafe(`CREATE TRIGGER ${name} BEFORE INSERT ON sala_training_records FOR EACH ROW EXECUTE FUNCTION ${name}()`);
     try {
       await expect(training.saveMonthlyWeights(f.person.id, body)).rejects.toThrow();

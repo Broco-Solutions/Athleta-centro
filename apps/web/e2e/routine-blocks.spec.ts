@@ -35,9 +35,9 @@ test('blocks survive template editing, assignment, portal weights, replacement, 
     const root = target.locator('#athleta-routine-print-root');
     await expect(root).toBeAttached();
     await target.emulateMedia({ media: 'print' });
-    await expect(root.locator('tbody .routine-print-weight')).toHaveCount(legacy ? 15 : 25);
+    await expect(root.locator('tbody .routine-print-weight')).toHaveCount(legacy ? 12 : 20);
     for (const table of await root.locator('table').all()) {
-      await expect(table.locator('thead tr:last-child th')).toHaveText(['Ejercicio', 'Rep./Tiempo', 'S1', 'S2', 'S3', 'S4', 'S5']);
+      await expect(table.locator('thead tr:last-child th')).toHaveText(['Ejercicio', 'Rep./Tiempo', 'S1', 'S2', 'S3', 'S4']);
     }
     if (legacy) await expect(root.getByRole('cell', { name: /^3 series ·/ }).first()).toBeVisible();
     if (!legacy) await expect(root.getByRole('heading', { name: 'Bloque A — 4 series', exact: true })).toBeVisible();
@@ -85,7 +85,7 @@ test('blocks survive template editing, assignment, portal weights, replacement, 
     const cards = portal.locator('button[aria-expanded][aria-controls]');
     await cards.nth(0).click();
     await cards.nth(1).click();
-    const weights = portal.getByLabel(/Semana 6/); await expect(weights).toHaveCount(5); await weights.nth(0).fill('32,5'); await weights.nth(1).fill('22');
+    const weights = portal.getByLabel(/Semana 4/); await expect(weights).toHaveCount(5); await weights.nth(0).fill('32,5'); await weights.nth(1).fill('22');
     await portal.getByRole('button', { name: 'Guardar pesos', exact: true }).click(); await expect(portal.getByText('Pesos guardados correctamente.')).toBeVisible();
     await page.getByRole('button', { name: 'Asignar nueva rutina' }).click(); await page.getByRole('button', { name: 'Aumentar series del bloque A' }).click(); await page.getByRole('button', { name: 'Aumentar series del bloque A' }).click(); await page.getByRole('button', { name: 'Guardar cambios' }).click(); await expect(page.getByText('Rutina asignada correctamente.')).toBeVisible();
     await portal.getByRole('link', { name: 'Mis entrenamientos', exact: true }).click(); await portal.getByRole('button', { name: /Ver detalle del/ }).click(); await expect(portal.getByText('Bloque A — 4 series')).toBeVisible(); await expect(portal.getByText('32,5 kg', { exact: true })).toBeVisible(); await capture(portal, 'history');
@@ -132,7 +132,7 @@ test('prints complete 3, 4 and 5 day sheets in landscape with empty weekly cells
       await page.emulateMedia({ media: 'print' });
       await expect(root.locator('h2')).toHaveCount(count);
       await expect(root.locator('tbody tr')).toHaveCount(count * 9);
-      await expect(root.locator('.routine-print-weight')).toHaveCount(count * 9 * 5);
+      await expect(root.locator('.routine-print-weight')).toHaveCount(count * 9 * 4);
       for (const row of await root.locator('.routine-print-day-row').all()) {
         const positions = await row.locator('section').evaluateAll(nodes => nodes.map(node => ({ x: node.getBoundingClientRect().x, y: node.getBoundingClientRect().y })));
         expect(new Set(positions.map(p => p.y)).size).toBe(1);

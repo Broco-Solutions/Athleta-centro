@@ -20,11 +20,11 @@ it('hides zero-duration versions and never invents a current routine before a fu
   expect(trainingMonthRoutines(routines, '2026-11').map(p => p.routine.id)).toEqual(['r6']);
   expect(initialTrainingRoutine([version(1, '2026-11-15')], '2026-11', '2026-11-03')).toBe('');
 });
-it('creates exactly six independent slots and keeps legacy records outside them', () => {
+it('creates exactly four independent slots and keeps legacy records outside them', () => {
   const record = { id: 'monthly', routineId: 'r1', routineDayId: 'd1', date: null, month: '2026-11', weekNumber: 4 } as TrainingRecordDetailDto;
-  const records = [record, { ...record, id: 'legacy', month: null, weekNumber: null, date: '2026-11-01' }, { ...record, id: 'other-month', month: '2026-12' }, { ...record, id: 'other-routine', routineId: 'r2' }, { ...record, id: 'other-day', routineDayId: 'd2' }];
-  expect(monthlyTrainingSlots(records, 'r1', 'd1', '2026-11')).toEqual([null, null, null, record, null, null]);
-  expect(monthlyTrainingSlots([], 'r1', 'd1', '2026-11')).toHaveLength(6);
+  const records = [record, ...[5, 6].map(weekNumber => ({ ...record, id: `historical-${weekNumber}`, weekNumber })), { ...record, id: 'legacy', month: null, weekNumber: null, date: '2026-11-01' }, { ...record, id: 'other-month', month: '2026-12' }, { ...record, id: 'other-routine', routineId: 'r2' }, { ...record, id: 'other-day', routineDayId: 'd2' }];
+  expect(monthlyTrainingSlots(records, 'r1', 'd1', '2026-11')).toEqual([null, null, null, record]);
+  expect(monthlyTrainingSlots([], 'r1', 'd1', '2026-11')).toHaveLength(4);
 });
 it('navigates months across years without host timezone conversions', () => {
   expect(shiftTrainingMonth('2026-12', 1)).toBe('2027-01');
