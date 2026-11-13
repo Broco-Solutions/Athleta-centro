@@ -399,7 +399,7 @@ it.each([true, false])('prints active and specific historical routines without w
     expect(root).toHaveTextContent('Deporte: Hockey');
     expect(root).toHaveTextContent('Objetivo: Fuerza general');
     expect(root).toHaveTextContent('Inicio: 01/10/2026');
-    expect(root.querySelectorAll('.routine-print-weight')).toHaveLength(10);
+    expect(root.querySelectorAll('.routine-print-weight')).toHaveLength(8);
     expect(root).toHaveTextContent('Estado: Activa · Versión: 2');
     expect(root).not.toHaveTextContent('Histórico exclusivo');
     expect(root).not.toHaveTextContent('Historial de entrenamientos');
@@ -430,7 +430,7 @@ it('prints the selected template preview without assignment', async () => {
     expect(document.getElementById('athleta-routine-print-root')).toHaveTextContent('Rutina: Modelo previo');
     expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('Alumno Prueba');
     expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('Hockey');
-    expect(document.querySelectorAll('.routine-print-weight')).toHaveLength(10);
+    expect(document.querySelectorAll('.routine-print-weight')).toHaveLength(8);
     for (const write of [api.create, api.replace, api.duplicate]) expect(write).not.toHaveBeenCalled();
   } finally { print.mockRestore(); }
 });

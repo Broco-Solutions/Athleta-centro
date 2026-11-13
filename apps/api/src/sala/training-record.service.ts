@@ -110,7 +110,7 @@ export class TrainingRecordService {
   }
   async saveMonthlyWeights(personId: string, input: SaveMonthlyTrainingWeightsDto) {
     if (!/^(?!0000)\d{4}-(0[1-9]|1[0-2])$/.test(input.month)) throw new BadRequestException({ code: 'TRAINING_MONTH_INVALID', message: 'Elegí un mes válido.' });
-    if (!Array.isArray(input.weeks) || input.weeks.length !== 6 || new Set(input.weeks.map(w => w.weekNumber)).size !== 6 || input.weeks.some(w => !Number.isInteger(w.weekNumber) || w.weekNumber < 1 || w.weekNumber > 6)) throw new BadRequestException({ code: 'TRAINING_WEEKS_INVALID', message: 'Informá las seis semanas, sin repetirlas.' });
+    if (!Array.isArray(input.weeks) || input.weeks.length !== 4 || new Set(input.weeks.map(w => w.weekNumber)).size !== 4 || input.weeks.some(w => !Number.isInteger(w.weekNumber) || w.weekNumber < 1 || w.weekNumber > 4)) throw new BadRequestException({ code: 'TRAINING_WEEKS_INVALID', message: 'Informá las cuatro semanas, sin repetirlas.' });
     input.weeks.forEach(week => this.validateWeights(week));
     try {
       return await this.serialized(async tx => {

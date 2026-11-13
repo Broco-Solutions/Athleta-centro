@@ -2220,7 +2220,7 @@ export interface MonthlyTrainingWeekDto {
   exercises: TrainingWeightDto[];
   /**
    * @minimum 1
-   * @maximum 6
+   * @maximum 4
    */
   weekNumber: number;
 }
@@ -2230,8 +2230,8 @@ export interface SaveMonthlyTrainingWeightsDto {
   routineDayId: string;
   month: string;
   /**
-   * @minItems 6
-   * @maxItems 6
+   * @minItems 4
+   * @maxItems 4
    */
   weeks: MonthlyTrainingWeekDto[];
 }

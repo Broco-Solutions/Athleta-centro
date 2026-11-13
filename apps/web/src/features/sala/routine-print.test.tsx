@@ -72,7 +72,7 @@ it('respects disabled and falls back to Ejercicio for missing names', () => {
   expect(within(document.getElementById('athleta-routine-print-root')!).getByRole('cell', { name: 'Ejercicio' })).toBeInTheDocument();
 });
 
-it.each(['template', 'ACTIVE', 'HISTORICAL', 'SCHEDULED'] as const)('prints grouped %s routines with shared series and five empty weekly cells without writes', kind => {
+it.each(['template', 'ACTIVE', 'HISTORICAL', 'SCHEDULED'] as const)('prints grouped %s routines with shared series and four empty weekly cells without writes', kind => {
   const fetch = vi.spyOn(globalThis, 'fetch');
   const grouped: RoutineDay[] = [{ position: 1, name: 'Fuerza', exercises: [{ exerciseDefinitionId: 'a', exerciseName: 'Sentadilla', blockPosition: 1, series: '4', repetitions: '8', load: '60 kg' }, { exerciseDefinitionId: 'b', exerciseName: 'Remo', blockPosition: 1, series: '4', notes: 'Control' }, { exerciseDefinitionId: 'c', exerciseName: 'Press', blockPosition: 2, series: '3' }] }];
   const original = structuredClone(grouped);
@@ -82,10 +82,11 @@ it.each(['template', 'ACTIVE', 'HISTORICAL', 'SCHEDULED'] as const)('prints grou
   expect(root.getByRole('cell', { name: 'A1 — Sentadilla' })).toHaveTextContent(/^A1 — Sentadilla$/);
   expect(root.queryByRole('columnheader', { name: 'Series' })).not.toBeInTheDocument();
   for (const table of root.getAllByRole('table')) {
-    expect(within(table).getAllByRole('columnheader').slice(-5).map(node => node.textContent)).toEqual(['S1', 'S2', 'S3', 'S4', 'S5']);
+    expect(table.querySelector('.routine-print-block-title')).toHaveAttribute('colspan', '6');
+    expect(within(table).getAllByRole('columnheader').slice(-4).map(node => node.textContent)).toEqual(['S1', 'S2', 'S3', 'S4']);
     for (const row of table.querySelectorAll('tbody tr')) {
       const cells = row.querySelectorAll('.routine-print-weight');
-      expect(cells).toHaveLength(5);
+      expect(cells).toHaveLength(4);
       for (const cell of cells) expect(cell).toBeEmptyDOMElement();
     }
   }
@@ -100,7 +101,7 @@ it('prints available personal details, real dates and a blank payment field', ()
     const { root } = start({ studentName: 'Alumno Prueba', studentDetails: { birthDate: '2000-11-04', sport: 'Hockey' }, objective: 'Fuerza', effectiveFrom: '2026-10-01', effectiveUntil: '2026-11-01' });
     for (const text of ['Edad: 25 años', 'Deporte: Hockey', 'Objetivo: Fuerza', 'Inicio: 01/10/2026', 'Cambio: 01/11/2026']) expect(root.getByText(text)).toBeInTheDocument();
     expect(root.getByText('Pago:').querySelector('.routine-print-blank')).toBeInTheDocument();
-    expect(root.getByText('S1–S5: peso utilizado en kg')).toBeInTheDocument();
+    expect(root.getByText('S1–S4: peso utilizado en kg')).toBeInTheDocument();
   } finally { vi.useRealTimers(); }
 });
 it('never leaks any personal details into a template', () => {
@@ -116,7 +117,7 @@ it.each([1, 2, 3, 4, 5, 7])('prints all %i days with the automatic panel distrib
   expect(container).toHaveAttribute('data-columns', String(columns));
   expect([...container.children].map(row => row.children.length)).toEqual(count === 4 ? [2, 2] : count === 5 ? [3, 2] : count === 7 ? [3, 3, 1] : [count]);
   expect(root.getAllByText('3 series · 10+10 rep. / 45 seg.')).toHaveLength(count);
-  expect(document.querySelectorAll('.routine-print-weight')).toHaveLength(count * 5);
+  expect(document.querySelectorAll('.routine-print-weight')).toHaveLength(count * 4);
   expect(root.queryByText('Series: 3')).not.toBeInTheDocument();
 });
 
@@ -128,7 +129,7 @@ it.each(['template', 'ACTIVE', 'HISTORICAL', 'SCHEDULED'] as const)('prints comp
   for (const text of [/Descripción/, /Carga indicada/, /Descanso/, /Controlar/]) expect(root.queryByText(text)).not.toBeInTheDocument();
   for (const row of document.querySelectorAll('#athleta-routine-print-root tbody tr')) {
     const cells = within(row as HTMLElement).getAllByRole('cell');
-    expect(cells).toHaveLength(7);
+    expect(cells).toHaveLength(6);
     expect(cells[0]?.children).toHaveLength(0);
     for (const cell of cells.slice(2)) expect(cell).toBeEmptyDOMElement();
   }

@@ -9,7 +9,7 @@ export const trainingMonthLabel = (month: string): string => new Intl.DateTimeFo
 
 /** Monthly slots have no calendar date. Legacy records never populate this matrix. */
 export function monthlyTrainingSlots(records: TrainingRecordDetailDto[], routineId: string, dayId: string, month: string): (TrainingRecordDetailDto | null)[] {
-  return Array.from({ length: 6 }, (_, i) => records.find(r => r.date === null && r.routineId === routineId && r.routineDayId === dayId && r.month === month && r.weekNumber === i + 1) ?? null);
+  return Array.from({ length: 4 }, (_, i) => records.find(r => r.date === null && r.routineId === routineId && r.routineDayId === dayId && r.month === month && r.weekNumber === i + 1) ?? null);
 }
 export function trainingRoutinePeriods(routines: TrainingRoutineVersionDto[]) {
   const sorted = [...routines].sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom) || a.version - b.version);

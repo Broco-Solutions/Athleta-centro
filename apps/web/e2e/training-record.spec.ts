@@ -29,11 +29,11 @@ test('monthly Portal save, repeated correction, retrospective months and read-on
     await expect(cards).toHaveCount(2); await expect(cards.first()).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByRole('region', { name: 'Períodos de rutina' })).toHaveCount(0);
     await capture(page, 'one-routine-closed');
-    await cards.first().click(); await expect(page.getByRole('textbox')).toHaveCount(6);
-    await capture(page, 'six-empty');
+    await cards.first().click(); await expect(page.getByRole('textbox')).toHaveCount(4);
+    await capture(page, 'four-empty');
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole('textbox').nth(1).fill('42,5'); await page.getByRole('textbox').nth(5).fill('0');
-    await cards.last().click(); await page.getByRole('textbox').nth(6).fill('60');
+    await page.getByRole('textbox').nth(1).fill('42,5'); await page.getByRole('textbox').nth(3).fill('0');
+    await cards.last().click(); await page.getByRole('textbox').nth(4).fill('60');
     page.once('dialog', dialog => dialog.dismiss()); await page.getByRole('button', { name: 'Mes anterior', exact: true }).click(); await expect(page.getByRole('textbox').nth(1)).toHaveValue('42,5');
     const requests: string[] = []; page.on('request', req => { if (req.method() === 'PUT' && req.url().endsWith('/training-records/monthly')) requests.push(req.url()); });
     const save = page.getByRole('button', { name: 'Guardar pesos', exact: true }); await expect(save).toHaveCount(1);
@@ -88,10 +88,10 @@ test('two periods have separate days and monthly slots, and select the routine f
     const periods = page.getByRole('region', { name: 'Períodos de rutina' }); await expect(periods.getByRole('button')).toHaveCount(2);
     await expect(page.getByRole('heading', { name: 'Versión 2', exact: true })).toBeVisible();
     await capture(page, 'two-periods-latest');
-    const cards = page.locator('button[aria-expanded][aria-controls]'); await cards.first().click(); await expect(page.getByRole('textbox')).toHaveCount(6); await page.getByRole('textbox').nth(3).fill('35'); await page.getByRole('button', { name: 'Guardar pesos', exact: true }).click(); await expect(page.getByText('Pesos guardados correctamente.')).toBeVisible();
+    const cards = page.locator('button[aria-expanded][aria-controls]'); await cards.first().click(); await expect(page.getByRole('textbox')).toHaveCount(4); await page.getByRole('textbox').nth(3).fill('35'); await page.getByRole('button', { name: 'Guardar pesos', exact: true }).click(); await expect(page.getByText('Pesos guardados correctamente.')).toBeVisible();
     await periods.getByRole('button', { name: /Rutina 1$/ }).click();
     const days = page.getByRole('navigation', { name: 'Días de la rutina' }); await expect(days.getByRole('button')).toHaveCount(2); await expect(days).not.toContainText('Versión 2');
-    await cards.first().click(); await expect(page.getByRole('textbox')).toHaveCount(6); await expect(page.getByRole('textbox').nth(3)).toHaveValue('');
+    await cards.first().click(); await expect(page.getByRole('textbox')).toHaveCount(4); await expect(page.getByRole('textbox').nth(3)).toHaveValue('');
     await page.getByRole('textbox').nth(3).fill('25'); await page.getByRole('button', { name: 'Guardar pesos', exact: true }).click(); await expect(page.getByText('Pesos guardados correctamente.')).toBeVisible(); await capture(page, 'two-periods-historical-manual');
     await periods.getByRole('button', { name: /Rutina 2$/ }).click(); await cards.first().click(); await expect(page.getByRole('textbox').nth(3)).toHaveValue('35');
     for (const [today, heading] of [['2026-10-03', 'Fuerza'], ['2026-10-16', 'Versión 2']]) {
@@ -111,7 +111,7 @@ test('edits current exercises with a future routine and preserves monthly weight
     await cards.first().click();
     await page.getByRole('textbox').first().fill('40');
     await cards.last().click();
-    await page.getByRole('textbox').nth(6).fill('60');
+    await page.getByRole('textbox').nth(4).fill('60');
     await page.getByRole('button', { name: 'Guardar pesos', exact: true }).click();
     await expect(page.getByText('Pesos guardados correctamente.')).toBeVisible();
     const teacher = await staff.newPage();
@@ -140,8 +140,8 @@ test('edits current exercises with a future routine and preserves monthly weight
     await cards.first().click();
     await expect(page.getByRole('textbox').first()).toHaveValue('40');
     await cards.last().click();
-    await expect(page.getByRole('textbox').nth(6)).toHaveValue('');
-    await page.getByRole('textbox').nth(6).fill('25');
+    await expect(page.getByRole('textbox').nth(4)).toHaveValue('');
+    await page.getByRole('textbox').nth(4).fill('25');
     await page.getByRole('button', { name: 'Guardar pesos', exact: true }).click();
     await expect(page.getByText('Pesos guardados correctamente.')).toBeVisible();
     await teacher.getByRole('button', { name: 'Ver pesos', exact: true }).first().click();

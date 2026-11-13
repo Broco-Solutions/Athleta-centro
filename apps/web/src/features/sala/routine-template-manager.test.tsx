@@ -227,8 +227,8 @@ it('prints only the selected saved template and never writes', async () => {
     expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('Otra rutina');
     expect(document.querySelector('.routine-print-identification')).toHaveTextContent('Alumno:');
     for (const table of document.querySelectorAll('#athleta-routine-print-root table')) {
-      expect([...table.querySelectorAll('thead tr:last-child th')].slice(-5).map(cell => cell.textContent)).toEqual(['S1', 'S2', 'S3', 'S4', 'S5']);
-      for (const row of table.querySelectorAll('tbody tr')) expect(row.querySelectorAll('.routine-print-weight')).toHaveLength(5);
+      expect([...table.querySelectorAll('thead tr:last-child th')].slice(-4).map(cell => cell.textContent)).toEqual(['S1', 'S2', 'S3', 'S4']);
+      for (const row of table.querySelectorAll('tbody tr')) expect(row.querySelectorAll('.routine-print-weight')).toHaveLength(4);
     }
     fireEvent(window, new Event('afterprint'));
     fireEvent.click(screen.getByRole('button', { name: /Otra rutina/ }));

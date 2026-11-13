@@ -42,12 +42,14 @@ beforeEach(() => {
 afterEach(() => { cleanup(); server.resetHandlers(); vi.restoreAllMocks(); });
 afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 async function open(name = 'Press') { fireEvent.click(await screen.findByRole('button', { name: new RegExp(`^${name}`) })); }
-it('has a single routine without period selector and six initially empty fields per exercise', async () => {
+it('has a single routine without period selector and four initially empty fields per exercise', async () => {
   renderRoutine(); await screen.findByRole('heading', { name: 'Fuerza 1' });
   expect(screen.queryByRole('region', { name: 'Períodos de rutina' })).not.toBeInTheDocument();
   const card = await screen.findByRole('button', { name: /^Press/ }); expect(card).toHaveAttribute('aria-expanded', 'false');
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument(); await open();
-  const inputs = screen.getAllByRole('textbox'); expect(inputs).toHaveLength(6);
+  const inputs = screen.getAllByRole('textbox'); expect(inputs).toHaveLength(4);
+  expect(inputs.map(input => (input as HTMLInputElement).labels?.[0]?.textContent)).toEqual([1, 2, 3, 4].map(week => `Semana ${week} — Press, ejercicio 1`));
+  expect(screen.queryByLabelText(/Semana [56]/)).not.toBeInTheDocument();
   inputs.forEach(input => { expect(input).toHaveValue(''); expect(input).toBeEnabled(); });
   expect(screen.queryByText(/26\/10/)).not.toBeInTheDocument(); expect(screen.queryByLabelText('Fecha del entrenamiento')).not.toBeInTheDocument();
   expect(months).toEqual(['2026-11']);
@@ -61,7 +63,7 @@ it.each(['2026-11-03', '2026-11-16'])('selects the effective version on %s and k
   expect(within(nav).queryByRole('button', { name: `Fuerza ${expected === 1 ? 2 : 1}` })).not.toBeInTheDocument();
   fireEvent.click(within(periods).getByRole('button', { name: new RegExp(`Rutina ${expected === 1 ? 2 : 1}$`) }));
   await screen.findByRole('heading', { name: `Fuerza ${expected === 1 ? 2 : 1}` });
-  await open(expected === 1 ? 'Remo' : 'Press'); expect(screen.getAllByRole('textbox')).toHaveLength(6);
+  await open(expected === 1 ? 'Remo' : 'Press'); expect(screen.getAllByRole('textbox')).toHaveLength(4);
 });
 it('hides zero-period versions and keeps future assignment from replacing today', async () => {
   routines = [routine(1, '2026-10-01'), routine(2, '2026-10-01'), routine(3, '2026-12-01')];
@@ -69,14 +71,14 @@ it('hides zero-period versions and keeps future assignment from replacing today'
   expect(screen.queryByRole('region', { name: 'Períodos de rutina' })).not.toBeInTheDocument();
   expect(screen.getByRole('navigation', { name: 'Días de la rutina' })).not.toHaveTextContent('Fuerza 1');
 });
-it('saves all six weeks in one request, keeps open cards and resets only after success', async () => {
+it('saves all four weeks in one request, keeps open cards and resets only after success', async () => {
   renderRoutine(); await open();
   fireEvent.change(screen.getByLabelText(/Semana 2/), { target: { value: '42,5' } });
-  fireEvent.change(screen.getByLabelText(/Semana 6/), { target: { value: '0' } });
+  fireEvent.change(screen.getByLabelText(/Semana 4/), { target: { value: '0' } });
   fireEvent.click(screen.getAllByRole('button', { name: 'Guardar pesos' })[0]!);
   await screen.findByText('Pesos guardados correctamente.');
-  expect(saves).toHaveLength(1); expect(saves[0]?.weeks).toHaveLength(6);
-  expect(saves[0]?.weeks[1]?.exercises[0]?.weightKg).toBe('42.5'); expect(saves[0]?.weeks[5]?.exercises[0]?.weightKg).toBe('0'); expect(saves[0]?.weeks[0]?.exercises[0]?.weightKg).toBeNull();
+  expect(saves).toHaveLength(1); expect(saves[0]?.weeks).toHaveLength(4); expect(saves[0]?.weeks.map(week => week.weekNumber)).toEqual([1, 2, 3, 4]);
+  expect(saves[0]?.weeks[1]?.exercises[0]?.weightKg).toBe('42.5'); expect(saves[0]?.weeks[3]?.exercises[0]?.weightKg).toBe('0'); expect(saves[0]?.weeks[0]?.exercises[0]?.weightKg).toBeNull();
   expect(screen.getByLabelText(/Semana 2/)).toHaveValue('42,5');
   expect(screen.getByRole('button', { name: /^Press/ })).toHaveAttribute('aria-expanded', 'true');
   fireEvent.click(screen.getByRole('button', { name: 'Mes siguiente' })); await open();
@@ -98,7 +100,7 @@ it('preserves drafts and manual period choice through refetch and cancelled cont
 it('retrospectively uses the first prescription without changing its effective date', async () => {
   routines = [routine(1, '2026-11-03')]; renderRoutine(); await screen.findByRole('heading', { name: 'Fuerza 1' });
   fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' })); await screen.findByText('Carga de historial anterior'); await open();
-  expect(screen.getAllByRole('textbox')).toHaveLength(6); expect(routines[0]?.effectiveFrom).toBe('2026-11-03');
+  expect(screen.getAllByRole('textbox')).toHaveLength(4); expect(routines[0]?.effectiveFrom).toBe('2026-11-03');
 });
 it('keeps all values and open cards on network error and invalid input', async () => {
   server.use(http.put(`${base}/sala/training-records/monthly`, () => HttpResponse.json({ message: 'Error de guardado' }, { status: 500 })));
