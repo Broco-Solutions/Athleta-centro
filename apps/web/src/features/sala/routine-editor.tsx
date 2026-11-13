@@ -158,7 +158,7 @@ function ExerciseCatalog({ definitions, catalogLoading, catalogError, patterns, 
 
 type OpenCatalogTarget = { dayKey: string; blockKey: string } | null;
 
-export function RoutineDaysEditor({ days, definitions, catalogLoading, catalogError, patterns, patternsLoading, patternsError, onChange, disabled }: ExerciseCatalogProps & { days: EditingDay[]; onChange: (days: EditingDay[]) => void; disabled: boolean }): React.JSX.Element {
+export function RoutineDaysEditor({ dayOffset = 0, allowEmpty = false, days, definitions, catalogLoading, catalogError, patterns, patternsLoading, patternsError, onChange, disabled }: ExerciseCatalogProps & { dayOffset?: number; allowEmpty?: boolean; days: EditingDay[]; onChange: (days: EditingDay[]) => void; disabled: boolean }): React.JSX.Element {
   const [openCatalog, setOpenCatalog] = useState<OpenCatalogTarget>(null);
   const [activeKey, setActiveKey] = useState(days[0]?.key ?? '');
   // Attach asynchronous creation to its originating day, preserving the latest draft.
@@ -177,15 +177,15 @@ export function RoutineDaysEditor({ days, definitions, catalogLoading, catalogEr
   };
   const catalog = activeDay && (activeDay.blocks === null || (openCatalog?.dayKey === activeDay.key && activeDay.blocks.some(block => block.key === openCatalog.blockKey))) ? <ExerciseCatalog inline={activeDay.blocks !== null} key={`catalog-${openCatalog?.blockKey ?? 'legacy'}`} definitions={editorDefinitions} catalogLoading={catalogLoading} catalogError={catalogError} patterns={patterns} patternsLoading={patternsLoading} patternsError={patternsError} disabled={disabled} dayName={activeDay.name.trim() || `Día ${activeIndex + 1}`} onAdd={definition => addExercise(activeDay.key, openCatalog?.blockKey ?? null, definition)}/> : null;
   const removeDay = () => {
-    if (!activeDay || days.length <= 1) return;
+    if (!activeDay || (days.length <= 1 && !allowEmpty)) return;
     const next = days.filter((day) => day.key !== activeDay.key);
     setOpenCatalog(null); onChange(next); setActiveKey(next[Math.max(0, activeIndex - 1)]?.key ?? '');
   };
-  const addDay = () => { setOpenCatalog(null); const next = newDay(`Día ${days.length + 1}`); onChange([...days, next]); setActiveKey(next.key); };
+  const addDay = () => { setOpenCatalog(null); const next = newDay(`Día ${dayOffset + days.length + 1}`); onChange([...days, next]); setActiveKey(next.key); };
   return <section className="mt-4 min-w-0 space-y-4" aria-label="Contenido de la rutina">
-    <nav aria-label="Días de la rutina" className="flex items-center gap-2 overflow-x-auto pb-1">{days.map((day, index) => <button key={day.key} type="button" disabled={disabled} aria-label={`Día ${index + 1}: ${day.name || `Día ${index + 1}`}`} aria-pressed={activeDay?.key === day.key} onClick={() => { if (activeDay?.key !== day.key) setOpenCatalog(null); setActiveKey(day.key); }} className={`min-h-11 shrink-0 border-b-2 px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${activeDay?.key === day.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:bg-surface-muted'}`}>{day.name || `Día ${index + 1}`}</button>)}<Button type="button" variant="ghost" className="shrink-0" disabled={disabled} onClick={addDay}>+ Agregar día</Button></nav>
+    <nav aria-label="Días de la rutina" className="flex items-center gap-2 overflow-x-auto pb-1">{days.map((day, index) => <button key={day.key} type="button" disabled={disabled} aria-label={`Día ${dayOffset + index + 1}: ${day.name || `Día ${dayOffset + index + 1}`}`} aria-pressed={activeDay?.key === day.key} onClick={() => { if (activeDay?.key !== day.key) setOpenCatalog(null); setActiveKey(day.key); }} className={`min-h-11 shrink-0 border-b-2 px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${activeDay?.key === day.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:bg-surface-muted'}`}>{day.name || `Día ${index + 1}`}</button>)}<Button type="button" variant="ghost" className="shrink-0" disabled={disabled} onClick={addDay}>+ Agregar día</Button></nav>
     {activeDay ? <>
-      <DayEditor key={activeDay.key} day={activeDay} index={activeIndex} definitions={editorDefinitions} disabled={disabled} canRemove={days.length > 1} onRemove={removeDay} onChange={changeDay} openBlockKey={openCatalog?.dayKey === activeDay.key ? openCatalog.blockKey : null} onToggleCatalog={blockKey => setOpenCatalog(current => current?.dayKey === activeDay.key && current.blockKey === blockKey ? null : { dayKey: activeDay.key, blockKey })} catalog={catalog}/>
+      <DayEditor key={activeDay.key} day={activeDay} index={dayOffset + activeIndex} definitions={editorDefinitions} disabled={disabled} canRemove={allowEmpty || days.length > 1} onRemove={removeDay} onChange={changeDay} openBlockKey={openCatalog?.dayKey === activeDay.key ? openCatalog.blockKey : null} onToggleCatalog={blockKey => setOpenCatalog(current => current?.dayKey === activeDay.key && current.blockKey === blockKey ? null : { dayKey: activeDay.key, blockKey })} catalog={catalog}/>
       {activeDay.blocks === null ? catalog : null}
     </> : null}
   </section>;

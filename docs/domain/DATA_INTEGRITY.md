@@ -1978,9 +1978,11 @@ No sacrificar integridad por simplicidad de código, pero tampoco forzar dentro 
 ## Edición vigente y cancelación de programaciones (2026-11-04)
 
 Editar ejercicios vigentes agrega o retira ocurrencias sin crear versión ni
-cambiar ID, inicio o días. Los ejercicios conservados mantienen sus IDs e
+cambiar ID, versión o inicio. También permite anexar días al final, conservando
+los IDs y el orden de los días existentes; no permite retirarlos ni sustituirlos.
+Los ejercicios conservados mantienen sus IDs e
 indicaciones. Los retirados conservan snapshots y pesos históricos; agregarlos
-otra vez crea otra identidad, con seis semanas vacías. Agregar ejercicios no
+otra vez crea otra identidad, sin pesos registrados. Agregar ejercicios no
 reinicia el mes ni altera semanas previas. Una próxima programación independiente
 no bloquea la edición vigente ni recibe sus cambios.
 
@@ -1988,7 +1990,13 @@ Las programaciones pueden cambiar fecha o cancelarse antes de comenzar. Su
 contenido solo puede cambiar si no tiene registros. La fecha debe mantener el
 orden y los períodos de los registros existentes. Cancelar establece
 `cancelledAt`, conserva el historial y excluye la versión de la vigencia;
-la anterior continúa hasta la siguiente asignación no cancelada. El enum
+si nunca comenzó, la anterior continúa hasta la siguiente asignación no cancelada.
+Quitar una rutina vigente también establece `cancelledAt`, pero conserva su
+período histórico hasta la fecha operativa argentina de la baja (fin exclusivo).
+Desde ese día queda un intervalo sin rutina hasta una eventual programación
+futura, que conserva su fecha. Ninguna versión anterior se reactiva.
+La baja vigente y la cancelación futura son operaciones distintas con
+`SALA_ROUTINE_MANAGE`, transacción y bloqueo de Persona. El enum
 persistido no cambia. La nueva versión usa el máximo histórico incluso tras
 cancelaciones. Todas las escrituras coordinan por bloqueo de Persona; los
 snapshots mensuales nuevos usan posiciones libres, sin borrar los retirados.

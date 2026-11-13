@@ -30,3 +30,13 @@ it('navigates months across years without host timezone conversions', () => {
   expect(shiftTrainingMonth('2026-12', 1)).toBe('2027-01');
   expect(shiftTrainingMonth('2026-01', -1)).toBe('2025-12');
 });
+
+it('respects retirement boundaries during gaps, preserving history and future activation', () => {
+  const routines = [version(1, '2026-10-01'), { ...version(2, '2026-11-01'), effectiveUntil: '2026-11-13' }, version(3, '2026-12-01')];
+  expect(initialTrainingRoutine(routines, '2026-11', '2026-11-12')).toBe('r2');
+  expect(initialTrainingRoutine(routines, '2026-11', '2026-11-13')).toBe('');
+  expect(initialTrainingRoutine(routines, '2026-11', '2026-11-30')).toBe('');
+  expect(initialTrainingRoutine(routines, '2026-12', '2026-12-01')).toBe('r3');
+  expect(trainingMonthRoutines(routines, '2026-11')[0]?.until).toBe('2026-11-13');
+  expect(initialTrainingRoutine(routines.slice(0, 2), '2026-12', '2026-12-01')).toBe('');
+});

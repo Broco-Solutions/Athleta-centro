@@ -1032,7 +1032,9 @@ export interface ActiveRoutineExerciseDto {
 }
 
 export interface ActiveRoutineDayDto {
-  id: string;
+  id?: string;
+  /** @maxLength 120 */
+  name?: string;
   exercises: ActiveRoutineExerciseDto[];
 }
 
@@ -5013,6 +5015,45 @@ export const cancelScheduledSalaRoutine = async (id: string, options?: RequestIn
 
   const data: cancelScheduledSalaRoutineResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as cancelScheduledSalaRoutineResponse
+}
+
+
+
+export type removeActiveSalaRoutineResponse201 = {
+  data: void
+  status: 201
+}
+
+export type removeActiveSalaRoutineResponseSuccess = (removeActiveSalaRoutineResponse201) & {
+  headers: Headers;
+};
+;
+
+export type removeActiveSalaRoutineResponse = (removeActiveSalaRoutineResponseSuccess)
+
+export const getRemoveActiveSalaRoutineUrl = (id: string,) => {
+
+
+
+
+  return `/api/sala/routines/${id}/remove`
+}
+
+export const removeActiveSalaRoutine = async (id: string, options?: RequestInit): Promise<removeActiveSalaRoutineResponse> => {
+
+  const res = await fetch(getRemoveActiveSalaRoutineUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: removeActiveSalaRoutineResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as removeActiveSalaRoutineResponse
 }
 
 

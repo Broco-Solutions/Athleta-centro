@@ -723,7 +723,7 @@ export class SalaService {
   async listRoutines(personId: string) {
     const routines = await this.prisma.routine.findMany({ where: { personId }, include: { ...this.routineTemplateInclude(), _count: { select: { trainingRecords: true } } }, orderBy: { version: 'desc' } });
     const presented = routinePresentation(routines, this.todayOperational());
-    const cancelled = routines.filter(r => r.cancelledAt && r._count.trainingRecords > 0).map(r => ({ ...r, effectiveFrom: r.effectiveFrom.toISOString().slice(0,10), effectiveUntil: null, status: 'HISTORICAL' as const }));
+    const cancelled = routines.filter(r => r.cancelledAt && r._count.trainingRecords > 0 && !presented.some(p => p.id === r.id)).map(r => ({ ...r, effectiveFrom: r.effectiveFrom.toISOString().slice(0,10), effectiveUntil: null, status: 'HISTORICAL' as const }));
     return [...presented, ...cancelled].map(r => ({ ...r, hasTrainingRecords: r._count.trainingRecords > 0 })).sort((a,b) => b.version - a.version);
   }
   private async lockRoutine(tx: Prisma.TransactionClient, id: string) {
@@ -739,10 +739,22 @@ export class SalaService {
       if (routine.cancelledAt || routineForDate(versions, this.todayOperational())?.id !== id) throw new BadRequestException({ code: 'SALA_ROUTINE_NOT_ACTIVE', message: 'Esta rutina ya no es la vigente. Actualizá la ficha antes de modificar sus ejercicios.' });
       if (!await tx.salaParticipation.findFirst({ where: { id: routine.salaParticipationId, personId: routine.personId, endDate: null } })) throw new BadRequestException({ code: 'SALA_ACTIVE_PARTICIPATION_REQUIRED', message: 'Se requiere una participación activa en Sala.' });
       const invalid = () => new BadRequestException({ code: 'SALA_ROUTINE_EXERCISES_INVALID', message: 'Los días o ejercicios no corresponden a esta rutina. Actualizá la ficha.' });
-      if (input.days.length !== routine.days.length || new Set(input.days.map(d => d.id)).size !== routine.days.length) throw invalid();
+      const existingIds = input.days.filter(d => d.id).map(d => d.id!);
+      if (existingIds.length !== routine.days.length || new Set(existingIds).size !== routine.days.length || routine.days.some(d => !existingIds.includes(d.id))) throw invalid();
+      const newDays: RoutineDayDto[] = [];
+      let seenNew = false;
       for (const proposed of input.days) {
+        if (!proposed.id) {
+          seenNew = true;
+          if (!proposed.name?.trim() || proposed.name.trim().length > 120 || !proposed.exercises.length || proposed.exercises.some(e => e.id || !e.exerciseDefinitionId)) throw invalid();
+          const day = { name: proposed.name, exercises: proposed.exercises.map(e => ({ ...e, exerciseDefinitionId: e.exerciseDefinitionId! })) };
+          this.validateRoutine({ days: [day] });
+          await this.validateRoutineExercises(tx, { days: [day] });
+          newDays.push(day);
+          continue;
+        }
         const day = routine.days.find(d => d.id === proposed.id);
-        if (!day) throw invalid();
+        if (!day || seenNew || Object.keys(proposed).some(key => key !== 'id' && key !== 'exercises')) throw invalid();
         const kept = proposed.exercises.filter(e => e.id).map(e => e.id!);
         if (new Set(kept).size !== kept.length) throw invalid();
         const grouped = day.exercises.some(e => e.blockPosition !== null);
@@ -777,12 +789,25 @@ export class SalaService {
           }
         }
       }
+      const lastPosition = Math.max(0, ...routine.days.map(d => d.position));
+      for (const [index, day] of this.routineContent(newDays).entries()) {
+        await tx.routineDay.create({ data: { ...day, routineId: id, position: lastPosition + index + 1 } });
+      }
+      return { id };
+    });
+  }
+  async removeActiveRoutine(id: string) {
+    return this.prisma.$transaction(async tx => {
+      const { routine, versions } = await this.lockRoutine(tx, id);
+      if (routine.cancelledAt || routineForDate(versions, this.todayOperational())?.id !== id) throw new BadRequestException({ code: 'SALA_ROUTINE_NOT_ACTIVE', message: 'Solo se puede quitar la rutina vigente.' });
+      await tx.routine.update({ where: { id }, data: { cancelledAt: new Date(), status: RoutineStatus.HISTORICAL } });
       return { id };
     });
   }
   private async reconcileRoutineStatus(tx: Prisma.TransactionClient, personId: string) {
     await tx.routine.updateMany({ where: { personId, status: RoutineStatus.ACTIVE }, data: { status: RoutineStatus.HISTORICAL } });
-    const latest = await tx.routine.findFirst({ where: { personId, cancelledAt: null }, orderBy: [{ effectiveFrom: 'desc' }, { version: 'desc' }] });
+    const versions = await tx.routine.findMany({ where: { personId } });
+    const latest = routineForDate(versions, this.todayOperational());
     if (latest) await tx.routine.update({ where: { id: latest.id }, data: { status: RoutineStatus.ACTIVE } });
   }
   async updateScheduledRoutine(id: string, input: UpdateScheduledRoutineDto) {
@@ -922,7 +947,7 @@ export class SalaService {
         } },
         plan: { select: { id: true, name: true } },
         mainProfessor: { select: { id: true, firstName: true, lastName: true } },
-        routines: { where: { effectiveFrom: { lte: today } }, select: { id: true }, take: 1 },
+        routines: { select: { id: true, version: true, effectiveFrom: true, cancelledAt: true } },
       },
     });
     const payments = await this.prisma.salaPayment.findMany({
@@ -942,7 +967,7 @@ export class SalaService {
       return {
         id: person.id, participationId: id, participationStartDate: startDate.toISOString().slice(0, 10),
         firstName: person.firstName, lastName: person.lastName, dni: person.dni, plan, professor: mainProfessor,
-        routineStatus: routines.length ? 'ACTIVE' : 'MISSING',
+        routineStatus: routineForDate(routines, this.todayOperational()) ? 'ACTIVE' : 'MISSING',
         hasValidAccess: end !== null, validUntil: end?.toISOString().slice(0, 10) ?? null,
         lastPaymentPaidAt: rows[0]?.paidAt.toISOString().slice(0, 10) ?? null,
       };
@@ -956,8 +981,8 @@ export class SalaService {
     const now = new Date();
     const [withoutRoutine, withoutValidity] = await Promise.all([
       this.prisma.salaParticipation.findMany({
-        where: { endDate: null, routines: { none: { effectiveFrom: { lte: this.date(today) } } } },
-        select: { personId: true }, orderBy: { personId: 'asc' },
+        where: { endDate: null },
+        select: { personId: true, routines: { select: { id: true, version: true, effectiveFrom: true, cancelledAt: true } } }, orderBy: { personId: 'asc' },
       }),
       this.prisma.salaParticipation.findMany({
         where: { endDate: null, person: { salaPayments: { none: { coverageStartDate: { lte: this.date(today) }, coverageEndDate: { gte: this.date(today) }, reversal: null } } } },
@@ -981,7 +1006,7 @@ export class SalaService {
       cancelledOrAbsent: entries.filter((entry) => entry.status === SalaOccurrenceStatus.CANCELLED || entry.status === SalaOccurrenceStatus.ABSENT).length,
       upcoming: [...upcomingByTime.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(0, 3)
         .map(([startTime, people]) => ({ startTime, total: people.length, people: people.slice(0, 3) })),
-      withoutRoutine: followUp(withoutRoutine),
+      withoutRoutine: followUp(withoutRoutine.filter(row => !routineForDate(row.routines, today))),
       withoutValidity: followUp(withoutValidity),
     };
   }

@@ -131,7 +131,8 @@ export class ActiveRoutineExerciseDto extends PartialType(RoutineExerciseDto) {
   @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() id?: string;
 }
 export class ActiveRoutineDayDto {
-  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() id!: string;
+  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() id?: string;
+  @ApiPropertyOptional({ type: String, maxLength: 120 }) @IsOptional() @IsString() @MaxLength(120) name?: string;
   @ApiProperty({ type: () => [ActiveRoutineExerciseDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => ActiveRoutineExerciseDto) exercises!: ActiveRoutineExerciseDto[];
 }
 export class UpdateActiveRoutineExercisesDto {

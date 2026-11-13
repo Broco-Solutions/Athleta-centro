@@ -16,7 +16,7 @@ const routine: Routine = {
 };
 function renderPanel(rows: Routine[] = [routine], canManage = true, catalog: RoutineApi['exercises'] = async () => definitions) {
   const api = {
-    updateActiveExercises: vi.fn().mockResolvedValue({}), updateScheduled: vi.fn().mockResolvedValue({}), cancelScheduled: vi.fn().mockResolvedValue({}),
+    removeActive: vi.fn().mockResolvedValue({}), updateActiveExercises: vi.fn<RoutineApi['updateActiveExercises']>().mockResolvedValue({}), updateScheduled: vi.fn().mockResolvedValue({}), cancelScheduled: vi.fn().mockResolvedValue({}),
     training: { list: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }), detail: vi.fn() },
     list: vi.fn<RoutineApi['list']>().mockResolvedValue(rows), exercises: vi.fn<RoutineApi['exercises']>().mockImplementation(catalog), patterns: vi.fn<RoutineApi['patterns']>().mockResolvedValue([{ id: 'push', name: 'Empuje' }]),
     templates: vi.fn<RoutineApi['templates']>().mockResolvedValue([]),
@@ -519,10 +519,84 @@ it('edits current occurrences by ID with a future assignment, without a date or 
 it('requires confirmation before cancelling a future assignment', async () => {
   const future: Routine = { ...routine, id: 'future', version: 3, status: 'SCHEDULED', effectiveFrom: '2099-11-15', hasTrainingRecords: true };
   const { api } = renderPanel([routine, future]);
-  fireEvent.click(await screen.findByRole('button', { name: 'Eliminar programación' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Eliminar rutina programada' }));
   expect(api.cancelScheduled).not.toHaveBeenCalled();
   const confirmation = screen.getByRole('alertdialog');
   expect(within(confirmation).getByText('Los pesos registrados se conservarán en el historial.')).toBeInTheDocument();
-  fireEvent.click(within(confirmation).getByRole('button', { name: 'Eliminar programación' }));
+  fireEvent.click(within(confirmation).getByRole('button', { name: 'Eliminar rutina programada' }));
   await waitFor(() => expect(api.cancelScheduled).toHaveBeenCalledWith('future', expect.any(Object)));
+});
+
+it('appends configurable days through the existing editor without sending persisted IDs for new content', async () => {
+  const current: Routine = { ...routine, days: [{ id: 'day', position: 1, name: 'Fuerza', exercises: [{ id: 'kept', exerciseDefinitionId: 'squat', series: '4', repetitions: '10' }] }] };
+  const { api } = renderPanel([current]);
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar ejercicios' }));
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar día' }));
+  expect(screen.getByLabelText('Nombre del día 2')).toHaveValue('Día 2');
+  change(day(2), 'Nombre del día 2', 'Segundo');
+  await add(day(2));
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar bloque' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Buscar ejercicios para el bloque B' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Agregar Plancha' }));
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar día' }));
+  await add(day(3));
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar día' }));
+  fireEvent.click(day(4).getByRole('button', { name: 'Eliminar día' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+  await waitFor(() => expect(api.updateActiveExercises).toHaveBeenCalled());
+  const input = api.updateActiveExercises.mock.calls[0]![1];
+  expect(input.days).toHaveLength(3);
+  expect(input.days[0]).toEqual({ id: 'day', exercises: [{ id: 'kept' }] });
+  expect(input.days[1]).toMatchObject({ name: 'Segundo', exercises: [{ exerciseDefinitionId: 'squat', blockPosition: 1, series: '4' }, { exerciseDefinitionId: 'plank', blockPosition: 2, series: '4' }] });
+  for (const day of input.days.slice(1)) { expect(day).not.toHaveProperty('id'); for (const exercise of day.exercises) expect(exercise).not.toHaveProperty('id'); }
+  expect(api.create).not.toHaveBeenCalled(); expect(api.replace).not.toHaveBeenCalled();
+});
+it('allows removing the only new day before saving', async () => {
+  const current: Routine = { ...routine, days: [{ id: 'day', position: 1, exercises: [{ id: 'kept', exerciseDefinitionId: 'squat' }] }] };
+  const { api } = renderPanel([current]);
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar ejercicios' }));
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar día' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Eliminar día' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+  await waitFor(() => expect(api.updateActiveExercises).toHaveBeenCalledWith('routine', { days: [{ id: 'day', exercises: [{ id: 'kept' }] }] }, expect.any(Object)));
+});
+it.each([false, true])('confirms routine removal, refreshes students and preserves future scheduling: %s', async hasFuture => {
+  const future: Routine = { ...routine, id: 'future', status: 'SCHEDULED', effectiveFrom: '2099-12-01' };
+  const { api, client } = renderPanel(hasFuture ? [routine, future] : [routine]);
+  const invalidate = vi.spyOn(client, 'invalidateQueries');
+  api.list.mockResolvedValue(hasFuture ? [future] : []);
+  fireEvent.click(await screen.findByRole('button', { name: 'Quitar rutina' }));
+  expect(api.removeActive).not.toHaveBeenCalled();
+  expect(screen.getByRole('alertdialog')).toHaveTextContent('El alumno quedará sin rutina activa.');
+  expect(Boolean(screen.queryByText('La próxima rutina programada se conservará y comenzará en la fecha indicada.'))).toBe(hasFuture);
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+  await screen.findByText('Rutina quitada correctamente. El historial se conservó.');
+  expect(api.removeActive).toHaveBeenCalledTimes(1);
+  expect(api.cancelScheduled).not.toHaveBeenCalled();
+  await screen.findByText('No hay una rutina activa.');
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['sala', 'students'] });
+  if (hasFuture) {
+    expect(screen.getByText('Esta rutina todavía no está activa. Se activará el 01/12/2099.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar rutina programada' }));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('El alumno continuará sin rutina hasta que se le asigne otra.');
+  }
+});
+it('hides removal without management permission', async () => {
+  renderPanel([routine], false); await screen.findByText('Rutina 2');
+  expect(screen.queryByRole('button', { name: 'Quitar rutina' })).not.toBeInTheDocument();
+});
+it('waits for backend confirmation, prevents double submission and keeps a failed removal retryable', async () => {
+  const { api } = renderPanel();
+  let rejectRemoval!: (error: Error) => void;
+  api.removeActive.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectRemoval = reject; }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Quitar rutina' }));
+  const confirm = screen.getByRole('button', { name: 'Confirmar' });
+  fireEvent.click(confirm); fireEvent.click(confirm);
+  await waitFor(() => expect(api.removeActive).toHaveBeenCalledTimes(1));
+  expect(confirm).toBeDisabled();
+  expect(screen.queryByText('Rutina quitada correctamente. El historial se conservó.')).not.toBeInTheDocument();
+  rejectRemoval(new Error('No se pudo quitar la rutina'));
+  expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo quitar la rutina');
+  await waitFor(() => expect(confirm).toBeEnabled());
+  expect(screen.getByRole('alertdialog')).toBeInTheDocument();
 });

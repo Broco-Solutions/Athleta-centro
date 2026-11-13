@@ -13,7 +13,7 @@ export function monthlyTrainingSlots(records: TrainingRecordDetailDto[], routine
 }
 export function trainingRoutinePeriods(routines: TrainingRoutineVersionDto[]) {
   const sorted = [...routines].sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom) || a.version - b.version);
-  return sorted.map((routine, index) => ({ routine, from: routine.effectiveFrom, until: sorted[index + 1]?.effectiveFrom ?? null }));
+  return sorted.map((routine, index) => ({ routine, from: routine.effectiveFrom, until: routine.effectiveUntil ?? sorted[index + 1]?.effectiveFrom ?? null }));
 }
 export function trainingMonthRoutines(routines: TrainingRoutineVersionDto[], month: string) {
   const periods = trainingRoutinePeriods(routines);

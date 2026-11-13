@@ -56,3 +56,18 @@ it('separates retired occurrences while retaining all six historical weights', a
   expect(screen.getByText('32,5 kg')).toBeInTheDocument();
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
 });
+
+it.each([4, 5, 6])('shows four weeks by default and expands for historical week %s only in its month', async week => {
+  const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7);
+  const record = { ...savedTraining, date: null, month, weekNumber: week };
+  const api = { list: vi.fn(), detail: vi.fn(), month: vi.fn().mockImplementation(async value => value === month ? [record] : []) };
+  const routine = { id: record.routineId, personId: 'person', salaParticipationId: 'participation', status: 'HISTORICAL' as const, version: 3, effectiveFrom: month + '-01', effectiveUntil: null, days: [{ id: record.routineDayId, position: 1, name: 'Fuerza', exercises: [] }] };
+  render(<QueryClientProvider client={new QueryClient()}><MonthlyRoutineHistory routine={routine} api={api}/></QueryClientProvider>);
+  expect(await screen.findByText('32,5 kg')).toBeInTheDocument();
+  expect(screen.getAllByRole('columnheader')).toHaveLength(week + 2);
+  expect(screen.getByText('Ejercicios retirados')).toHaveAttribute('colspan', String(week + 1));
+  fireEvent.click(screen.getByRole('button', { name: 'Mes anterior de pesos' }));
+  await waitFor(() => expect(screen.getAllByRole('columnheader')).toHaveLength(5));
+  expect(screen.queryByText('S5')).not.toBeInTheDocument();
+  expect(screen.queryByText('S6')).not.toBeInTheDocument();
+});
