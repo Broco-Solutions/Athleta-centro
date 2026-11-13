@@ -118,3 +118,15 @@ it('shows an empty assigned day without an empty weights form', async () => {
   expect(screen.queryByRole('button', { name: 'Guardar pesos' })).not.toBeInTheDocument();
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
 });
+
+it('shows the existing empty message during a retirement gap and keeps the historical month available', async () => {
+  today = '2026-11-13';
+  routines = [{ ...routine(1, '2026-10-01'), status: 'HISTORICAL', effectiveUntil: '2026-11-13' }, routine(2, '2026-12-01')];
+  renderRoutine();
+  expect(await screen.findByText('No hay una rutina vigente para este período.')).toBeInTheDocument();
+  expect(screen.queryByText(/Período vigente/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }));
+  expect(await screen.findByRole('heading', { name: 'Fuerza 1' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Volver al mes actual' }));
+  expect(await screen.findByText('No hay una rutina vigente para este período.')).toBeInTheDocument();
+});

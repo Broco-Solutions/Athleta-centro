@@ -28,7 +28,9 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     prisma = app.get(PrismaService); sala = app.get(SalaService); training = app.get(TrainingRecordService);
     jest.spyOn(training as unknown as { today(): string }, 'today').mockReturnValue('2026-10-26');
   });
+  const freezeOperationalDate = () => jest.useFakeTimers({ now: new Date('2026-10-26T15:00:00Z'), doNotFake: ['hrtime', 'nextTick', 'performance', 'queueMicrotask', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
   afterEach(async () => {
+    jest.useRealTimers();
     // Only this suite's synthetic owners; dependent records are removed first.
     await prisma.salaTrainingRecordExercise.deleteMany({ where: { record: { personId: { in: people } } } });
     await prisma.salaTrainingRecord.deleteMany({ where: { personId: { in: people } } });
@@ -47,6 +49,80 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     people.length = users.length = plans.length = definitions.length = 0;
   });
   afterAll(async () => { jest.restoreAllMocks(); await app.close(); });
+
+  it('appends multiple days atomically without replacing identities, versions or training snapshots', async () => {
+    const f = await fixture();
+    jest.spyOn(sala as unknown as { todayOperational(): string }, 'todayOperational').mockReturnValue('2026-10-26');
+    const before = await training.saveMonthlyWeights(f.person.id, monthly(f));
+    const kept = f.routine.days.map(day => ({ id: day.id, exercises: day.exercises.map(e => ({ id: e.id })) }));
+    const newDays = [2, 3].map(n => ({ name: `Día ${n}`, exercises: [1, 2].map(blockPosition => ({ exerciseDefinitionId: f.a.id, blockPosition, series: '3', repetitions: '8' })) }));
+    const persisted = () => prisma.routine.findUniqueOrThrow({ where: { id: f.routine.id }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' } } } } } });
+    const original = await persisted();
+    await expect(sala.updateActiveRoutineExercises(f.routine.id, { days: [...kept, newDays[0]!, { name: 'Inválido', exercises: [{ exerciseDefinitionId: randomUUID() }] }] })).rejects.toThrow();
+    expect(await persisted()).toEqual(original);
+    for (const days of [[...kept, ...kept], newDays, [...kept, { name: 'Vacío', exercises: [] }], [...kept, { name: 'Ajeno', exercises: [{ id: f.routine.days[0]!.exercises[0]!.id }] }]]) {
+      await expect(sala.updateActiveRoutineExercises(f.routine.id, { days })).rejects.toThrow();
+      expect(await persisted()).toEqual(original);
+    }
+    await sala.updateActiveRoutineExercises(f.routine.id, { days: [...kept, ...newDays] });
+    const updated = await persisted();
+    expect(updated).toMatchObject({ id: original.id, version: original.version, effectiveFrom: original.effectiveFrom });
+    expect(updated.days[0]).toEqual(original.days[0]);
+    expect(updated.days.map(day => day.position)).toEqual([1, 2, 3]);
+    expect(updated.days.slice(1).map(day => day.exercises.map(e => e.blockPosition))).toEqual([[1, 2], [1, 2]]);
+    expect(new Set(updated.days.flatMap(day => day.exercises.map(e => e.id))).size).toBe(updated.days.flatMap(day => day.exercises).length);
+    expect(await training.listMonth(f.person.id, '2026-10')).toEqual(before);
+    expect((await training.context(f.person.id)).routine?.days).toHaveLength(3);
+    expect(await prisma.routine.count({ where: { personId: f.person.id } })).toBe(1);
+  });
+
+  it.each([false, true])('removes the current routine preserving history and a future assignment: %s', async withFuture => {
+    const f = await fixture();
+    const other = await fixture();
+    jest.spyOn(sala as unknown as { todayOperational(): string }, 'todayOperational').mockReturnValue('2026-10-26');
+    await training.saveMonthlyWeights(f.person.id, monthly(f));
+    const current = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, effectiveFrom: '2026-10-26', days: [{ name: 'Actual', exercises: [{ exerciseDefinitionId: f.a.id }] }] });
+    await training.saveMonthlyWeights(f.person.id, { routineId: current.id, routineDayId: current.days[0]!.id, month: '2026-10', weeks: Array.from({ length: 4 }, (_, i) => ({ weekNumber: i + 1, exercises: [{ id: current.days[0]!.exercises[0]!.id, weightKg: i === 0 ? '31' : null }] })) });
+    const weights = await training.listMonth(f.person.id, '2026-10');
+    const future = withFuture ? await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, effectiveFrom: '2026-12-01', days: [{ exercises: [{ exerciseDefinitionId: f.b.id }] }] }) : null;
+    const futureBefore = future ? await prisma.routine.findUniqueOrThrow({ where: { id: future.id }, include: { days: { include: { exercises: true } } } }) : null;
+    const otherBefore = await prisma.routine.findMany({ where: { personId: other.person.id } });
+    const content = await prisma.routineDay.findMany({ where: { routineId: current.id }, include: { exercises: true } });
+    // Freeze only Date; PostgreSQL and HTTP keep real timers.
+    freezeOperationalDate();
+    try {
+      if (future) await expect(sala.removeActiveRoutine(future.id)).rejects.toThrow();
+      const results = await Promise.allSettled([sala.removeActiveRoutine(current.id), sala.removeActiveRoutine(current.id)]);
+      expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+      expect(results.filter(r => r.status === 'rejected')).toHaveLength(1);
+      expect((await training.context(f.person.id)).routine).toBeNull();
+      expect((await sala.listStudents()).find(s => s.id === f.person.id)?.routineStatus).toBe('MISSING');
+      expect((await sala.dashboard('2026-10-26')).withoutRoutine.personIds).toContain(f.person.id);
+      expect((await sala.listRoutines(f.person.id)).find(r => r.id === current.id)).toMatchObject({ status: 'HISTORICAL', effectiveUntil: '2026-10-26' });
+      expect(await prisma.routineDay.findMany({ where: { routineId: current.id }, include: { exercises: true } })).toEqual(content);
+      expect(await training.listMonth(f.person.id, '2026-10')).toEqual(weights);
+      await expect(sala.removeActiveRoutine(f.routine.id)).rejects.toThrow();
+      if (future) {
+        expect(await prisma.routine.findUniqueOrThrow({ where: { id: future.id }, include: { days: { include: { exercises: true } } } })).toEqual(futureBefore);
+        expect((await sala.listRoutines(f.person.id)).find(r => r.id === future.id)).toMatchObject({ status: 'SCHEDULED', effectiveFrom: '2026-12-01' });
+        jest.spyOn(training as unknown as { today(): string }, 'today').mockReturnValue('2026-12-01');
+        expect((await training.context(f.person.id)).routine?.id).toBe(future.id);
+        jest.spyOn(sala as unknown as { todayOperational(): string }, 'todayOperational').mockReturnValue('2026-12-01');
+        expect((await sala.listStudents()).find(s => s.id === f.person.id)?.routineStatus).toBe('ACTIVE');
+        jest.spyOn(sala as unknown as { todayOperational(): string }, 'todayOperational').mockReturnValue('2026-10-26');
+        jest.spyOn(training as unknown as { today(): string }, 'today').mockReturnValue('2026-10-26');
+        await sala.cancelScheduledRoutine(future.id);
+        expect((await training.context(f.person.id)).routine).toBeNull();
+        jest.spyOn(training as unknown as { today(): string }, 'today').mockReturnValue('2026-12-01');
+        expect((await training.context(f.person.id)).routine).toBeNull();
+      }
+      expect(await prisma.routine.findMany({ where: { personId: other.person.id } })).toEqual(otherBefore);
+      expect(await training.listMonth(f.person.id, '2026-10')).toEqual(weights);
+    } finally {
+      jest.useRealTimers();
+      jest.spyOn(training as unknown as { today(): string }, 'today').mockReturnValue('2026-10-26');
+    }
+  });
 
   it('edits current occurrences with a scheduled successor, preserving monthly identities and retired snapshots', async () => {
     const f = await fixture();
@@ -89,7 +165,9 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     const future = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, effectiveFrom: '2026-11-15', days: [{ exercises: [{ exerciseDefinitionId: f.b.id }] }] });
     await sala.updateScheduledRoutine(future.id, { effectiveFrom: '2026-11-16' });
     expect((await sala.listRoutines(f.person.id)).find(r => r.id === future.id)).toMatchObject({ version: future.version, effectiveFrom: '2026-11-16' });
+    freezeOperationalDate();
     await sala.cancelScheduledRoutine(future.id);
+    jest.useRealTimers();
     expect((await training.context(f.person.id)).routine?.id).toBe(f.routine.id);
     expect((await sala.listRoutines(f.person.id)).find(r => r.id === f.routine.id)?.effectiveUntil).toBeNull();
     expect(await prisma.routine.findUnique({ where: { id: future.id } })).toMatchObject({ cancelledAt: expect.any(Date), version: future.version });
@@ -126,6 +204,12 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     const denied = await internal(Role.KINESIOLOGIST);
     const deniedSession = await request(app.getHttpServer()).get('/api/auth/session').set('Cookie', denied).expect(200);
     await request(app.getHttpServer()).patch(path).set('Cookie', denied).set('x-csrf-token', deniedSession.body.data.csrfToken).send(body).expect(403);
+    const removePath = '/api/sala/routines/' + f.routine.id + '/remove';
+    await request(app.getHttpServer()).post(removePath).set('Cookie', denied).set('x-csrf-token', deniedSession.body.data.csrfToken).expect(403);
+    expect((await prisma.routine.findUniqueOrThrow({ where: { id: f.routine.id } })).cancelledAt).toBeNull();
+    await request(app.getHttpServer()).post('/api/sala/routines/not-a-uuid/remove').set('Cookie', cookie).set('x-csrf-token', csrf).expect(400);
+    await request(app.getHttpServer()).post(removePath).set('Cookie', cookie).set('x-csrf-token', csrf).expect(201);
+    await request(app.getHttpServer()).post(removePath).set('Cookie', cookie).set('x-csrf-token', csrf).expect(400);
   });
 
   it('preserves recorded cancelled versions, activates today and rejects contradictory dates', async () => {
@@ -140,7 +224,9 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     const records = await training.listMonth(f.person.id, '2026-11');
     await expect(sala.updateScheduledRoutine(future.id, { effectiveFrom: '2026-11-14', days: [] })).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_HAS_RECORDS' } });
     await expect(sala.updateScheduledRoutine(future.id, { effectiveFrom: '2026-12-16' })).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_DATE_ORDER' } });
+    freezeOperationalDate();
     await sala.cancelScheduledRoutine(future.id);
+    jest.useRealTimers();
     expect(await training.listMonth(f.person.id, '2026-11')).toEqual(records);
     expect((await sala.listRoutines(f.person.id)).find(r => r.id === future.id)).toMatchObject({ status: 'HISTORICAL', hasTrainingRecords: true });
     expect((await sala.listRoutines(f.person.id)).find(r => r.id === later.id)?.effectiveFrom).toBe('2026-12-15');

@@ -1,5 +1,5 @@
 'use client';
-import { updateActiveSalaRoutineExercises, updateScheduledSalaRoutine, cancelScheduledSalaRoutine } from '@athleta/api-client';
+import { removeActiveSalaRoutine, updateActiveSalaRoutineExercises, updateScheduledSalaRoutine, cancelScheduledSalaRoutine } from '@athleta/api-client';
 import { personTrainingApi } from './training-record-api';
 import React, { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -109,6 +109,7 @@ export function SalaPersonWorkspace({ personId }: { personId: string }): React.J
   const routineApi: RoutineApi = {
     updateActiveExercises: async (id, input, requestOptions) => assertRoutineResponse(await updateActiveSalaRoutineExercises(id, input, requestOptions)),
     updateScheduled: async (id, input, requestOptions) => assertRoutineResponse(await updateScheduledSalaRoutine(id, input, requestOptions)),
+    removeActive: async (id, requestOptions) => assertRoutineResponse(await removeActiveSalaRoutine(id, requestOptions)),
     cancelScheduled: async (id, requestOptions) => assertRoutineResponse(await cancelScheduledSalaRoutine(id, requestOptions)),
     training: personTrainingApi(personId),
     list: async (id, requestOptions) => { const response = await listPersonSalaRoutines(id, requestOptions); assertRoutineResponse(response); return response.data.data; },
