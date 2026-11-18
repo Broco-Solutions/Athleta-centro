@@ -2465,6 +2465,12 @@ Si existe una intervención de emergencia, deberá reconciliarse y documentarse 
 ### Catálogos opcionales de Sala — Bloque 5 (2026-10-15)
 
 `ExerciseDefinition.primaryMuscle` es nullable (`VARCHAR(120)`).
+
+`ExerciseDefinition.requiresWeight` es un booleano nullable. El catálogo usa
+`true` para ejercicios que requieren registrar peso, `false` para los que no y
+`NULL` para los que aún no se clasificaron. La migración deja las filas
+existentes sin clasificar. El aviso de registro completo se deriva de la
+planificación vigente y de sus pesos mensuales guardados.
 `PhysicalTestDefinition.type` es nullable (`VARCHAR(80)`). La aplicación
 normaliza valores de Músculo principal omitidos, nulos o vacíos a `null`.
 Tipo omitido o nulo se persiste como `null`; un valor informado solo puede ser

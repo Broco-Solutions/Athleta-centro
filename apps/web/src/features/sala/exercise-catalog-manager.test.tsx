@@ -83,7 +83,7 @@ it('creates a name-only exercise without a movement pattern, closes its form and
   expect(await screen.findByText('Ejercicio creado correctamente.')).toBeVisible();
   expect(await screen.findByRole('heading', { name: 'Remo' })).toBeVisible();
   expect(screen.queryByRole('form')).not.toBeInTheDocument();
-  expect(writes).toEqual([{ method: 'POST', body: { name: 'Remo', primaryMuscle: '', description: '', movementPatternId: null }, csrf: 'synthetic-csrf' }]);
+  expect(writes).toEqual([{ method: 'POST', body: { name: 'Remo', primaryMuscle: '', description: '', movementPatternId: null, requiresWeight: null }, csrf: 'synthetic-csrf' }]);
   expectRefreshed(invalidate);
 });
 
@@ -125,13 +125,24 @@ it('edits all fields on the existing definition without creating a new exercise'
   expect(screen.getByRole('textbox', { name: /Nombre/ })).toHaveValue(squat.name);
   expect(screen.getByRole('textbox', { name: /Músculo/ })).toHaveValue(squat.primaryMuscle);
   expect(screen.getByRole('textbox', { name: /Descripción/ })).toHaveValue(squat.description);
+  const weight = screen.getByRole('combobox', { name: 'Requiere registrar peso' });
+  expect(weight).toHaveDisplayValue('Sin clasificar');
+  fireEvent.change(weight, { target: { value: 'yes' } });
   await fill('Sentadilla actualizada', '', 'Estabilidad para hockey');
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
   await screen.findByText('Ejercicio actualizado correctamente.');
   expect(await screen.findByRole('heading', { name: 'Sentadilla actualizada' })).toBeVisible();
   expect(screen.queryByText('Estabilidad para hockey')).not.toBeInTheDocument();
-  expect(writes).toEqual([{ method: 'PATCH', id: 'squat', body: { name: 'Sentadilla actualizada', primaryMuscle: '', description: 'Estabilidad para hockey', movementPatternId: 'pattern' }, csrf: 'synthetic-csrf' }]);
+  expect(writes).toEqual([{ method: 'PATCH', id: 'squat', body: { name: 'Sentadilla actualizada', primaryMuscle: '', description: 'Estabilidad para hockey', movementPatternId: 'pattern', requiresWeight: true }, csrf: 'synthetic-csrf' }]);
   expectRefreshed(invalidate);
+});
+
+it('saves No as an explicit weight classification', async () => {
+  renderCatalog(); startNew(); await fill('Movilidad', '', '');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Requiere registrar peso' }), { target: { value: 'no' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Crear ejercicio' }));
+  await screen.findByText('Ejercicio creado correctamente.');
+  expect(writes[0]?.body).toMatchObject({ requiresWeight: false });
 });
 
 it('allows creating without patterns and clearing an existing exercise pattern', async () => {

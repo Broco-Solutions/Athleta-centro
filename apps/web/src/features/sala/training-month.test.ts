@@ -40,3 +40,16 @@ it('respects retirement boundaries during gaps, preserving history and future ac
   expect(trainingMonthRoutines(routines, '2026-11')[0]?.until).toBe('2026-11-13');
   expect(initialTrainingRoutine(routines.slice(0, 2), '2026-12', '2026-12-01')).toBe('');
 });
+
+it('keeps the routine through review and switches at the actual replacement', () => {
+  const routines = [
+    { ...version(1, '2026-11-13'), effectiveUntil: '2026-12-20' },
+    version(2, '2026-12-20'),
+  ];
+  expect(initialTrainingRoutine(routines, '2026-12', '2026-12-10')).toBe('r1');
+  expect(initialTrainingRoutine(routines, '2026-12', '2026-12-11')).toBe('r1');
+  expect(initialTrainingRoutine(routines, '2026-12', '2026-12-20')).toBe('r2');
+  expect(trainingMonthRoutines(routines, '2026-12').map(p => [p.routine.id, p.until])).toEqual([['r1', '2026-12-20'], ['r2', null]]);
+  expect(trainingMonthRoutines(routines, '2027-02').map(p => p.routine.id)).toEqual(['r2']);
+  expect(initialTrainingRoutine(routines.slice(1), '2026-11', '2026-11-25')).toBe('');
+});

@@ -174,6 +174,22 @@ describe('Portal Sala services from the current plan', () => {
       coverageStartDate: day, coverageEndDate: sala.addCalendarMonthClamped(day), paidAt: new Date('2000-01-01'), amount: 1, paymentMethodId, registeredById: professorId, operationId: crypto.randomUUID(),
     } });
   }
+  it('keeps the current routine in the Portal through the four-week review and until replacement', async () => {
+    const f = await fixture();
+    const exercise = await sala.createExerciseDefinition({ name: `Remo ${crypto.randomUUID()}` });
+    exerciseDefinitionIds.push(exercise.id);
+    const assignment = { personId, salaParticipationId: f.participation.id, days: [{ exercises: [{ exerciseDefinitionId: exercise.id }] }] };
+    const current = await sala.replaceRoutine({ ...assignment, effectiveFrom: '2026-10-16' });
+    const next = await sala.replaceRoutine({ ...assignment, effectiveFrom: '2026-11-20' });
+    const routineOn = async (date: string) => {
+      operationalDate.mockReturnValue(date);
+      return (await request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200)).body.data.routine;
+    };
+    expect(await routineOn('2026-11-12')).toMatchObject({ id: current.id, status: 'ACTIVE' });
+    expect(await routineOn('2026-11-13')).toMatchObject({ id: current.id, status: 'ACTIVE' });
+    expect(await routineOn('2026-11-19')).toMatchObject({ id: current.id, status: 'ACTIVE' });
+    expect(await routineOn('2026-11-20')).toMatchObject({ id: next.id, status: 'ACTIVE' });
+  });
   async function reverse(paymentId: string) {
     return prisma.salaPaymentReversal.create({ data: { paymentId, reason: 'Reversión sintética', registeredById: professorId, operationId: crypto.randomUUID() } });
   }

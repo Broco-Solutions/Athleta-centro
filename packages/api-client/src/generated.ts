@@ -490,6 +490,14 @@ export interface SalaStudentListItemDto {
   plan: SalaStudentPlanDto;
   professor: SalaAgendaProfessionalDto;
   routineStatus: SalaStudentListItemDtoRoutineStatus;
+  /**
+   * Days until the four-week review. Zero means the review is due.
+   * @minimum 0
+   * @maximum 7
+   * @nullable
+   */
+  routineChangeInDays: number | null;
+  routineTrainingComplete: boolean;
   hasValidAccess: boolean;
   /** @nullable */
   validUntil: string | null;
@@ -1098,6 +1106,8 @@ export interface UpdateScheduledRoutineDto {
 
 export interface ExerciseDefinitionResponseDto {
   /** @nullable */
+  requiresWeight: boolean | null;
+  /** @nullable */
   movementPatternId?: string | null;
   id: string;
   name: string;
@@ -1296,6 +1306,8 @@ export interface ExerciseDefinitionListEnvelopeDto {
 }
 
 export interface ExerciseDefinitionDto {
+  /** @nullable */
+  requiresWeight?: boolean | null;
   /** @nullable */
   movementPatternId?: string | null;
   /** @maxLength 120 */

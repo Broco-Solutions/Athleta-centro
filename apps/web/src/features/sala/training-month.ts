@@ -26,7 +26,7 @@ export function trainingMonthRoutines(routines: TrainingRoutineVersionDto[], mon
 }
 export function initialTrainingRoutine(routines: TrainingRoutineVersionDto[], month: string, today: string): string {
   const periods = trainingMonthRoutines(routines, month);
-  if (month === today.slice(0, 7)) return periods.findLast(p => p.from <= today && (!p.until || p.until > today))?.routine.id ?? (periods[0]?.retrospective ? periods[0].routine.id : '');
+  if (month === today.slice(0, 7)) return periods.findLast(p => p.from <= today && (!p.until || p.until > today))?.routine.id ?? '';
   return periods.at(-1)?.routine.id ?? '';
 }
 export function trainingPeriodLabel(from: string, until: string | null, month: string): string {

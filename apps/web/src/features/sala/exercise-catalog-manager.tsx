@@ -7,14 +7,14 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Folder, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@athleta/ui';
-import { createSalaMovementPattern, updateSalaMovementPattern, deleteSalaMovementPattern, listSalaMovementPatterns, createSalaExerciseDefinition, listSalaExerciseDefinitions, retireSalaExerciseDefinition, updateSalaExerciseDefinition } from '@athleta/api-client';
+import { createSalaMovementPattern, updateSalaMovementPattern, deleteSalaMovementPattern, listSalaMovementPatterns, createSalaExerciseDefinition, listSalaExerciseDefinitions, retireSalaExerciseDefinition, updateSalaExerciseDefinition, type ExerciseDefinitionResponseDto } from '@athleta/api-client';
 import { exerciseDefinitionSchema, filterExerciseDefinitions } from './exercise-catalog';
-import { errorMessage, fieldClass, type ExerciseDefinition } from './routine-editor';
+import { errorMessage, fieldClass } from './routine-editor';
 
 type ExerciseValues = z.infer<typeof exerciseDefinitionSchema>;
 type CatalogError = Error & { code?: string; details?: { activeRoutines?: number } };
 const CATALOG_PAGE_SIZE = 10;
-const emptyValues: ExerciseValues = { name: '', primaryMuscle: '', description: '', movementPatternId: '' };
+const emptyValues: ExerciseValues = { name: '', primaryMuscle: '', description: '', movementPatternId: '', requiresWeight: '' };
 
 function checkResponse(response: { status: number; data: unknown }): void {
   if (response.status < 400) return;
@@ -63,9 +63,15 @@ export function ExerciseCatalogManager({ csrfToken, canManage }: { csrfToken: st
     client.invalidateQueries({ queryKey: ['sala-exercise-definitions'] }),
     client.invalidateQueries({ queryKey: ['sala-routine-templates'] }),
     client.invalidateQueries({ queryKey: ['sala-routines'] }),
+    client.invalidateQueries({ queryKey: ['sala', 'students'] }),
   ]);
   const save = useMutation({ mutationFn: async ({ id, values }: { id: string | null; values: ExerciseValues }) => {
-    const response = id ? await updateSalaExerciseDefinition(id, { ...values, movementPatternId: values.movementPatternId || null }, options) : await createSalaExerciseDefinition({ ...values, movementPatternId: values.movementPatternId || null }, options);
+    const body = {
+      ...values,
+      movementPatternId: values.movementPatternId || null,
+      requiresWeight: values.requiresWeight === '' ? null : values.requiresWeight === 'yes',
+    };
+    const response = id ? await updateSalaExerciseDefinition(id, body, options) : await createSalaExerciseDefinition(body, options);
     checkResponse(response);
   }, onSuccess: async (_data, { id, values }) => {
     form.reset({ ...emptyValues, movementPatternId: values.movementPatternId ?? '' }); setEditingId(null); setFormOpen(false);
@@ -83,9 +89,15 @@ export function ExerciseCatalogManager({ csrfToken, canManage }: { csrfToken: st
     }
   } });
   const busy = save.isPending || retire.isPending;
-  const openForm = (exercise?: ExerciseDefinition) => {
+  const openForm = (exercise?: ExerciseDefinitionResponseDto) => {
     save.reset(); retire.reset(); setFeedback(null); setEditingId(exercise?.id ?? null);
-    form.reset(exercise ? { name: exercise.name, primaryMuscle: exercise.primaryMuscle ?? '', description: exercise.description ?? '', movementPatternId: exercise.movementPatternId ?? '' } : { ...emptyValues, movementPatternId: selectedPattern !== 'all' && selectedPattern !== 'none' ? selectedPattern : form.getValues('movementPatternId') ?? '' });
+    form.reset(exercise ? {
+      name: exercise.name,
+      primaryMuscle: exercise.primaryMuscle ?? '',
+      description: exercise.description ?? '',
+      movementPatternId: exercise.movementPatternId ?? '',
+      requiresWeight: exercise.requiresWeight == null ? '' : exercise.requiresWeight ? 'yes' : 'no',
+    } : { ...emptyValues, movementPatternId: selectedPattern !== 'all' && selectedPattern !== 'none' ? selectedPattern : form.getValues('movementPatternId') ?? '' });
     setFormOpen(true);
   };
   const submit = form.handleSubmit(values => {
@@ -112,6 +124,7 @@ export function ExerciseCatalogManager({ csrfToken, canManage }: { csrfToken: st
         <label className="text-sm">Nombre *<input className={`${fieldClass} mt-1`} maxLength={120} required aria-invalid={Boolean(form.formState.errors.name)} aria-describedby="exercise-name-error" {...form.register('name')} />{form.formState.errors.name ? <span id="exercise-name-error" role="alert" className="mt-1 block text-red-700">{form.formState.errors.name.message}</span> : null}</label>
         <label className="text-sm">Patrón de movimiento<select aria-label="Patrón de movimiento" className={fieldClass} {...form.register('movementPatternId')}><option value="">Sin patrón</option>{patterns.data?.map(pattern => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select>{form.formState.errors.movementPatternId ? <span role="alert">{form.formState.errors.movementPatternId.message}</span> : null}</label>
         <label className="text-sm">Músculo principal (opcional)<input className={`${fieldClass} mt-1`} maxLength={120} aria-invalid={Boolean(form.formState.errors.primaryMuscle)} aria-describedby="exercise-muscle-error" {...form.register('primaryMuscle')} />{form.formState.errors.primaryMuscle ? <span id="exercise-muscle-error" role="alert" className="mt-1 block text-red-700">{form.formState.errors.primaryMuscle.message}</span> : null}</label>
+        <label className="text-sm">Requiere registrar peso<select className={fieldClass} {...form.register('requiresWeight')}><option value="">Sin clasificar</option><option value="yes">Sí</option><option value="no">No</option></select></label>
         <label className="text-sm sm:col-span-2">Descripción (opcional)<textarea className="mt-1 min-h-20 w-full rounded-md border bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-ring" maxLength={500} aria-invalid={Boolean(form.formState.errors.description)} aria-describedby="exercise-description-error" {...form.register('description')} />{form.formState.errors.description ? <span id="exercise-description-error" role="alert" className="mt-1 block text-red-700">{form.formState.errors.description.message}</span> : null}</label>
       </fieldset>
       {save.isError ? <p role="alert" className="text-sm text-red-700">{errorMessage(save.error)}</p> : null}

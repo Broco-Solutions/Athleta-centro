@@ -98,6 +98,57 @@ it('uses Mis alumnos only as a reversible local filter', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Mis alumnos' }));
   expect(list().getAllByRole('link', { name: 'Ver ficha' })).toHaveLength(3);
 });
+it('counts and shows upcoming changes only for the signed-in Professor’s active students', async () => {
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({
+    data: [
+      { ...students[0], routineChangeInDays: 7 },
+      { ...students[1], routineStatus: 'ACTIVE', routineChangeInDays: 6 },
+      { ...students[2], routineChangeInDays: 1 },
+    ],
+  })));
+  renderPage();
+  expect(await screen.findByText('2 rutinas próximas a cumplir 4 semanas.')).toBeInTheDocument();
+  expect(within(list().getByText('Ana Alumna').closest('tr')!).getByText('Activa')).toBeInTheDocument();
+  expect(screen.getByText('Cambio en 7 días')).toBeInTheDocument();
+  expect(screen.getByText('Cambio mañana')).toBeInTheDocument();
+  expect(screen.queryByText('Cambio en 6 días')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Mis alumnos' }));
+  expect(list().queryByText('Lucía Ejemplo')).not.toBeInTheDocument();
+});
+
+it('includes students without an active routine in Sin rutina and keeps the paid validity visible', async () => {
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({
+    data: students.map(student => ({ ...student, routineStatus: student.id === 'student-1' ? 'MISSING' : student.routineStatus, routineChangeInDays: null })),
+  })));
+  renderPage();
+  await screen.findByText('Ana Alumna');
+  fireEvent.click(screen.getByRole('button', { name: 'Sin rutina' }));
+  const row = within(list().getByText('Ana Alumna').closest('tr')!);
+  expect(row.getByText('Sin rutina')).toBeInTheDocument();
+  expect(row.getByText('Vigente hasta 20/11/2026')).toBeInTheDocument();
+  expect(screen.queryByText(/próximas? a cumplir/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/^Cambio/)).not.toBeInTheDocument();
+});
+it.each([0, 7])('prioritizes the red completion notice over the time notice (%s days) and keeps routines active', async days => {
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({
+    data: [
+      { ...students[0], routineChangeInDays: days, routineTrainingComplete: true },
+      { ...students[1], routineStatus: 'ACTIVE', routineChangeInDays: 0, routineTrainingComplete: true },
+      { ...students[2], routineChangeInDays: 0, routineTrainingComplete: false },
+    ],
+  })));
+  renderPage();
+  expect(await screen.findByText('1 rutina con registro completo.')).toBeVisible();
+  expect(screen.getByText('1 rutina cumplió 4 semanas.')).toBeVisible();
+  const completed = within(list().getByText('Ana Alumna').closest('tr')!);
+  const review = within(list().getByText('Pedro Prueba').closest('tr')!);
+  expect(completed.getByText('Activa')).toBeVisible();
+  expect(review.getByText('Activa')).toBeVisible();
+  expect(completed.getByText('Registro completo · Asignar nueva rutina')).toHaveClass('text-red-800');
+  expect(completed.queryByText(/Cambio|Revisar rutina/)).not.toBeInTheDocument();
+  expect(review.getByText('4 semanas cumplidas · Revisar rutina')).toHaveClass('text-amber-800');
+  expect(within(list().getByText('Lucía Ejemplo').closest('tr')!).queryByText(/Asignar nueva rutina|Revisar rutina/)).not.toBeInTheDocument();
+});
 it('hides Mis alumnos without Professor role and selection without management permission', async () => {
   managerSession(['ADMINISTRATIVE'], false); renderPage(); await screen.findByText('Ana Alumna');
   expect(screen.queryByRole('button', { name: 'Mis alumnos' })).not.toBeInTheDocument();

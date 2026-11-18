@@ -13,6 +13,7 @@ import { TrainingRecordService, trainingOperationalDate } from '../src/sala/trai
 import { HealthDeclarationService } from '../src/sala/health-declaration/health-declaration.service';
 import type { CreateTrainingRecordDto } from '../src/sala/training-record.dto';
 import { AuthService } from '../src/auth/auth.service';
+import { PortalService } from '../src/portal/portal.service';
 
 describe('Sala training history (isolated PostgreSQL)', () => {
   let app: INestApplication;
@@ -26,7 +27,11 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     app.setGlobalPrefix('api'); await app.init();
     prisma = app.get(PrismaService); sala = app.get(SalaService); training = app.get(TrainingRecordService);
+  });
+  beforeEach(() => {
     jest.spyOn(training as unknown as { today(): string }, 'today').mockReturnValue('2026-10-26');
+    jest.spyOn(sala as unknown as { todayOperational(): string }, 'todayOperational').mockReturnValue('2026-10-26');
+    jest.spyOn(app.get(PortalService) as unknown as { todayOperational(): string }, 'todayOperational').mockReturnValue('2026-10-26');
   });
   const freezeOperationalDate = () => jest.useFakeTimers({ now: new Date('2026-10-26T15:00:00Z'), doNotFake: ['hrtime', 'nextTick', 'performance', 'queueMicrotask', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
   afterEach(async () => {
@@ -74,6 +79,101 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     expect(await training.listMonth(f.person.id, '2026-10')).toEqual(before);
     expect((await training.context(f.person.id)).routine?.days).toHaveLength(3);
     expect(await prisma.routine.count({ where: { personId: f.person.id } })).toBe(1);
+  });
+
+  it('keeps an edited routine active and its weights correctable after the review date', async () => {
+    const f = await fixture();
+    const saved = (await saveMonth(f).expect(200)).body.data[0];
+    const day = f.routine.days[0]!;
+    const edits = { days: [
+      { id: day.id, exercises: day.exercises.map(e => ({ id: e.id, series: '4' })) },
+      { name: 'Segundo día', exercises: [{ exerciseDefinitionId: f.b.id, blockPosition: 1, series: '3' }] },
+    ] };
+    await sala.updateActiveRoutineExercises(f.routine.id, edits);
+    const schedule = jest.spyOn(sala as unknown as { todayOperational(): string }, 'todayOperational').mockReturnValue('2026-11-15');
+    const trainingDate = jest.spyOn(training as unknown as { today(): string }, 'today').mockReturnValue('2026-11-15');
+    expect((await training.context(f.person.id)).routine?.id).toBe(f.routine.id);
+    const stored = await prisma.routine.findUniqueOrThrow({ where: { id: f.routine.id }, include: { days: { include: { exercises: true } } } });
+    const student = async () => (await sala.listStudents(f.user.id)).find(row => row.id === f.person.id);
+    expect(await student()).toMatchObject({ routineStatus: 'ACTIVE', routineChangeInDays: 1 });
+    schedule.mockReturnValue('2026-11-16');
+    trainingDate.mockReturnValue('2026-11-16');
+    expect(await training.context(f.person.id)).toMatchObject({ routine: { id: f.routine.id }, routines: [{ id: f.routine.id, status: 'ACTIVE', effectiveUntil: null }] });
+    expect(await student()).toMatchObject({ routineStatus: 'ACTIVE', routineChangeInDays: 0 });
+    expect((await sala.listRoutines(f.person.id))[0]).toMatchObject({ status: 'ACTIVE', effectiveUntil: null, hasTrainingRecords: true });
+    expect(await prisma.routine.findUniqueOrThrow({ where: { id: f.routine.id }, include: { days: { include: { exercises: true } } } })).toEqual(stored);
+    expect(await training.detail(f.person.id, saved.id)).toEqual(saved);
+    const corrected = await training.correct(f.person.id, saved.id, { exercises: saved.exercises.map((e: { id: string }) => ({ id: e.id, weightKg: '42' })) });
+    expect(corrected).toMatchObject({ id: saved.id, routineId: f.routine.id, month: '2026-10', weekNumber: 1 });
+    expect(corrected.exercises[0]).toMatchObject({ ...saved.exercises[0], weightKg: '42' });
+    schedule.mockReturnValue('2026-12-01');
+    trainingDate.mockReturnValue('2026-12-01');
+    await sala.updateActiveRoutineExercises(f.routine.id, { days: [
+      ...stored.days.map(item => ({ id: item.id, exercises: item.exercises.map(exercise => ({ id: exercise.id })) })),
+    ] });
+    await saveMonth(f, monthly(f, '2026-12')).expect(200);
+    expect(await student()).toMatchObject({ routineStatus: 'ACTIVE', routineChangeInDays: 0 });
+    const next = await sala.duplicateRoutine(f.routine.id, '2026-12-01');
+    expect((await training.context(f.person.id)).routine?.id).toBe(next.id);
+    const history = await sala.listRoutines(f.person.id);
+    expect(history[0]).toMatchObject({ version: f.routine.version + 1, effectiveUntil: null });
+    expect(history[1]).toMatchObject({ id: f.routine.id, status: 'HISTORICAL', effectiveUntil: '2026-12-01' });
+    expect(await student()).toMatchObject({ routineChangeInDays: null, routineTrainingComplete: false });
+  });
+
+  it('completes only classified current occurrences with four non-null monthly slots, without ending the routine', async () => {
+    const f = await fixture();
+    const other = await fixture();
+    const active = async () => (await sala.listStudents(f.user.id)).find(row => row.id === f.person.id);
+    const first = f.routine.days[0]!;
+    const preserved = { id: first.id, exercises: first.exercises.map(e => ({ id: e.id })) };
+    await sala.updateExerciseDefinition(f.a.id, { name: f.a.name, requiresWeight: true });
+    await sala.updateActiveRoutineExercises(f.routine.id, { days: [
+      preserved, { name: 'Otro día', exercises: [{ exerciseDefinitionId: f.a.id }] },
+    ] });
+    const second = (await sala.listRoutines(f.person.id))[0]!.days[1]!;
+    const saveSlots = (day: typeof first, month: string, count: number, omitLastRequired = false) =>
+      saveMonth(f, {
+        routineId: f.routine.id, routineDayId: day.id, month,
+        weeks: Array.from({ length: 4 }, (_, i) => ({
+          weekNumber: i + 1,
+          exercises: day.exercises.map((e, j) => ({
+            id: e.id,
+            weightKg: i < count && e.exerciseDefinitionId === f.a.id && !(omitLastRequired && i === count - 1 && j === 2) ? '0' : null,
+          })),
+        })),
+      }).expect(200);
+    await saveSlots(first, '2026-10', 2);
+    await saveSlots(first, '2026-11', 2, true);
+    await saveSlots(second, '2026-10', 4);
+    expect(await active()).toMatchObject({ routineTrainingComplete: false });
+    await sala.updateExerciseDefinition(f.b.id, { name: f.b.name, requiresWeight: false });
+    expect(await active()).toMatchObject({ routineTrainingComplete: false });
+    await saveSlots(first, '2026-11', 2);
+    expect(await active()).toMatchObject({ routineStatus: 'ACTIVE', routineChangeInDays: null, routineTrainingComplete: true });
+    expect((await sala.listStudents(other.user.id)).find(row => row.id === f.person.id)).toMatchObject({ routineTrainingComplete: false });
+
+    const secondDay = { id: second.id, exercises: second.exercises.map(e => ({ id: e.id })) };
+    await sala.updateActiveRoutineExercises(f.routine.id, { days: [
+      preserved, { ...secondDay, exercises: [...secondDay.exercises, { exerciseDefinitionId: f.a.id }] },
+    ] });
+    expect(await active()).toMatchObject({ routineTrainingComplete: false });
+    const afterEdit = (await sala.listRoutines(f.person.id))[0]!.days[1]!;
+    await saveSlots(afterEdit, '2026-10', 4);
+    expect(await active()).toMatchObject({ routineTrainingComplete: true });
+    const weights = await training.listMonth(f.person.id, '2026-10');
+    await sala.updateActiveRoutineExercises(f.routine.id, { days: [preserved, secondDay] });
+    expect(await active()).toMatchObject({ routineTrainingComplete: true });
+    expect(await training.listMonth(f.person.id, '2026-10')).toEqual(weights);
+
+    const next = await sala.duplicateRoutine(f.routine.id, '2026-11-01');
+    expect(await active()).toMatchObject({ routineStatus: 'ACTIVE', routineTrainingComplete: false });
+    expect((await training.context(f.person.id)).routine?.id).toBe(f.routine.id);
+    jest.spyOn(sala as unknown as { todayOperational(): string }, 'todayOperational').mockReturnValue('2026-11-01');
+    jest.spyOn(training as unknown as { today(): string }, 'today').mockReturnValue('2026-11-01');
+    expect((await training.context(f.person.id)).routine?.id).toBe(next.id);
+    expect(await active()).toMatchObject({ routineStatus: 'ACTIVE', routineChangeInDays: null, routineTrainingComplete: false });
+    expect(await training.listMonth(f.person.id, '2026-10')).toEqual(weights);
   });
 
   it.each([false, true])('removes the current routine preserving history and a future assignment: %s', async withFuture => {
@@ -368,13 +468,13 @@ describe('Sala training history (isolated PostgreSQL)', () => {
   it('keeps months independent and repeatedly updates the same record, preserving null, zero and snapshots', async () => {
     const f = await fixture();
     const ids: string[] = [];
-    for (const [month, weight] of [['2026-10', '40'], ['2026-11', '45'], ['2026-12', '50']]) {
+    for (const [month, weight] of [['2026-09', '50'], ['2026-10', '40'], ['2026-11', '45'], ['2026-12', '55']]) {
       const body = monthly(f, month); body.weeks[0]!.exercises[0]!.weightKg = weight!;
       const response = await saveMonth(f, body).expect(200); ids.push(response.body.data[0].id);
       expect(response.body.data).toHaveLength(1);
       expect(response.body.data[0]).toMatchObject({ date: null, month, weekNumber: 1 });
     }
-    expect(new Set(ids).size).toBe(3);
+    expect(new Set(ids).size).toBe(4);
     const original = (await training.listMonth(f.person.id, '2026-10'))[0]!;
     for (const weight of ['45', '47,5', '0']) {
       const body = monthly(f); body.weeks[0]!.exercises[0]!.weightKg = weight;
@@ -469,9 +569,9 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     const f = await fixture(); const body = monthly(f);
     const saved = (await saveMonth(f, body).expect(200)).body.data;
     expect((await saveMonth(f, body).expect(200)).body.data).toEqual(saved);
-    const future = monthly(f, '2026-12'); future.weeks[0]!.exercises[0]!.weightKg = '99'; await saveMonth(f, future).expect(200);
+    const future = monthly(f, '2026-11'); future.weeks[0]!.exercises[0]!.weightKg = '99'; await saveMonth(f, future).expect(200);
     expect((await training.context(f.person.id, '2026-10-26')).routine?.days[0]?.exercises[0]?.lastWeightKg).toBe('32.5');
-    expect((await training.context(f.person.id, '2026-12-01')).routine?.days[0]?.exercises[0]?.lastWeightKg).toBe('99');
+    expect((await training.context(f.person.id, '2026-11-01')).routine?.days[0]?.exercises[0]?.lastWeightKg).toBe('99');
   });
   it('keeps four slots of two mid-month prescriptions separate, including advance entries', async () => {
     const f = await fixture();
@@ -543,6 +643,7 @@ describe('Sala training history (isolated PostgreSQL)', () => {
   });
   it('accepts weekly future references, preserves traditional limits and prevents duplicates across months', async () => {
     const f = await fixture();
+    await prisma.routine.update({ where: { id: f.routine.id }, data: { effectiveFrom: new Date('2026-11-15') } });
     const body = { ...f.body, date: '2026-11-30', allowFuture: true };
     await create(f, { ...f.body, date: body.date }).expect(400);
     const saved = await create(f, body).expect(201);
@@ -628,7 +729,8 @@ describe('Sala training history (isolated PostgreSQL)', () => {
   });
   it('uses one calendar week across month/year boundaries and allows the next week', async () => {
     const f = await fixture();
-    await prisma.routine.update({ where: { id: f.routine.id }, data: { createdAt: new Date('2025-12-01T12:00:00Z'), effectiveFrom: new Date('2025-12-01') } });
+    await prisma.routine.update({ where: { id: f.routine.id }, data: { createdAt: new Date('2025-12-15T12:00:00Z'), effectiveFrom: new Date('2025-12-15') } });
+    jest.spyOn(training as unknown as { today(): string }, 'today').mockReturnValue('2026-01-05');
     const saved = (await create(f, { ...f.body, date: '2025-12-31' }).expect(201)).body.data;
     const duplicate = await create(f, { ...f.body, date: '2026-01-04' }).expect(409);
     expect(duplicate.body).toMatchObject({ code: 'TRAINING_DUPLICATE', details: { recordId: saved.id } });

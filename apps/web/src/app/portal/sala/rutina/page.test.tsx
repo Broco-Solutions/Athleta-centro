@@ -1,5 +1,5 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
@@ -129,4 +129,39 @@ it('shows the existing empty message during a retirement gap and keeps the histo
   expect(await screen.findByRole('heading', { name: 'Fuerza 1' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Volver al mes actual' }));
   expect(await screen.findByText('No hay una rutina vigente para este período.')).toBeInTheDocument();
+});
+
+it('keeps the routine editable through the review and offers its weights after replacement', async () => {
+  today = '2026-12-10';
+  const current = { ...routine(1, '2026-11-13'), effectiveUntil: '2026-12-20' };
+  routines = [current];
+  const client = renderRoutine();
+  await open();
+  expect(screen.getByText('Rutina 1 · Período vigente')).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText(/Semana 1/), { target: { value: '42' } });
+  fireEvent.click(screen.getAllByRole('button', { name: 'Guardar pesos' })[0]!);
+  await screen.findByText('Pesos guardados correctamente.');
+
+  today = '2026-12-11';
+  await client.invalidateQueries({ queryKey: ['portal', 'training-context'] });
+  expect(await screen.findByText('Rutina 1 · Período vigente')).toBeInTheDocument();
+  await screen.findByLabelText(/Semana 1/);
+  fireEvent.change(screen.getByLabelText(/Semana 1/), { target: { value: '46' } });
+  await waitFor(() => expect(screen.getAllByRole('button', { name: 'Guardar pesos' })[0]).toBeEnabled());
+  fireEvent.click(screen.getAllByRole('button', { name: 'Guardar pesos' })[0]!);
+  await waitFor(() => expect(saves).toHaveLength(2));
+  await screen.findByText('Pesos guardados correctamente.');
+  expect(saves[1]?.weeks[0]?.exercises[0]?.weightKg).toBe('46');
+
+  today = '2026-12-20';
+  routines = [{ ...current, status: 'HISTORICAL' }, { ...routine(2, '2026-12-20'), status: 'ACTIVE' }];
+  await client.invalidateQueries({ queryKey: ['portal', 'training-context'] });
+  await screen.findByText('Rutina 2 · Período vigente');
+  expect(screen.queryByRole('heading', { name: 'Fuerza 1' })).not.toBeInTheDocument();
+
+  fireEvent.click(within(screen.getByRole('region', { name: 'Períodos de rutina' })).getByRole('button', { name: /Rutina 1$/ }));
+  await open();
+  expect(screen.getByLabelText(/Semana 1/)).toHaveValue('46');
+  expect(screen.getAllByRole('textbox')).toHaveLength(4);
+  expect(screen.queryByText(/Período vigente/)).not.toBeInTheDocument();
 });
