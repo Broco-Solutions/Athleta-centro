@@ -94,7 +94,7 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     const trainingDate = jest.spyOn(training as unknown as { today(): string }, 'today').mockReturnValue('2026-11-15');
     expect((await training.context(f.person.id)).routine?.id).toBe(f.routine.id);
     const stored = await prisma.routine.findUniqueOrThrow({ where: { id: f.routine.id }, include: { days: { include: { exercises: true } } } });
-    const student = async () => (await sala.listStudents(f.user.id)).find(row => row.id === f.person.id);
+    const student = async () => (await sala.listStudents()).find(row => row.id === f.person.id);
     expect(await student()).toMatchObject({ routineStatus: 'ACTIVE', routineChangeInDays: 1 });
     schedule.mockReturnValue('2026-11-16');
     trainingDate.mockReturnValue('2026-11-16');
@@ -123,8 +123,7 @@ describe('Sala training history (isolated PostgreSQL)', () => {
 
   it('completes only classified current occurrences with four non-null monthly slots, without ending the routine', async () => {
     const f = await fixture();
-    const other = await fixture();
-    const active = async () => (await sala.listStudents(f.user.id)).find(row => row.id === f.person.id);
+    const active = async () => (await sala.listStudents()).find(row => row.id === f.person.id);
     const first = f.routine.days[0]!;
     const preserved = { id: first.id, exercises: first.exercises.map(e => ({ id: e.id })) };
     await sala.updateExerciseDefinition(f.a.id, { name: f.a.name, requiresWeight: true });
@@ -151,7 +150,6 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     expect(await active()).toMatchObject({ routineTrainingComplete: false });
     await saveSlots(first, '2026-11', 2);
     expect(await active()).toMatchObject({ routineStatus: 'ACTIVE', routineChangeInDays: null, routineTrainingComplete: true });
-    expect((await sala.listStudents(other.user.id)).find(row => row.id === f.person.id)).toMatchObject({ routineTrainingComplete: false });
 
     const secondDay = { id: second.id, exercises: second.exercises.map(e => ({ id: e.id })) };
     await sala.updateActiveRoutineExercises(f.routine.id, { days: [

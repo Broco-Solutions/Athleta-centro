@@ -26,9 +26,8 @@ export class SalaController {
   @Get('participations/person/:personId') @RequirePermissions('SALA_RELATION_READ') @ApiOperation({ operationId: 'listPersonSalaParticipations' }) @ApiParam({ name: 'personId', type: String, format: 'uuid' }) @ApiOkResponse({ type: SalaParticipationListEnvelopeDto }) async personParticipations(@Param('personId') personId: string) { return { data: await this.sala.listParticipations(personId) }; }
   @Get('professors') @RequirePermissions('SALA_PARTICIPATION_MANAGE') @ApiOperation({ operationId: 'listSalaProfessors' }) @ApiOkResponse({ type: SalaProfessorListEnvelopeDto }) async professors() { return { data: await this.sala.listProfessors() }; }
   @Get('students') @RequirePermissions('SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PAYMENT_READ') @ApiOperation({ operationId: 'listSalaStudents' }) @ApiOkResponse({ type: SalaStudentListEnvelopeDto })
-  async students(@Req() request: Request & { athletaUserId?: string; athletaPermissions?: readonly Permission[] }) {
-    const professorId = request.athletaPermissions?.includes('SALA_ROUTINE_MANAGE') ? this.actor(request) : undefined;
-    return { data: await this.sala.listStudents(professorId) };
+  async students() {
+    return { data: await this.sala.listStudents() };
   }
   @Post('students') @RequirePermissions('PEOPLE_CREATE', 'SALA_PARTICIPATION_MANAGE') @ApiOperation({ operationId: 'createSalaStudent' }) @ApiBody({ type: CreateSalaStudentDto }) @ApiCreatedResponse({ type: PersonEnvelopeDto }) async createStudent(@Req() request: Request & { athletaUserId?: string }, @Body() body: CreateSalaStudentDto) { return { data: await this.sala.createStudent(body, this.actor(request)) }; }
   @Post('participations') @RequirePermissions('SALA_PARTICIPATION_MANAGE') @ApiOperation({ operationId: 'joinSala' }) @ApiBody({ type: JoinSalaDto }) @ApiOkResponse({ schema: { type: 'object', properties: { data: { type: 'object' } } } }) async join(@Req() request: Request & { athletaUserId?: string }, @Body() body: JoinSalaDto) { return { data: await this.sala.join(body, this.actor(request)) }; }

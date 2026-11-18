@@ -962,7 +962,7 @@ export class SalaService {
       return this.physicalEvaluationResponse(evaluation);
     });
   }
-  async listStudents(professorId?: string): Promise<SalaStudentListItemDto[]> {
+  async listStudents(): Promise<SalaStudentListItemDto[]> {
     const operationalToday = this.todayOperational();
     const today = this.date(operationalToday);
     const participations = await this.prisma.salaParticipation.findMany({
@@ -983,7 +983,7 @@ export class SalaService {
       ...routineFollowUp(routines, operationalToday),
     }));
     const noticeRoutineIds = students.flatMap(student =>
-      student.mainProfessor.id === professorId && student.routineIdForNotice ? [student.routineIdForNotice] : []);
+      student.routineIdForNotice ? [student.routineIdForNotice] : []);
     const [completeRoutines, payments] = await Promise.all([
       this.training.completedRoutineIds(noticeRoutineIds),
       this.prisma.salaPayment.findMany({
@@ -1005,7 +1005,7 @@ export class SalaService {
         id: person.id, participationId: id, participationStartDate: startDate.toISOString().slice(0, 10),
         firstName: person.firstName, lastName: person.lastName, dni: person.dni, plan, professor: mainProfessor,
         routineStatus,
-        routineChangeInDays: mainProfessor.id === professorId ? routineChangeInDays : null,
+        routineChangeInDays,
         routineTrainingComplete: routineIdForNotice !== null && completeRoutines.has(routineIdForNotice),
         hasValidAccess: end !== null, validUntil: end?.toISOString().slice(0, 10) ?? null,
         lastPaymentPaidAt: rows[0]?.paidAt.toISOString().slice(0, 10) ?? null,
