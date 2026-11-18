@@ -128,11 +128,11 @@ export class RoutineExerciseDto {
   @ApiPropertyOptional({ type: String, maxLength: 500, nullable: true }) @IsOptional() @IsString() @MaxLength(500) notes?: string | null;
 }
 export class ActiveRoutineExerciseDto extends PartialType(RoutineExerciseDto) {
-  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() id?: string;
+  @ApiPropertyOptional({ type: String, format: 'uuid', description: 'Existing occurrence to retain or update. Omit exerciseDefinitionId when providing this ID.' }) @IsOptional() @IsUUID() id?: string;
 }
 export class ActiveRoutineDayDto {
   @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() id?: string;
-  @ApiPropertyOptional({ type: String, maxLength: 120 }) @IsOptional() @IsString() @MaxLength(120) name?: string;
+  @ApiPropertyOptional({ type: String, maxLength: 120, description: 'Required for a new day. Omit to keep the name of an existing day.' }) @IsOptional() @IsString() @MaxLength(120) name?: string;
   @ApiProperty({ type: () => [ActiveRoutineExerciseDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => ActiveRoutineExerciseDto) exercises!: ActiveRoutineExerciseDto[];
 }
 export class UpdateActiveRoutineExercisesDto {

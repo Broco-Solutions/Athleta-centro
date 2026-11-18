@@ -201,6 +201,14 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     const body = { days: [{ id: f.routine.days[0]!.id, exercises: [{ id: f.routine.days[0]!.exercises[0]!.id }] }] };
     await request(app.getHttpServer()).patch(path).set('Cookie', cookie).set('x-csrf-token', csrf).send({ ...body, version: 99 }).expect(400);
     await request(app.getHttpServer()).patch(path).set('Cookie', cookie).set('x-csrf-token', csrf).send(body).expect(200);
+    const day = body.days[0]!;
+    await request(app.getHttpServer()).patch(path).set('Cookie', cookie).set('x-csrf-token', csrf)
+      .send({ days: [{ ...day, name: 'Editada', exercises: [{ ...day.exercises[0], repetitions: '12', rest: '50 s' }] }] }).expect(200);
+    await request(app.getHttpServer()).patch(path).set('Cookie', cookie).set('x-csrf-token', csrf)
+      .send({ days: [{ ...day, exercises: [{ ...day.exercises[0], exerciseDefinitionId: f.b.id }] }] }).expect(400);
+    await request(app.getHttpServer()).patch(path).set('Cookie', cookie).set('x-csrf-token', csrf)
+      .send({ days: [{ ...day, exercises: [{ ...day.exercises[0], notes: 'x'.repeat(501) }] }] }).expect(400);
+
     const denied = await internal(Role.KINESIOLOGIST);
     const deniedSession = await request(app.getHttpServer()).get('/api/auth/session').set('Cookie', denied).expect(200);
     await request(app.getHttpServer()).patch(path).set('Cookie', denied).set('x-csrf-token', deniedSession.body.data.csrfToken).send(body).expect(403);
@@ -235,6 +243,58 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     await expect(sala.cancelScheduledRoutine(later.id)).rejects.toMatchObject({ response: { code: 'SALA_ROUTINE_NOT_SCHEDULED' } });
   });
 
+  it('edits grouped prescriptions while keeping recorded identities and snapshots intact', async () => {
+    const f = await fixture();
+    jest.spyOn(sala as unknown as { todayOperational(): string }, 'todayOperational').mockReturnValue('2026-10-26');
+    const routine = await sala.replaceRoutine({
+      personId: f.person.id, salaParticipationId: f.participation.id, effectiveFrom: '2026-10-26',
+      days: [{ name: 'Fuerza', exercises: [1, 1, 2, 3].map(blockPosition => ({
+        exerciseDefinitionId: f.a.id, blockPosition, series: '4', repetitions: '8', load: '40', notes: 'Original',
+      })) }],
+    });
+    const day = routine.days[0]!;
+    const [first, second, removed, moved] = day.exercises;
+    const weights = await training.saveMonthlyWeights(f.person.id, {
+      routineId: routine.id, routineDayId: day.id, month: '2026-10',
+      weeks: Array.from({ length: 4 }, (_, i) => ({
+        weekNumber: i + 1, exercises: day.exercises.map(e => ({ id: e.id, weightKg: i === 0 ? '40' : null })),
+      })),
+    });
+
+    await sala.updateActiveRoutineExercises(routine.id, { days: [
+      { id: day.id, name: 'Tren inferior', exercises: [
+        { id: first!.id, series: '3', repetitions: '10', load: '45', notes: 'Actualizada' },
+        { id: second!.id, series: '3', repetitions: null, duration: '30' },
+        { id: moved!.id, blockPosition: 2 },
+        { exerciseDefinitionId: f.b.id, blockPosition: 1, series: '3' },
+        { exerciseDefinitionId: f.b.id, blockPosition: 3, series: '5', repetitions: '12' },
+      ] },
+      { name: 'Segundo', exercises: [{ exerciseDefinitionId: f.b.id, blockPosition: 1, series: '4' }] },
+    ] });
+    const context = await training.context(f.person.id);
+    const updated = context.routine!;
+    expect(updated).toMatchObject({ id: routine.id, effectiveFrom: '2026-10-26' });
+    expect(context.routines.find(item => item.id === routine.id)?.version).toBe(routine.version);
+    expect(updated.days).toHaveLength(2);
+    expect(updated.days[0]).toMatchObject({ id: day.id, name: 'Tren inferior' });
+    expect(updated.days[1]).toMatchObject({ name: 'Segundo', exercises: [{ blockPosition: 1, series: '4' }] });
+    const exercises = updated.days[0]!.exercises;
+    expect(exercises).toHaveLength(5);
+    expect(exercises).toMatchObject([
+      { id: first!.id, blockPosition: 1, series: '3', repetitions: '10', load: '45', notes: 'Actualizada' },
+      { id: second!.id, blockPosition: 1, series: '3', repetitions: null, duration: '30' },
+      { blockPosition: 1, series: '3', exerciseDefinitionId: f.b.id },
+      { id: moved!.id, blockPosition: 2, series: '4' },
+      { blockPosition: 3, series: '5', repetitions: '12', exerciseDefinitionId: f.b.id },
+    ]);
+    const after = await training.listMonth(f.person.id, '2026-10');
+    expect(after).toEqual(weights);
+    const recorded = after.flatMap(record => record.exercises.map(e => e.routineExerciseId));
+    expect(recorded).toContain(removed!.id);
+    for (const exercise of [exercises[2]!, exercises[4]!]) expect(recorded).not.toContain(exercise.id);
+    expect(await prisma.routine.count({ where: { personId: f.person.id } })).toBe(2);
+  });
+
   it('normalizes empty blocks by occurrence ID and rolls back earlier day changes on a later failure', async () => {
     const f = await fixture();
     jest.spyOn(sala as unknown as { todayOperational(): string }, 'todayOperational').mockReturnValue('2026-10-26');
@@ -242,7 +302,21 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     const day = routine.days[0]!, second = routine.days[1]!;
     const retained = day.exercises.slice(1);
     const original = await prisma.routineDay.findMany({ where: { routineId: routine.id }, include: { exercises: { orderBy: { position: 'asc' } } }, orderBy: { position: 'asc' } });
-    await expect(sala.updateActiveRoutineExercises(routine.id, { days: [{ id: day.id, exercises: retained.map(e => ({ id: e.id })) }, { id: second.id, exercises: [{ exerciseDefinitionId: randomUUID() }] }] })).rejects.toMatchObject({ response: { code: 'SALA_EXERCISE_INVALID' } });
+    const otherDay = { id: second.id, exercises: second.exercises.map(e => ({ id: e.id })) };
+    for (const exercises of [
+      [],
+      [{ id: retained[0]!.id }, { id: retained[0]!.id }],
+      [{ id: second.exercises[0]!.id }],
+      [{ id: retained[0]!.id, exerciseDefinitionId: f.b.id }],
+      [{ id: retained[0]!.id, blockPosition: null }],
+      [{ id: retained[0]!.id, blockPosition: 3 }],
+      [{ id: retained[0]!.id, series: '3' }, { id: retained[1]!.id }],
+      [{ id: retained[0]!.id, series: '0' }],
+      [{ id: retained[0]!.id, repetitions: '10', duration: '30' }],
+    ]) {
+      await expect(sala.updateActiveRoutineExercises(routine.id, { days: [{ id: day.id, exercises }, otherDay] })).rejects.toMatchObject({ status: 400 });
+    }
+    await expect(sala.updateActiveRoutineExercises(routine.id, { days: [{ id: day.id, name: 'No persistir', exercises: retained.map(e => ({ id: e.id })) }, { id: second.id, exercises: [{ exerciseDefinitionId: randomUUID() }] }] })).rejects.toMatchObject({ response: { code: 'SALA_EXERCISE_INVALID' } });
     expect(await prisma.routineDay.findMany({ where: { routineId: routine.id }, include: { exercises: { orderBy: { position: 'asc' } } }, orderBy: { position: 'asc' } })).toEqual(original);
     await sala.updateActiveRoutineExercises(routine.id, { days: [{ id: day.id, exercises: [...retained.map(e => ({ id: e.id })), { exerciseDefinitionId: f.a.id, blockPosition: 2, series: '4' }] }, { id: second.id, exercises: second.exercises.map(e => ({ id: e.id })) }] });
     const exercises = await prisma.routineExercise.findMany({ where: { routineDayId: day.id }, orderBy: { position: 'asc' } });

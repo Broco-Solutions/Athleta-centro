@@ -1028,12 +1028,16 @@ export interface ActiveRoutineExerciseDto {
    * @nullable
    */
   notes?: string | null;
+  /** Existing occurrence to retain or update. Omit exerciseDefinitionId when providing this ID. */
   id?: string;
 }
 
 export interface ActiveRoutineDayDto {
   id?: string;
-  /** @maxLength 120 */
+  /**
+   * Required for a new day. Omit to keep the name of an existing day.
+   * @maxLength 120
+   */
   name?: string;
   exercises: ActiveRoutineExerciseDto[];
 }
