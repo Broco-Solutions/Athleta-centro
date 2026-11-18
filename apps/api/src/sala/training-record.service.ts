@@ -1,4 +1,5 @@
-import { routineAllowsMonth, routineForDate, routinePresentation } from './routine-periods';
+import { routineAllowsMonth, routineForDate, routinePeriods, routinePresentation } from './routine-periods';
+import { hasCompleteTraining } from './training-completion';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, type SalaTrainingRecord, type SalaTrainingRecordExercise } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,6 +15,30 @@ const summarySelect = { id: true, routineId: true, routineDayId: true, date: tru
 export class TrainingRecordService {
   constructor(private readonly prisma: PrismaService) {}
   private today() { return trainingOperationalDate(); }
+  async completedRoutineIds(routineIds: string[]): Promise<Set<string>> {
+    if (!routineIds.length) return new Set();
+    const routines = await this.prisma.routine.findMany({
+      where: { id: { in: routineIds } },
+      select: {
+        id: true,
+        personId: true,
+        days: { select: { id: true, exercises: { select: {
+          id: true, exerciseDefinitionId: true, exerciseDefinition: { select: { requiresWeight: true } },
+        } } } },
+        trainingRecords: {
+          where: { date: null, month: { not: null }, weekNumber: { gte: 1, lte: 4 } },
+          select: {
+            personId: true, routineDayId: true, month: true, weekNumber: true,
+            exercises: {
+              where: { weightKg: { not: null } },
+              select: { routineExerciseId: true, exerciseDefinitionId: true },
+            },
+          },
+        },
+      },
+    });
+    return new Set(routines.filter(hasCompleteTraining).map(routine => routine.id));
+  }
   async context(personId: string, before = this.today()) {
     const today = this.today();
     const versions = await this.prisma.routine.findMany({ where: { personId }, orderBy: [{ createdAt: 'asc' }, { version: 'asc' }], include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } } } });
@@ -82,13 +107,11 @@ export class TrainingRecordService {
         if (input.allowFuture !== true && input.date < routine.effectiveFrom.toISOString().slice(0, 10)) throw new BadRequestException({ code: 'TRAINING_BEFORE_ROUTINE', message: 'La fecha es anterior a la asignación de esta rutina.' });
         // Weekly references must lie in this version's portion of the week. Only
         // the first assignment extends backwards for retrospective entry.
-        const versions = await tx.routine.findMany({ where: { personId }, orderBy: [{ effectiveFrom: 'asc' }, { version: 'asc' }], select: { id: true, effectiveFrom: true, version: true, cancelledAt: true } });
-        if (input.allowFuture !== true && routineForDate(versions.map((v, i) => ({ ...v, version: i })), this.today())?.id !== routine.id) throw new ConflictException({ code: 'TRAINING_ROUTINE_CHANGED', message: 'La rutina vigente cambió. Revisala antes de registrar.' });
-        const index = versions.findIndex(version => version.id === routine.id);
-        const next = versions[index + 1];
-        if ((index > 0 && input.date < routine.effectiveFrom.toISOString().slice(0, 10)) ||
-            (next && input.date >= next.effectiveFrom.toISOString().slice(0, 10)) ||
-            (input.allowFuture !== true && routineForDate(versions.map((v, i) => ({ ...v, version: i })), this.today())?.id !== routine.id)) {
+        const versions = await tx.routine.findMany({ where: { personId }, select: { id: true, effectiveFrom: true, version: true, cancelledAt: true } });
+        if (input.allowFuture !== true && routineForDate(versions, this.today())?.id !== routine.id) throw new ConflictException({ code: 'TRAINING_ROUTINE_CHANGED', message: 'La rutina vigente cambió. Revisala antes de registrar.' });
+        const periods = routinePeriods(versions);
+        const period = periods.find(p => p.routine.id === routine.id);
+        if (!period || period.from === period.until || (period.until && input.date >= period.until) || (period !== periods[0] && input.date < period.from)) {
           throw new BadRequestException({ code: 'TRAINING_ROUTINE_PERIOD_INVALID', message: 'La fecha de referencia no corresponde al período de esta rutina.' });
         }
         const day = routine.days[0];

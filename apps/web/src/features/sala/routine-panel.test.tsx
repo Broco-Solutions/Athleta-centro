@@ -225,7 +225,7 @@ it('allows read-only users to see active and historical routines without managem
   const { api } = renderPanel([routine, { ...routine, id: 'old', version: 1, status: 'HISTORICAL' }], false);
   await screen.findAllByText('Fuerza'); fireEvent.click(screen.getByText('Rutinas históricas (1)'));
   expect(screen.getByText('Rutina 1')).toBeInTheDocument();
-  for (const name of ['Crear desde cero', 'Usar preestablecida', 'Asignar nueva rutina', 'Editar ejercicios', 'Usar nuevamente', 'Duplicar rutina', '+ Crear nuevo ejercicio']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  for (const name of ['Crear desde cero', 'Usar preestablecida', 'Asignar nueva rutina', 'Editar rutina', 'Usar nuevamente', 'Duplicar rutina', '+ Crear nuevo ejercicio']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
   expect(screen.queryByText('Administrar ejercicios')).not.toBeInTheDocument(); expect(api.exercises).not.toHaveBeenCalled();
 });
 
@@ -507,15 +507,80 @@ it('edits current occurrences by ID with a future assignment, without a date or 
   const current: Routine = { ...routine, days: [{ id: 'day', position: 1, name: 'Fuerza', exercises: [{ id: 'kept', exerciseDefinitionId: 'squat', series: '4', repetitions: '10' }, { id: 'removed', exerciseDefinitionId: 'plank' }] }] };
   const future: Routine = { ...routine, id: 'future', version: 3, status: 'SCHEDULED', effectiveFrom: '2099-11-15' };
   const { api } = renderPanel([current, future]);
-  fireEvent.click(await screen.findByRole('button', { name: 'Editar ejercicios' }));
-  const editor = screen.getByRole('region', { name: 'Editar ejercicios' });
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar rutina' }));
+  const editor = screen.getByRole('region', { name: 'Editar rutina' });
   expect(within(editor).queryByLabelText('Fecha de inicio')).not.toBeInTheDocument();
-  fireEvent.click(within(editor).getAllByRole('button', { name: 'Quitar' })[1]!);
+  fireEvent.click(within(editor).getAllByRole('button', { name: /^Quitar / })[1]!);
   fireEvent.click(within(editor).getByRole('button', { name: 'Guardar cambios' }));
   await waitFor(() => expect(api.updateActiveExercises).toHaveBeenCalledWith('routine', { days: [{ id: 'day', exercises: [{ id: 'kept' }] }] }, expect.objectContaining({ credentials: 'include' })));
   expect(api.replace).not.toHaveBeenCalled();
   expect(await screen.findByText('Ejercicios actualizados correctamente. Los pesos registrados se conservaron.')).toBeInTheDocument();
 });
+it('updates grouped days in place, renumbers retained blocks and rejects empty blocks', async () => {
+  const current: Routine = { ...routine, days: [{ id: 'day', position: 1, name: 'Fuerza', exercises: [
+    { id: 'a1', exerciseDefinitionId: 'squat', blockPosition: 1, series: '4', repetitions: '8', load: '40', notes: 'Original' },
+    { id: 'a2', exerciseDefinitionId: 'plank', blockPosition: 1, series: '4', repetitions: '6' },
+    { id: 'b1', exerciseDefinitionId: 'plank', blockPosition: 2, series: '4' },
+    { id: 'c1', exerciseDefinitionId: 'squat', blockPosition: 3, series: '4' },
+  ] }] };
+  const { api } = renderPanel([current]);
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar rutina' }));
+  const editor = within(screen.getByRole('region', { name: 'Editar rutina' }));
+  const block = (letter: string) => within(editor.getByRole('region', { name: `Bloque ${letter}` }));
+  const save = () => fireEvent.click(editor.getByRole('button', { name: 'Guardar cambios' }));
+  expect(editor.queryByRole('button', { name: 'Eliminar día' })).not.toBeInTheDocument();
+  change(editor, 'Nombre del día 1', 'Tren inferior');
+  fireEvent.click(block('A').getByRole('button', { name: 'Disminuir series del bloque A' }));
+  const [first, second] = block('A').getAllByRole('listitem').map(element => within(element));
+  change(first!, 'Valor', '10');
+  change(first!, 'Carga', '45');
+  change(first!, 'Observación', '');
+  change(second!, 'Tipo', 'duration');
+  change(second!, 'Valor', '30');
+  fireEvent.click(block('B').getByRole('button', { name: 'Eliminar bloque' }));
+  expect(block('B').getByText('B1 — Sentadilla')).toBeInTheDocument();
+  fireEvent.click(editor.getByRole('button', { name: '+ Agregar bloque' }));
+  save();
+  expect(await screen.findByText(/El Bloque C del Día 1 no tiene ejercicios/)).toBeVisible();
+  expect(api.updateActiveExercises).not.toHaveBeenCalled();
+  expect(block('C').getByLabelText('Series del bloque C')).toHaveTextContent('4');
+  fireEvent.click(block('C').getByRole('button', { name: 'Aumentar series del bloque C' }));
+  fireEvent.click(block('C').getByRole('button', { name: 'Buscar ejercicios para el bloque C' }));
+  fireEvent.click(await block('C').findByRole('button', { name: 'Agregar Plancha' }));
+  change(block('C'), 'Valor', '12');
+  save();
+  await waitFor(() => expect(api.updateActiveExercises).toHaveBeenCalledWith('routine', { days: [{
+    id: 'day', name: 'Tren inferior', exercises: [
+      { id: 'a1', series: '3', repetitions: '10', load: '45', notes: null },
+      { id: 'a2', series: '3', repetitions: null, duration: '30' },
+      { id: 'c1', blockPosition: 2 },
+      { exerciseDefinitionId: 'plank', blockPosition: 3, series: '5', repetitions: '12', duration: null, load: null, rest: null, notes: null },
+    ],
+  }] }, expect.any(Object)));
+  expect(api.replace).not.toHaveBeenCalled();
+});
+
+it('discards active day and block changes on cancel', async () => {
+  const { api } = renderPanel([{ ...routine, days: [{ id: 'day', position: 1, name: 'Fuerza', exercises: [
+    { id: 'a', exerciseDefinitionId: 'squat', blockPosition: 1, series: '4' },
+  ] }] }]);
+  const open = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar rutina' }));
+    return within(screen.getByRole('region', { name: 'Editar rutina' }));
+  };
+  const editor = await open();
+  expect(editor.getByRole('button', { name: 'Eliminar bloque' })).toBeDisabled();
+  change(editor, 'Nombre del día 1', 'Otro nombre');
+  fireEvent.click(editor.getByRole('button', { name: 'Disminuir series del bloque A' }));
+  fireEvent.click(editor.getByRole('button', { name: '+ Agregar bloque' }));
+  fireEvent.click(editor.getByRole('button', { name: 'Cancelar' }));
+  const reopened = await open();
+  expect(reopened.getByLabelText('Nombre del día 1')).toHaveValue('Fuerza');
+  expect(reopened.getByLabelText('Series del bloque A')).toHaveTextContent('4');
+  expect(reopened.queryByRole('region', { name: 'Bloque B' })).not.toBeInTheDocument();
+  expect(api.updateActiveExercises).not.toHaveBeenCalled();
+});
+
 it('requires confirmation before cancelling a future assignment', async () => {
   const future: Routine = { ...routine, id: 'future', version: 3, status: 'SCHEDULED', effectiveFrom: '2099-11-15', hasTrainingRecords: true };
   const { api } = renderPanel([routine, future]);
@@ -530,7 +595,7 @@ it('requires confirmation before cancelling a future assignment', async () => {
 it('appends configurable days through the existing editor without sending persisted IDs for new content', async () => {
   const current: Routine = { ...routine, days: [{ id: 'day', position: 1, name: 'Fuerza', exercises: [{ id: 'kept', exerciseDefinitionId: 'squat', series: '4', repetitions: '10' }] }] };
   const { api } = renderPanel([current]);
-  fireEvent.click(await screen.findByRole('button', { name: 'Editar ejercicios' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar rutina' }));
   fireEvent.click(screen.getByRole('button', { name: '+ Agregar día' }));
   expect(screen.getByLabelText('Nombre del día 2')).toHaveValue('Día 2');
   change(day(2), 'Nombre del día 2', 'Segundo');
@@ -554,7 +619,7 @@ it('appends configurable days through the existing editor without sending persis
 it('allows removing the only new day before saving', async () => {
   const current: Routine = { ...routine, days: [{ id: 'day', position: 1, exercises: [{ id: 'kept', exerciseDefinitionId: 'squat' }] }] };
   const { api } = renderPanel([current]);
-  fireEvent.click(await screen.findByRole('button', { name: 'Editar ejercicios' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar rutina' }));
   fireEvent.click(screen.getByRole('button', { name: '+ Agregar día' }));
   fireEvent.click(screen.getByRole('button', { name: 'Eliminar día' }));
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));

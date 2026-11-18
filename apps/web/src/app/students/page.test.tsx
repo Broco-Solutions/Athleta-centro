@@ -35,6 +35,10 @@ it('shows all students, full Professor names, plan and follow-up states with con
   expect(await screen.findByRole('heading', { name: 'Alumnos' })).toBeInTheDocument();
   await screen.findByText('Ana Alumna');
   expect(screen.getByText('3 alumnos')).toBeInTheDocument();
+  const filters = within(screen.getByRole('group', { name: 'Filtrar alumnos' }));
+  expect(filters.getAllByRole('button').map(button => button.textContent)).toEqual([
+    'Todos', 'Sin rutina', 'Sin vigencia', 'Próximas (7 días)', '4 semanas cumplidas', 'Registro completo', 'Mis alumnos',
+  ]);
   expect(list().getByText('Lucía Ejemplo')).toBeInTheDocument();
   expect(list().getByText('Pedro Prueba')).toBeInTheDocument();
   expect(list().getByRole('columnheader', { name: 'Profesor', hidden: true })).toBeInTheDocument();
@@ -97,6 +101,152 @@ it('uses Mis alumnos only as a reversible local filter', async () => {
   expect(list().queryByText('Lucía Ejemplo')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Mis alumnos' }));
   expect(list().getAllByRole('link', { name: 'Ver ficha' })).toHaveLength(3);
+});
+it('counts and shows upcoming changes for all active students until Mis alumnos is enabled', async () => {
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({
+    data: [
+      { ...students[0], routineChangeInDays: 7 },
+      { ...students[1], routineStatus: 'ACTIVE', routineChangeInDays: 6 },
+      { ...students[2], routineChangeInDays: 1 },
+    ],
+  })));
+  renderPage();
+  const summary = within(await screen.findByRole('group', { name: 'Rutinas que requieren atención' }));
+  expect(summary.getByRole('button', { name: '3 rutinas próximas a cumplir 4 semanas.' })).toBeVisible();
+  expect(within(list().getByText('Ana Alumna').closest('tr')!).getByText('Activa')).toBeInTheDocument();
+  expect(screen.getByText('Cambio en 7 días')).toBeInTheDocument();
+  expect(screen.getByText('Cambio mañana')).toBeInTheDocument();
+  expect(screen.getByText('Cambio en 6 días')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Próximas (7 días)' }));
+  expect(list().getAllByRole('link', { name: 'Ver ficha' })).toHaveLength(3);
+  fireEvent.click(screen.getByRole('button', { name: 'Mis alumnos' }));
+  expect(summary.getByRole('button', { name: '2 rutinas próximas a cumplir 4 semanas.' })).toBeVisible();
+  expect(list().queryByText('Lucía Ejemplo')).not.toBeInTheDocument();
+  expect(list().getAllByRole('link', { name: 'Ver ficha' })).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Mis alumnos' }));
+  expect(summary.getByRole('button', { name: '3 rutinas próximas a cumplir 4 semanas.' })).toBeVisible();
+  expect(list().getByText('Lucía Ejemplo')).toBeInTheDocument();
+});
+
+it('includes students without an active routine in Sin rutina and keeps the paid validity visible', async () => {
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({
+    data: students.map(student => ({ ...student, routineStatus: student.id === 'student-1' ? 'MISSING' : student.routineStatus, routineChangeInDays: null })),
+  })));
+  renderPage();
+  await screen.findByText('Ana Alumna');
+  fireEvent.click(screen.getByRole('button', { name: 'Sin rutina' }));
+  const row = within(list().getByText('Ana Alumna').closest('tr')!);
+  expect(row.getByText('Sin rutina')).toBeInTheDocument();
+  expect(row.getByText('Vigente hasta 20/11/2026')).toBeInTheDocument();
+  expect(screen.queryByText(/próximas? a cumplir/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/^Cambio/)).not.toBeInTheDocument();
+});
+it.each([0, 7])('prioritizes the red completion notice over the time notice (%s days) and keeps routines active', async days => {
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({
+    data: [
+      { ...students[0], routineChangeInDays: days, routineTrainingComplete: true },
+      { ...students[1], routineStatus: 'ACTIVE', routineChangeInDays: 0, routineTrainingComplete: true },
+      { ...students[2], routineChangeInDays: 0, routineTrainingComplete: false },
+    ],
+  })));
+  renderPage();
+  expect(await screen.findByText('2 rutinas con registro completo.')).toBeVisible();
+  expect(screen.getByText(days === 0 ? '3 rutinas cumplieron 4 semanas.' : '2 rutinas cumplieron 4 semanas.')).toBeVisible();
+  const completed = within(list().getByText('Ana Alumna').closest('tr')!);
+  const review = within(list().getByText('Pedro Prueba').closest('tr')!);
+  expect(completed.getByText('Activa')).toBeVisible();
+  expect(review.getByText('Activa')).toBeVisible();
+  expect(completed.getByText('Registro completo · Asignar nueva rutina')).toHaveClass('text-red-800');
+  expect(completed.queryByText(/Cambio|Revisar rutina/)).not.toBeInTheDocument();
+  expect(review.getByText('4 semanas cumplidas · Revisar rutina')).toHaveClass('text-amber-800');
+  const other = within(list().getByText('Lucía Ejemplo').closest('tr')!);
+  expect(other.getByText('Registro completo · Asignar nueva rutina')).toHaveClass('text-red-800');
+  expect(other.queryByText('4 semanas cumplidas · Revisar rutina')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '4 semanas cumplidas' }));
+  expect(list().getByText('Lucía Ejemplo')).toBeVisible();
+});
+
+function routineNoticeStudents() {
+  const getStudents = vi.fn(() => HttpResponse.json({
+    data: [
+      { ...students[0], routineChangeInDays: 0, routineTrainingComplete: true },
+      { ...students[1], routineStatus: 'ACTIVE', routineChangeInDays: 7, routineTrainingComplete: true },
+      { ...students[2], routineChangeInDays: 0 },
+    ],
+  }));
+  server.use(http.get('http://localhost:3000/api/sala/students', getStudents));
+  return getStudents;
+}
+
+it.each([
+  ['routine-upcoming', 'Próximas (7 días)', 'Lucía Ejemplo', 1],
+  ['routine-review', '4 semanas cumplidas', 'Ana Alumna', 2],
+  ['routine-complete', 'Registro completo', 'Ana Alumna', 2],
+] as const)('recognizes URL filter %s for administration', async (filter, label, name, count) => {
+  managerSession(['ADMINISTRATIVE'], false);
+  routineNoticeStudents();
+  navigation.filter = filter;
+  renderPage();
+  await screen.findByText(name);
+  expect(screen.getByRole('button', { name: label })).toHaveAttribute('aria-pressed', 'true');
+  expect(list().getAllByRole('link', { name: 'Ver ficha' })).toHaveLength(count);
+});
+
+it('opens each summary category for a General Admin and combines it with name and DNI search', async () => {
+  managerSession(['GENERAL_ADMIN'], false);
+  const getStudents = routineNoticeStudents();
+  renderPage();
+  const summary = within(await screen.findByRole('group', { name: 'Rutinas que requieren atención' }));
+  const search = screen.getByRole('textbox', { name: 'Buscar por nombre o DNI' });
+
+  fireEvent.click(summary.getByRole('button', { name: '1 rutina próxima a cumplir 4 semanas.' }));
+  expect(screen.getByRole('button', { name: 'Próximas (7 días)' })).toHaveAttribute('aria-pressed', 'true');
+  expect(list().getAllByRole('link', { name: 'Ver ficha' })).toHaveLength(1);
+  expect(list().getByText('Lucía Ejemplo')).toBeInTheDocument();
+
+  fireEvent.click(summary.getByRole('button', { name: '2 rutinas cumplieron 4 semanas.' }));
+  expect(screen.getByRole('button', { name: '4 semanas cumplidas' })).toHaveAttribute('aria-pressed', 'true');
+  expect(list().getByText('Registro completo · Asignar nueva rutina')).toHaveClass('text-red-800');
+  fireEvent.change(search, { target: { value: 'Pedro' } });
+  expect(list().getAllByRole('link', { name: 'Ver ficha' })).toHaveLength(1);
+  expect(list().getByText('Pedro Prueba')).toBeInTheDocument();
+
+  fireEvent.click(summary.getByRole('button', { name: '2 rutinas con registro completo.' }));
+  expect(screen.getByRole('button', { name: 'Registro completo' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByText('Sin resultados')).toBeInTheDocument();
+  fireEvent.change(search, { target: { value: '88000002' } });
+  expect(list().getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/student-2');
+  expect(getStudents).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  { roles: ['PROFESSOR'] },
+  { roles: ['PROFESSOR', 'ADMINISTRATIVE'] },
+])('combines Registro completo, Mis alumnos and DNI search for $roles', async ({ roles }) => {
+  managerSession(roles, false);
+  const getStudents = routineNoticeStudents();
+  renderPage();
+  const summary = within(await screen.findByRole('group', { name: 'Rutinas que requieren atención' }));
+  fireEvent.click(summary.getByRole('button', { name: '2 rutinas con registro completo.' }));
+  expect(screen.getByRole('button', { name: 'Registro completo' })).toHaveAttribute('aria-pressed', 'true');
+  expect(list().getAllByRole('link', { name: 'Ver ficha' })).toHaveLength(2);
+  expect(list().getByText('Lucía Ejemplo')).toBeVisible();
+
+  const mine = screen.getByRole('button', { name: 'Mis alumnos' });
+  fireEvent.click(mine);
+  expect(summary.getByRole('button', { name: '1 rutina con registro completo.' })).toBeVisible();
+  expect(summary.getByRole('button', { name: '2 rutinas cumplieron 4 semanas.' })).toBeVisible();
+  expect(summary.queryByRole('button', { name: /próxima/ })).not.toBeInTheDocument();
+  expect(list().getAllByRole('link', { name: 'Ver ficha' })).toHaveLength(1);
+  expect(list().getByText('Ana Alumna')).toBeInTheDocument();
+
+  fireEvent.change(screen.getByRole('textbox', { name: 'Buscar por nombre o DNI' }), { target: { value: '88000002' } });
+  expect(screen.getByText('Sin resultados')).toBeInTheDocument();
+  fireEvent.click(mine);
+  expect(list().getByText('Lucía Ejemplo')).toBeVisible();
+  expect(summary.getByRole('button', { name: '2 rutinas con registro completo.' })).toBeVisible();
+  expect(summary.getByRole('button', { name: '1 rutina próxima a cumplir 4 semanas.' })).toBeVisible();
+  expect(getStudents).toHaveBeenCalledTimes(1);
 });
 it('hides Mis alumnos without Professor role and selection without management permission', async () => {
   managerSession(['ADMINISTRATIVE'], false); renderPage(); await screen.findByText('Ana Alumna');
@@ -380,8 +530,8 @@ it('validates the full Person and enrollment fields before writing', async () =>
   expect(writes).not.toHaveBeenCalled();
 });
 
-it.each(['search', 'filter', 'mine'])('paginates 25 students and resets page on %s', async change => {
-  const many = Array.from({ length: 26 }, (_, index) => ({ ...students[0], id: `synthetic-${index}`, firstName: `Alumno ${index + 1}`, lastName: 'Sintético' }));
+it.each(['search', 'filter', 'mine', 'routine filter', 'summary'])('paginates 25 students and resets page on %s', async change => {
+  const many = Array.from({ length: 26 }, (_, index) => ({ ...students[0], id: `synthetic-${index}`, firstName: `Alumno ${index + 1}`, lastName: 'Sintético', routineChangeInDays: 0, routineTrainingComplete: true }));
   server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: many })));
   renderPage();
   await screen.findByText('Mostrando 1–25 de 26');
@@ -394,6 +544,8 @@ it.each(['search', 'filter', 'mine'])('paginates 25 students and resets page on 
   expect(screen.getByText('Página 1 de 2')).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
   if (change === 'search') fireEvent.change(screen.getByLabelText('Buscar por nombre o DNI'), { target: { value: 'Sintético' } });
+  else if (change === 'routine filter') fireEvent.click(screen.getByRole('button', { name: '4 semanas cumplidas' }));
+  else if (change === 'summary') fireEvent.click(screen.getByRole('button', { name: '26 rutinas con registro completo.' }));
   else fireEvent.click(screen.getByRole('button', { name: change === 'mine' ? 'Mis alumnos' : 'Todos' }));
   expect(screen.getByText('Página 1 de 2')).toBeVisible();
 });

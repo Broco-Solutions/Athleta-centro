@@ -13,6 +13,8 @@ import { AuthRateLimitService } from '../src/auth/auth-rate-limit.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { InternalUserService } from '../src/team/internal-user.service';
 import { SalaService } from '../src/sala/sala.service';
+import { TrainingRecordService } from '../src/sala/training-record.service';
+import type { SalaStudentListItemDto } from '../src/sala/sala.dto';
 
 describe('Sala configuration API', () => {
   let app: INestApplication; let prisma: PrismaService; let users: InternalUserService; let auth: AuthService; let sala: SalaService;
@@ -95,7 +97,7 @@ describe('Sala configuration API', () => {
   afterEach(cleanSalaFixtures);
   afterAll(() => app.close());
   const uniqueDni = () => `${Date.now()}${Math.floor(Math.random() * 100000)}`.slice(-12);
-  async function session(role: Role, httpApp = app) { const user = await users.create({ firstName: 'Sala', lastName: 'User', email: `${role.toLowerCase()}@sala.test`, roles: [role] }); await auth.provisionCredential(user.id, 'ValidPass1!'); await prisma.internalCredential.update({ where: { internalUserId: user.id }, data: { mustChangePassword: false } }); const login = await request(httpApp.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200); return { cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string }; }
+  async function session(role: Role | Role[], httpApp = app) { const roles = Array.isArray(role) ? role : [role]; const user = await users.create({ firstName: 'Sala', lastName: 'User', email: `${roles.join('-').toLowerCase()}@sala.test`, roles }); await auth.provisionCredential(user.id, 'ValidPass1!'); await prisma.internalCredential.update({ where: { internalUserId: user.id }, data: { mustChangePassword: false } }); const login = await request(httpApp.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200); return { cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string }; }
   it('configures positive capacity, plans, slots and explicit closure/override exceptions', async () => {
     const authn = await session(Role.ADMINISTRATIVE);
     const service = await sala.createServiceType({ name: 'Musculación', durationMinutes: 60 });
@@ -1856,7 +1858,7 @@ describe('Sala configuration API', () => {
         const participation = await prisma.salaParticipation.create({ data: { personId: person.id, mainProfessorId: index % 2 ? other.id : professor.id, planId: plan.id, startDate: new Date('2026-01-01'), ...(index === 4 ? { endDate: new Date('2026-10-01') } : {}) } });
         students.push({ person, participation });
       }
-      await prisma.routine.create({ data: { effectiveFrom: new Date('2026-10-01T00:00:00Z'), personId: students[0]!.person.id, salaParticipationId: students[0]!.participation.id, version: 1, status: 'ACTIVE' } });
+      await prisma.routine.create({ data: { effectiveFrom: new Date('2026-10-04T00:00:00Z'), personId: students[0]!.person.id, salaParticipationId: students[0]!.participation.id, version: 1, status: 'ACTIVE' } });
       await prisma.routine.create({ data: { effectiveFrom: new Date('2099-12-01T00:00:00Z'), personId: students[1]!.person.id, salaParticipationId: students[1]!.participation.id, version: 1, status: 'HISTORICAL' } });
       const method = await prisma.paymentMethod.create({ data: { name: `Students ${randomUUID()}` } });
       const pay = (index: number, month: number) => prisma.salaPayment.create({ data: { personId: students[index]!.person.id, year: 2026, month, coverageStartDate: new Date(Date.UTC(2026, month - 1, 1)), coverageEndDate: new Date(Date.UTC(2026, month, 0)), amount: 1000, paidAt: new Date('2026-10-01'), registeredById: professor.id, paymentMethodId: method.id, operationId: randomUUID() } });
@@ -1882,7 +1884,7 @@ describe('Sala configuration API', () => {
         const professor = index % 2 ? f.other : f.professor;
         expect(row.professor).toEqual({ id: professor.id, firstName: professor.firstName, lastName: professor.lastName });
         expect(row.plan).toEqual({ id: f.plan.id, name: '3 veces' });
-        expect(Object.keys(row).sort()).toEqual(['dni', 'firstName', 'hasValidAccess', 'id', 'lastName', 'lastPaymentPaidAt', 'participationId', 'participationStartDate', 'plan', 'professor', 'routineStatus', 'validUntil']);
+        expect(Object.keys(row).sort()).toEqual(['dni', 'firstName', 'hasValidAccess', 'id', 'lastName', 'lastPaymentPaidAt', 'participationId', 'participationStartDate', 'plan', 'professor', 'routineChangeInDays', 'routineStatus', 'routineTrainingComplete', 'validUntil']);
         expect(row.dni).toBe(f.students[index]!.person.dni);
       }
       expect(Object.keys(result.body)).toEqual(['data']);
@@ -1900,12 +1902,69 @@ describe('Sala configuration API', () => {
       expect(after.body.data.find((row: { id: string }) => row.id === f.students[2]!.person.id).routineStatus).toBe('MISSING');
     });
     it('returns an empty list and denies clinical relation-only and support actors', async () => {
+      await request(app.getHttpServer()).get('/api/sala/students').expect(401);
       const professor = await session(Role.PROFESSOR);
       const result = await request(app.getHttpServer()).get('/api/sala/students').set('Cookie', professor.cookie).expect(200);
       expect(result.body).toEqual({ data: [] });
       for (const role of [Role.KINESIOLOGIST, Role.BROCO_SUPPORT]) {
         const denied = await session(role);
         await request(app.getHttpServer()).get('/api/sala/students').set('Cookie', denied.cookie).expect(403);
+      }
+    });
+    it('updates notices for all students at Argentine midnight and keeps their routines active', async () => {
+      const f = await studentsFixture();
+      const own = f.students[0]!;
+      const other = f.students[3]!;
+      await prisma.routine.create({ data: { effectiveFrom: new Date('2026-10-04'), personId: other.person.id, salaParticipationId: other.participation.id, version: 1, status: 'HISTORICAL' } });
+      const list = async () => (await request(app.getHttpServer()).get('/api/sala/students').set('Cookie', f.authn.cookie).expect(200)).body.data;
+      const forStudent = (rows: Awaited<ReturnType<typeof list>>, id: string) => rows.find((row: { id: string }) => row.id === id);
+      const lastDay = await list();
+      expect(forStudent(lastDay, own.person.id)).toMatchObject({ routineStatus: 'ACTIVE', routineChangeInDays: 1, hasValidAccess: true });
+      expect(forStudent(lastDay, other.person.id)).toMatchObject({ routineStatus: 'ACTIVE', routineChangeInDays: 1 });
+      const stored = await prisma.routine.findMany({ orderBy: { id: 'asc' } });
+      const payments = await prisma.salaPayment.findMany({ orderBy: { id: 'asc' } });
+      jest.setSystemTime(new Date('2026-11-01T03:00:00Z'));
+      expect(forStudent(await list(), own.person.id)).toMatchObject({ routineStatus: 'ACTIVE', routineChangeInDays: 0, hasValidAccess: false });
+      expect(forStudent(await list(), other.person.id)).toMatchObject({ routineStatus: 'ACTIVE', routineChangeInDays: 0, routineTrainingComplete: false, hasValidAccess: true, validUntil: '2026-11-30' });
+      expect((await sala.dashboard('2026-11-01')).withoutRoutine.personIds).not.toContain(own.person.id);
+      expect(await prisma.routine.findMany({ orderBy: { id: 'asc' } })).toEqual(stored);
+      expect(await prisma.salaPayment.findMany({ orderBy: { id: 'asc' } })).toEqual(payments);
+    });
+    it('shows the same routine notices to professors, administrators and users with both roles', async () => {
+      const f = await studentsFixture();
+      const own = f.students[0]!;
+      const other = f.students[3]!;
+      const exercise = await sala.createExerciseDefinition({ name: 'Peso sintético', requiresWeight: true });
+      const routine = await prisma.routine.create({
+        data: {
+          personId: other.person.id, salaParticipationId: other.participation.id,
+          effectiveFrom: new Date('2026-10-03'), version: 1, status: 'ACTIVE',
+          days: { create: { position: 1, exercises: { create: { exerciseDefinitionId: exercise.id, position: 1 } } } },
+        },
+        include: { days: { include: { exercises: true } } },
+      });
+      const day = routine.days[0]!;
+      const records = () => prisma.salaTrainingRecord.findMany({ where: { routineId: routine.id }, orderBy: { weekNumber: 'asc' }, include: { exercises: true } });
+      try {
+        await app.get(TrainingRecordService).saveMonthlyWeights(other.person.id, {
+          routineId: routine.id, routineDayId: day.id, month: '2026-10',
+          weeks: [1, 2, 3, 4].map(weekNumber => ({ weekNumber, exercises: [{ id: day.exercises[0]!.id, weightKg: '20' }] })),
+        });
+        const list = async (cookie: string): Promise<SalaStudentListItemDto[]> =>
+          (await request(app.getHttpServer()).get('/api/sala/students').set('Cookie', cookie).expect(200)).body.data;
+        const storedRecords = await records();
+        const storedRoutines = await prisma.routine.findMany({ orderBy: { id: 'asc' } });
+        const professorRows = await list(f.authn.cookie);
+        expect(professorRows.find(row => row.id === own.person.id)).toMatchObject({ routineStatus: 'ACTIVE', routineChangeInDays: 1, routineTrainingComplete: false });
+        expect(professorRows.find(row => row.id === other.person.id)).toMatchObject({ routineStatus: 'ACTIVE', routineChangeInDays: 0, routineTrainingComplete: true });
+
+        for (const roles of [[Role.ADMINISTRATIVE], [Role.GENERAL_ADMIN], [Role.PROFESSOR, Role.ADMINISTRATIVE]]) {
+          expect(await list((await session(roles)).cookie)).toEqual(professorRows);
+        }
+        expect(await records()).toEqual(storedRecords);
+        expect(await prisma.routine.findMany({ orderBy: { id: 'asc' } })).toEqual(storedRoutines);
+      } finally {
+        await prisma.salaTrainingRecord.deleteMany({ where: { routineId: routine.id } });
       }
     });
   });
@@ -1937,7 +1996,7 @@ describe('Sala configuration API', () => {
       const base = { personId: student.person.id, salaParticipationId: student.participation.id, scheduleSlotId: slot.id };
       const fixed = await prisma.fixedSalaBooking.create({ data: { ...base, startDate: new Date('2026-10-01') } });
       const reservation = await prisma.oneOffReservation.create({ data: { ...base, date: new Date('2026-11-02') } });
-      const routine = await prisma.routine.create({ data: { effectiveFrom: new Date('2026-10-01T00:00:00Z'), personId: student.person.id, salaParticipationId: student.participation.id, status: 'ACTIVE', version: 1 } });
+      const routine = await prisma.routine.create({ data: { effectiveFrom: new Date('2026-10-13T00:00:00Z'), personId: student.person.id, salaParticipationId: student.participation.id, status: 'ACTIVE', version: 1 } });
       const indication = await prisma.salaClinicalIndication.create({ data: { personId: student.person.id, responsibleProfessionalId: f.actor.id, trainingCondition: 'RESTRICTED', affectedArea: 'Dato privado sintético', instructions: 'Instrucción privada sintética' } });
       return { fixed, reservation, routine, indication };
     }

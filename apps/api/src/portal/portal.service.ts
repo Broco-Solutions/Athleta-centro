@@ -1,4 +1,5 @@
 import { TrainingRecordService } from '../sala/training-record.service';
+import { routineForDate } from '../sala/routine-periods';
 import type { SaveMonthlyTrainingWeightsDto, CreateTrainingRecordDto, CorrectTrainingRecordDto, TrainingRecordQueryDto } from '../sala/training-record.dto';
 import { HealthDeclarationService } from '../sala/health-declaration/health-declaration.service';
 import type { SubmitHealthDeclarationDto } from '../sala/health-declaration/health-declaration.dto';
@@ -79,9 +80,13 @@ export class PortalService {
     const fixed = await this.prisma.fixedSalaBooking.findMany({ where: { personId: person.id }, include: { scheduleSlot: true, serviceType: true }, orderBy: { startDate: 'asc' } });
     const dates = Array.from({ length: 31 }, (_, index) => { const day = new Date(`${today}T00:00:00.000Z`); day.setUTCDate(day.getUTCDate() + index); return day.toISOString().slice(0, 10); });
     const fixedOccurrences = (await this.salaService.fixedOccurrenceStates(person.id, dates)).filter(item => this.salaService.operationalStart(item.date, new Date(`1970-01-01T${item.startTime}:00Z`)) > now);
-    const routine = await this.prisma.routine.findFirst({
-      where: { personId: person.id, cancelledAt: null, effectiveFrom: { lte: new Date(`${today}T00:00:00Z`) } },
-      orderBy: [{ effectiveFrom: 'desc' }, { version: 'desc' }],
+    const routineVersions = await this.prisma.routine.findMany({
+      where: { personId: person.id, effectiveFrom: { lte: new Date(`${today}T00:00:00Z`) } },
+      select: { id: true, version: true, effectiveFrom: true, cancelledAt: true },
+    });
+    const activeRoutine = routineForDate(routineVersions, today);
+    const routine = activeRoutine ? await this.prisma.routine.findUnique({
+      where: { id: activeRoutine.id },
       include: {
         days: {
           orderBy: { position: 'asc' },
@@ -93,7 +98,7 @@ export class PortalService {
           },
         },
       },
-    });
+    }) : null;
     const evaluations = await this.prisma.physicalEvaluation.findMany({ where: { personId: person.id }, select: { id: true, evaluationDate: true, results: { select: { resultText: true, testDefinition: { select: { id: true, name: true } } }, orderBy: { id: 'asc' } } }, orderBy: [{ evaluationDate: 'asc' }, { id: 'asc' }] });
     const validity = await this.salaService.validity(person.id, today);
     const replacementWeeks = await this.salaService.listPortalReplacementWeeks(person.id, today);

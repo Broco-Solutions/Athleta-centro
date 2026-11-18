@@ -1977,11 +1977,12 @@ No sacrificar integridad por simplicidad de código, pero tampoco forzar dentro 
 
 ## Edición vigente y cancelación de programaciones (2026-11-04)
 
-Editar ejercicios vigentes agrega o retira ocurrencias sin crear versión ni
+Editar una rutina vigente permite renombrar días existentes, agregar y retirar
+bloques, cambiar sus series y editar parámetros de los ejercicios sin crear versión ni
 cambiar ID, versión o inicio. También permite anexar días al final, conservando
 los IDs y el orden de los días existentes; no permite retirarlos ni sustituirlos.
-Los ejercicios conservados mantienen sus IDs e
-indicaciones. Los retirados conservan snapshots y pesos históricos; agregarlos
+Los ejercicios conservados mantienen sus IDs, incluso al cambiar de posición
+por la eliminación de un bloque. Los retirados conservan snapshots y pesos históricos; agregarlos
 otra vez crea otra identidad, sin pesos registrados. Agregar ejercicios no
 reinicia el mes ni altera semanas previas. Una próxima programación independiente
 no bloquea la edición vigente ni recibe sus cambios.

@@ -108,6 +108,7 @@ export class MovementPatternListEnvelopeDto {
   @ApiProperty({ type: () => [MovementPatternResponseDto] }) data!: MovementPatternResponseDto[];
 }
 export class ExerciseDefinitionDto {
+  @ApiPropertyOptional({ type: Boolean, nullable: true }) @IsOptional() @IsBoolean() requiresWeight?: boolean | null;
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true }) @IsOptional() @IsUUID() movementPatternId?: string | null;
 
   @ApiProperty({ type: String, maxLength: 120 }) @IsString() @MinLength(1) @MaxLength(120) name!: string;
@@ -128,11 +129,11 @@ export class RoutineExerciseDto {
   @ApiPropertyOptional({ type: String, maxLength: 500, nullable: true }) @IsOptional() @IsString() @MaxLength(500) notes?: string | null;
 }
 export class ActiveRoutineExerciseDto extends PartialType(RoutineExerciseDto) {
-  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() id?: string;
+  @ApiPropertyOptional({ type: String, format: 'uuid', description: 'Existing occurrence to retain or update. Omit exerciseDefinitionId when providing this ID.' }) @IsOptional() @IsUUID() id?: string;
 }
 export class ActiveRoutineDayDto {
   @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() id?: string;
-  @ApiPropertyOptional({ type: String, maxLength: 120 }) @IsOptional() @IsString() @MaxLength(120) name?: string;
+  @ApiPropertyOptional({ type: String, maxLength: 120, description: 'Required for a new day. Omit to keep the name of an existing day.' }) @IsOptional() @IsString() @MaxLength(120) name?: string;
   @ApiProperty({ type: () => [ActiveRoutineExerciseDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => ActiveRoutineExerciseDto) exercises!: ActiveRoutineExerciseDto[];
 }
 export class UpdateActiveRoutineExercisesDto {
@@ -214,6 +215,8 @@ export class SalaStudentListItemDto {
   @ApiProperty({ type: () => SalaStudentPlanDto }) plan!: SalaStudentPlanDto;
   @ApiProperty({ type: () => SalaAgendaProfessionalDto }) professor!: SalaAgendaProfessionalDto;
   @ApiProperty({ type: String, enum: ['ACTIVE', 'MISSING'] }) routineStatus!: 'ACTIVE' | 'MISSING';
+  @ApiProperty({ type: 'integer', minimum: 0, maximum: 7, nullable: true, description: 'Days until the four-week review. Zero means the review is due.' }) routineChangeInDays!: number | null;
+  @ApiProperty({ type: Boolean }) routineTrainingComplete!: boolean;
   @ApiProperty({ type: Boolean }) hasValidAccess!: boolean;
   @ApiProperty({ type: String, format: 'date', nullable: true }) validUntil!: string | null;
   @ApiProperty({ type: String, format: 'date', nullable: true }) lastPaymentPaidAt!: string | null;
@@ -278,6 +281,7 @@ export class PhysicalEvaluationEnvelopeDto { @ApiProperty({ type: () => Physical
 export class PhysicalEvaluationListEnvelopeDto { @ApiProperty({ type: () => [PhysicalEvaluationResponseDto] }) data!: PhysicalEvaluationResponseDto[]; }
 
 export class ExerciseDefinitionResponseDto {
+  @ApiProperty({ type: Boolean, nullable: true }) requiresWeight!: boolean | null;
   @ApiPropertyOptional({ type: String, nullable: true }) movementPatternId?: string | null;
 
   @ApiProperty({ type: String }) id!: string;

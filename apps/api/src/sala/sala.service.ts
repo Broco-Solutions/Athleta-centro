@@ -1,6 +1,7 @@
 import { UpdateActiveRoutineExercisesDto, UpdateScheduledRoutineDto } from './sala.dto';
-import { routinePresentation, routineForDate, routineAllowsMonth } from './routine-periods';
+import { routinePresentation, routineForDate, routineAllowsMonth, routineFollowUp } from './routine-periods';
 import { HealthDeclarationService } from './health-declaration/health-declaration.service';
+import { TrainingRecordService } from './training-record.service';
 import { BadRequestException, ForbiddenException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { FinancialAdjustmentKind, Prisma, Role, RoutineStatus, SalaChargeKind, SalaOccurrenceOrigin, SalaOccurrenceStatus, SalaScheduleExceptionType, InternalUserStatus, SalaWeekday } from '@prisma/client';
 import { PeopleService } from '../people/people.service';
@@ -31,7 +32,7 @@ const planServicesInclude = {
 type PlanWithServices = Prisma.SalaPlanGetPayload<{ include: typeof planServicesInclude }>;
 @Injectable()
 export class SalaService {
-  constructor(private readonly prisma: PrismaService, private readonly financeCatalog: FinanceCatalogService, private readonly people: PeopleService, private readonly health: HealthDeclarationService) {}
+  constructor(private readonly prisma: PrismaService, private readonly financeCatalog: FinanceCatalogService, private readonly people: PeopleService, private readonly health: HealthDeclarationService, private readonly training: TrainingRecordService) {}
 
   registerPaperHealthDeclaration(personId: string, signedOn: string, actorId: string) { return this.health.registerPaper(personId, signedOn, actorId); }
   healthDeclarationStatus(personId: string) { return this.health.status(personId); }
@@ -641,8 +642,8 @@ export class SalaService {
     if (id && !await this.prisma.exerciseMovementPattern.findUnique({ where: { id } })) throw new BadRequestException({ code: 'SALA_MOVEMENT_PATTERN_NOT_FOUND', message: 'No existe el patrón seleccionado.' });
   }
   async listExerciseDefinitions(includeInactive = false) { return this.prisma.exerciseDefinition.findMany({ where: includeInactive ? {} : { isActive: true }, orderBy: { name: 'asc' } }); }
-  async createExerciseDefinition(input: ExerciseDefinitionDto) { await this.validateMovementPattern(input.movementPatternId); try { return await this.prisma.exerciseDefinition.create({ data: { ...(input.movementPatternId !== undefined ? { movementPatternId: input.movementPatternId } : {}), name: input.name.trim(), primaryMuscle: this.optionalText(input.primaryMuscle), description: this.optionalText(input.description) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_EXERCISE_DUPLICATE', message: 'Exercise already exists' }); throw error; } }
-  async updateExerciseDefinition(id: string, input: ExerciseDefinitionDto) { await this.validateMovementPattern(input.movementPatternId); try { return await this.prisma.exerciseDefinition.update({ where: { id }, data: { ...(input.movementPatternId !== undefined ? { movementPatternId: input.movementPatternId } : {}), name: input.name.trim(), primaryMuscle: this.optionalText(input.primaryMuscle), description: this.optionalText(input.description) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_EXERCISE_NOT_FOUND', message: 'Exercise not found' }); if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_EXERCISE_DUPLICATE', message: 'Exercise already exists' }); throw error; } }
+  async createExerciseDefinition(input: ExerciseDefinitionDto) { await this.validateMovementPattern(input.movementPatternId); try { return await this.prisma.exerciseDefinition.create({ data: { ...(input.movementPatternId !== undefined ? { movementPatternId: input.movementPatternId } : {}), name: input.name.trim(), primaryMuscle: this.optionalText(input.primaryMuscle), description: this.optionalText(input.description), requiresWeight: input.requiresWeight ?? null } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_EXERCISE_DUPLICATE', message: 'Exercise already exists' }); throw error; } }
+  async updateExerciseDefinition(id: string, input: ExerciseDefinitionDto) { await this.validateMovementPattern(input.movementPatternId); try { return await this.prisma.exerciseDefinition.update({ where: { id }, data: { ...(input.movementPatternId !== undefined ? { movementPatternId: input.movementPatternId } : {}), ...(input.requiresWeight !== undefined ? { requiresWeight: input.requiresWeight } : {}), name: input.name.trim(), primaryMuscle: this.optionalText(input.primaryMuscle), description: this.optionalText(input.description) } }); } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ code: 'SALA_EXERCISE_NOT_FOUND', message: 'Exercise not found' }); if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_EXERCISE_DUPLICATE', message: 'Exercise already exists' }); throw error; } }
   async retireExerciseDefinition(id: string, confirmActiveRoutineImpact: boolean) {
     return this.prisma.$transaction(async (tx) => {
       const exercise = await tx.exerciseDefinition.findUnique({ where: { id } });
@@ -754,38 +755,64 @@ export class SalaService {
           continue;
         }
         const day = routine.days.find(d => d.id === proposed.id);
-        if (!day || seenNew || Object.keys(proposed).some(key => key !== 'id' && key !== 'exercises')) throw invalid();
+        if (!day || seenNew) throw invalid();
+        const existingExercises = new Map(day.exercises.map(exercise => [exercise.id, exercise]));
         const kept = proposed.exercises.filter(e => e.id).map(e => e.id!);
         if (new Set(kept).size !== kept.length) throw invalid();
-        const grouped = day.exercises.some(e => e.blockPosition !== null);
-        const blocks = new Map(day.exercises.filter(e => e.blockPosition !== null).map(e => [e.blockPosition!, e.series]));
+
+        const existingBlocks = new Set(day.exercises.flatMap(e => e.blockPosition === null ? [] : [e.blockPosition]));
+        const grouped = existingBlocks.size > 0;
+        const fields = ['series', 'repetitions', 'duration', 'load', 'rest', 'notes'] as const;
         const entries = proposed.exercises.map(entry => {
-          if (entry.id) {
-            if (Object.keys(entry).some(key => key !== 'id')) throw invalid();
-            const existing = day.exercises.find(e => e.id === entry.id);
-            if (!existing) throw invalid();
-            return existing;
-          }
-          if (!entry.exerciseDefinitionId) throw invalid();
-          if (grouped && (!entry.blockPosition || !blocks.has(entry.blockPosition) || entry.series !== blocks.get(entry.blockPosition))) throw invalid();
-          if (!grouped && entry.blockPosition != null) throw invalid();
-          return { ...entry, exerciseDefinitionId: entry.exerciseDefinitionId, id: undefined, blockPosition: entry.blockPosition ?? null };
+          const existing = entry.id ? existingExercises.get(entry.id) : undefined;
+          if (entry.id ? !existing || entry.exerciseDefinitionId !== undefined : !entry.exerciseDefinitionId) throw invalid();
+          const blockPosition = entry.blockPosition === undefined ? existing?.blockPosition ?? null : entry.blockPosition;
+          if (grouped !== (blockPosition !== null)) throw invalid();
+          const text = Object.fromEntries(fields.map(field => [
+            field, entry[field] === undefined ? existing?.[field] ?? null : this.optionalText(entry[field]),
+          ])) as Record<(typeof fields)[number], string | null>;
+          return { ...text, id: existing?.id, exerciseDefinitionId: existing?.exerciseDefinitionId ?? entry.exerciseDefinitionId!, blockPosition };
         });
-        // Keep the order of retained occurrences; additions go at the end of their block.
-        const ordered = [...entries].sort((a, b) => (a.blockPosition ?? 0) - (b.blockPosition ?? 0) || (a.id ? day.exercises.findIndex(e => e.id === a.id) : Number.MAX_SAFE_INTEGER) - (b.id ? day.exercises.findIndex(e => e.id === b.id) : Number.MAX_SAFE_INTEGER));
-        const blockPositions = [...new Set(ordered.map(e => e.blockPosition).filter(p => p !== null))];
-        const normalized = ordered.map(e => ({ ...e, blockPosition: e.blockPosition === null ? null : blockPositions.indexOf(e.blockPosition) + 1 }));
-        this.validateRoutine({ days: [{ exercises: normalized }] });
-        await this.validateRoutineExercises(tx, { days: [{ exercises: normalized.filter(e => !e.id) }] });
+        if (grouped && !entries.length) throw invalid();
+
+        // Retained occurrences keep their relative order; additions go at the end of their block.
+        const ordered = entries.sort((a, b) => (a.blockPosition ?? 0) - (b.blockPosition ?? 0)
+          || (existingExercises.get(a.id ?? '')?.position ?? Number.MAX_SAFE_INTEGER)
+          - (existingExercises.get(b.id ?? '')?.position ?? Number.MAX_SAFE_INTEGER));
+        // Older requests can omit a whole block while still using the original positions.
+        const usesOriginalPositions = grouped && proposed.exercises.every(entry => entry.id
+          ? entry.blockPosition === undefined
+          : entry.blockPosition != null && existingBlocks.has(entry.blockPosition));
+        const positions = [...new Set(ordered.map(e => e.blockPosition))];
+        const finalEntries = usesOriginalPositions ? ordered.map(entry => ({
+          ...entry, blockPosition: positions.indexOf(entry.blockPosition) + 1,
+        })) : ordered;
+        this.validateRoutine({ days: [{ exercises: finalEntries }] });
+        await this.validateRoutineExercises(tx, { days: [{ exercises: finalEntries.filter(e => !e.id) }] });
+
+        if (proposed.name !== undefined) {
+          const name = this.optionalText(proposed.name);
+          if (name !== day.name) await tx.routineDay.update({ where: { id: day.id }, data: { name } });
+        }
         await tx.routineExercise.deleteMany({ where: { routineDayId: day.id, id: { notIn: kept } } });
-        // Temporary positions above both ranges avoid transient UNIQUE conflicts.
-        const offset = Math.max(0, ...day.exercises.map(e => e.position)) + normalized.length + 1;
-        for (const [index, entry] of normalized.entries()) if (entry.id) await tx.routineExercise.update({ where: { id: entry.id }, data: { position: offset + index } });
-        for (const [index, entry] of normalized.entries()) {
-          if (entry.id) await tx.routineExercise.update({ where: { id: entry.id }, data: { position: index + 1, blockPosition: entry.blockPosition } });
-          else {
-            const { exerciseDefinitionId, blockPosition, series, repetitions, duration, load, rest, notes } = entry;
-            await tx.routineExercise.create({ data: { routineDayId: day.id, exerciseDefinitionId, position: index + 1, blockPosition, series: series ?? null, repetitions: repetitions ?? null, duration: duration ?? null, load: load ?? null, rest: rest ?? null, notes: notes ?? null } });
+        // Move only rows that change position above both ranges to avoid transient UNIQUE conflicts.
+        const offset = Math.max(0, ...day.exercises.map(e => e.position)) + finalEntries.length + 1;
+        for (const [index, entry] of finalEntries.entries()) {
+          if (entry.id && existingExercises.get(entry.id)!.position !== index + 1) {
+            await tx.routineExercise.update({ where: { id: entry.id }, data: { position: offset + index } });
+          }
+        }
+        for (const [index, { id: exerciseId, ...entry }] of finalEntries.entries()) {
+          const position = index + 1;
+          if (exerciseId) {
+            const existing = existingExercises.get(exerciseId)!;
+            const changes: Prisma.RoutineExerciseUpdateInput = {};
+            if (position !== existing.position) changes.position = position;
+            if (entry.blockPosition !== existing.blockPosition) changes.blockPosition = entry.blockPosition;
+            for (const field of fields) if (entry[field] !== existing[field]) changes[field] = entry[field];
+            if (Object.keys(changes).length) await tx.routineExercise.update({ where: { id: exerciseId }, data: changes });
+          } else {
+            await tx.routineExercise.create({ data: { ...entry, routineDayId: day.id, position } });
           }
         }
       }
@@ -936,7 +963,8 @@ export class SalaService {
     });
   }
   async listStudents(): Promise<SalaStudentListItemDto[]> {
-    const today = this.date(this.todayOperational());
+    const operationalToday = this.todayOperational();
+    const today = this.date(operationalToday);
     const participations = await this.prisma.salaParticipation.findMany({
       where: { endDate: null },
       orderBy: [{ person: { lastName: 'asc' } }, { person: { firstName: 'asc' } }],
@@ -950,24 +978,35 @@ export class SalaService {
         routines: { select: { id: true, version: true, effectiveFrom: true, cancelledAt: true } },
       },
     });
-    const payments = await this.prisma.salaPayment.findMany({
-      where: { personId: { in: participations.map(item => item.person.id) }, reversal: null },
-      select: { personId: true, coverageStartDate: true, coverageEndDate: true, paidAt: true },
-      orderBy: { paidAt: 'desc' },
-    });
+    const students = participations.map(({ routines, ...student }) => ({
+      ...student,
+      ...routineFollowUp(routines, operationalToday),
+    }));
+    const noticeRoutineIds = students.flatMap(student =>
+      student.routineIdForNotice ? [student.routineIdForNotice] : []);
+    const [completeRoutines, payments] = await Promise.all([
+      this.training.completedRoutineIds(noticeRoutineIds),
+      this.prisma.salaPayment.findMany({
+        where: { personId: { in: participations.map(item => item.person.id) }, reversal: null },
+        select: { personId: true, coverageStartDate: true, coverageEndDate: true, paidAt: true },
+        orderBy: { paidAt: 'desc' },
+      }),
+    ]);
     const byPerson = new Map<string, typeof payments>();
     for (const payment of payments) {
       const rows = byPerson.get(payment.personId) ?? [];
       rows.push(payment);
       byPerson.set(payment.personId, rows);
     }
-    return participations.map(({ id, startDate, person, plan, mainProfessor, routines }) => {
+    return students.map(({ id, startDate, person, plan, mainProfessor, routineStatus, routineChangeInDays, routineIdForNotice }) => {
       const rows = byPerson.get(person.id) ?? [];
       const end = this.continuousValidityEnd(rows, today);
       return {
         id: person.id, participationId: id, participationStartDate: startDate.toISOString().slice(0, 10),
         firstName: person.firstName, lastName: person.lastName, dni: person.dni, plan, professor: mainProfessor,
-        routineStatus: routineForDate(routines, this.todayOperational()) ? 'ACTIVE' : 'MISSING',
+        routineStatus,
+        routineChangeInDays,
+        routineTrainingComplete: routineIdForNotice !== null && completeRoutines.has(routineIdForNotice),
         hasValidAccess: end !== null, validUntil: end?.toISOString().slice(0, 10) ?? null,
         lastPaymentPaidAt: rows[0]?.paidAt.toISOString().slice(0, 10) ?? null,
       };

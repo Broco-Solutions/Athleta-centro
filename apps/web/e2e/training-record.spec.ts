@@ -2,8 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 
 type Fixture = { personId: string; professorId: string; planId: string; exerciseId: string; dni: string; email: string };
-function fixture(history = false): Fixture {
-  return JSON.parse(execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts', ...(history ? ['history'] : [])], { cwd: '../..', encoding: 'utf8' }).trim()) as Fixture;
+function fixture(variant?: 'history' | 'grouped'): Fixture {
+  return JSON.parse(execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts', ...(variant ? [variant] : [])], { cwd: '../..', encoding: 'utf8' }).trim()) as Fixture;
 }
 function cleanup(f: Fixture) {
   execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts', 'cleanup', f.personId, f.professorId, f.planId, f.exerciseId], { cwd: '../..', stdio: 'pipe' });
@@ -81,7 +81,7 @@ test('monthly Portal save, repeated correction, retrospective months and read-on
 });
 
 test('two periods have separate days and monthly slots, and select the routine for the backend date', async ({ page }) => {
-  test.setTimeout(180000); const f = fixture(true);
+  test.setTimeout(180000); const f = fixture('history');
   try {
     await login(page, f);
     await page.getByRole('button', { name: 'Mes anterior', exact: true }).click();
@@ -101,9 +101,9 @@ test('two periods have separate days and monthly slots, and select the routine f
   } finally { cleanup(f); }
 });
 
-test('edits current exercises with a future routine and preserves monthly weights', async ({ page, browser }) => {
+test('edits a grouped current routine with a future routine and preserves monthly weights', async ({ page, browser }) => {
   test.setTimeout(180000);
-  const f = fixture();
+  const f = fixture('grouped');
   const staff = await browser.newContext();
   try {
     await login(page, f);
@@ -125,18 +125,36 @@ test('edits current exercises with a future routine and preserves monthly weight
     await teacher.getByLabel('Fecha de inicio').fill('2099-12-01');
     await teacher.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
     await expect(teacher.getByText('Rutina programada desde el 01/12/2099.')).toBeVisible();
-    await teacher.getByRole('button', { name: 'Editar ejercicios', exact: true }).click();
-    const editor = teacher.getByRole('region', { name: 'Editar ejercicios', exact: true });
+    await teacher.getByRole('button', { name: 'Editar rutina', exact: true }).click();
+    const editor = teacher.getByRole('region', { name: 'Editar rutina', exact: true });
     await expect(editor.getByLabel('Fecha de inicio')).toHaveCount(0);
-    await editor.getByRole('button', { name: 'Quitar', exact: true }).nth(1).click();
-    await editor.getByRole('button', { name: /^\+ Agregar ejercicio/ }).first().click();
-    await editor.getByRole('button', { name: /^Agregar / }).first().click();
+    await editor.getByRole('button', { name: /^Quitar / }).nth(1).click();
+    await editor.getByLabel('Nombre del día 1').fill('Tren inferior');
+    const firstBlock = editor.getByRole('region', { name: 'Bloque A' });
+    await firstBlock.getByLabel('Valor').fill('12');
+    await firstBlock.getByRole('button', { name: 'Aumentar series del bloque A' }).click();
+    await editor.getByRole('button', { name: '+ Agregar bloque', exact: true }).click();
+    const newBlock = editor.getByRole('region', { name: 'Bloque B' });
+    await newBlock.getByRole('button', { name: 'Buscar ejercicios para el bloque B' }).click();
+    await newBlock.getByRole('button', { name: /^Agregar Press sintético/ }).click();
+    await newBlock.getByLabel('Valor').fill('8');
     await capture(teacher, 'active-exercises-editor');
     await editor.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
     await expect(teacher.getByText('Ejercicios actualizados correctamente. Los pesos registrados se conservaron.')).toBeVisible();
     await expect(teacher.getByText('Comienza el 01/12/2099')).toBeVisible();
+    await teacher.getByRole('button', { name: 'Editar rutina', exact: true }).click();
+    await expect(teacher.getByRole('region', { name: 'Editar rutina' }).getByRole('region', { name: 'Bloque B' }).getByLabel('Valor')).toHaveValue('8');
+    await teacher.getByRole('button', { name: 'Cancelar', exact: true }).click();
+    await teacher.evaluate(() => { window.print = () => {}; });
+    await teacher.getByRole('button', { name: 'Imprimir / PDF', exact: true }).first().click();
+    const printed = teacher.locator('#athleta-routine-print-root');
+    await expect(printed).toContainText('Tren inferior');
+    await expect(printed).toContainText('Bloque B — 4 series');
+    await teacher.evaluate(() => window.dispatchEvent(new Event('afterprint')));
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Rutina 1 · Período vigente' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Bloque B — 4 series' })).toBeVisible();
+    await expect(cards.first()).toContainText('12 rep.');
     await cards.first().click();
     await expect(page.getByRole('textbox').first()).toHaveValue('40');
     await cards.last().click();

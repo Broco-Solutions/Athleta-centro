@@ -39,8 +39,9 @@ export const exerciseSchema = z.object({
 }).refine((entry) => !(entry.repetitions && entry.duration), { message: exclusiveMessage });
 // UI-only choice for an empty value; exerciseSchema strips it before serialization.
 type ExerciseForm = z.infer<typeof exerciseSchema> & { valueMode?: 'repetitions' | 'duration' };
-type EditingBlock = { key: string; series: string; exercises: ExerciseForm[] };
-export type EditingDay = { key: string; name: string; exercises: ExerciseForm[]; blocks: EditingBlock[] | null };
+type ActiveExerciseDraft = ExerciseForm & { original?: RoutineExercise };
+type EditingBlock = { key: string; series: string; exercises: ActiveExerciseDraft[] };
+export type EditingDay = { key: string; name: string; exercises: ActiveExerciseDraft[]; blocks: EditingBlock[] | null };
 function newBlock(): EditingBlock { return { key: crypto.randomUUID(), series: '4', exercises: [] }; }
 export const fieldClass = 'h-10 w-full rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-ring';
 
@@ -66,14 +67,16 @@ type ExerciseCatalogProps = {
 };
 
 function ExerciseRow({ exercise, definitions, onChange, onRemove, disabled, showSeries = true, showRest = true, code }: {
-  showRest?: boolean; showSeries?: boolean; code?: string; exercise: ExerciseForm; definitions: ExerciseDefinition[]; onChange: (exercise: ExerciseForm) => void; onRemove: () => void; disabled: boolean;
+  showRest?: boolean; showSeries?: boolean; code?: string; exercise: ActiveExerciseDraft; definitions: ExerciseDefinition[]; onChange: (exercise: ActiveExerciseDraft) => void; onRemove: () => void; disabled: boolean;
 }): React.JSX.Element {
   const invalid = Boolean(exercise.repetitions?.trim() && exercise.duration?.trim());
   const mode = invalid ? '' : exercise.duration ? 'duration' : exercise.repetitions ? 'repetitions' : exercise.valueMode ?? 'repetitions';
   const selected = definitions.find((item) => item.id === exercise.exerciseDefinitionId);
+  const name = exercise.original ? displayExercise(exercise.original, definitions) : selected?.name ?? 'Ejercicio retirado';
+  const unavailable = exercise.original ? exerciseUnavailable(exercise.original, definitions) : !selected?.isActive;
   return <li className="space-y-2 p-3">
     <div className={`grid min-w-0 gap-3 md:items-end ${showSeries ? 'md:grid-cols-[minmax(0,2fr)_minmax(0,.7fr)_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]' : 'lg:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,1fr)_auto]'}`}>
-      <div className="min-w-0 text-sm">Ejercicio<p className="font-medium">{code ? `${code} — ` : ''}{selected?.name ?? 'Ejercicio retirado'}{!selected?.isActive ? ' · No disponible' : ''}</p></div>
+      <div className="min-w-0 text-sm">Ejercicio<p className="font-medium">{code ? `${code} — ` : ''}{name}{unavailable ? ' · No disponible' : ''}</p></div>
       {showSeries ? <label className="min-w-0 text-sm">Series<input className={fieldClass} value={exercise.series ?? ''} maxLength={80} disabled={disabled} onChange={(event) => onChange({ ...exercise, series: event.target.value })}/></label> : null}
       <div className="grid min-w-0 gap-2 sm:grid-cols-2"><p className="hidden text-sm md:col-span-2 md:block">Repeticiones o tiempo</p><label className="min-w-0 text-sm"><span className="md:sr-only">Tipo</span><select className={fieldClass} value={mode} disabled={disabled} onChange={(event) => {
         const next = event.target.value === 'duration' ? 'duration' : 'repetitions';
@@ -88,18 +91,18 @@ function ExerciseRow({ exercise, definitions, onChange, onRemove, disabled, show
         onChange({ ...exercise, load: event.target.value });
       }}/>{!showSeries ? <span>kg</span> : null}</span></label>
       {showRest ? <label className="min-w-0 text-sm">Descanso<input className={fieldClass} value={exercise.rest ?? ''} maxLength={80} disabled={disabled} onChange={(event) => onChange({ ...exercise, rest: event.target.value })}/></label> : null}
-      <Button type="button" variant="ghost" className="text-red-700" aria-label={`Quitar ${selected?.name ?? 'Ejercicio retirado'}`} disabled={disabled} onClick={onRemove}>Quitar</Button>
+      <Button type="button" variant="ghost" className="text-red-700" aria-label={`Quitar ${name}`} disabled={disabled} onClick={onRemove}>Quitar</Button>
     </div>
     {invalid ? <p role="alert" className="text-sm text-red-700">{exclusiveMessage} Repeticiones: {exercise.repetitions}. Tiempo: {exercise.duration}.</p> : null}
     <details open={exercise.notes ? true : undefined}><summary className="cursor-pointer text-sm text-muted-foreground">{exercise.notes ? 'Observación' : '+ Agregar observación'}</summary><label className="mt-2 block text-sm">Observación<textarea className="mt-1 min-h-16 w-full rounded-md border bg-white px-3 py-2 text-sm" value={exercise.notes ?? ''} maxLength={500} disabled={disabled} onChange={(event) => onChange({ ...exercise, notes: event.target.value })}/></label></details>
   </li>;
 }
 
-export function DayEditor({ day, index, definitions, onChange, onRemove, canRemove, disabled, onToggleCatalog, openBlockKey, catalog }: {
-  onToggleCatalog: (blockKey: string) => void; openBlockKey?: string | null; catalog?: React.ReactNode; day: EditingDay; index: number; definitions: ExerciseDefinition[]; onChange: (day: EditingDay) => void; onRemove: () => void; canRemove: boolean; disabled: boolean;
+export function DayEditor({ day, index, definitions, onChange, onRemove, canRemove, disabled, onToggleCatalog, openBlockKey, catalog, className = "rounded-lg border bg-surface-muted p-4" }: {
+  onToggleCatalog: (blockKey: string) => void; openBlockKey?: string | null; catalog?: React.ReactNode; className?: string; day: EditingDay; index: number; definitions: ExerciseDefinition[]; onChange: (day: EditingDay) => void; onRemove?: () => void; canRemove: boolean; disabled: boolean;
 }): React.JSX.Element {
-  return <fieldset aria-label={`Día ${index + 1}`} className="min-w-0 rounded-lg border bg-surface-muted p-4" disabled={disabled}>
-    <div className="flex flex-wrap items-end justify-between gap-3"><label className="min-w-0 grow text-sm font-medium">Nombre del día<input aria-label={`Nombre del día ${index + 1}`} className={`${fieldClass} mt-1`} placeholder={`Día ${index + 1} (opcional)`} maxLength={120} value={day.name} onChange={(event) => onChange({ ...day, name: event.target.value })}/></label><Button type="button" variant="ghost" disabled={!canRemove || disabled} onClick={onRemove}>Eliminar día</Button></div>
+  return <fieldset aria-label={`Día ${index + 1}`} className={`min-w-0 ${className}`} disabled={disabled}>
+    <div className="flex flex-wrap items-end justify-between gap-3"><label className="min-w-0 grow text-sm font-medium">Nombre del día<input aria-label={`Nombre del día ${index + 1}`} className={`${fieldClass} mt-1`} placeholder={`Día ${index + 1} (opcional)`} maxLength={120} value={day.name} onChange={(event) => onChange({ ...day, name: event.target.value })}/></label>{onRemove ? <Button type="button" variant="ghost" disabled={!canRemove || disabled} onClick={onRemove}>Eliminar día</Button> : null}</div>
     {day.blocks !== null ? <div className="mt-4 space-y-4">{day.blocks.map((block, blockIndex) => {
       const label = blockLabel(blockIndex + 1);
       const series = /^[0-9]+$/.test(block.series.trim()) ? BigInt(block.series.trim()) : 0n;
@@ -118,10 +121,10 @@ export function DayEditor({ day, index, definitions, onChange, onRemove, canRemo
         <Button type="button" variant="secondary" aria-label={`Aumentar series del bloque ${label}`} disabled={disabled} onClick={() => changeSeries(1n)}>+</Button>
       </div>
       {!validSeries ? <p role="alert" className="mt-2 text-sm text-red-700">Las series deben corregirse: elegí un número entero mayor a cero.</p> : null}
-      {block.exercises.length ? <ul className="mt-3 divide-y">{block.exercises.map((exercise, entryIndex) => <ExerciseRow key={entryIndex} exercise={exercise} definitions={definitions} disabled={disabled} showSeries={false} showRest={false} code={`${blockLabel(blockIndex + 1)}${entryIndex + 1}`} onChange={updated => onChange({ ...day, blocks: day.blocks!.map(item => item.key === block.key ? { ...item, exercises: item.exercises.map((entry, i) => i === entryIndex ? updated : entry) } : item) })} onRemove={() => onChange({ ...day, blocks: day.blocks!.map(item => item.key === block.key ? { ...item, exercises: item.exercises.filter((_, i) => i !== entryIndex) } : item) })}/>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">Sin ejercicios. Agregalos desde el catálogo.</p>}
+      {block.exercises.length ? <ul className="mt-3 divide-y">{block.exercises.map((exercise, entryIndex) => <ExerciseRow key={exercise.original?.id ?? entryIndex} exercise={exercise} definitions={definitions} disabled={disabled} showSeries={false} showRest={false} code={`${blockLabel(blockIndex + 1)}${entryIndex + 1}`} onChange={updated => onChange({ ...day, blocks: day.blocks!.map(item => item.key === block.key ? { ...item, exercises: item.exercises.map((entry, i) => i === entryIndex ? updated : entry) } : item) })} onRemove={() => onChange({ ...day, blocks: day.blocks!.map(item => item.key === block.key ? { ...item, exercises: item.exercises.filter((_, i) => i !== entryIndex) } : item) })}/>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">Sin ejercicios. Agregalos desde el catálogo.</p>}
       <Button type="button" variant="secondary" className="mt-3" disabled={disabled} aria-expanded={openBlockKey === block.key} onClick={() => onToggleCatalog(block.key)}>{openBlockKey === block.key ? 'Cerrar buscador del bloque' : 'Buscar ejercicios para el bloque'} {blockLabel(blockIndex + 1)}</Button>
       {openBlockKey === block.key ? <div className="@container mt-3">{catalog}</div> : null}
-    </section>; })}<Button type="button" variant="ghost" onClick={() => onChange({ ...day, blocks: [...day.blocks!, newBlock()] })}>+ Agregar bloque</Button></div> : day.exercises.length ? <ul className="mt-4 divide-y rounded-md border">{day.exercises.map((exercise, entryIndex) => <ExerciseRow key={entryIndex} exercise={exercise} definitions={definitions} disabled={disabled} onChange={(updated) => onChange({ ...day, exercises: day.exercises.map((item, i) => i === entryIndex ? updated : item) })} onRemove={() => onChange({ ...day, exercises: day.exercises.filter((_, i) => i !== entryIndex) })}/>)}</ul> : <p className="mt-4 text-sm text-muted-foreground">Sin ejercicios. Agregalos desde el catálogo.</p>}
+    </section>; })}<Button type="button" variant="ghost" onClick={() => onChange({ ...day, blocks: [...day.blocks!, newBlock()] })}>+ Agregar bloque</Button></div> : day.exercises.length ? <ul className="mt-4 divide-y rounded-md border">{day.exercises.map((exercise, entryIndex) => <ExerciseRow key={exercise.original?.id ?? entryIndex} exercise={exercise} definitions={definitions} disabled={disabled} onChange={(updated) => onChange({ ...day, exercises: day.exercises.map((item, i) => i === entryIndex ? updated : item) })} onRemove={() => onChange({ ...day, exercises: day.exercises.filter((_, i) => i !== entryIndex) })}/>)}</ul> : <p className="mt-4 text-sm text-muted-foreground">Sin ejercicios. Agregalos desde el catálogo.</p>}
   </fieldset>;
 }
 
@@ -198,14 +201,27 @@ export function routineDaysToDraft(days: RoutineDay[]): EditingDay[] {
   return days.map((day, index) => ({ key: crypto.randomUUID(), name: day.name ?? `Día ${index + 1}`, exercises: isGroupedDay(day.exercises) ? [] : day.exercises.map(exerciseToForm), blocks: isGroupedDay(day.exercises) ? groupRoutineBlocks(day.exercises).map(block => ({ key: crypto.randomUUID(), series: block.series ?? '', exercises: block.exercises.map(exerciseToForm) })) : null }));
 }
 export function draftToRoutineDays(days: EditingDay[]): RoutineDayDto[] {
-  return days.map((day, index) => ({ name: day.name.trim() || `Día ${index + 1}`, exercises: (day.blocks === null ? day.exercises : day.blocks.flatMap((block, blockIndex) => {
+  return days.map((day, index) => ({
+    name: day.name.trim() || `Día ${index + 1}`,
+    exercises: draftDayExercises(day, index).map(serializeExercise),
+  }));
+}
+function draftDayExercises(day: EditingDay, index: number): (ActiveExerciseDraft & { blockPosition?: number })[] {
+  if (day.blocks === null) return day.exercises;
+  return day.blocks.flatMap((block, blockIndex) => {
     if (!block.exercises.length) throw new Error(`El Bloque ${blockLabel(blockIndex + 1)} del Día ${index + 1} no tiene ejercicios. Agregá uno o eliminá el bloque.`);
     if (!/^[0-9]+$/.test(block.series.trim()) || BigInt(block.series.trim()) < 1n) throw new Error(`Las series del Bloque ${blockLabel(blockIndex + 1)} del Día ${index + 1} deben ser un número entero mayor a cero.`);
     return block.exercises.map(exercise => ({ ...exercise, series: block.series, blockPosition: blockIndex + 1 }));
-  })).map((exercise) => {
-    const parsed = exerciseSchema.parse(exercise);
-    return { exerciseDefinitionId: parsed.exerciseDefinitionId, ...('blockPosition' in exercise ? { blockPosition: exercise.blockPosition as number } : {}), series: parsed.series || null, repetitions: parsed.repetitions || null, duration: parsed.duration || null, load: parsed.load || null, rest: parsed.rest || null, notes: parsed.notes || null };
-  }) }));
+  });
+}
+function serializeExercise(exercise: ExerciseForm & { blockPosition?: number }): RoutineDayDto['exercises'][number] {
+  const parsed = exerciseSchema.parse(exercise);
+  return {
+    exerciseDefinitionId: parsed.exerciseDefinitionId,
+    ...(exercise.blockPosition !== undefined ? { blockPosition: exercise.blockPosition } : {}),
+    series: parsed.series || null, repetitions: parsed.repetitions || null, duration: parsed.duration || null,
+    load: parsed.load || null, rest: parsed.rest || null, notes: parsed.notes || null,
+  };
 }
 /** Copy only content; omit all source aggregate and child IDs. Preserve optional day names. */
 export function copyRoutineDays(days: RoutineDay[]): RoutineDayDto[] {
@@ -229,33 +245,61 @@ export function RoutineContentSummary({ days, definitions = [], dayAction }: { d
   </section>)}</div>;
 }
 
-/** Separate identity-preserving draft for the current prescription. */
-export type ActiveExerciseDraft = { key: string; original?: RoutineExercise; exercise: ExerciseForm; blockPosition: number | null };
-export type ActiveDayDraft = { id: string; name: string; entries: ActiveExerciseDraft[]; blocks: { position: number; series: string }[] };
+export type ActiveDayDraft = EditingDay & { originalName: string };
 export function activeRoutineDraft(days: RoutineDay[]): ActiveDayDraft[] {
+  const toDraft = (exercise: RoutineExercise): ActiveExerciseDraft => ({ ...exerciseToForm(exercise), original: exercise });
   return days.map(day => {
-    if (!day.id || day.exercises.some(e => !e.id)) throw new Error('Actualizá la ficha para editar los ejercicios.');
-    return { id: day.id, name: day.name || `Día ${day.position}`, blocks: groupRoutineBlocks(day.exercises).filter(b => b.position > 0).map(b => ({ position: b.position, series: b.series ?? '' })), entries: day.exercises.map(e => ({ key: e.id!, original: e, exercise: exerciseToForm(e), blockPosition: e.blockPosition ?? null })) };
+    if (!day.id || day.exercises.some(exercise => !exercise.id)) throw new Error('Actualizá la ficha para editar los ejercicios.');
+    const name = day.name ?? '';
+    const grouped = isGroupedDay(day.exercises);
+    return {
+      key: day.id, name, originalName: name,
+      exercises: grouped ? [] : day.exercises.map(toDraft),
+      blocks: grouped ? groupRoutineBlocks(day.exercises).map(block => ({
+        key: crypto.randomUUID(), series: block.series ?? '', exercises: block.exercises.map(toDraft),
+      })) : null,
+    };
   });
 }
+
 export function activeDraftToInput(days: ActiveDayDraft[]): import('@athleta/api-client').UpdateActiveRoutineExercisesDto {
-  return { days: days.map(day => ({ id: day.id, exercises: day.entries.map(entry => {
-    if (entry.original) return { id: entry.original.id! };
-    const parsed = exerciseSchema.parse(entry.exercise);
-    return { exerciseDefinitionId: parsed.exerciseDefinitionId, blockPosition: entry.blockPosition, series: parsed.series || null, repetitions: parsed.repetitions || null, duration: parsed.duration || null, load: parsed.load || null, rest: parsed.rest || null, notes: parsed.notes || null };
-  }) })) };
+  return { days: days.map((day, index) => ({
+    id: day.key,
+    ...(day.name.trim() !== day.originalName.trim() ? { name: day.name.trim() } : {}),
+    exercises: draftDayExercises(day, index).map(exercise => {
+      const input = serializeExercise(exercise);
+      const original = exercise.original;
+      if (!original) return input;
+
+      const changes: import('@athleta/api-client').ActiveRoutineExerciseDto = { id: original.id! };
+      if (exercise.blockPosition !== undefined && exercise.blockPosition !== original.blockPosition) changes.blockPosition = exercise.blockPosition;
+      for (const field of ['series', 'repetitions', 'duration', 'load', 'rest', 'notes'] as const) {
+        const value = input[field] ?? null;
+        if (value !== (original[field]?.trim() || null)) changes[field] = value;
+      }
+      return changes;
+    }),
+  })) };
 }
+
 export function ActiveRoutineExercisesEditor({ days, onChange, disabled, ...catalogProps }: ExerciseCatalogProps & { days: ActiveDayDraft[]; onChange: (days: ActiveDayDraft[]) => void; disabled: boolean }): React.JSX.Element {
-  const [target, setTarget] = useState<{ id: string; block: number | null } | null>(null);
-  const update = (id: string, entries: ActiveExerciseDraft[]) => onChange(days.map(d => d.id === id ? { ...d, entries } : d));
-  return <div className="mt-4 min-w-0 space-y-4">{days.map(day => <section key={day.id} className="min-w-0 rounded-md border p-3">
-    <h5 className="font-semibold">{day.name}</h5>
-    {(day.blocks.length ? day.blocks : [{ position: null, series: '' }]).map(block => <section key={block.position ?? 'legacy'} className="mt-3">
-      {block.position ? <h6 className="font-medium">Bloque {blockLabel(block.position)} — {block.series} series</h6> : null}
-      <ul className="divide-y">{day.entries.filter(e => e.blockPosition === block.position).map(entry => entry.original ? <li key={entry.key} className="flex min-w-0 flex-wrap items-center justify-between gap-2 py-3"><div className="min-w-0 break-words"><p className="font-medium">{displayExercise(entry.original, catalogProps.definitions)}</p><p className="text-sm">{[entry.original.series && `${entry.original.series} series`, formatRoutineRepetitions(entry.original.repetitions), formatRoutineDuration(entry.original.duration), entry.original.load, entry.original.rest, entry.original.notes].filter(Boolean).join(' · ')}</p></div><Button type="button" variant="ghost" disabled={disabled} onClick={() => update(day.id, day.entries.filter(e => e.key !== entry.key))}>Quitar</Button></li> :
-        <ExerciseRow key={entry.key} exercise={entry.exercise} definitions={catalogProps.definitions} disabled={disabled} showSeries={block.position === null} onChange={exercise => update(day.id, day.entries.map(e => e.key === entry.key ? { ...e, exercise } : e))} onRemove={() => update(day.id, day.entries.filter(e => e.key !== entry.key))}/>)}</ul>
-      <Button type="button" variant="secondary" disabled={disabled} onClick={() => setTarget({ id: day.id, block: block.position })}>+ Agregar ejercicio{block.position ? ` al bloque ${blockLabel(block.position)}` : ''}</Button>
-      {target?.id === day.id && target.block === block.position ? <div className="@container mt-3"><ExerciseCatalog {...catalogProps} inline disabled={disabled} dayName={day.name} onAdd={definition => update(day.id, [...day.entries, { key: crypto.randomUUID(), exercise: { ...emptyExercise(), exerciseDefinitionId: definition.id, series: block.series }, blockPosition: block.position }])}/></div> : null}
-    </section>)}
-  </section>)}</div>;
+  const [target, setTarget] = useState<OpenCatalogTarget>(null);
+  return <div className="mt-4 min-w-0 space-y-4">{days.map((day, index) => {
+    const openBlockKey = target?.dayKey === day.key ? target.blockKey : null;
+    const changeDay = (updated: EditingDay) => onChange(days.map(item => item.key === day.key ? { ...updated, originalName: item.originalName } : item));
+    const toggleCatalog = (blockKey: string) => setTarget(openBlockKey === blockKey ? null : { dayKey: day.key, blockKey });
+    const catalog = openBlockKey ? <ExerciseCatalog {...catalogProps} key={openBlockKey} inline disabled={disabled} dayName={day.name} onAdd={definition => {
+      const exercise = { ...emptyExercise(), exerciseDefinitionId: definition.id };
+      changeDay(day.blocks === null ? { ...day, exercises: [...day.exercises, exercise] } : {
+        ...day, blocks: day.blocks.map(block => block.key === openBlockKey ? { ...block, exercises: [...block.exercises, exercise] } : block),
+      });
+    }}/> : null;
+    return <section key={day.key} className="min-w-0 rounded-md border p-3">
+      <DayEditor className="" day={day} index={index} definitions={catalogProps.definitions} disabled={disabled} canRemove={false} onChange={changeDay} openBlockKey={openBlockKey} onToggleCatalog={toggleCatalog} catalog={catalog}/>
+      {day.blocks === null ? <div className="mt-3">
+        <Button type="button" variant="secondary" disabled={disabled} aria-expanded={openBlockKey === day.key} onClick={() => toggleCatalog(day.key)}>+ Agregar ejercicio</Button>
+        {catalog}
+      </div> : null}
+    </section>;
+  })}</div>;
 }
