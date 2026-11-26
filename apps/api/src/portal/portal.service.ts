@@ -71,15 +71,13 @@ export class PortalService {
   async trainingCorrect(token: string | undefined, id: string, input: CorrectTrainingRecordDto) { const { person } = await this.ready(token); return this.training.correct(person.id, id, input); }
   async sala(token?: string) {
     const { person } = await this.ready(token);
-    const participation = await this.prisma.salaParticipation.findFirst({ where: { personId: person.id, endDate: null } });
+    const participation = await this.prisma.salaParticipation.findFirst({ where: { personId: person.id, endDate: null }, select: { plan: { select: { isOnline: true } } } });
     if (!participation) throw new ForbiddenException({ code: 'SALA_NOT_AVAILABLE', message: 'Sala no disponible.' });
     const today = this.todayOperational();
-    const candidates = await this.prisma.oneOffReservation.findMany({ where: { personId: person.id, date: { gte: new Date(`${today}T00:00:00.000Z`) } }, include: { serviceType: true, scheduleSlot: { select: { startTime: true } } }, orderBy: [{ date: 'asc' }, { startTime: 'asc' }] });
-    const now = this.reservationNow();
-    const reservations = candidates.filter(item => this.salaService.operationalStart(item.date.toISOString().slice(0, 10), item.startTime ?? item.scheduleSlot.startTime) > now).slice(0, 20).map(({ scheduleSlot, ...item }) => ({ ...item, startTime: item.startTime ?? scheduleSlot.startTime }));
-    const fixed = await this.prisma.fixedSalaBooking.findMany({ where: { personId: person.id }, include: { scheduleSlot: true, serviceType: true }, orderBy: { startDate: 'asc' } });
-    const dates = Array.from({ length: 31 }, (_, index) => { const day = new Date(`${today}T00:00:00.000Z`); day.setUTCDate(day.getUTCDate() + index); return day.toISOString().slice(0, 10); });
-    const fixedOccurrences = (await this.salaService.fixedOccurrenceStates(person.id, dates)).filter(item => this.salaService.operationalStart(item.date, new Date(`1970-01-01T${item.startTime}:00Z`)) > now);
+    const isOnline = participation.plan.isOnline;
+    const bookings = isOnline
+      ? { reservations: [], fixed: [], fixedOccurrences: [], validity: null, replacementWeeks: [] }
+      : await this.salaBookings(person.id, today);
     const routineVersions = await this.prisma.routine.findMany({
       where: { personId: person.id, effectiveFrom: { lte: new Date(`${today}T00:00:00Z`) } },
       select: { id: true, version: true, effectiveFrom: true, cancelledAt: true },
@@ -100,13 +98,23 @@ export class PortalService {
       },
     }) : null;
     const evaluations = await this.prisma.physicalEvaluation.findMany({ where: { personId: person.id }, select: { id: true, evaluationDate: true, results: { select: { resultText: true, testDefinition: { select: { id: true, name: true } } }, orderBy: { id: 'asc' } } }, orderBy: [{ evaluationDate: 'asc' }, { id: 'asc' }] });
-    const validity = await this.salaService.validity(person.id, today);
-    const replacementWeeks = await this.salaService.listPortalReplacementWeeks(person.id, today);
-    return { reservations, fixed, fixedOccurrences, routine: routine ? { ...routine, status: 'ACTIVE' as const } : null, evaluations, validity, replacementWeeks };
+    return { isOnline, ...bookings, routine: routine ? { ...routine, status: 'ACTIVE' as const } : null, evaluations };
+  }
+
+  private async salaBookings(personId: string, today: string) {
+    const candidates = await this.prisma.oneOffReservation.findMany({ where: { personId, date: { gte: new Date(`${today}T00:00:00.000Z`) } }, include: { serviceType: true, scheduleSlot: { select: { startTime: true } } }, orderBy: [{ date: 'asc' }, { startTime: 'asc' }] });
+    const now = this.reservationNow();
+    const reservations = candidates.filter(item => this.salaService.operationalStart(item.date.toISOString().slice(0, 10), item.startTime ?? item.scheduleSlot.startTime) > now).slice(0, 20).map(({ scheduleSlot, ...item }) => ({ ...item, startTime: item.startTime ?? scheduleSlot.startTime }));
+    const fixed = await this.prisma.fixedSalaBooking.findMany({ where: { personId }, include: { scheduleSlot: true, serviceType: true }, orderBy: { startDate: 'asc' } });
+    const dates = Array.from({ length: 31 }, (_, index) => { const day = new Date(`${today}T00:00:00.000Z`); day.setUTCDate(day.getUTCDate() + index); return day.toISOString().slice(0, 10); });
+    const fixedOccurrences = (await this.salaService.fixedOccurrenceStates(personId, dates)).filter(item => this.salaService.operationalStart(item.date, new Date(`1970-01-01T${item.startTime}:00Z`)) > now);
+    const validity = await this.salaService.validity(personId, today);
+    const replacementWeeks = await this.salaService.listPortalReplacementWeeks(personId, today);
+    return { reservations, fixed, fixedOccurrences, validity, replacementWeeks };
   }
   async salaServices(token?: string) { const { person } = await this.ready(token); return this.salaService.listPersonServiceTypes(person.id); }
   async salaAvailability(token: string|undefined, date: string, excludeFixedBookingId?: string) { const { person } = await this.ready(token); if (date < this.todayOperational()) throw new BadRequestException({ code: 'PORTAL_DATE_OUT_OF_RANGE', message: 'No podés consultar fechas pasadas.' }); if (excludeFixedBookingId) { const owned = await this.prisma.fixedSalaBooking.findFirst({ where: { id: excludeFixedBookingId, personId: person.id }, select: { id: true } }); if (!owned) throw new ForbiddenException({ code: 'PORTAL_RESOURCE_FORBIDDEN', message: 'No podés consultar este turno.' }); } return (await this.salaService.availability(date, this.prisma, excludeFixedBookingId)).map(slot => ({ scheduleSlotId: slot.scheduleSlotId, startTime: slot.startTime, endTime: slot.endTime, available: slot.available > 0 && !slot.isClosed, date: slot.date })); }
-  async reserve(token: string|undefined, body: { date: string; scheduleSlotId: string; serviceTypeId?: string; startTime?: string }) { const { person } = await this.ready(token); const p = await this.prisma.salaParticipation.findFirst({ where: { personId: person.id, endDate: null } }); if (!p) throw new ForbiddenException({ code: 'SALA_NOT_AVAILABLE', message: 'Sala no disponible.' }); const date = new Date(`${body.date}T00:00:00.000Z`); const today = new Date(`${this.todayOperational()}T00:00:00.000Z`); const max = new Date(today); max.setUTCDate(max.getUTCDate()+30); if (Number.isNaN(date.getTime()) || date < today || date > max) throw new BadRequestException({ code: 'PORTAL_DATE_OUT_OF_RANGE', message: 'Las reservas están disponibles hasta 30 días.' }); await this.assertSalaReservationValidity(person.id, date); return this.salaService.createReservation({ personId: person.id, salaParticipationId: p.id, scheduleSlotId: body.scheduleSlotId, date: body.date, ...(body.serviceTypeId ? { serviceTypeId: body.serviceTypeId } : {}), ...(body.startTime ? { startTime: body.startTime } : {}) }, resolved => {
+  async reserve(token: string|undefined, body: { date: string; scheduleSlotId: string; serviceTypeId?: string; startTime?: string }) { const { person } = await this.ready(token); const p = await this.prisma.salaParticipation.findFirst({ where: { personId: person.id, endDate: null }, select: { id: true, plan: { select: { isOnline: true } } } }); if (!p) throw new ForbiddenException({ code: 'SALA_NOT_AVAILABLE', message: 'Sala no disponible.' }); this.salaService.assertInPersonBooking(p.plan.isOnline); const date = new Date(`${body.date}T00:00:00.000Z`); const today = new Date(`${this.todayOperational()}T00:00:00.000Z`); const max = new Date(today); max.setUTCDate(max.getUTCDate()+30); if (Number.isNaN(date.getTime()) || date < today || date > max) throw new BadRequestException({ code: 'PORTAL_DATE_OUT_OF_RANGE', message: 'Las reservas están disponibles hasta 30 días.' }); await this.assertSalaReservationValidity(person.id, date); return this.salaService.createReservation({ personId: person.id, salaParticipationId: p.id, scheduleSlotId: body.scheduleSlotId, date: body.date, ...(body.serviceTypeId ? { serviceTypeId: body.serviceTypeId } : {}), ...(body.startTime ? { startTime: body.startTime } : {}) }, resolved => {
       const startsAt = this.salaService.operationalStart(body.date, resolved.startTime);
       if (startsAt.getTime() + resolved.durationMinutes * 60_000 - this.reservationNow().getTime() < 20 * 60_000) throw new BadRequestException({ code: 'PORTAL_SALA_TIME_PASSED', message: 'Ese horario ya no admite reservas porque quedan menos de 20 minutos de actividad. Elegí otro horario.' });
     }, { requirePortalReplacement: true }); }

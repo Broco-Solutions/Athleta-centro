@@ -10,6 +10,7 @@ import { AppModule } from '../src/app.module';
 import { InternalUserService } from '../src/team/internal-user.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
+import { AuthRateLimitService } from '../src/auth/auth-rate-limit.service';
 import { PortalService } from '../src/portal/portal.service';
 import { SalaService } from '../src/sala/sala.service';
 
@@ -30,6 +31,8 @@ describe('Portal Sala services from the current plan', () => {
   let operationalDate: jest.SpyInstance<string, []>;
 
   beforeEach(() => {
+    // Keep unrelated fixture requests from accumulating against the same test IP.
+    app.get(AuthRateLimitService)['generalBuckets'].clear();
     // A local seam controls only Portal's date rules, leaving sessions and timers alone.
     operationalDate = jest.spyOn(app.get(PortalService) as unknown as { todayOperational(): string }, 'todayOperational').mockReturnValue('2026-10-16');
     reservationNow = jest.spyOn(app.get(PortalService) as unknown as { reservationNow(): Date }, 'reservationNow').mockImplementation(() => new Date(`${operationalDate.getMockImplementation()?.()}T11:00:00Z`));
@@ -57,6 +60,7 @@ describe('Portal Sala services from the current plan', () => {
       await prisma.fixedSalaBooking.deleteMany({ where: { personId } });
       await prisma.session.deleteMany({ where: { personId } });
       await prisma.salaCharge.deleteMany({ where: { personId } });
+      await prisma.salaTrainingRecord.deleteMany({ where: { personId } });
       await prisma.routine.deleteMany({ where: { personId } });
       await prisma.physicalTestResult.deleteMany({ where: { evaluation: { personId } } });
       await prisma.physicalEvaluation.deleteMany({ where: { personId } });
@@ -82,14 +86,16 @@ describe('Portal Sala services from the current plan', () => {
   });
   afterAll(() => app.close());
 
-  async function fixture(date = '2026-10-20', withReplacement = false) {
+  async function fixture(date = '2026-10-20', withReplacement = false, isOnline = false) {
     const suffix = crypto.randomUUID();
     const professor = await users.create({ firstName: 'Portal', lastName: 'Profesor', email: `portal-sala-${suffix}@test.local`, roles: [Role.PROFESSOR] });
     professorId = professor.id;
     const muscle = await sala.createServiceType({ name: 'Musculación', durationMinutes: 60 });
     const calisthenics = await sala.createServiceType({ name: 'Calistenia', durationMinutes: 60 });
     serviceIds = [muscle.id, calisthenics.id];
-    const plan = await sala.createPlan({ name: `Plan Base ${suffix}`, monthlyAmount: 20000, weeklySessions: 5, serviceTypeIds: [muscle.id] });
+    const plan = await sala.createPlan(isOnline
+      ? { name: `Plan remoto ${suffix}`, isOnline: true }
+      : { name: `Plan Base ${suffix}`, monthlyAmount: 20000, weeklySessions: 5, serviceTypeIds: [muscle.id] });
     planId = plan.id;
     const dni = `${Date.now()}`.slice(-10);
     const person = await prisma.person.create({ data: { firstName: 'Portal', lastName: 'Alumno sintético', dni, normalizedDni: dni, phone: '3515550000', birthDate: new Date('1990-01-01'), portalCredential: { create: { pinHash: await argon2.hash('1111', { type: argon2.argon2id }), mustChangePin: false } } } });
@@ -174,6 +180,41 @@ describe('Portal Sala services from the current plan', () => {
       coverageStartDate: day, coverageEndDate: sala.addCalendarMonthClamped(day), paidAt: new Date('2000-01-01'), amount: 1, paymentMethodId, registeredById: professorId, operationId: crypto.randomUUID(),
     } });
   }
+  it('lets an Online student train and review weights without payment or turns', async () => {
+    const f = await fixture('2026-10-20', false, true);
+    const exercise = await sala.createExerciseDefinition({ name: 'Remo Online', requiresWeight: true });
+    exerciseDefinitionIds.push(exercise.id);
+    const routine = await sala.replaceRoutine({ personId, salaParticipationId: f.participation.id, effectiveFrom: '2026-10-16', days: [{ exercises: [{ exerciseDefinitionId: exercise.id }] }] });
+    const day = routine.days[0]!;
+    const get = (path: string) => request(app.getHttpServer()).get('/api/portal/sala' + path).set('Cookie', f.cookie);
+    const home = await get('').expect(200);
+    expect(home.body.data).toMatchObject({ isOnline: true, validity: null, fixed: [], fixedOccurrences: [], reservations: [], replacementWeeks: [], routine: { id: routine.id, status: 'ACTIVE' } });
+    await get('/training-context?date=2026-10-16').expect(200);
+    const weeks = Array.from({ length: 4 }, (_, index) => ({ weekNumber: index + 1, exercises: [{ id: day.exercises[0]!.id, weightKg: String(30 + index) }] }));
+    await request(app.getHttpServer()).put('/api/portal/sala/training-records/monthly').set('Cookie', f.cookie).set('x-csrf-token', f.csrf).send({ routineId: routine.id, routineDayId: day.id, month: '2026-10', weeks }).expect(200);
+    const history = (await get('/training-records/month?month=2026-10').expect(200)).body.data;
+    expect(history).toHaveLength(4);
+    expect(history).toEqual(expect.arrayContaining([expect.objectContaining({ weekNumber: 4, exercises: [expect.objectContaining({ weightKg: '33' })] })]));
+    const booking = await request(app.getHttpServer()).post('/api/portal/sala/reservations').set('Cookie', f.cookie).set('x-csrf-token', f.csrf).send({ date: f.body.date, scheduleSlotId: f.body.scheduleSlotId, startTime: '09:00' }).expect(400);
+    expect(booking.body.code).toBe('SALA_ONLINE_NO_IN_PERSON_BOOKING');
+    expect(await prisma.salaPayment.count({ where: { personId } })).toBe(0);
+    expect(await prisma.oneOffReservation.count({ where: { personId } })).toBe(0);
+
+    const salaDate = jest.spyOn(sala as unknown as { todayOperational(): string }, 'todayOperational');
+    try {
+      for (const [date, remaining] of [['2026-11-12', 1], ['2026-11-13', 0], ['2026-11-19', 0]] as const) {
+        salaDate.mockReturnValue(date);
+        operationalDate.mockReturnValue(date);
+        expect((await get('').expect(200)).body.data.routine).toMatchObject({ id: routine.id, status: 'ACTIVE' });
+        expect((await sala.listStudents()).find(student => student.id === personId)).toMatchObject({
+          routineStatus: 'ACTIVE', routineChangeInDays: remaining, routineTrainingComplete: true,
+        });
+      }
+    } finally {
+      salaDate.mockRestore();
+    }
+  });
+
   it('keeps the current routine in the Portal through the four-week review and until replacement', async () => {
     const f = await fixture();
     const exercise = await sala.createExerciseDefinition({ name: `Remo ${crypto.randomUUID()}` });

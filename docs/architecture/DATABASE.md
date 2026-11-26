@@ -596,6 +596,18 @@ ENDED  = endDate IS NOT NULL
 
 ---
 
+### Modalidad del plan
+
+`SalaPlan.isOnline` identifica el entrenamiento Online. La migración agrega la
+columna `is_online` con valor predeterminado `false`. La administración configura
+los planes Online desde el catálogo de Sala. Sus condiciones internas son importe
+cero, sesiones semanales nulas y ausencia de servicios de reserva. Los cobros se
+gestionan fuera de Athleta Manager.
+
+La participación conserva su relación obligatoria con el plan. Una vez que el
+plan tiene asignaciones o historial, su modalidad permanece fija. Los cambios
+de plan de una participación deben conservar la modalidad.
+
 ### Objetivo de Sala
 
 `SalaParticipation.objective` es nullable, `VARCHAR(500)`, breve y opcional.

@@ -94,10 +94,12 @@ export class SalaService {
         }
         return existing;
       }
-      const participation = await tx.salaParticipation.findFirst({ where: { personId: input.personId, endDate: null } });
+      const participation = await tx.salaParticipation.findFirst({ where: { personId: input.personId, endDate: null }, include: { plan: true } });
       if (!participation) throw new BadRequestException({ code: 'SALA_PARTICIPATION_REQUIRED', message: 'Se necesita una participación activa de Sala para registrar pagos.' });
+      this.assertInternalBilling(participation.plan.isOnline);
+      const plan = await this.selectPlanForAssignment(tx, input.planId);
+      this.assertInternalBilling(plan?.isOnline);
       await this.assertPaymentMethodSelectable(tx, input.paymentMethodId);
-      const plan = await tx.salaPlan.findUnique({ where: { id: input.planId } });
       if (!plan?.isSelectable) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'El Plan ya no está disponible.' });
       if (!canManagePayment && (!amount.equals(plan.monthlyAmount) || input.adjustmentReason?.trim())) throw new ForbiddenException({ code: 'SALA_PAYMENT_AMOUNT_ADJUSTMENT_FORBIDDEN', message: 'La renovación debe utilizar el precio actual del Plan, sin ajustes.' });
       if (canManagePayment) this.validatePaymentAdjustment(amount, plan.monthlyAmount, input.adjustmentReason);
@@ -118,6 +120,20 @@ export class SalaService {
     });
     return this.paymentResponse(payment);
   }
+  private assertInternalBilling(isOnline: boolean | undefined): void {
+    if (isOnline) throw new BadRequestException({
+      code: 'SALA_ONLINE_EXTERNAL_BILLING',
+      message: 'Los cobros de alumnos online se gestionan fuera de Athleta Manager.',
+    });
+  }
+
+  assertInPersonBooking(isOnline: boolean): void {
+    if (isOnline) throw new BadRequestException({
+      code: 'SALA_ONLINE_NO_IN_PERSON_BOOKING',
+      message: 'La modalidad Online no utiliza turnos presenciales.',
+    });
+  }
+
   private validatePaymentAdjustment(amount: Prisma.Decimal, proposedAmount: Prisma.Decimal, reason?: string): void {
     if (!amount.equals(proposedAmount) && !reason?.trim()) {
       throw new BadRequestException({ code: 'SALA_PAYMENT_ADJUSTMENT_REASON_REQUIRED', message: 'Indicá un motivo de ajuste cuando el importe difiere del precio actual del Plan.' });
@@ -154,11 +170,23 @@ export class SalaService {
   async createOpeningBalance(input: { personId: string; chargeDate: string; amount: string; concept?: string; reason: string; operationId: string }, actorId: string) {
     const amount = this.positiveMoney(input.amount, 'SALA_CHARGE_AMOUNT_INVALID');
     const reason = this.requiredReason(input.reason);
-    const existing = await this.prisma.salaCharge.findUnique({ where: { operationId: input.operationId }, include: { adjustments: true, allocations: true } });
-    if (existing) return existing;
-    const person = await this.prisma.person.findUnique({ where: { id: input.personId }, select: { id: true } });
-    if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
-    return this.prisma.salaCharge.create({ data: { personId: input.personId, kind: SalaChargeKind.OPENING_BALANCE, chargeDate: this.date(input.chargeDate), concept: input.concept?.trim() || `Saldo inicial: ${reason}`, amount, operationId: input.operationId, createdById: actorId }, include: { adjustments: true, allocations: true } });
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockPaymentPerson(tx, input.personId);
+      const existing = await tx.salaCharge.findUnique({ where: { operationId: input.operationId }, include: { adjustments: true, allocations: true } });
+      if (existing) return existing;
+      const person = await tx.person.findUnique({ where: { id: input.personId }, select: { id: true } });
+      if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
+      const chargeDate = this.date(input.chargeDate);
+      const online = await tx.salaParticipation.findFirst({
+        where: {
+          personId: input.personId, plan: { isOnline: true },
+          OR: [{ endDate: null }, { startDate: { lte: chargeDate }, endDate: { gte: chargeDate } }],
+        },
+        select: { id: true },
+      });
+      this.assertInternalBilling(Boolean(online));
+      return tx.salaCharge.create({ data: { personId: input.personId, kind: SalaChargeKind.OPENING_BALANCE, chargeDate, concept: input.concept?.trim() || `Saldo inicial: ${reason}`, amount, operationId: input.operationId, createdById: actorId }, include: { adjustments: true, allocations: true } });
+    });
   }
   async adjustCharge(id: string, input: { amount: string; reason: string; operationId: string }, actorId: string) {
     const amount = this.signedMoney(input.amount, 'SALA_CHARGE_ADJUSTMENT_AMOUNT_INVALID');
@@ -233,13 +261,14 @@ export class SalaService {
     return plans.map((plan) => this.mapPlanServices(plan));
   }
   async createPlan(input: PlanDto) {
+    const planTerms = this.planTerms(input, input.isOnline ?? false);
     await this.assertPlanNameAvailable(input.name);
     try {
       return await this.prisma.$transaction(async (tx) => {
         if (input.serviceTypeIds !== undefined) await this.assertPlanServicesAvailable(tx, input.serviceTypeIds);
         const plan = await tx.salaPlan.create({
           data: {
-            name: input.name.trim(), monthlyAmount: input.monthlyAmount, weeklySessions: input.weeklySessions, isSelectable: input.isSelectable ?? true,
+            name: input.name.trim(), ...planTerms, isSelectable: input.isSelectable ?? true,
             services: { create: (input.serviceTypeIds ?? []).map((serviceTypeId) => ({ serviceTypeId })) },
           },
           include: planServicesInclude,
@@ -255,13 +284,25 @@ export class SalaService {
     await this.assertPlanNameAvailable(input.name, id);
     try {
       return await this.prisma.$transaction(async (tx) => {
-        if (input.serviceTypeIds !== undefined) await this.assertPlanServicesAvailable(tx, input.serviceTypeIds);
+        await tx.$queryRaw`SELECT id FROM sala_plans WHERE id = ${id}::uuid FOR UPDATE`;
+        const current = await tx.salaPlan.findUniqueOrThrow({ where: { id } });
+        const isOnline = input.isOnline ?? current.isOnline;
+        if (isOnline !== current.isOnline) {
+          const used = await tx.salaPlan.findFirst({
+            where: { id, OR: [{ participations: { some: {} } }, { assignments: { some: {} } }, { payments: { some: {} } }, { charges: { some: {} } }] },
+            select: { id: true },
+          });
+          if (used) throw new ConflictException({ code: 'SALA_PLAN_MODALITY_IN_USE', message: 'No se puede cambiar la modalidad de un Plan con alumnos asignados o historial.' });
+        }
+        const planTerms = this.planTerms(input, isOnline);
+        const serviceTypeIds = isOnline ? [] : input.serviceTypeIds;
+        if (serviceTypeIds !== undefined) await this.assertPlanServicesAvailable(tx, serviceTypeIds);
         const plan = await tx.salaPlan.update({
           where: { id },
           data: {
-            name: input.name.trim(), monthlyAmount: input.monthlyAmount, weeklySessions: input.weeklySessions,
+            name: input.name.trim(), ...planTerms,
             ...(input.isSelectable !== undefined ? { isSelectable: input.isSelectable } : {}),
-            ...(input.serviceTypeIds !== undefined ? { services: { deleteMany: {}, create: input.serviceTypeIds.map((serviceTypeId) => ({ serviceTypeId })) } } : {}),
+            ...(serviceTypeIds !== undefined ? { services: { deleteMany: {}, create: serviceTypeIds.map((serviceTypeId) => ({ serviceTypeId })) } } : {}),
           },
           include: planServicesInclude,
         });
@@ -273,6 +314,24 @@ export class SalaService {
       throw error;
     }
   }
+  private planTerms(input: PlanDto, isOnline: boolean) {
+    if (isOnline) {
+      if ((input.monthlyAmount != null && input.monthlyAmount !== 0) || input.weeklySessions != null || input.serviceTypeIds?.length) {
+        throw new BadRequestException({ code: 'SALA_ONLINE_PLAN_INVALID', message: 'Un Plan Online debe tener importe interno cero y no admite sesiones ni servicios presenciales.' });
+      }
+      return { isOnline, monthlyAmount: 0, weeklySessions: null };
+    }
+    if (!Number.isInteger(input.monthlyAmount) || input.monthlyAmount == null || input.weeklySessions == null || !Number.isInteger(input.weeklySessions) || input.weeklySessions < 2 || input.weeklySessions > 5) {
+      throw new BadRequestException({ code: 'SALA_IN_PERSON_PLAN_INVALID', message: 'Indicá el importe mensual y entre 2 y 5 sesiones por semana.' });
+    }
+    return { isOnline, monthlyAmount: input.monthlyAmount, weeklySessions: input.weeklySessions };
+  }
+
+  private async selectPlanForAssignment(tx: Prisma.TransactionClient, planId: string) {
+    await tx.$queryRaw`SELECT id FROM sala_plans WHERE id = ${planId}::uuid FOR SHARE`;
+    return tx.salaPlan.findUnique({ where: { id: planId } });
+  }
+
   async retirePlan(id: string) { const plan = await this.prisma.salaPlan.findUnique({ where: { id }, select: { id: true } }); if (!plan) throw new NotFoundException({ code: 'SALA_PLAN_NOT_FOUND', message: 'Plan not found' }); return this.prisma.salaPlan.update({ where: { id }, data: { isSelectable: false } }); }
   async removeException(id: string) { try { return await this.prisma.salaScheduleException.delete({ where: { id } }); } catch { throw new NotFoundException({ code: 'SALA_EXCEPTION_NOT_FOUND', message: 'Exception not found' }); } }
   async listSlots() { return this.prisma.salaScheduleSlot.findMany({ where: { isActive: true }, include: { exceptions: true }, orderBy: [{ weekday: 'asc' }, { startTime: 'asc' }] }); }
@@ -324,7 +383,8 @@ export class SalaService {
   }
 
   private async joinWithinTransaction(tx: Prisma.TransactionClient, input: { personId: string; mainProfessorId: string; planId: string; startDate: string; paperHealthDeclarationSignedOn?: string | undefined }, actorId?: string) {
-    const [person, professor, plan] = await Promise.all([tx.person.findUnique({ where: { id: input.personId }, select: { id: true } }), tx.internalUser.findFirst({ where: { id: input.mainProfessorId, ...eligibleProfessorWhere }, select: { id: true } }), tx.salaPlan.findUnique({ where: { id: input.planId } })]);
+    await this.lockPaymentPerson(tx, input.personId);
+    const [person, professor, plan] = await Promise.all([tx.person.findUnique({ where: { id: input.personId }, select: { id: true } }), tx.internalUser.findFirst({ where: { id: input.mainProfessorId, ...eligibleProfessorWhere }, select: { id: true } }), this.selectPlanForAssignment(tx, input.planId)]);
     if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
     if (!professor) throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Professor is not eligible' });
     if (!plan || !plan.isSelectable) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'Plan is not selectable' });
@@ -430,9 +490,15 @@ export class SalaService {
   }
   async changeProfessor(id: string, mainProfessorId: string) { const professor = await this.prisma.internalUser.findUnique({ where: { id: mainProfessorId }, include: { roles: true } }); if (!professor || professor.status !== InternalUserStatus.ACTIVE || !professor.roles.some((role) => role.role === Role.PROFESSOR)) throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Professor is not eligible' }); return this.prisma.salaParticipation.update({ where: { id }, data: { mainProfessorId }, include: { plan: true, mainProfessor: true } }); }
   async changePlan(id: string, planId: string) {
-    const plan = await this.prisma.salaPlan.findUnique({ where: { id: planId } });
-    if (!plan || !plan.isSelectable) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'Plan is not selectable' });
-    return this.prisma.$transaction(tx => this.updateParticipationPlanWithinTransaction(tx, id, planId));
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockParticipations(tx, [id]);
+      const participation = await tx.salaParticipation.findUnique({ where: { id }, select: { plan: { select: { isOnline: true } } } });
+      if (!participation) throw new NotFoundException({ code: 'SALA_ACTIVE_PARTICIPATION_NOT_FOUND', message: 'Active participation not found' });
+      const plan = await this.selectPlanForAssignment(tx, planId);
+      if (!plan?.isSelectable) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'Plan is not selectable' });
+      if (participation.plan.isOnline !== plan.isOnline) throw new ConflictException({ code: 'SALA_PLAN_MODALITY_CHANGE', message: 'El nuevo Plan debe tener la misma modalidad que la participación.' });
+      return this.updateParticipationPlanWithinTransaction(tx, id, planId);
+    });
   }
   private async updateParticipationPlanWithinTransaction(tx: Prisma.TransactionClient, id: string, planId: string) {
     const today = this.date(this.todayOperational());
@@ -973,7 +1039,7 @@ export class SalaService {
         person: { select: {
           id: true, firstName: true, lastName: true, dni: true,
         } },
-        plan: { select: { id: true, name: true } },
+        plan: { select: { id: true, name: true, isOnline: true } },
         mainProfessor: { select: { id: true, firstName: true, lastName: true } },
         routines: { select: { id: true, version: true, effectiveFrom: true, cancelledAt: true } },
       },
@@ -987,7 +1053,7 @@ export class SalaService {
     const [completeRoutines, payments] = await Promise.all([
       this.training.completedRoutineIds(noticeRoutineIds),
       this.prisma.salaPayment.findMany({
-        where: { personId: { in: participations.map(item => item.person.id) }, reversal: null },
+        where: { personId: { in: participations.filter(item => !item.plan.isOnline).map(item => item.person.id) }, reversal: null },
         select: { personId: true, coverageStartDate: true, coverageEndDate: true, paidAt: true },
         orderBy: { paidAt: 'desc' },
       }),
@@ -1024,7 +1090,7 @@ export class SalaService {
         select: { personId: true, routines: { select: { id: true, version: true, effectiveFrom: true, cancelledAt: true } } }, orderBy: { personId: 'asc' },
       }),
       this.prisma.salaParticipation.findMany({
-        where: { endDate: null, person: { salaPayments: { none: { coverageStartDate: { lte: this.date(today) }, coverageEndDate: { gte: this.date(today) }, reversal: null } } } },
+        where: { endDate: null, plan: { isOnline: false }, person: { salaPayments: { none: { coverageStartDate: { lte: this.date(today) }, coverageEndDate: { gte: this.date(today) }, reversal: null } } } },
         select: { personId: true }, orderBy: { personId: 'asc' },
       }),
     ]);
@@ -1102,9 +1168,10 @@ export class SalaService {
       manual: 'No pudimos registrar automáticamente tu asistencia. Consultá con un profesor.',
     };
     const activeParticipation = person
-      ? await this.prisma.salaParticipation.findFirst({ where: { personId: person.id, endDate: null }, select: { id: true } })
+      ? await this.prisma.salaParticipation.findFirst({ where: { personId: person.id, endDate: null }, select: { id: true, plan: { select: { isOnline: true } } } })
       : null;
     if (!person || !activeParticipation) return denied('NOT_FOUND', messages.notFound);
+    if (activeParticipation.plan.isOnline) return denied('NO_BOOKING', 'La modalidad Online no utiliza turnos presenciales.');
     const groups = await this.agenda(date);
     const entries = groups.flatMap((group) => group.people).filter((entry) => entry.personId === person.id);
     const unique = [...new Map(entries.map((entry) => [`${entry.origin}:${entry.sourceId}`, entry])).values()];
@@ -1187,7 +1254,7 @@ export class SalaService {
   }
   async getSpontaneousOptions(personId: string, date: string) {
     const resolved = await this.spontaneousParticipation(this.prisma, personId, date);
-    if (!resolved) return { eligible: false, services: [] };
+    if (!resolved || resolved.plan.isOnline) return { eligible: false, services: [] };
     const links = await this.prisma.salaPlanService.findMany({ where: { planId: resolved.plan.id, serviceType: { isSelectable: true } }, include: { serviceType: { select: { id: true, name: true, durationMinutes: true } } }, orderBy: { serviceType: { name: 'asc' } } });
     return { eligible: true, participationId: resolved.participation.id, plan: { id: resolved.plan.id, name: resolved.plan.name }, mainProfessor: resolved.participation.mainProfessor, services: links.map((link) => link.serviceType) };
   }
@@ -1218,6 +1285,7 @@ export class SalaService {
     if (input.date > this.todayOperational()) throw new BadRequestException({ code: 'SALA_SPONTANEOUS_FUTURE_NOT_ALLOWED', message: 'La incorporación espontánea sólo puede registrarse para hoy o una fecha pasada.' });
     const initialParticipation = await this.spontaneousParticipation(tx, input.personId, input.date);
     if (!initialParticipation) throw new BadRequestException({ code: 'SALA_PARTICIPATION_REQUIRED', message: 'La Persona no tiene una participación válida de Sala para esa fecha.' });
+    this.assertInPersonBooking(initialParticipation.plan.isOnline);
     await this.lockParticipations(tx, [initialParticipation.participation.id]);
     const day = this.date(input.date);
     await tx.$queryRaw`SELECT id FROM sala_schedule_slots WHERE id = ${input.scheduleSlotId}::uuid FOR UPDATE`;
@@ -1276,6 +1344,8 @@ export class SalaService {
       ]);
       if (!slot) throw new NotFoundException({ code: 'SALA_OCCURRENCE_SLOT_INVALID', message: 'Schedule occurrence not found' });
       if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
+      const participation = await this.spontaneousParticipation(tx, input.personId, input.date);
+      this.assertInPersonBooking(participation?.plan.isOnline ?? false);
       const candidateStarts = [...fixedBookings.map((item) => this.formatMinutes(this.minutes(item.startTime ?? slot.startTime))), ...reservations.map((item) => this.formatMinutes(this.minutes(item.startTime ?? slot.startTime))), ...occurrences.filter((item) => item.origin === SalaOccurrenceOrigin.SPONTANEOUS).map((item) => this.formatMinutes(this.minutes(item.startTime ?? slot.startTime)))];
       if (!input.startTime && !input.sourceId && new Set(candidateStarts).size > 1) throw new ConflictException({ code: 'SALA_OCCURRENCE_AMBIGUOUS', message: 'Indicá el horario de la actividad que querés corregir.' });
       const startTime = input.startTime ?? candidateStarts[0];
@@ -1485,11 +1555,12 @@ export class SalaService {
     const requestedDay = this.date(date);
     await tx.$queryRaw`SELECT id FROM sala_schedule_slots WHERE id = ${input.scheduleSlotId}::uuid FOR UPDATE`;
     const [participation, window, service] = await Promise.all([
-      tx.salaParticipation.findFirst({ where: { id: input.salaParticipationId, personId: input.personId, endDate: null } }),
+      tx.salaParticipation.findFirst({ where: { id: input.salaParticipationId, personId: input.personId, endDate: null }, include: { plan: { select: { isOnline: true } } } }),
       tx.salaScheduleSlot.findFirst({ where: { id: input.scheduleSlotId, isActive: true } }),
       input.serviceTypeId ? tx.salaServiceType.findFirst({ where: { id: input.serviceTypeId, isSelectable: true } }) : Promise.resolve(null),
     ]);
     if (!participation) throw new BadRequestException({ code: 'SALA_PARTICIPATION_REQUIRED', message: 'An active Sala participation is required' });
+    this.assertInPersonBooking(participation.plan.isOnline);
     if (!window) throw new NotFoundException({ code: 'SALA_SCHEDULE_NOT_FOUND', message: 'Opening window not found for this date' });
     const day = 'startDate' in input ? this.nextWeekday(requestedDay, window.weekday) : requestedDay;
     if (!('startDate' in input) && this.weekday(day) !== window.weekday) throw new NotFoundException({ code: 'SALA_SCHEDULE_NOT_FOUND', message: 'Opening window not found for this date' });

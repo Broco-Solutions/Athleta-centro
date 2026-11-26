@@ -19,7 +19,7 @@ const assignmentSchema = z.object({ planId: z.string().min(1, 'Seleccioná un Pl
 export const studentSchema = personSchema.extend(assignmentSchema.shape);
 export type StudentValues = z.infer<typeof studentSchema>;
 export type Notice = { pin: string; firstName: string; lastName: string; assignmentError?: string };
-type Plan = { id: string; name: string; isSelectable?: boolean };
+type Plan = { id: string; name: string; isSelectable?: boolean; isOnline?: boolean };
 const fieldClass = 'mt-1 h-10 w-full rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-ring';
 function checked<T>(response: { status: number; data: T }): T {
   if (response.status < 200 || response.status >= 300) throw Object.assign(new Error('No pudimos guardar los datos.'), { status: response.status, response: response.data });
@@ -46,11 +46,11 @@ export function StudentOnboarding({ csrfToken, canPlanManage, canCreate }: { csr
   </div>;
 }
 
-export function StudentTrainingFields({ form, canPlanManage }: { form: UseFormReturn<StudentValues>; canPlanManage: boolean }): React.JSX.Element {
+export function StudentTrainingFields({ form, canPlanManage, inPersonOnly = false }: { form: UseFormReturn<StudentValues>; canPlanManage: boolean; inPersonOnly?: boolean }): React.JSX.Element {
   const options = { credentials: 'include' } as const;
   const plans = useQuery({ queryKey: ['sala-plans'], queryFn: async () => checked(await listSalaPlans(options)).data as unknown as Plan[] });
   const professors = useQuery({ queryKey: ['sala-professors'], queryFn: async () => checked(await listSalaProfessors(options)).data });
-  const selectablePlans = plans.data?.filter((plan) => plan.isSelectable !== false) ?? [];
+  const selectablePlans = plans.data?.filter((plan) => plan.isSelectable !== false && (!inPersonOnly || !plan.isOnline)) ?? [];
   return <>
     <section className="border-t border-border pt-4 sm:col-span-2"><h3 className="mb-3 text-sm font-semibold">Entrenamiento</h3><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm">Plan<select aria-label="Plan" required className={fieldClass} {...form.register('planId')}><option value="">Seleccionar Plan</option>{selectablePlans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select><span className="text-xs text-red-700">{form.formState.errors.planId?.message}</span></label>
       <label className="text-sm">Profesor principal<select aria-label="Profesor principal" required className={fieldClass} {...form.register('mainProfessorId')}><option value="">Seleccionar Profesor</option>{professors.data?.map((professor) => <option key={professor.id} value={professor.id}>{professor.lastName}, {professor.firstName}</option>)}</select><span className="text-xs text-red-700">{form.formState.errors.mainProfessorId?.message}</span></label></div></section>

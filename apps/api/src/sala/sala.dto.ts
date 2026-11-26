@@ -9,8 +9,9 @@ export class CapacityDto { @ApiProperty({ type: Number, minimum: 1 }) @Type(() =
 export class UpdateSalaConfigurationDto extends CapacityDto {}
 export class PlanDto {
   @ApiProperty({ type: String }) @IsString() @MinLength(1) @MaxLength(120) name!: string;
-  @ApiProperty({ type: Number }) @Type(() => Number) @IsInt() monthlyAmount!: number;
-  @ApiProperty({ type: Number, minimum: 2, maximum: 5 }) @Type(() => Number) @IsInt() @Min(2) @Max(5) weeklySessions!: number;
+  @ApiPropertyOptional({ type: Boolean, default: false }) @IsOptional() @IsBoolean() isOnline?: boolean;
+  @ApiPropertyOptional({ type: Number }) @IsOptional() @Type(() => Number) @IsInt() monthlyAmount?: number;
+  @ApiPropertyOptional({ type: Number, minimum: 2, maximum: 5, nullable: true }) @IsOptional() @Type(() => Number) @IsInt() @Min(2) @Max(5) weeklySessions?: number | null;
   @ApiPropertyOptional({ type: [String], format: 'uuid', uniqueItems: true })
   @IsOptional() @IsArray() @ArrayUnique() @IsUUID(undefined, { each: true }) serviceTypeIds?: string[];
   @ApiPropertyOptional({ type: Boolean }) @IsOptional() isSelectable?: boolean;
@@ -202,6 +203,7 @@ export class SpontaneousStudentResponseDto {
 export class SpontaneousStudentEnvelopeDto { @ApiProperty({ type: () => SpontaneousStudentResponseDto }) data!: SpontaneousStudentResponseDto; }
 
 export class SalaStudentPlanDto {
+  @ApiProperty({ type: Boolean }) isOnline!: boolean;
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
   @ApiProperty({ type: String }) name!: string;
 }
@@ -340,11 +342,28 @@ export class SalaRoutineListEnvelopeDto {
   @ApiProperty({ type: () => [SalaRoutineResponseDto] }) data!: SalaRoutineResponseDto[];
 }
 export class SalaParticipationPlanResponseDto {
+  @ApiProperty({ type: Boolean }) isOnline!: boolean;
   @ApiProperty({ type: String }) id!: string;
   @ApiProperty({ type: String }) name!: string;
   @ApiProperty({ type: Number, nullable: true }) weeklySessions!: number | null;
   @ApiProperty({ type: String }) monthlyAmount!: string;
 }
+export class SalaCatalogServiceResponseDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String }) name!: string;
+  @ApiProperty({ type: Number }) durationMinutes!: number;
+  @ApiProperty({ type: Boolean }) isSelectable!: boolean;
+}
+
+export class SalaCatalogPlanResponseDto extends SalaParticipationPlanResponseDto {
+  @ApiProperty({ type: Boolean }) isSelectable!: boolean;
+  @ApiProperty({ type: () => [SalaCatalogServiceResponseDto] }) services!: SalaCatalogServiceResponseDto[];
+}
+
+export class SalaCatalogPlanListEnvelopeDto {
+  @ApiProperty({ type: () => [SalaCatalogPlanResponseDto] }) data!: SalaCatalogPlanResponseDto[];
+}
+
 export class SalaParticipationResponseDto {
   @ApiProperty({ type: String }) id!: string;
   @ApiProperty({ type: String }) personId!: string;

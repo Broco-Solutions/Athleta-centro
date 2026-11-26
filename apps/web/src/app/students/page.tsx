@@ -7,6 +7,7 @@ import { useSearchParams } from 'next/navigation';
 import { ListPagination, LIST_PAGE_SIZE } from '../../lib/list-pagination';
 import { Search } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { EnrollmentPlanFields } from '../../features/sala/enrollment-plan-fields';
 import { createSalaStudent, joinSala, listSalaPlans, listSalaProfessors, listSalaStudents, type SalaStudentListItemDto } from '@athleta/api-client';
 import { Button } from '@athleta/ui';
 import { currentSession } from '../../features/auth/auth';
@@ -15,7 +16,7 @@ import { WorkspaceShell } from '../../features/auth/workspace-shell';
 import { GeneralPersonFields, personSchema, personDefaults, personInput, type PersonValues } from '../../features/people/general-person-form';
 import { fetchPeople } from '../../features/people/people-api';
 import { ParticipationDialog } from '../../features/sala/participation-dialog';
-import { useForm } from 'react-hook-form';
+import { useWatch, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
@@ -58,6 +59,7 @@ function StudentsContent(): React.JSX.Element {
 function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.Element {
   const [filter, setFilter] = useState<Filter>(initialFilter);
   const [search, setSearch] = useState('');
+  const [modality, setModality] = useState('all');
   const [mine, setMine] = useState(false);
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
@@ -77,7 +79,9 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
     return response.data.data;
   } });
   const students = query.data ?? [];
-  const scopedStudents = mine ? students.filter(student => student.professor.id === session.data?.user.id) : students;
+  const scopedStudents = students.filter(student =>
+    (!mine || student.professor.id === session.data?.user.id) &&
+    (modality === 'all' || Boolean(student.plan.isOnline) === (modality === 'online')));
   const canSeeRoutineNotice = (student: SalaStudentListItemDto) => canRead && student.routineStatus === 'ACTIVE';
   const routineNotice = (student: SalaStudentListItemDto) => {
     if (!canSeeRoutineNotice(student)) return null;
@@ -93,7 +97,7 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
   const filtered = scopedStudents.filter((student) =>
     (`${student.firstName} ${student.lastName}`.toLocaleLowerCase('es').includes(term) || student.dni.includes(term)) &&
     (filter !== 'without-routine' || student.routineStatus === 'MISSING') &&
-    (filter !== 'without-validity' || !student.hasValidAccess) &&
+    (filter !== 'without-validity' || (!student.plan.isOnline && !student.hasValidAccess)) &&
     (!routineFilter || (canSeeRoutineNotice(student) && routineFilter.matches(student))));
   const effectivePage = Math.min(page, Math.max(1, Math.ceil(filtered.length / LIST_PAGE_SIZE)));
   const selectFilter = (value: Filter) => { setFilter(value); setPage(1); };
@@ -102,6 +106,11 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
     {notice ? <p role="status">{notice}</p> : null}
     <div className="space-y-3">
       <div className="relative w-full max-w-sm"><Search aria-hidden="true" size={17} className="pointer-events-none absolute left-3 top-3 text-muted-foreground" /><input aria-label="Buscar por nombre o DNI" placeholder="Buscar por nombre o DNI" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className="h-11 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" /></div>
+      <label className="inline-grid gap-1 text-sm">Modalidad
+        <select className={inputClass} value={modality} onChange={event => { setModality(event.target.value); setPage(1); }}>
+          <option value="all">Todos</option><option value="in-person">Presencial</option><option value="online">Online</option>
+        </select>
+      </label>
       <div role="group" aria-label="Filtrar alumnos" className="flex flex-wrap gap-2">{filters.map((item) => <Button key={item.value} variant={filter === item.value ? 'primary' : 'secondary'} aria-pressed={filter === item.value} onClick={() => selectFilter(item.value)}>{item.label}</Button>)}{isProfessor ? <Button variant={mine ? 'primary' : 'secondary'} aria-pressed={mine} onClick={() => { setMine(!mine); setPage(1); }}>Mis alumnos</Button> : null}</div>
       {query.isSuccess && session.isSuccess && canRead ? <p className="text-sm text-muted-foreground">{filtered.length} {filtered.length === 1 ? 'alumno' : 'alumnos'}</p> : null}
     </div>
@@ -122,11 +131,11 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
         return <tr key={student.id} className="grid min-w-0 rounded-md border border-border bg-surface py-3 xl:table-row xl:border-0 xl:border-t xl:py-0">
           <td className={`${cell} break-words font-medium`}>{student.firstName} {student.lastName}</td>
           <td className={cell}><span className={label}>DNI</span>{student.dni}</td>
-          <td className={`${cell} break-words`}><span className={label}>Plan:</span>{student.plan.name}</td>
+          <td className={`${cell} break-words`}><span className={label}>Plan:</span>{student.plan.name}<span className="block text-xs text-muted-foreground">{student.plan.isOnline ? 'Online' : 'Presencial'}</span></td>
           <td className={`${cell} break-words`}><span className={label}>Profesor:</span>{student.professor.firstName} {student.professor.lastName}</td>
           <td className={cell}><span className={label}>Rutina:</span><span className={badge(student.routineStatus === 'ACTIVE')}>{student.routineStatus === 'ACTIVE' ? 'Activa' : 'Sin rutina'}</span>{notice ? <p className={`mt-1 text-xs font-medium ${notice === 'complete' ? 'text-red-800' : 'text-amber-800'}`}>{noticeText}</p> : null}</td>
-          <td className={cell}><span className={label}>Vigencia:</span><span className={badge(student.hasValidAccess)}>{student.hasValidAccess ? `Vigente hasta ${student.validUntil?.split('-').reverse().join('/')}` : 'Sin vigencia'}</span></td>
-          <td className={cell}><div className="flex flex-wrap justify-end gap-2 xl:justify-start"><Link href={`/sala/people/${student.id}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:min-h-9">Ver ficha</Link>{canUseFinance || canRegister ? <Link href={canUseFinance ? `/finance?view=income&personId=${student.id}${!student.hasValidAccess ? '&action=renew' : ''}` : `/sala/people/${student.id}?tab=payments${!student.hasValidAccess ? '&action=renew' : ''}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted xl:min-h-9">{!student.hasValidAccess ? (canUseFinance ? 'Renovar' : 'Registrar renovación') : 'Ver pagos'}</Link> : null}</div></td>
+          <td className={cell}><span className={label}>Vigencia:</span>{student.plan.isOnline ? 'Cobro externo' : <span className={badge(student.hasValidAccess)}>{student.hasValidAccess ? `Vigente hasta ${student.validUntil?.split('-').reverse().join('/')}` : 'Sin vigencia'}</span>}</td>
+          <td className={cell}><div className="flex flex-wrap justify-end gap-2 xl:justify-start"><Link href={`/sala/people/${student.id}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:min-h-9">Ver ficha</Link>{!student.plan.isOnline && (canUseFinance || canRegister) ? <Link href={canUseFinance ? `/finance?view=income&personId=${student.id}${!student.hasValidAccess ? '&action=renew' : ''}` : `/sala/people/${student.id}?tab=payments${!student.hasValidAccess ? '&action=renew' : ''}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted xl:min-h-9">{!student.hasValidAccess ? (canUseFinance ? 'Renovar' : 'Registrar renovación') : 'Ver pagos'}</Link> : null}</div></td>
         </tr>;
       })}</tbody>
     </table>}
@@ -174,7 +183,7 @@ function NewStudentDialog({ csrf, onClose, onSaved }: EnrollmentProps): React.JS
   const plans = useQuery({ queryKey: ['sala-plans'], enabled: catalogsEnabled, queryFn: async () => {
     const response = await listSalaPlans({ credentials: 'include' });
     if (response.status !== 200) throw new Error('No se pudieron cargar los Planes.');
-    return z.array(z.object({ id: z.string(), name: z.string(), isSelectable: z.boolean().optional() }).passthrough()).parse(response.data.data);
+    return response.data.data;
   } });
   const professors = useQuery({ queryKey: ['sala-professors'], enabled: catalogsEnabled, queryFn: async () => {
     const response = await listSalaProfessors({ credentials: 'include' });
@@ -203,7 +212,7 @@ function NewStudentDialog({ csrf, onClose, onSaved }: EnrollmentProps): React.JS
       </div> : null : null}
       {selectedPerson?.hasSalaParticipation === true ? <p role="status">Esta Persona ya es alumno activo de Sala.</p> : null}
       {needsJoin ? <>
-        <label className="grid gap-1 text-sm">Plan *<select aria-label="Plan" required className={inputClass} value={planId} disabled={mutation.isPending} onChange={event => setPlanId(event.target.value)}><option value="">Seleccionar Plan</option>{selectablePlans.map(plan => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></label>
+        <EnrollmentPlanFields key={selectedPerson?.id} plans={selectablePlans} planId={planId} onPlanChange={setPlanId} inputClass={inputClass} ready={plans.isSuccess} disabled={mutation.isPending} />
         <label className="grid gap-1 text-sm">Profesor principal *<select aria-label="Profesor principal" required className={inputClass} value={mainProfessorId} disabled={mutation.isPending} onChange={event => setMainProfessorId(event.target.value)}><option value="">Seleccionar Profesor</option>{professors.data?.map(professor => <option key={professor.id} value={professor.id}>{professor.firstName} {professor.lastName}</option>)}</select></label>
         {plans.isError || professors.isError ? <p role="alert">No se pudieron cargar los Planes o Profesores. Cerrá el alta e intentá nuevamente.</p> : !plans.isSuccess || !professors.isSuccess ? <p role="status">Cargando Planes y Profesores…</p> : null}
       </> : null}
@@ -214,10 +223,11 @@ function NewStudentDialog({ csrf, onClose, onSaved }: EnrollmentProps): React.JS
   </ParticipationDialog>;
 }
 
-function NewPersonEnrollmentForm({ csrf, onClose, onSaved, onExisting, plans, professors, catalogsReady, catalogsError }: EnrollmentProps & { onExisting: () => void; plans: Array<{ id: string; name: string }>; professors: Array<{ id: string; firstName: string; lastName: string }>; catalogsReady: boolean; catalogsError: boolean }): React.JSX.Element {
+function NewPersonEnrollmentForm({ csrf, onClose, onSaved, onExisting, plans, professors, catalogsReady, catalogsError }: EnrollmentProps & { onExisting: () => void; plans: Array<{ id: string; name: string; isOnline: boolean }>; professors: Array<{ id: string; firstName: string; lastName: string }>; catalogsReady: boolean; catalogsError: boolean }): React.JSX.Element {
   const paper = usePaperDeclaration();
   const schema = personSchema.extend({ planId: z.string().min(1, 'Seleccioná un Plan.'), mainProfessorId: z.string().min(1, 'Seleccioná un profesor.') });
   const form = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema), defaultValues: { ...personDefaults(), planId: '', mainProfessorId: '' } });
+  const planId = useWatch({ control: form.control, name: 'planId' });
   const generalForm: import('react-hook-form').UseFormReturn<PersonValues> = form as unknown as import('react-hook-form').UseFormReturn<PersonValues>;
   const mutation = useMutation({ gcTime: 0, mutationFn: async (values: z.infer<typeof schema>) => {
     if (!csrf) throw new Error('Sesión inválida. Volvé a iniciar sesión.');
@@ -235,7 +245,7 @@ function NewPersonEnrollmentForm({ csrf, onClose, onSaved, onExisting, plans, pr
       <section className="border-t border-border pt-4 sm:col-span-2">
         <h3 className="mb-3 text-sm font-semibold">Entrenamiento</h3>
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="grid gap-1 text-sm">Plan *<select aria-label="Plan" className={inputClass} {...form.register('planId')}><option value="">Seleccionar Plan</option>{plans.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <EnrollmentPlanFields plans={plans} planId={planId} onPlanChange={value => form.setValue('planId', value, { shouldValidate: form.formState.isSubmitted })} inputClass={inputClass} ready={catalogsReady} disabled={mutation.isPending} required={false} />
           <label className="grid gap-1 text-sm">Profesor principal *<select aria-label="Profesor principal" className={inputClass} {...form.register('mainProfessorId')}><option value="">Seleccionar profesor</option>{professors.map(item => <option key={item.id} value={item.id}>{item.firstName} {item.lastName}</option>)}</select></label>
         </div>
       </section>

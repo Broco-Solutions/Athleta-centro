@@ -29,7 +29,11 @@ async function main(): Promise<void> {
   const email = `${suffix}@training.test`;
   const dni = String(Math.floor(10000000 + Math.random() * 80000000));
   const professor = await prisma.internalUser.create({ data: { firstName: 'Profesor', lastName: 'TrainingRecordE2E', email, normalizedEmail: email, roles: { create: { role: 'PROFESSOR' } }, credential: { create: { passwordHash: await argon2.hash('Synthetic-test-password1!'), mustChangePassword: false } } } });
-  const plan = await prisma.salaPlan.create({ data: { name: `TrainingRecordE2E ${suffix}`, monthlyAmount: 1000, weeklySessions: 2 } });
+  const isOnline = process.argv[2] === 'online';
+  const plan = await prisma.salaPlan.create({ data: {
+    name: `TrainingRecordE2E ${suffix}`, isOnline,
+    monthlyAmount: isOnline ? 0 : 1000, weeklySessions: isOnline ? null : 2,
+  } });
   const person = await prisma.person.create({ data: { firstName: 'Alumno', lastName: 'TrainingRecordE2E', dni, normalizedDni: dni, phone: '0000000000', birthDate: new Date('1990-01-01'), portalCredential: { create: { pinHash: await argon2.hash('1111'), mustChangePin: false } }, salaParticipations: { create: { mainProfessorId: professor.id, planId: plan.id, startDate: new Date('2020-01-01') } } }, include: { salaParticipations: true } });
   const signed = new Date(); signed.setUTCDate(signed.getUTCDate() - 1);
   const validUntil = new Date(signed); validUntil.setUTCFullYear(validUntil.getUTCFullYear() + 1);

@@ -57,12 +57,12 @@ it.each(['reservations', 'fixed'])('allows general Sala without configured servi
   server.use(http.get(`http://localhost:3000/api/sala/people/${personId}/services`, () => HttpResponse.json({ data: [] })));
   renderWorkspace();
   if (tab === 'reservations') expect(await waitFor(() => booking().getByText('Podés reservar Sala sin seleccionar un Servicio.'))).toBeInTheDocument();
-  else await findBookingOption({ name: 'Lunes' });
+  else await findBookingOption({ name: '09:00' });
   expect(screen.getByRole('button', { name: tab === 'fixed' ? 'Crear turno fijo' : 'Crear reserva' })).toBeDisabled();
   if (tab === 'reservations') expect(booking().getByLabelText('Servicio').querySelectorAll('option')).toHaveLength(1);
   else { expect(booking().queryByLabelText('Fecha')).not.toBeInTheDocument(); expect(booking().queryByLabelText('Servicio')).not.toBeInTheDocument(); }
   fireEvent.change(booking().getByLabelText('Horario'), { target: { value: 'window:09:00' } });
-  expect(screen.getByRole('button', { name: tab === 'fixed' ? 'Crear turno fijo' : 'Crear reserva' })).toBeEnabled();
+  await waitFor(() => expect(screen.getByRole('button', { name: tab === 'fixed' ? 'Crear turno fijo' : 'Crear reserva' })).toBeEnabled());
 });
 it.each([true, false])('edits a historical fixed booking as general Sala regardless of its prior service (allowed=%s)', async (allowed) => {
   navigation.tab = 'fixed';
@@ -84,7 +84,7 @@ it('does not query person services without an active participation', async () =>
   server.use(http.get(`http://localhost:3000/api/sala/participations/person/${personId}`, () => HttpResponse.json({ data: [] })));
   renderWorkspace();
   await screen.findByText('Sin participación activa');
-  expect(screen.getByRole('button', { name: 'Crear reserva' })).toBeDisabled();
+  expect(await screen.findByRole('button', { name: 'Crear reserva' })).toBeDisabled();
   expect(personServicesRequests).toBe(0);
   expect(catalogRequests).toBe(0);
 });
@@ -425,7 +425,7 @@ it.each([['ADMINISTRATIVE'], ['GENERAL_ADMIN'], ['KINESIOLOGIST'], ['OSTEOPATH']
     http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: [] })),
     http.get('http://localhost:3000/api/finance/payment-methods', () => HttpResponse.json({ data: [] })),
   );
-  renderWorkspace(); await screen.findByText('Workspace Sala');
+  renderWorkspace(); await screen.findByRole('heading', { name: 'Pago' });
   const tabs = within(screen.getByRole('navigation', { name: 'Secciones del alumno en Sala' }));
   expect(tabs.getAllByRole('link').map(link => link.textContent)).toEqual(['Resumen', 'Turno fijo', 'Reservas', 'Rutina', ...(roles.some(role => ['ADMINISTRATIVE', 'GENERAL_ADMIN', 'PROFESSOR'].includes(role)) ? ['Evaluaciones físicas'] : []), 'Declaración de salud']);
   expect(await screen.findByRole('heading', { name: 'Pago' })).toBeInTheDocument();
@@ -895,4 +895,24 @@ it('prints the existing person full name without requesting it again', async () 
     expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('12345678');
     expect(personReads).toBe(1);
   } finally { print.mockRestore(); }
+});
+
+it('shows the summary for Online students on a direct payment URL and keeps training links', async () => {
+  navigation.tab = 'payments';
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PHYSICAL_EVALUATION_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_REGISTER'], csrfToken: 'csrf', mustChangePassword: false } })),
+    http.get(`http://localhost:3000/api/sala/participations/person/${personId}`, () => HttpResponse.json({ data: [{ id: 'participation', endDate: null, plan: { name: 'Entrenamiento remoto', isOnline: true } }] })),
+    http.get(`http://localhost:3000/api/sala/people/${personId}/routines`, () => HttpResponse.json({ data: [] })),
+    http.get(`http://localhost:3000/api/sala/people/${personId}/physical-evaluations`, () => HttpResponse.json({ data: [] })),
+  );
+  renderWorkspace();
+  expect(await screen.findByText(/Online · Cobro externo/)).toBeInTheDocument();
+  const nav = within(screen.getByRole('navigation', { name: 'Secciones del alumno en Sala' }));
+  expect(nav.getByRole('link', { name: 'Resumen' })).toHaveAttribute('aria-current', 'page');
+  expect(nav.getByRole('link', { name: 'Rutina' })).toBeInTheDocument();
+  expect(nav.getByRole('link', { name: 'Evaluaciones' })).toBeInTheDocument();
+  expect(nav.queryByRole('link', { name: 'Pagos' })).not.toBeInTheDocument();
+  expect(nav.queryByRole('link', { name: 'Turnos' })).not.toBeInTheDocument();
+  expect(screen.queryByText(/Registrar renovación|Sin vigencia/)).not.toBeInTheDocument();
+  expect(personServicesRequests).toBe(0);
 });

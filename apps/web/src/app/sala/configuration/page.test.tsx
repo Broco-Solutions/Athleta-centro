@@ -109,7 +109,7 @@ it('requires the weekly limit and permits optional service selections', async ()
   fireEvent.click(functional);
   expect(within(form).getByRole('button', { name: 'Guardar' })).toBeEnabled();
   fireEvent.click(within(form).getByRole('button', { name: 'Guardar' }));
-  await waitFor(() => expect(submitted).toEqual({ name: 'Plan Base', monthlyAmount: 20000, weeklySessions: 2, serviceTypeIds: [services[0]!.id, services[1]!.id] }));
+  await waitFor(() => expect(submitted).toEqual({ name: 'Plan Base', isOnline: false, monthlyAmount: 20000, weeklySessions: 2, serviceTypeIds: [services[0]!.id, services[1]!.id] }));
 });
 it('preloads plan services and sends the complete replacement selection', async () => {
   let submitted: unknown;
@@ -134,7 +134,7 @@ it('preloads plan services and sends the complete replacement selection', async 
   fireEvent.click(functional);
   fireEvent.click(calisthenics);
   fireEvent.click(within(form).getByRole('button', { name: 'Guardar' }));
-  await waitFor(() => expect(submitted).toEqual({ name: 'Plan Base', monthlyAmount: 20000, weeklySessions: 2, serviceTypeIds: [services[0]!.id, services[2]!.id] }));
+  await waitFor(() => expect(submitted).toEqual({ name: 'Plan Base', isOnline: false, monthlyAmount: 20000, weeklySessions: 2, serviceTypeIds: [services[0]!.id, services[2]!.id] }));
 });
 it('shows legacy plans without inventing services and allows configuring them', async () => {
   server.use(http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'legacy', name: 'Plan anterior', monthlyAmount: '1000', isSelectable: true, services: [] }] })));
@@ -190,4 +190,23 @@ it('lets Administrative create, edit and retire services with its effective Sala
   await waitFor(() => expect(edited).toEqual({ name: 'Musculación', durationMinutes: 75 }));
   fireEvent.click(screen.getByText('Tests físicos'));
   expect(screen.queryByRole('button', { name: 'Crear primer test' })).not.toBeInTheDocument();
+});
+
+it('creates an Online plan with external billing and no in-person fields', async () => {
+  let submitted: unknown;
+  server.use(http.post('http://localhost:3000/api/sala/plans', async ({ request }) => {
+    submitted = await request.json();
+    return HttpResponse.json({ data: { id: 'online' } }, { status: 201 });
+  }));
+  renderPage();
+  fireEvent.click(await screen.findByText('Planes'));
+  fireEvent.click(await screen.findByRole('button', { name: 'Nuevo plan' }));
+  fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Entrenamiento remoto' } });
+  fireEvent.change(screen.getByLabelText('Modalidad'), { target: { value: 'online' } });
+  expect(screen.getByText('Cobro externo · Sin turnos')).toBeInTheDocument();
+  expect(screen.queryByLabelText('Precio mensual ($ ARS)')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Sesiones por semana')).not.toBeInTheDocument();
+  expect(screen.queryByRole('group', { name: 'Servicios incluidos (opcional)' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(submitted).toEqual({ name: 'Entrenamiento remoto', isOnline: true, monthlyAmount: 0, weeklySessions: null, serviceTypeIds: [] }));
 });

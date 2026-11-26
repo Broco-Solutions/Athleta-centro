@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 
 type Fixture = { personId: string; professorId: string; planId: string; exerciseId: string; dni: string; email: string };
-function fixture(variant?: 'history' | 'grouped'): Fixture {
+function fixture(variant?: 'history' | 'grouped' | 'online'): Fixture {
   return JSON.parse(execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts', ...(variant ? [variant] : [])], { cwd: '../..', encoding: 'utf8' }).trim()) as Fixture;
 }
 function cleanup(f: Fixture) {
@@ -167,4 +167,55 @@ test('edits a grouped current routine with a future routine and preserves monthl
     await expect(teacher.getByText('60 kg', { exact: true })).toBeVisible();
     await capture(teacher, 'retired-exercise-history');
   } finally { await staff.close(); cleanup(f); }
+});
+
+test('an Online student saves Portal weights without turns or payments', async ({ page }) => {
+  const f = fixture('online');
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/portal/login');
+    await page.getByLabel('DNI', { exact: true }).fill(f.dni);
+    await page.getByLabel('PIN', { exact: true }).fill('1111');
+    await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
+    await expect(page.getByText('Modalidad Online')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Mis turnos fijos' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Vigencia de Sala' })).toHaveCount(0);
+    await page.screenshot({ path: '/tmp/athleta-online-portal-390.png', fullPage: true });
+    await page.getByRole('link', { name: 'Registrar entrenamiento' }).click();
+    const exercise = page.locator('button[aria-expanded][aria-controls]').first();
+    await exercise.click();
+    await page.getByLabel(/Semana 1/).first().fill('42');
+    await page.getByRole('button', { name: 'Guardar pesos', exact: true }).click();
+    await expect(page.getByText('Pesos guardados correctamente.')).toBeVisible();
+    await page.reload();
+    await exercise.click();
+    await expect(page.getByLabel(/Semana 1/).first()).toHaveValue('42');
+
+    await page.goto('/portal/sala/reservas');
+    await expect(page.getByText('La modalidad Online no utiliza turnos presenciales.')).toBeVisible();
+    await page.goto('/portal/sala/reservar');
+    await expect(page.getByText('La modalidad Online no utiliza turnos presenciales.')).toBeVisible();
+    await expect(page.getByText('Cuota sin vigencia')).toHaveCount(0);
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(f.email);
+    await page.getByLabel('Contraseña', { exact: true }).fill('Synthetic-test-password1!');
+    await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
+    await expect(page).toHaveURL('/');
+    await page.goto('/students');
+    await page.getByLabel('Modalidad').selectOption('online');
+    await page.getByRole('button', { name: 'Mis alumnos' }).click();
+    const student = page.getByRole('row').filter({ hasText: f.dni });
+    await expect(student.getByText('Cobro externo')).toBeVisible();
+    await expect(student.getByRole('link', { name: /renovación|pagos/i })).toHaveCount(0);
+    await page.screenshot({ path: '/tmp/athleta-online-students-1440.png', fullPage: true });
+    await student.getByRole('link', { name: 'Ver ficha' }).click();
+    const tabs = page.getByRole('navigation', { name: 'Secciones del alumno en Sala' });
+    await expect(tabs.getByRole('link', { name: 'Rutina' })).toBeVisible();
+    await expect(tabs.getByRole('link', { name: 'Turnos' })).toHaveCount(0);
+    await expect(tabs.getByRole('link', { name: 'Pagos' })).toHaveCount(0);
+  } finally {
+    cleanup(f);
+  }
 });

@@ -82,8 +82,9 @@ function FinancePageContent(): React.JSX.Element {
     return response.data.data;
   } });
   const withoutValidity = (summaryStudents.data ?? []).filter(student => !student.hasValidAccess);
-  const pendingStudents = (students.data ?? []).filter(student => !student.hasValidAccess);
-  const paidStudents = (students.data ?? []).filter(student => student.hasValidAccess);
+  const internalBillingStudents = (students.data ?? []).filter(student => !student.plan.isOnline);
+  const pendingStudents = internalBillingStudents.filter(student => !student.hasValidAccess);
+  const paidStudents = internalBillingStudents.filter(student => student.hasValidAccess);
   const tabStudents = incomeTab === 'pending' ? pendingStudents : paidStudents;
   const results = tabStudents.filter(student => matchesStudentSearch(student, search));
   const [name, setName] = useState('');
@@ -238,7 +239,7 @@ function FinancePageContent(): React.JSX.Element {
           <div className="flex-1"><h2 className="text-xl font-semibold">{person.data.firstName} {person.data.lastName}</h2><p className="text-sm text-muted-foreground">DNI {person.data.dni}</p>
             <Link className="text-sm underline" href={`/sala/people/${personId}`}>Ver ficha<span aria-hidden="true"> ↗</span></Link>
           </div>
-          {activePlan ? <div className="border-border sm:border-l sm:pl-6"><p className="font-semibold">{activePlan.name}</p><p className="text-sm text-muted-foreground">Precio actual: {formatArs(activePlan.monthlyAmount)} / mes</p></div> : null}
+          {activePlan ? <div className="border-border sm:border-l sm:pl-6"><p className="font-semibold">{activePlan.name}</p><p className="text-sm text-muted-foreground">{activePlan.isOnline ? 'Cobro externo' : `Precio actual: ${formatArs(activePlan.monthlyAmount)} / mes`}</p></div> : null}
         </div>
         {participations.isSuccess ? <SalaPaymentPanel key={`${personId}-${paymentAction}`} defaultOpen={paymentAction === 'renew'} personId={personId!} csrfToken={session.data?.csrfToken ?? ''} canRegister={permissions.includes('SALA_PAYMENT_REGISTER')} canSelectPlan={permissions.includes('SALA_PAYMENT_REGISTER')} canAdjust={permissions.includes('SALA_PAYMENT_MANAGE')} canReverse={permissions.includes('SALA_PAYMENT_MANAGE')} activePlan={activePlan}/> : null}
       </> : null}

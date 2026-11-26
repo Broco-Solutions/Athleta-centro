@@ -425,6 +425,7 @@ export interface HealthDeclarationDetailEnvelopeDto {
 }
 
 export interface SalaParticipationPlanResponseDto {
+  isOnline: boolean;
   id: string;
   name: string;
   /** @nullable */
@@ -461,6 +462,7 @@ export interface SalaProfessorListEnvelopeDto {
 }
 
 export interface SalaStudentPlanDto {
+  isOnline: boolean;
   id: string;
   name: string;
 }
@@ -1525,14 +1527,38 @@ export interface UpdateSalaConfigurationDto {
   capacity: number;
 }
 
+export interface SalaCatalogServiceResponseDto {
+  id: string;
+  name: string;
+  durationMinutes: number;
+  isSelectable: boolean;
+}
+
+export interface SalaCatalogPlanResponseDto {
+  isOnline: boolean;
+  id: string;
+  name: string;
+  /** @nullable */
+  weeklySessions: number | null;
+  monthlyAmount: string;
+  isSelectable: boolean;
+  services: SalaCatalogServiceResponseDto[];
+}
+
+export interface SalaCatalogPlanListEnvelopeDto {
+  data: SalaCatalogPlanResponseDto[];
+}
+
 export interface PlanDto {
   name: string;
-  monthlyAmount: number;
+  isOnline?: boolean;
+  monthlyAmount?: number;
   /**
    * @minimum 2
    * @maximum 5
+   * @nullable
    */
-  weeklySessions: number;
+  weeklySessions?: number | null;
   serviceTypeIds?: string[];
   isSelectable?: boolean;
 }
@@ -2432,12 +2458,6 @@ page?: number;
 
 export type ListPersonTrainingRecordsMonthParams = {
 month: string;
-};
-
-export type ListSalaPlans200DataItem = { [key: string]: unknown };
-
-export type ListSalaPlans200 = {
-  data?: ListSalaPlans200DataItem[];
 };
 
 export type ListPersonSalaServices200DataItem = {
@@ -6450,7 +6470,7 @@ export const updateSalaConfiguration = async (updateSalaConfigurationDto: Update
 
 
 export type listSalaPlansResponse200 = {
-  data: ListSalaPlans200
+  data: SalaCatalogPlanListEnvelopeDto
   status: 200
 }
 

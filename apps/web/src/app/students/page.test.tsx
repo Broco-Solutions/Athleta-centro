@@ -604,3 +604,60 @@ it.each(['new', 'existing'])('includes the real paper signature date for %s enro
   await waitFor(() => expect(body).toMatchObject({ paperHealthDeclarationSignedOn: '2020-01-01', planId: 'plan-new' }));
   expect(body).not.toHaveProperty('registeredBy');
 });
+
+it('combines Online, completed routines and my students without exposing a renewal action', async () => {
+  const online = { ...students[0], id: 'online-1', firstName: 'Andrea', lastName: 'Remota', plan: { id: 'online-plan', name: 'Remoto', isOnline: true }, routineChangeInDays: 0, routineTrainingComplete: true, hasValidAccess: false };
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: [
+    online,
+    { ...online, id: 'online-2', firstName: 'Otro', professor: students[1]!.professor },
+    { ...online, id: 'online-3', firstName: 'Pendiente', routineTrainingComplete: false },
+    { ...students[2], routineChangeInDays: 0, routineTrainingComplete: true },
+  ] })));
+  renderPage();
+  await screen.findByText('Andrea Remota');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Modalidad' }), { target: { value: 'online' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Registro completo' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Mis alumnos' }));
+  const row = within(screen.getByRole('row', { name: /Andrea Remota/ }));
+  expect(row.getByText('Online')).toBeInTheDocument();
+  expect(row.getByText('Cobro externo')).toBeInTheDocument();
+  expect(row.queryByRole('link', { name: /renovación|pagos/i })).not.toBeInTheDocument();
+  expect(list().queryByText(/Otro Remota|Pendiente Remota|Pedro Prueba/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Sin vigencia' }));
+  expect(screen.getByText('Sin resultados')).toBeInTheDocument();
+});
+
+it('filters the plan catalog by modality and enrolls an existing person online', async () => {
+  enrollmentHandlers([existingPerson]);
+  let submitted: unknown;
+  server.use(
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [
+      { id: 'plan-new', name: 'Plan presencial', isSelectable: true, isOnline: false },
+      { id: 'plan-online', name: 'Entrenamiento remoto', isSelectable: true, isOnline: true },
+    ] })),
+    http.post('http://localhost:3000/api/sala/participations', async ({ request }) => {
+      submitted = await request.json();
+      return HttpResponse.json({ data: {} }, { status: 201 });
+    }),
+  );
+  await startAdministrativeEnrollment();
+  await selectExistingPerson();
+  expect(await screen.findByRole('option', { name: 'Plan presencial' })).toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: 'Entrenamiento remoto' })).not.toBeInTheDocument();
+  fireEvent.change(within(screen.getByRole('dialog')).getByLabelText('Modalidad'), { target: { value: 'online' } });
+  expect(screen.queryByRole('option', { name: 'Plan presencial' })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Plan'), { target: { value: 'plan-online' } });
+  fireEvent.change(screen.getByLabelText('Profesor principal'), { target: { value: 'prof-new' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Incorporar a Sala' }));
+  await waitFor(() => expect(submitted).toMatchObject({ personId: 'person-existing', planId: 'plan-online', mainProfessorId: 'prof-new' }));
+});
+
+it('tells staff where to configure an Online plan when the catalog has none', async () => {
+  enrollmentHandlers([existingPerson]);
+  await startAdministrativeEnrollment();
+  await selectExistingPerson();
+  await screen.findByRole('option', { name: 'Plan seleccionable' });
+  fireEvent.change(within(screen.getByRole('dialog')).getByLabelText('Modalidad'), { target: { value: 'online' } });
+  expect(screen.getByText(/Sala → Configuración → Planes/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Incorporar a Sala' })).toBeDisabled();
+});

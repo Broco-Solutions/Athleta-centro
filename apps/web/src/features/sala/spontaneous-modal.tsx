@@ -13,7 +13,7 @@ import { GeneralPersonFields, personDefaults, personInput, type PersonValues } f
 import { studentSchema, todayOperational, type Notice, type StudentValues } from './student-onboarding';
 
 type Service = { id: string; name: string; durationMinutes: number; isSelectable?: boolean };
-type Plan = { id: string; name: string; isSelectable?: boolean; services: Service[] };
+type Plan = { isOnline?: boolean; id: string; name: string; isSelectable?: boolean; services: Service[] };
 type Submission = { values?: StudentValues | undefined; confirmed?: boolean };
 const fieldClass = 'mt-1 h-10 w-full rounded-md border bg-white px-3 text-sm';
 const messages: Record<string, string> = {
@@ -71,7 +71,7 @@ export function SpontaneousModal({ date, groups, initialSlotId, csrfToken, canMa
   const professors = useQuery({ queryKey: ['sala-professors'], enabled: inline, queryFn: async () => checked(await listSalaProfessors(options)).data });
   const planId = form.watch('planId');
   const professorId = form.watch('mainProfessorId');
-  const plan = plans.data?.find((item) => item.id === planId && item.isSelectable !== false);
+  const plan = plans.data?.find((item) => item.id === planId && item.isSelectable !== false && !item.isOnline);
   const services = mode === 'existing' && eligibility.data?.eligible ? eligibility.data.services : inline ? plan?.services.filter((service) => service.isSelectable !== false) ?? [] : [];
   const service = serviceTypeId ? services.find((item) => item.id === serviceTypeId) : { id: '', name: 'Sala', durationMinutes: 60 };
   const group = visibleGroups.find((item) => item.slot.id === slotId && !item.isClosed);
@@ -119,11 +119,11 @@ export function SpontaneousModal({ date, groups, initialSlotId, csrfToken, canMa
           {eligibility.data?.eligible && <div className="grid grid-cols-2 gap-3 text-sm"><div>Plan<p className="font-medium">{eligibility.data.plan?.name}</p></div><div>Profesor principal<p className="font-medium">{eligibility.data.mainProfessor?.firstName} {eligibility.data.mainProfessor?.lastName}</p></div></div>}
         </div>}
         {inline && (mode === 'new' ? <section className="border-t border-border pt-4 sm:col-span-2"><h3 className="mb-3 text-sm font-semibold">Entrenamiento</h3><div className="grid gap-4 sm:grid-cols-2">
-          <label className="text-sm">Plan<select aria-label="Plan" className={fieldClass} {...form.register('planId', { onChange: resetSelection })}><option value="">Seleccionar Plan</option>{plans.data?.filter((item) => item.isSelectable !== false).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><span className="text-xs text-red-700">{form.formState.errors.planId?.message}</span></label>
+          <label className="text-sm">Plan<select aria-label="Plan" className={fieldClass} {...form.register('planId', { onChange: resetSelection })}><option value="">Seleccionar Plan</option>{plans.data?.filter((item) => item.isSelectable !== false && !item.isOnline).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><span className="text-xs text-red-700">{form.formState.errors.planId?.message}</span></label>
           <label className="text-sm">Profesor principal<select aria-label="Profesor principal" className={fieldClass} {...form.register('mainProfessorId')}><option value="">Seleccionar Profesor</option>{professors.data?.map((professor) => <option key={professor.id} value={professor.id}>{professor.lastName}, {professor.firstName}</option>)}</select><span className="text-xs text-red-700">{form.formState.errors.mainProfessorId?.message}</span></label>
           {(plans.isError || professors.isError) && <p role="alert" className="sm:col-span-2">No pudimos cargar los Planes o Profesores.</p>}
         </div></section> : <>
-          <label className="text-sm">Plan<select aria-label="Plan" className={fieldClass} {...form.register('planId', { onChange: resetSelection })}><option value="">Seleccionar Plan</option>{plans.data?.filter((item) => item.isSelectable !== false).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><span className="text-xs text-red-700">{form.formState.errors.planId?.message}</span></label>
+          <label className="text-sm">Plan<select aria-label="Plan" className={fieldClass} {...form.register('planId', { onChange: resetSelection })}><option value="">Seleccionar Plan</option>{plans.data?.filter((item) => item.isSelectable !== false && !item.isOnline).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><span className="text-xs text-red-700">{form.formState.errors.planId?.message}</span></label>
           <label className="text-sm">Profesor principal<select aria-label="Profesor principal" className={fieldClass} {...form.register('mainProfessorId')}><option value="">Seleccionar Profesor</option>{professors.data?.map((professor) => <option key={professor.id} value={professor.id}>{professor.lastName}, {professor.firstName}</option>)}</select><span className="text-xs text-red-700">{form.formState.errors.mainProfessorId?.message}</span></label>
           {(plans.isError || professors.isError) && <p role="alert" className="sm:col-span-2">No pudimos cargar los Planes o Profesores.</p>}
         </>)}

@@ -570,6 +570,7 @@ model SalaConfiguration {
 }
 
 model SalaPlan {
+  isOnline       Boolean              @default(false) @map("is_online")
   weeklySessions Int? @map("weekly_sessions")
   id             String               @id @default(uuid()) @db.Uuid
   name           String

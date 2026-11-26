@@ -13,7 +13,7 @@ import { todayOperational } from '../sala/student-onboarding';
 
 type Payment = SalaPaymentResponseDto;
 type Method = { id: string; name: string; isSelectable: boolean };
-type Plan = { id: string; name: string; monthlyAmount: string };
+type Plan = { id: string; name: string; monthlyAmount: string; isOnline?: boolean };
 const formSchema = z.object({
   planId: z.string().min(1),
   amount: z.string().regex(/^\d+$/).refine(value => BigInt(value) > 0n, 'El precio debe ser mayor que cero.'),
@@ -40,6 +40,7 @@ const assertSuccess = (response: { status: number; data?: unknown }) => {
   if (response.status < 200 || response.status >= 300) throw new Error((response.data as { message?: string })?.message || 'No pudimos guardar el pago.');
 };
 export function SalaPaymentPanel({ personId, csrfToken, canRegister, canSelectPlan, canAdjust, canReverse, activePlan, defaultOpen = false }: { personId: string; csrfToken: string; canRegister: boolean; canSelectPlan: boolean; canAdjust: boolean; canReverse: boolean; activePlan?: Plan | undefined; defaultOpen?: boolean }): React.JSX.Element {
+  const usesInternalBilling = activePlan?.isOnline !== true;
   const [registerOpen, setRegisterOpen] = useState(defaultOpen);
   const queryClient = useQueryClient();
   const form = useForm<z.infer<typeof formSchema>>({ resolver: zodResolver(formSchema), defaultValues: { planId: activePlan?.id ?? '', amount: activePlan?.monthlyAmount ?? '', paidAt: todayOperational(), paymentMethodId: '', adjustmentReason: '' } });
@@ -50,9 +51,10 @@ export function SalaPaymentPanel({ personId, csrfToken, canRegister, canSelectPl
   const [paymentToReverse, setPaymentToReverse] = useState<Payment | null>(null);
   const payments = useQuery({ queryKey: ['sala', 'payments', personId], queryFn: async () => { const response = await listSalaPayments(personId, { credentials: 'include' }); assertSuccess(response); return response.data.data; } });
   const methods = useQuery({ queryKey: ['finance', 'payment-methods'], queryFn: async () => { const response = await listPaymentMethods({ credentials: 'include' }); assertSuccess(response); return (response.data as unknown as { data: Method[] }).data; } });
-  const plans = useQuery({ queryKey: ['sala-plans'], enabled: canSelectPlan, queryFn: async () => { const response = await listSalaPlans({ credentials: 'include' }); assertSuccess(response); return response.data.data as unknown as Plan[]; } });
+  const plans = useQuery({ queryKey: ['sala-plans'], enabled: canSelectPlan && usesInternalBilling, queryFn: async () => { const response = await listSalaPlans({ credentials: 'include' }); assertSuccess(response); return response.data.data; } });
   const values = form.watch();
-  const plan = canSelectPlan ? plans.data?.find(item => item.id === values.planId) : activePlan;
+  const billablePlans = (plans.data ?? []).filter(item => !item.isOnline);
+  const plan = canSelectPlan ? billablePlans.find(item => item.id === values.planId) : activePlan;
   const needsReason = Boolean(canAdjust && plan && /^\d+$/.test(values.amount) && BigInt(values.amount) !== BigInt(plan.monthlyAmount));
   const selectableMethods = (methods.data ?? []).filter(item => item.isSelectable);
   const currentEnd = validityEnd(payments.data ?? [], todayOperational());
@@ -82,13 +84,13 @@ export function SalaPaymentPanel({ personId, csrfToken, canRegister, canSelectPl
   const error = create.error ?? remove.error;
   const inputClass = 'mt-1 h-10 w-full rounded border px-2';
   return <section className="space-y-5">
-    <p className="text-sm">Vigencia actual: {currentEnd ? `Hasta ${formatDate(currentEnd)}` : 'Sin vigencia'}</p>
+    {usesInternalBilling ? <p className="text-sm">Vigencia actual: {currentEnd ? `Hasta ${formatDate(currentEnd)}` : 'Sin vigencia'}</p> : null}
     {canRegister && !activePlan ? <p>Se necesita una participación activa de Sala para registrar pagos.</p> : null}
-    {canRegister && activePlan ? <Button type="button" variant="secondary" aria-expanded={registerOpen} aria-controls="register-payment-form" onClick={() => setRegisterOpen(value => !value)}>+ Registrar renovación</Button> : null}
-    {canRegister && activePlan && registerOpen ? <form id="register-payment-form" className="rounded border border-border bg-surface p-5 sm:p-6" onSubmit={form.handleSubmit(() => { if (plan && (!needsReason || values.adjustmentReason.trim()) && payments.isSuccess && selectableMethods.some(item => item.id === values.paymentMethodId)) create.mutate(); })}>
+    {usesInternalBilling && canRegister && activePlan ? <Button type="button" variant="secondary" aria-expanded={registerOpen} aria-controls="register-payment-form" onClick={() => setRegisterOpen(value => !value)}>+ Registrar renovación</Button> : null}
+    {usesInternalBilling && canRegister && activePlan && registerOpen ? <form id="register-payment-form" className="rounded border border-border bg-surface p-5 sm:p-6" onSubmit={form.handleSubmit(() => { if (plan && (!needsReason || values.adjustmentReason.trim()) && payments.isSuccess && selectableMethods.some(item => item.id === values.paymentMethodId)) create.mutate(); })}>
       <h2 className="mb-5 text-xl font-semibold">Registrar renovación</h2>
       <fieldset disabled={create.isPending} className="grid gap-5 sm:grid-cols-2">
-        {canSelectPlan ? <label className="text-sm">Plan<select className={inputClass} {...form.register('planId')} onChange={event => { const selected = plans.data?.find(item => item.id === event.target.value); form.setValue('planId', event.target.value); form.setValue('amount', selected?.monthlyAmount ?? ''); form.setValue('adjustmentReason', ''); }}><option value="" disabled>Seleccionar Plan</option>{plans.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : <div className="text-sm">Plan<p className="mt-1 font-medium">{activePlan?.name}</p></div>}
+        {canSelectPlan ? <label className="text-sm">Plan<select className={inputClass} {...form.register('planId')} onChange={event => { const selected = billablePlans.find(item => item.id === event.target.value); form.setValue('planId', event.target.value); form.setValue('amount', selected?.monthlyAmount ?? ''); form.setValue('adjustmentReason', ''); }}><option value="" disabled>Seleccionar Plan</option>{billablePlans.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : <div className="text-sm">Plan<p className="mt-1 font-medium">{activePlan?.name}</p></div>}
         {canAdjust ? <label className="text-sm">Precio ($ ARS)<input className={inputClass} inputMode="numeric" {...form.register('amount')} /></label> : <div className="text-sm">Precio<p className="mt-1 font-medium">{formatArs(plan?.monthlyAmount ?? '0')}</p></div>}
         <label className="text-sm sm:col-span-2">Fecha de cobro<input type="date" max={todayOperational()} className={inputClass} {...form.register('paidAt')} /></label>
         <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm">Medio de pago</legend><div className="flex flex-wrap gap-2">{selectableMethods.map(item => <Button key={item.id} type="button" variant={values.paymentMethodId === item.id ? 'primary' : 'secondary'} aria-pressed={values.paymentMethodId === item.id} onClick={() => form.setValue('paymentMethodId', item.id, { shouldValidate: true })}>{item.name}</Button>)}</div>{methods.isSuccess && !selectableMethods.length ? <p>No hay medios de pago configurados.</p> : null}</fieldset>

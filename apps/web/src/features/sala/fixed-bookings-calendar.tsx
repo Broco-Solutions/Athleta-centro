@@ -139,7 +139,7 @@ function AssignmentDialog({ selection, csrfToken, canManageParticipation, canCre
     {startDate !== selection.date ? <p className="mt-2 text-sm text-muted-foreground">La fecha consultada ya pasó. Se utilizará la siguiente ocurrencia de este día.</p> : null}
     {creatingStudent ? <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={studentForm.handleSubmit((values) => createStudent.mutate(values))}>
       <GeneralPersonFields form={studentForm as unknown as import('react-hook-form').UseFormReturn<PersonValues>} />
-      <StudentTrainingFields form={studentForm} canPlanManage={false} />
+      <StudentTrainingFields form={studentForm} canPlanManage={false} inPersonOnly />
       <PaperDeclarationFields value={paper} disabled={createStudent.isPending} />
       {agenda.isPending ? <p role="status" className="sm:col-span-2">Verificando disponibilidad…</p> : agenda.isError ? <p role="alert" className="sm:col-span-2">No se pudo consultar la disponibilidad.</p> : !slot ? <p role="alert" className="sm:col-span-2">El horario está cerrado, incompleto o sin cupo para la fecha de inicio.</p> : null}
       {createStudent.isError ? <p role="alert" className="text-sm text-red-800 sm:col-span-2">{createStudent.error.message}</p> : null}
