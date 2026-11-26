@@ -25,12 +25,10 @@
 .feedback p:global(.text-red-800) { color:var(--error-border); }
 .action { width:100%; min-height:60px; height:auto; padding:16px; font-size:18px; justify-content:space-between; line-height:1.4; }
 .action kbd { border:1px solid currentColor; border-radius:4px; padding:2px 6px; font-size:12px; font-family:inherit; }
-.result { display:flex; flex-direction:column; align-items:flex-start; gap:20px; min-height:360px; padding-top:28px; }
-.result > svg { width:72px; height:72px; color:var(--primary); }
+.result { display:flex; align-items:flex-start; gap:8px; overflow-wrap:anywhere; }
+.result > svg { color:var(--primary); }
 .result[data-kind='warning'] > svg { color:var(--warning-border); }
 .result[data-kind='info'] > svg { color:var(--sidebar-foreground); }
-.result h3 { margin:0; font-size:clamp(28px,3vw,40px); font-weight:600; }
-.result p { margin:0; font-size:20px; line-height:1.5; overflow-wrap:anywhere; }
-.result .action { margin-top:auto; }
+.result h3 { margin:0; font-size:18px; font-weight:600; }
 @media (max-width:900px) { .reception { grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto 1fr; gap:32px; } .welcome,.panel { justify-self:center; max-width:600px; } .brand { grid-column:1; } .greeting h1 { font-size:44px; } .greeting p { margin-top:16px; } }
-@media (max-width:480px) { .reception { padding:24px 20px; gap:28px; } .logo { width:150px; } .brand { gap:12px; align-items:flex-start; } .brand :global(.reception-clock span) { max-width:130px; font-size:12px; } .greeting h1 { font-size:38px; } .panel { padding:24px 20px; } .form { margin-top:24px; } .feedback { font-size:14px; } .action { font-size:16px; } .result p { font-size:18px; } }
+@media (max-width:480px) { .reception { padding:24px 20px; gap:28px; } .logo { width:150px; } .brand { gap:12px; align-items:flex-start; } .brand :global(.reception-clock span) { max-width:130px; font-size:12px; } .greeting h1 { font-size:38px; } .panel { padding:24px 20px; } .form { margin-top:24px; } .feedback { font-size:14px; } .action { font-size:16px; } }

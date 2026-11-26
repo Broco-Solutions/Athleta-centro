@@ -10,45 +10,56 @@ const server = setupServer();
 const nativeFetch = globalThis.fetch;
 const session = { user: { id: 'staff', firstName: 'Staff', lastName: 'Athleta' }, roles: ['PROFESSOR'], permissions: ['SALA_AGENDA_MANAGE'], csrfToken: 'csrf', mustChangePassword: false };
 beforeAll(() => { globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch; server.listen({ onUnhandledRequest: 'error' }); });
-beforeEach(() => server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: session }))));
-afterEach(() => server.resetHandlers());
+beforeEach(() => {
+  vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+  server.use(http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: session })));
+});
+afterEach(() => {
+  server.resetHandlers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 afterAll(() => { server.close(); globalThis.fetch = nativeFetch; });
 function renderPage(): QueryClient { const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }); render(<QueryClientProvider client={client}><CheckInPage /></QueryClientProvider>); return client; }
 
 const noBookingMessage = 'No tenés un turno reservado para este horario. Consultá con un profesor.';
 const notFoundMessage = 'No encontramos un alumno activo con ese DNI. Revisalo o consultá en recepción.';
-async function showResult(status: string, message: string): Promise<void> {
-  server.use(http.post('http://localhost:3000/api/sala/check-in', () => HttpResponse.json({ data: { status, message } })));
-  renderPage();
-  fireEvent.change(await screen.findByLabelText('DNI del alumno'), { target: { value: '30123456' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Registrar ingreso' }));
-  expect(await screen.findByText(message)).toBeInTheDocument();
-}
-async function startDeferredResult(message: string): Promise<() => void> {
-  let releaseResponse: (() => void) | undefined;
-  server.use(http.post('http://localhost:3000/api/sala/check-in', async () => {
-    await new Promise<void>((resolve) => { releaseResponse = resolve; });
-    return HttpResponse.json({ data: { status: 'NO_BOOKING', message } });
-  }));
-  renderPage();
-  fireEvent.change(await screen.findByLabelText('DNI del alumno'), { target: { value: '30123456' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Registrar ingreso' }));
-  await waitFor(() => expect(releaseResponse).toBeDefined());
-  return releaseResponse!;
-}
 
-it('registra por DNI, presenta el resultado y habilita otro alumno después', async () => {
+it('enfoca el DNI en una ventana activa aunque no haya puntero fino', async () => {
+  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false })));
+  renderPage();
+  expect(await screen.findByLabelText('DNI del alumno')).toHaveFocus();
+});
+
+it('espera a que la ventana esté activa para enfocar el DNI', async () => {
+  vi.mocked(document.hasFocus).mockReturnValue(false);
+  renderPage();
+  const input = await screen.findByLabelText('DNI del alumno');
+  expect(input).not.toHaveFocus();
+
+  vi.mocked(document.hasFocus).mockReturnValue(true);
+  fireEvent(window, new Event('focus'));
+  expect(input).toHaveFocus();
+});
+
+it('registra por DNI, muestra los datos y deja el campo vacío y enfocado', async () => {
   let submitted: unknown;
   server.use(http.post('http://localhost:3000/api/sala/check-in', async ({ request }) => { submitted = await request.json(); expect(request.headers.get('x-csrf-token')).toBe('csrf'); return HttpResponse.json({ data: { status: 'REGISTERED', message: '¡Asistencia registrada! Que tengas un buen entrenamiento.', person: 'Ana Alumna', startTime: '09:00', validUntil: '2026-10-23', renewalMessage: 'Tu plan vence hoy. Recordá renovarlo para continuar entrenando.' } }); }));
-  renderPage();
-  fireEvent.change(await screen.findByLabelText('DNI del alumno'), { target: { value: '30123456' } });
+  const client = renderPage();
+  const refresh = vi.spyOn(client, 'invalidateQueries').mockImplementation(() => new Promise(() => {}));
+  const input = await screen.findByLabelText('DNI del alumno');
+  fireEvent.change(input, { target: { value: '30123456' } });
   fireEvent.click(screen.getByRole('button', { name: 'Registrar ingreso' }));
-  expect(await screen.findByText('Ana Alumna · Turno de las 09:00')).toBeInTheDocument();
+  expect(await screen.findByText('Ana Alumna · Turno de las 09:00')).toBeVisible();
   expect(screen.getByText('Tu plan vence hoy. Recordá renovarlo para continuar entrenando.')).toBeInTheDocument();
   expect(submitted).toEqual({ dni: '30123456' });
-  expect(screen.queryByLabelText('DNI del alumno')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Registrar otro alumno' }));
-  expect(screen.getByLabelText('DNI del alumno')).toHaveValue('');
+  expect(refresh.mock.calls.map(([filters]) => filters?.queryKey)).toEqual([
+    ['sala', 'agenda'], ['sala', 'availability'], ['reservations'],
+  ]);
+  expect(input).toBeEnabled();
+  expect(input).toHaveValue('');
+  expect(input).toHaveFocus();
+  expect(screen.queryByRole('button', { name: 'Registrar otro alumno' })).not.toBeInTheDocument();
 });
 
 it('muestra la falta de permiso sin exponer el formulario', async () => {
@@ -77,48 +88,49 @@ it('uses reception without administrative navigation and normalizes a pasted DNI
 
 it.each([
   ['NO_BOOKING', noBookingMessage],
-  ['NOT_FOUND', notFoundMessage],
-])('presenta exactamente el mensaje del backend para %s', async (status, message) => {
-  await showResult(status, message);
+  ['EXPIRED', 'Tu plan está vencido.'],
+  ['CANCELLED', 'Tu turno fue cancelado.'],
+  ['MANUAL_REVIEW', 'Consultá con un profesor para verificar tu ingreso.'],
+])('mantiene el formulario y el mensaje de rechazo para %s', async (status, message) => {
+  let writes = 0;
+  server.use(http.post('http://localhost:3000/api/sala/check-in', () => {
+    writes++;
+    return HttpResponse.json({ data: { status, message } });
+  }));
+  renderPage();
+  const input = await screen.findByLabelText('DNI del alumno');
+  fireEvent.change(input, { target: { value: '30123456' } });
+  fireEvent.submit(input.closest('form')!);
+
+  expect(await screen.findByText(message)).toBeVisible();
+  expect(input).toBeEnabled();
+  expect(input).toHaveFocus();
+  expect(writes).toBe(1);
 });
 
-it.each([true, false])('vuelve a los 10 segundos y enfoca solo con puntero fino (%s)', async finePointer => {
-  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: finePointer })));
-  const releaseResponse = await startDeferredResult(noBookingMessage);
-  vi.useFakeTimers();
-  try {
-    await act(async () => { releaseResponse(); for (let index = 0; index < 20; index += 1) await Promise.resolve(); });
-    expect(screen.getByText(noBookingMessage)).toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(9_999); });
-    expect(screen.getByText(noBookingMessage)).toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
-    const input = screen.getByLabelText('DNI del alumno');
-    expect(input).toHaveValue('');
-    expect(screen.getByRole('button', { name: 'Registrar ingreso' })).toBeInTheDocument();
-    expect(screen.queryByText(noBookingMessage)).not.toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(16); });
-    if (finePointer) expect(input).toHaveFocus();
-    else expect(input).not.toHaveFocus();
-  } finally {
-    vi.unstubAllGlobals();
-    vi.useRealTimers();
-  }
-});
+it('retira la confirmación sin borrar un DNI que se empieza a escribir', async () => {
+  let release: (() => void) | undefined;
+  server.use(http.post('http://localhost:3000/api/sala/check-in', async () => {
+    await new Promise<void>(resolve => { release = resolve; });
+    return HttpResponse.json({ data: { status: 'REGISTERED', message: '¡Asistencia registrada!' } });
+  }));
+  renderPage();
+  const input = await screen.findByLabelText('DNI del alumno');
+  fireEvent.change(input, { target: { value: '30123456' } });
+  fireEvent.submit(input.closest('form')!);
+  await waitFor(() => expect(release).toBeDefined());
 
-it('el reset manual cancela el timeout del resultado anterior', async () => {
-  const releaseResponse = await startDeferredResult(noBookingMessage);
   vi.useFakeTimers();
   try {
-    await act(async () => { releaseResponse(); for (let index = 0; index < 20; index += 1) await Promise.resolve(); });
-    expect(screen.getByText(noBookingMessage)).toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
-    fireEvent.click(screen.getByRole('button', { name: 'Registrar otro alumno' }));
-    expect(screen.getByLabelText('DNI del alumno')).toHaveValue('');
-    expect(screen.queryByText(noBookingMessage)).not.toBeInTheDocument();
+    await act(async () => { release!(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByText('¡Asistencia registrada!')).toBeVisible();
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    fireEvent.change(input, { target: { value: '302' } });
+    expect(screen.queryByText('¡Asistencia registrada!')).not.toBeInTheDocument();
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
-    expect(screen.getByLabelText('DNI del alumno')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Registrar ingreso' })).toBeInTheDocument();
-    expect(screen.queryByText(noBookingMessage)).not.toBeInTheDocument();
+    expect(input).toHaveValue('302');
+    expect(input).toHaveFocus();
   } finally {
     vi.useRealTimers();
   }
@@ -133,7 +145,10 @@ it('keeps the incorrect DNI editable, never refreshes agenda, and preserves a co
   fireEvent.change(input, { target: { value: '30123456' } });
   fireEvent.click(screen.getByRole('button', { name: 'Registrar ingreso' }));
   await screen.findByText(notFoundMessage);
-  expect(input).toBeEnabled(); expect(refresh).not.toHaveBeenCalled();
+  expect(input).toBeEnabled();
+  expect(input).toHaveFocus();
+  expect(input).toHaveValue('30123456');
+  expect(refresh).not.toHaveBeenCalled();
   vi.useFakeTimers();
   try {
     fireEvent.change(input, { target: { value: '30123457' } });
@@ -144,14 +159,27 @@ it('keeps the incorrect DNI editable, never refreshes agenda, and preserves a co
   fireEvent.click(screen.getByRole('button', { name: 'Registrar ingreso' }));
   await waitFor(() => expect(writes).toBe(2));
 });
-it('keeps technical errors visible with an immediate retry and prevents duplicate writes', async () => {
-  let writes = 0;
-  server.use(http.post('http://localhost:3000/api/sala/check-in', () => { writes++; return HttpResponse.json({}, { status: 500 }); }));
-  renderPage(); fireEvent.change(await screen.findByLabelText('DNI del alumno'), { target: { value: '30123456' } });
-  const button = screen.getByRole('button', { name: 'Registrar ingreso' });
-  fireEvent.click(button); fireEvent.click(button);
+it('mantiene el DNI ante un error técnico y permite volver a enviarlo', async () => {
+  const submitted: unknown[] = [];
+  server.use(http.post('http://localhost:3000/api/sala/check-in', async ({ request }) => {
+    submitted.push(await request.json());
+    if (submitted.length === 1) return HttpResponse.json({}, { status: 500 });
+    return HttpResponse.json({ data: { status: 'REGISTERED', message: 'Ingreso confirmado tras reintentar.' } });
+  }));
+  renderPage();
+  const input = await screen.findByLabelText('DNI del alumno');
+  fireEvent.change(input, { target: { value: '30123456' } });
+  fireEvent.submit(input.closest('form')!);
   expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos verificar tu asistencia.');
-  expect(writes).toBe(1); expect(button).toBeEnabled();
+  expect(input).toHaveValue('30123456');
+  expect(input).toHaveFocus();
+  expect(input).toBeEnabled();
+
+  fireEvent.submit(input.closest('form')!);
+  expect(await screen.findByText('Ingreso confirmado tras reintentar.')).toBeVisible();
+  expect(submitted).toEqual([{ dni: '30123456' }, { dni: '30123456' }]);
+  expect(input).toHaveValue('');
+  expect(input).toHaveFocus();
 });
 
 it('dismisses only the incorrect-DNI message after exactly 3 seconds', async () => {
@@ -172,26 +200,47 @@ it('dismisses only the incorrect-DNI message after exactly 3 seconds', async () 
   } finally { vi.useRealTimers(); }
 });
 
-it('does not register while typing and announces verification before showing an already registered arrival', async () => {
-  let writes = 0;
+it('acepta dos DNI consecutivos y bloquea envíos mientras el primero está pendiente', async () => {
+  const submitted: unknown[] = [];
   let release: (() => void) | undefined;
-  server.use(http.post('http://localhost:3000/api/sala/check-in', async () => {
-    writes++;
-    await new Promise<void>(resolve => { release = resolve; });
-    return HttpResponse.json({ data: { status: 'ALREADY_REGISTERED', message: 'Tu ingreso ya estaba registrado.' } });
+  server.use(http.post('http://localhost:3000/api/sala/check-in', async ({ request }) => {
+    const payload = await request.json();
+    submitted.push(payload);
+    if (submitted.length === 1) {
+      await new Promise<void>(resolve => { release = resolve; });
+      return HttpResponse.json({ data: { status: 'ALREADY_REGISTERED', message: 'Tu ingreso ya estaba registrado.' } });
+    }
+    return HttpResponse.json({ data: { status: 'REGISTERED', message: '¡Asistencia registrada!', person: 'Segundo alumno' } });
   }));
   renderPage();
   const input = await screen.findByLabelText('DNI del alumno');
+  const form = input.closest('form')!;
   expect(screen.getByText(/Esperando DNI/)).toBeVisible();
   fireEvent.change(input, { target: { value: '30123456' } });
-  expect(writes).toBe(0);
-  fireEvent.submit(input.closest('form')!);
+  expect(submitted).toEqual([]);
+  // jsdom no ejecuta el envío implícito de formularios al presionar Enter.
+  act(() => {
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+  });
   await waitFor(() => expect(release).toBeDefined());
+  expect(input).toBeDisabled();
   expect(screen.getByText('Verificando DNI…')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Verificando…' })).toBeDisabled();
+  fireEvent.submit(form);
   release!();
+
   expect(await screen.findByRole('heading', { name: 'Ingreso ya registrado' })).toBeVisible();
-  expect(screen.getByText('Tu ingreso ya estaba registrado.')).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: 'Registrar otro alumno' }));
-  expect(screen.getByLabelText('DNI del alumno')).toHaveValue('');
+  expect(input).toBeEnabled();
+  expect(input).toHaveFocus();
+  expect(input).toHaveValue('');
+  expect(submitted).toEqual([{ dni: '30123456' }]);
+
+  fireEvent.change(input, { target: { value: '30123457' } });
+  expect(screen.queryByText('Tu ingreso ya estaba registrado.')).not.toBeInTheDocument();
+  fireEvent.submit(form);
+  expect(await screen.findByText('Segundo alumno')).toBeVisible();
+  expect(input).toHaveValue('');
+  expect(input).toHaveFocus();
+  expect(submitted).toEqual([{ dni: '30123456' }, { dni: '30123457' }]);
 });
