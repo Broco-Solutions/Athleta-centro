@@ -5,8 +5,8 @@ import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import { SalaPersonWorkspace } from './person-workspace';
 
-const navigation = vi.hoisted(() => ({ tab: 'reservations' }));
-vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams({ tab: navigation.tab }) }));
+const navigation = vi.hoisted(() => ({ tab: 'reservations', modality: '' }));
+vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams({ tab: navigation.tab, ...(navigation.modality ? { modality: navigation.modality } : {}) }) }));
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
 const personId = '10000000-0000-4000-8000-000000000001';
@@ -23,9 +23,11 @@ beforeAll(() => {
 });
 beforeEach(() => {
   navigation.tab = 'reservations';
+  navigation.modality = '';
   personServicesRequests = 0;
   catalogRequests = 0;
   server.use(
+    http.get(`http://localhost:3000/api/sala/people/${personId}/online-student`, () => HttpResponse.json({ data: null })),
     http.get(`http://localhost:3000/api/sala/people/${personId}/training-records`, () => HttpResponse.json({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } })),
     http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor', firstName: 'Profesor', lastName: 'Sintético' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_AGENDA_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })),
     http.get(`http://localhost:3000/api/people/${personId}`, () => HttpResponse.json({ data: { id: personId, firstName: 'Alumno', lastName: 'Sintético', dni: '12345678' } })),
@@ -242,6 +244,7 @@ const professorPermissions = ['SALA_RELATION_READ', 'SALA_AGENDA_MANAGE', 'SALA_
 const dashboardDate = new Date('2026-10-14T01:30:00Z'); // Still October 13 in Argentina.
 function dashboardHandlers() {
   navigation.tab = 'summary';
+  navigation.modality = '';
   vi.setSystemTime(dashboardDate);
   routineSession(professorPermissions);
   server.use(
@@ -897,22 +900,42 @@ it('prints the existing person full name without requesting it again', async () 
   } finally { print.mockRestore(); }
 });
 
-it('shows the summary for Online students on a direct payment URL and keeps training links', async () => {
+it('shows the online summary on a direct payment URL and keeps routine and PIN access', async () => {
   navigation.tab = 'payments';
+  navigation.modality = 'online';
   server.use(
-    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_PHYSICAL_EVALUATION_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_REGISTER'], csrfToken: 'csrf', mustChangePassword: false } })),
-    http.get(`http://localhost:3000/api/sala/participations/person/${personId}`, () => HttpResponse.json({ data: [{ id: 'participation', endDate: null, plan: { name: 'Entrenamiento remoto', isOnline: true } }] })),
-    http.get(`http://localhost:3000/api/sala/people/${personId}/routines`, () => HttpResponse.json({ data: [] })),
-    http.get(`http://localhost:3000/api/sala/people/${personId}/physical-evaluations`, () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE', 'SALA_PHYSICAL_EVALUATION_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_REGISTER', 'PORTAL_PIN_RESET'], csrfToken: 'csrf', mustChangePassword: false } })),
+    http.get(`http://localhost:3000/api/sala/people/${personId}/online-student`, () => HttpResponse.json({ data: { id: 'online-link', professor: { id: 'professor', firstName: 'Ana', lastName: 'Profesora' } } })),
   );
   renderWorkspace();
-  expect(await screen.findByText(/Online · Cobro externo/)).toBeInTheDocument();
+  expect(await screen.findByText(/Modalidad Online · Profesor responsable: Ana Profesora/)).toBeInTheDocument();
   const nav = within(screen.getByRole('navigation', { name: 'Secciones del alumno en Sala' }));
   expect(nav.getByRole('link', { name: 'Resumen' })).toHaveAttribute('aria-current', 'page');
-  expect(nav.getByRole('link', { name: 'Rutina' })).toBeInTheDocument();
-  expect(nav.getByRole('link', { name: 'Evaluaciones' })).toBeInTheDocument();
-  expect(nav.queryByRole('link', { name: 'Pagos' })).not.toBeInTheDocument();
-  expect(nav.queryByRole('link', { name: 'Turnos' })).not.toBeInTheDocument();
-  expect(screen.queryByText(/Registrar renovación|Sin vigencia/)).not.toBeInTheDocument();
+  expect(nav.getByRole('link', { name: 'Rutina' })).toHaveAttribute('href', `/sala/people/${personId}?modality=online&tab=routine`);
+  expect(nav.queryByRole('link', { name: /Pagos|Turnos|Evaluaciones/ })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Restablecer PIN del Portal' })).toBeVisible();
+  expect(screen.queryByText(/Cambiar Plan|Registrar renovación|Sin vigencia/)).not.toBeInTheDocument();
   expect(personServicesRequests).toBe(0);
+});
+
+it('opens the existing routine editor using the online enrollment as owner', async () => {
+  navigation.tab = 'routine';
+  navigation.modality = 'online';
+  let requestedId: string | null = null;
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })),
+    http.get(`http://localhost:3000/api/sala/people/${personId}/online-student`, () => HttpResponse.json({ data: { id: 'online-link', professor: { id: 'professor', firstName: 'Ana', lastName: 'Profesora' } } })),
+    http.get('http://localhost:3000/api/sala/exercise-definitions', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/movement-patterns', () => HttpResponse.json({ data: [] })),
+    http.get(`http://localhost:3000/api/sala/people/${personId}/routines`, ({ request }) => {
+      requestedId = new URL(request.url).searchParams.get('onlineStudentId');
+      return HttpResponse.json({ data: [] });
+    }),
+  );
+  renderWorkspace();
+  const create = await screen.findByRole('button', { name: 'Crear desde cero' });
+  await waitFor(() => expect(create).toBeEnabled());
+  fireEvent.click(create);
+  expect(requestedId).toBe('online-link');
+  expect(screen.getByRole('button', { name: /Guardar|Asignar rutina/ })).toBeInTheDocument();
 });

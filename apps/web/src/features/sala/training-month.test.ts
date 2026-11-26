@@ -53,3 +53,12 @@ it('keeps the routine through review and switches at the actual replacement', ()
   expect(trainingMonthRoutines(routines, '2027-02').map(p => p.routine.id)).toEqual(['r2']);
   expect(initialTrainingRoutine(routines.slice(1), '2026-11', '2026-11-25')).toBe('');
 });
+
+
+it('keeps overlapping online and in-person periods available without shortening either track', () => {
+  const physical = { ...version(1, '2026-10-01'), status: 'ACTIVE' as const };
+  const online = { ...version(2, '2026-10-01'), onlineStudentId: 'online' };
+  const routines = [physical, online];
+  expect(trainingMonthRoutines(routines, '2026-11').map(period => period.routine.id)).toEqual([physical.id, online.id]);
+  expect(initialTrainingRoutine(routines, '2026-11', '2026-11-10')).toBe(physical.id);
+});

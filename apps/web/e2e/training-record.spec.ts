@@ -1,12 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 
-type Fixture = { personId: string; professorId: string; planId: string; exerciseId: string; dni: string; email: string };
+type Fixture = { personId: string; professorId: string; planId: string; exerciseId: string; exerciseName: string; dni: string; email: string };
 function fixture(variant?: 'history' | 'grouped' | 'online'): Fixture {
   return JSON.parse(execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts', ...(variant ? [variant] : [])], { cwd: '../..', encoding: 'utf8' }).trim()) as Fixture;
 }
 function cleanup(f: Fixture) {
-  execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts', 'cleanup', f.personId, f.professorId, f.planId, f.exerciseId], { cwd: '../..', stdio: 'pipe' });
+  execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/training-record-e2e-fixture.ts', 'cleanup', f.personId, f.professorId, f.planId, f.exerciseId, f.dni], { cwd: '../..', stdio: 'pipe' });
 }
 async function login(page: Page, f: Fixture) {
   await page.goto('/portal/login'); await page.getByLabel('DNI', { exact: true }).fill(f.dni); await page.getByLabel('PIN', { exact: true }).fill('1111'); await page.getByRole('button', { name: 'Ingresar', exact: true }).click(); await expect(page).toHaveURL('/portal');
@@ -169,14 +169,71 @@ test('edits a grouped current routine with a future routine and preserves monthl
   } finally { await staff.close(); cleanup(f); }
 });
 
-test('an Online student saves Portal weights without turns or payments', async ({ page }) => {
+test('a professor enrolls a private online student and the student saves Portal weights', async ({ page, browser }) => {
+  test.setTimeout(120_000);
   const f = fixture('online');
+  const staff = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   try {
+    const teacher = await staff.newPage();
+    await teacher.goto('/login');
+    await teacher.getByLabel('Email').fill(f.email);
+    await teacher.getByLabel('Contraseña', { exact: true }).fill('Synthetic-test-password1!');
+    await teacher.getByRole('button', { name: 'Ingresar', exact: true }).click();
+    await expect(teacher).toHaveURL('/');
+    await teacher.goto('/students');
+    await teacher.getByRole('button', { name: 'Nuevo alumno' }).click();
+    await teacher.getByRole('button', { name: 'Online', exact: true }).click();
+    const form = teacher.getByRole('dialog', { name: 'Nuevo alumno online' });
+    await expect(form.getByLabel('Plan')).toHaveCount(0);
+    await expect(form.getByLabel('Profesor responsable')).toHaveCount(0);
+    await form.getByLabel('Nombre', { exact: true }).fill('Alumno Particular');
+    await form.getByLabel('Apellido').fill('TrainingRecordE2E');
+    await form.getByLabel('DNI', { exact: true }).fill(f.dni);
+    await form.getByLabel('Teléfono', { exact: true }).fill('3515550000');
+    await form.getByLabel('Fecha de nacimiento').fill('1990-01-01');
+    const enrollment = teacher.waitForResponse(response => response.url().endsWith('/sala/online-students') && response.request().method() === 'POST');
+    await form.getByRole('button', { name: 'Guardar alumno online' }).click();
+    const enrolled = await enrollment;
+    expect(enrolled.status()).toBe(201);
+    f.personId = (await enrolled.json()).data.personId as string;
+    const pin = await teacher.getByLabel('PIN temporal', { exact: true }).innerText();
+    await teacher.getByRole('button', { name: 'Entendido' }).click();
+    await teacher.getByLabel('Modalidad').selectOption('online');
+    await teacher.getByRole('button', { name: 'Mis alumnos' }).click();
+    const row = teacher.getByRole('row').filter({ hasText: f.dni });
+    await expect(row.getByText('Online', { exact: true })).toBeVisible();
+    await expect(row.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', `/sala/people/${f.personId}?modality=online`);
+    await expect(row.getByRole('link', { name: /renovación|pagos/i })).toHaveCount(0);
+    await capture(teacher, 'private-online-students');
+    await row.getByRole('link', { name: 'Ver ficha' }).click();
+    const tabs = teacher.getByRole('navigation', { name: 'Secciones del alumno en Sala' });
+    await expect(tabs.getByRole('link', { name: 'Turnos' })).toHaveCount(0);
+    await expect(tabs.getByRole('link', { name: 'Pagos' })).toHaveCount(0);
+    await tabs.getByRole('link', { name: 'Rutina' }).click();
+    await teacher.getByRole('button', { name: 'Crear desde cero' }).click();
+    await teacher.getByLabel('Nombre del día 1').fill('Fuerza');
+    await teacher.getByRole('button', { name: 'Buscar ejercicios para el bloque A' }).click();
+    await teacher.getByLabel('Buscar ejercicio').fill(f.exerciseName);
+    await teacher.getByRole('button', { name: `Agregar ${f.exerciseName}`, exact: true }).click();
+    await teacher.getByLabel('Valor', { exact: true }).fill('10');
+    await teacher.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
+    await expect(teacher.getByText('Rutina asignada correctamente.')).toBeVisible();
+    await tabs.getByRole('link', { name: 'Declaración de salud' }).click();
+    await teacher.getByRole('button', { name: 'Registrar declaración presentada en papel' }).click();
+    await teacher.getByRole('checkbox', { name: /firmada en papel/ }).check();
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    await teacher.getByLabel('Fecha de firma').fill(today);
+    await teacher.getByRole('button', { name: 'Confirmar registro' }).click();
+    await expect(teacher.getByText('Vigente', { exact: true })).toBeVisible();
+
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/portal/login');
     await page.getByLabel('DNI', { exact: true }).fill(f.dni);
-    await page.getByLabel('PIN', { exact: true }).fill('1111');
+    await page.getByLabel('PIN', { exact: true }).fill(pin);
     await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
+    await page.getByLabel('PIN actual', { exact: true }).fill(pin);
+    await page.getByLabel('Nuevo PIN', { exact: true }).fill(pin === '4321' ? '1234' : '4321');
+    await page.getByRole('button', { name: 'Guardar PIN' }).click();
     await expect(page.getByText('Modalidad Online')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Mis turnos fijos' })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Vigencia de Sala' })).toHaveCount(0);
@@ -197,25 +254,11 @@ test('an Online student saves Portal weights without turns or payments', async (
     await expect(page.getByText('La modalidad Online no utiliza turnos presenciales.')).toBeVisible();
     await expect(page.getByText('Cuota sin vigencia')).toHaveCount(0);
 
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/login');
-    await page.getByLabel('Email').fill(f.email);
-    await page.getByLabel('Contraseña', { exact: true }).fill('Synthetic-test-password1!');
-    await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
-    await expect(page).toHaveURL('/');
-    await page.goto('/students');
-    await page.getByLabel('Modalidad').selectOption('online');
-    await page.getByRole('button', { name: 'Mis alumnos' }).click();
-    const student = page.getByRole('row').filter({ hasText: f.dni });
-    await expect(student.getByText('Cobro externo')).toBeVisible();
-    await expect(student.getByRole('link', { name: /renovación|pagos/i })).toHaveCount(0);
-    await page.screenshot({ path: '/tmp/athleta-online-students-1440.png', fullPage: true });
-    await student.getByRole('link', { name: 'Ver ficha' }).click();
-    const tabs = page.getByRole('navigation', { name: 'Secciones del alumno en Sala' });
-    await expect(tabs.getByRole('link', { name: 'Rutina' })).toBeVisible();
-    await expect(tabs.getByRole('link', { name: 'Turnos' })).toHaveCount(0);
-    await expect(tabs.getByRole('link', { name: 'Pagos' })).toHaveCount(0);
+    await tabs.getByRole('link', { name: 'Rutina' }).click();
+    await teacher.getByRole('button', { name: 'Ver pesos' }).click();
+    await expect(teacher.getByText('42 kg', { exact: true })).toBeVisible();
   } finally {
+    await staff.close();
     cleanup(f);
   }
 });

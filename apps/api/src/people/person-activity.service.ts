@@ -5,11 +5,12 @@ import { PrismaService } from '../prisma/prisma.service';
 export class PersonActivityService {
   constructor(private readonly prisma: PrismaService) {}
   async isActive(personId: string, now = new Date()): Promise<boolean> {
-    const [sala, treatment, appointment] = await Promise.all([
+    const [sala, online, treatment, appointment] = await Promise.all([
       this.prisma.salaParticipation.count({ where: { personId, endDate: null } }),
+      this.prisma.onlineStudent.count({ where: { personId, endDate: null } }),
       this.prisma.treatment.count({ where: { personId, status: TreatmentStatus.IN_PROGRESS } }),
       this.prisma.clinicalAppointment.count({ where: { personId, status: ClinicalAppointmentStatus.SCHEDULED, startAt: { gt: now } } }),
     ]);
-    return sala > 0 || treatment > 0 || appointment > 0;
+    return sala > 0 || online > 0 || treatment > 0 || appointment > 0;
   }
 }

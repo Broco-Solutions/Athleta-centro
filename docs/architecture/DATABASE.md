@@ -596,17 +596,23 @@ ENDED  = endDate IS NOT NULL
 
 ---
 
-### Modalidad del plan
+### Alumnos particulares online
 
-`SalaPlan.isOnline` identifica el entrenamiento Online. La migración agrega la
-columna `is_online` con valor predeterminado `false`. La administración configura
-los planes Online desde el catálogo de Sala. Sus condiciones internas son importe
-cero, sesiones semanales nulas y ausencia de servicios de reserva. Los cobros se
-gestionan fuera de Athleta Manager.
+`OnlineStudent` registra una Persona, su profesor responsable y las fechas de
+vigencia. PostgreSQL admite una sola vinculación online abierta por Persona.
+El vínculo online es independiente de la participación presencial y no genera
+cargos, vencimientos ni turnos.
 
-La participación conserva su relación obligatoria con el plan. Una vez que el
-plan tiene asignaciones o historial, su modalidad permanece fija. Los cambios
-de plan de una participación deben conservar la modalidad.
+Cada `Routine` pertenece a una participación presencial o a una vinculación
+online. Un `CHECK` requiere exactamente un propietario y las claves foráneas
+compuestas verifican que pertenezca a la misma Persona. Métodos, días, ejercicios
+y registros de pesos siguen en las tablas existentes.
+
+`SalaPlan.isOnline` se conserva como marca histórica. La migración
+`20261127120000_online_students` copia cada vinculación anterior con su profesor
+y fechas, mueve sus rutinas sin cambiar identificadores y cierra las
+participaciones activas del mecanismo anterior. Los planes y las referencias
+históricas de pagos y turnos se conservan.
 
 ### Objetivo de Sala
 

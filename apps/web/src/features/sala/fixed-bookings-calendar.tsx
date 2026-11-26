@@ -82,7 +82,7 @@ function AssignmentDialog({ selection, csrfToken, canManageParticipation, canCre
   const students = useQuery({ queryKey: ['sala', 'students'], queryFn: async () => {
     const response = await listSalaStudents(readOptions);
     if (response.status !== 200) throw new Error('No se pudieron buscar los alumnos.');
-    return response.data.data;
+    return response.data.data.filter(item => item.participationId && !item.plan?.isOnline);
   } });
   const agenda = useQuery({ queryKey: ['sala', 'agenda', startDate], queryFn: () => loadAgenda(startDate), ...refreshOptions });
   const slot = assignmentSlot(agenda.data ?? [], selection.hour);
@@ -106,7 +106,7 @@ function AssignmentDialog({ selection, csrfToken, canManageParticipation, canCre
     }
   };
   const create = useMutation({ mutationFn: async () => {
-    if (!student || !slot) throw new Error('Seleccioná un alumno y un horario con disponibilidad.');
+    if (!student?.participationId || !slot) throw new Error('Seleccioná un alumno y un horario con disponibilidad.');
     await assign(student.id, student.participationId);
   }, onSuccess: onSaved });
   const createStudent = useMutation({ mutationFn: async (values: StudentValues) => {
@@ -122,7 +122,7 @@ function AssignmentDialog({ selection, csrfToken, canManageParticipation, canCre
       const refreshed = await listSalaStudents(readOptions);
       if (refreshed.status !== 200) throw new Error('No se pudo actualizar la lista de alumnos.');
       const createdStudent = refreshed.data.data.find((item) => item.id === created.id);
-      if (!createdStudent) throw new Error('No se encontró la participación de Sala recién creada.');
+      if (!createdStudent?.participationId) throw new Error('No se encontró la participación de Sala recién creada.');
       await assign(created.id, createdStudent.participationId);
       return { notice, assigned: true };
     } catch (error) {
@@ -139,7 +139,7 @@ function AssignmentDialog({ selection, csrfToken, canManageParticipation, canCre
     {startDate !== selection.date ? <p className="mt-2 text-sm text-muted-foreground">La fecha consultada ya pasó. Se utilizará la siguiente ocurrencia de este día.</p> : null}
     {creatingStudent ? <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={studentForm.handleSubmit((values) => createStudent.mutate(values))}>
       <GeneralPersonFields form={studentForm as unknown as import('react-hook-form').UseFormReturn<PersonValues>} />
-      <StudentTrainingFields form={studentForm} canPlanManage={false} inPersonOnly />
+      <StudentTrainingFields form={studentForm} canPlanManage={false} />
       <PaperDeclarationFields value={paper} disabled={createStudent.isPending} />
       {agenda.isPending ? <p role="status" className="sm:col-span-2">Verificando disponibilidad…</p> : agenda.isError ? <p role="alert" className="sm:col-span-2">No se pudo consultar la disponibilidad.</p> : !slot ? <p role="alert" className="sm:col-span-2">El horario está cerrado, incompleto o sin cupo para la fecha de inicio.</p> : null}
       {createStudent.isError ? <p role="alert" className="text-sm text-red-800 sm:col-span-2">{createStudent.error.message}</p> : null}

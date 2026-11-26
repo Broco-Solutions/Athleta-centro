@@ -13,7 +13,13 @@ export function monthlyTrainingSlots(records: TrainingRecordDetailDto[], routine
 }
 export function trainingRoutinePeriods(routines: TrainingRoutineVersionDto[]) {
   const sorted = [...routines].sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom) || a.version - b.version);
-  return sorted.map((routine, index) => ({ routine, from: routine.effectiveFrom, until: routine.effectiveUntil ?? sorted[index + 1]?.effectiveFrom ?? null }));
+  const nextStartByOwner = new Map<string | null, string>();
+  return sorted.toReversed().map(routine => {
+    const owner = routine.onlineStudentId ?? null;
+    const until = routine.effectiveUntil ?? nextStartByOwner.get(owner) ?? null;
+    nextStartByOwner.set(owner, routine.effectiveFrom);
+    return { routine, from: routine.effectiveFrom, until };
+  }).reverse();
 }
 export function trainingMonthRoutines(routines: TrainingRoutineVersionDto[], month: string) {
   const periods = trainingRoutinePeriods(routines);
@@ -26,7 +32,10 @@ export function trainingMonthRoutines(routines: TrainingRoutineVersionDto[], mon
 }
 export function initialTrainingRoutine(routines: TrainingRoutineVersionDto[], month: string, today: string): string {
   const periods = trainingMonthRoutines(routines, month);
-  if (month === today.slice(0, 7)) return periods.findLast(p => p.from <= today && (!p.until || p.until > today))?.routine.id ?? '';
+  if (month === today.slice(0, 7)) {
+    const current = periods.filter(p => p.from <= today && (!p.until || p.until > today));
+    return (current.find(p => p.routine.status === 'ACTIVE') ?? current.at(-1))?.routine.id ?? '';
+  }
   return periods.at(-1)?.routine.id ?? '';
 }
 export function trainingPeriodLabel(from: string, until: string | null, month: string): string {

@@ -40,6 +40,7 @@ describe('Sala training history (isolated PostgreSQL)', () => {
     await prisma.salaTrainingRecordExercise.deleteMany({ where: { record: { personId: { in: people } } } });
     await prisma.salaTrainingRecord.deleteMany({ where: { personId: { in: people } } });
     await prisma.routine.deleteMany({ where: { personId: { in: people } } });
+    await prisma.onlineStudent.deleteMany({ where: { personId: { in: people } } });
     await prisma.session.deleteMany({ where: { OR: [{ personId: { in: people } }, { internalUserId: { in: users } }] } });
     await prisma.salaCharge.deleteMany({ where: { personId: { in: people } } });
     await prisma.salaParticipation.deleteMany({ where: { personId: { in: people } } });
@@ -617,6 +618,73 @@ describe('Sala training history (isolated PostgreSQL)', () => {
       await prisma.$executeRawUnsafe(`DROP FUNCTION ${name}()`);
     }
   });
+  it('moves legacy online assignments without changing routine, exercise, weight, payment or reservation identities', async () => {
+    const online = await fixture();
+    const physical = await fixture();
+    await create(online).expect(201);
+    await create(physical).expect(201);
+    const sql = readFileSync('prisma/migrations/20261127120000_online_students/migration.sql', 'utf8');
+    await prisma.$transaction(async tx => {
+      await tx.$executeRaw`CREATE SCHEMA legacy_online_migration`;
+      await tx.$executeRaw`SET LOCAL search_path = legacy_online_migration, public`;
+      const tables = [
+        'people', 'internal_users', 'sala_plans', 'sala_participations', 'routines',
+        'routine_days', 'routine_exercises', 'sala_training_records', 'sala_training_record_exercises',
+        'sala_payments', 'one_off_reservations',
+      ];
+      for (const table of tables) {
+        await tx.$executeRawUnsafe(`CREATE TABLE "${table}" AS SELECT * FROM public."${table}"`);
+      }
+      await tx.$executeRaw`ALTER TABLE people ADD PRIMARY KEY (id)`;
+      await tx.$executeRaw`ALTER TABLE internal_users ADD PRIMARY KEY (id)`;
+      await tx.$executeRaw`ALTER TABLE sala_participations ADD PRIMARY KEY (id)`;
+      await tx.$executeRaw`ALTER TABLE routines DROP COLUMN online_student_id, ALTER COLUMN sala_participation_id SET NOT NULL, ADD CONSTRAINT routines_sala_participation_id_fkey FOREIGN KEY (sala_participation_id) REFERENCES sala_participations(id)`;
+      await tx.$executeRaw`CREATE UNIQUE INDEX routines_one_active_per_person ON routines(person_id) WHERE status = 'ACTIVE'`;
+      await tx.$executeRaw`UPDATE sala_plans SET is_online = true WHERE id = ${online.participation.planId}::uuid`;
+      const snapshot = (table: string) => tx.$queryRawUnsafe(`SELECT to_jsonb(t) AS data FROM "${table}" t ORDER BY id`);
+      const unchanged = tables.filter(table => !['routines', 'sala_participations'].includes(table));
+      const before = await Promise.all(unchanged.map(snapshot));
+      const physicalBefore = await tx.$queryRaw`SELECT to_jsonb(r) AS data FROM routines r WHERE id = ${physical.routine.id}::uuid`;
+      const legacyBefore = await tx.$queryRaw`SELECT to_jsonb(r) - 'sala_participation_id' AS data FROM routines r WHERE id = ${online.routine.id}::uuid`;
+      for (const statement of sql.split(';').map(item => item.trim()).filter(item => item && !['BEGIN', 'COMMIT'].includes(item))) {
+        await tx.$executeRawUnsafe(statement);
+      }
+      expect(await Promise.all(unchanged.map(snapshot))).toEqual(before);
+      expect(await tx.$queryRaw`SELECT to_jsonb(r) - 'online_student_id' AS data FROM routines r WHERE id = ${physical.routine.id}::uuid`).toEqual(physicalBefore);
+      expect(await tx.$queryRaw`SELECT to_jsonb(r) - 'online_student_id' - 'sala_participation_id' AS data FROM routines r WHERE id = ${online.routine.id}::uuid`).toEqual(legacyBefore);
+      expect(await tx.$queryRaw`SELECT id, professor_id, person_id, end_date FROM online_students`).toEqual([{
+        id: online.participation.id, professor_id: online.participation.mainProfessorId, person_id: online.person.id, end_date: null,
+      }]);
+      expect(await tx.$queryRaw`SELECT id, online_student_id, sala_participation_id FROM routines WHERE id = ${online.routine.id}::uuid`).toEqual([
+        { id: online.routine.id, online_student_id: online.participation.id, sala_participation_id: null },
+      ]);
+      expect(await tx.$queryRaw`SELECT end_date FROM sala_participations WHERE id = ${online.participation.id}::uuid`).toEqual([{ end_date: expect.any(Date) }]);
+      await tx.$executeRaw`DROP SCHEMA legacy_online_migration CASCADE`;
+    });
+  });
+
+  it('filters online weight records by professor even when a person also attends in person', async () => {
+    const f = await fixture();
+    const other = await internal(Role.PROFESSOR);
+    const admin = await internal(Role.ADMINISTRATIVE);
+    const link = await prisma.onlineStudent.create({ data: { personId: f.person.id, professorId: f.participation.mainProfessorId, startDate: new Date('2026-10-01') } });
+    const online = await sala.replaceRoutine({ personId: f.person.id, onlineStudentId: link.id, effectiveFrom: '2026-10-18', days: [{ exercises: [{ exerciseDefinitionId: f.a.id }] }] });
+    const day = online.days[0]!;
+    const weights = await training.saveMonthlyWeights(f.person.id, {
+      routineId: online.id, routineDayId: day.id, month: '2026-10',
+      weeks: [1, 2, 3, 4].map(weekNumber => ({ weekNumber, exercises: [{ id: day.exercises[0]!.id, weightKg: '27' }] })),
+    });
+    const inPerson = (await create(f).expect(201)).body.data;
+    const url = `/api/sala/people/${f.person.id}/training-records`;
+    const http = request(app.getHttpServer());
+    expect((await http.get(url).set('Cookie', other).expect(200)).body.data).toEqual([expect.objectContaining({ id: inPerson.id })]);
+    expect((await http.get(url + '/month?month=2026-10').set('Cookie', other).expect(200)).body.data).toEqual([expect.objectContaining({ id: inPerson.id })]);
+    await http.get(url + '/' + weights[0]!.id).set('Cookie', other).expect(404);
+    expect((await http.get(url + '/' + weights[0]!.id).set('Cookie', admin).expect(200)).body.data).toMatchObject({ id: weights[0]!.id, exercises: [expect.objectContaining({ weightKg: '27' })] });
+    expect((await training.context(f.person.id, undefined, link.id)).routine?.id).toBe(online.id);
+    expect((await training.context(f.person.id)).routine?.id).toBe(f.routine.id);
+  });
+
   it('backfills operational effective dates and preserves legacy IDs, dates, weights and snapshots through the migration SQL', async () => {
     const f = await fixture(); await create(f).expect(201);
     const sql = readFileSync('prisma/migrations/20261104120000_routine_periods_monthly_weights/migration.sql', 'utf8');

@@ -62,27 +62,52 @@ export class PortalService {
   async changePin(token: string | undefined, currentPin: string, nextPin: string) { if (!/^\d{4}$/.test(nextPin)) throw new BadRequestException({ code: 'PIN_POLICY', message: 'El PIN debe tener 4 dígitos.' }); const { person } = await this.current(token); if (!person.portalCredential || !(await argon2.verify(person.portalCredential.pinHash, currentPin))) throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'El PIN actual no es válido.' }); await this.prisma.portalCredential.update({ where: { personId: person.id }, data: { pinHash: await argon2.hash(nextPin, { type: argon2.argon2id }), mustChangePin: false, credentialsUpdatedAt: new Date() } }); return { mustChangePin: false }; }
   profile(p: { id: string; firstName: string; lastName: string; dni: string; phone: string; birthDate: Date; email?: string|null; emergencyContactName?: string|null; emergencyContactPhone?: string|null; socialWorkId?: string|null; affiliateNumber?: string|null; socialWork?: { name: string } | null }) { return { id: p.id, firstName: p.firstName, lastName: p.lastName, dni: p.dni, phone: p.phone, birthDate: p.birthDate.toISOString().slice(0, 10), ...(p.email ? { email: p.email } : {}), ...(p.emergencyContactName ? { emergencyContactName: p.emergencyContactName } : {}), ...(p.emergencyContactPhone ? { emergencyContactPhone: p.emergencyContactPhone } : {}), ...(p.socialWorkId ? { socialWorkId: p.socialWorkId } : {}), ...(p.socialWork ? { socialWorkName: p.socialWork.name } : {}), ...(p.affiliateNumber ? { affiliateNumber: p.affiliateNumber } : {}) }; }
   async me(token?: string) { const { person } = await this.current(token); return this.profile(person); }
-  async trainingContext(token: string | undefined, date?: string) { const { person } = await this.ready(token); return this.training.context(person.id, date); }
+  async trainingContext(token: string | undefined, date?: string) {
+    const { person } = await this.ready(token);
+    const { inPerson, online } = await this.salaMembership(person.id);
+    return this.training.context(person.id, date, inPerson ? null : online?.id ?? null, inPerson ? online?.id : undefined);
+  }
   async trainingList(token: string | undefined, query: TrainingRecordQueryDto) { const { person } = await this.ready(token); return this.training.list(person.id, query); }
   async trainingMonth(token: string | undefined, month: string) { const { person } = await this.ready(token); return this.training.listMonth(person.id, month); }
   async trainingDetail(token: string | undefined, id: string) { const { person } = await this.ready(token); return this.training.detail(person.id, id); }
   async trainingCreate(token: string | undefined, input: CreateTrainingRecordDto) { const { person } = await this.ready(token); return this.training.create(person.id, input); }
   async trainingMonthlySave(token: string | undefined, input: SaveMonthlyTrainingWeightsDto) { const { person } = await this.ready(token); return this.training.saveMonthlyWeights(person.id, input); }
   async trainingCorrect(token: string | undefined, id: string, input: CorrectTrainingRecordDto) { const { person } = await this.ready(token); return this.training.correct(person.id, id, input); }
+  private async salaMembership(personId: string) {
+    const inPerson = await this.prisma.salaParticipation.findFirst({
+      where: { personId, endDate: null, plan: { isOnline: false } }, select: { id: true },
+    });
+    const online = await this.prisma.onlineStudent.findFirst({
+      where: { personId, endDate: null }, select: { id: true },
+    });
+    return { inPerson, online };
+  }
+
+  private async assertPortalInPerson(personId: string) {
+    const membership = await this.salaMembership(personId);
+    this.salaService.assertInPersonBooking(Boolean(!membership.inPerson && membership.online));
+    return membership.inPerson;
+  }
+
   async sala(token?: string) {
     const { person } = await this.ready(token);
-    const participation = await this.prisma.salaParticipation.findFirst({ where: { personId: person.id, endDate: null }, select: { plan: { select: { isOnline: true } } } });
-    if (!participation) throw new ForbiddenException({ code: 'SALA_NOT_AVAILABLE', message: 'Sala no disponible.' });
+    const { inPerson, online } = await this.salaMembership(person.id);
+    if (!inPerson && !online) throw new ForbiddenException({ code: 'SALA_NOT_AVAILABLE', message: 'Sala no disponible.' });
     const today = this.todayOperational();
-    const isOnline = participation.plan.isOnline;
+    const isOnline = Boolean(!inPerson && online);
     const bookings = isOnline
       ? { reservations: [], fixed: [], fixedOccurrences: [], validity: null, replacementWeeks: [] }
       : await this.salaBookings(person.id, today);
     const routineVersions = await this.prisma.routine.findMany({
-      where: { personId: person.id, effectiveFrom: { lte: new Date(`${today}T00:00:00Z`) } },
-      select: { id: true, version: true, effectiveFrom: true, cancelledAt: true },
+      where: {
+        personId: person.id,
+        OR: [...(inPerson ? [{ onlineStudentId: null }] : []), ...(online ? [{ onlineStudentId: online.id }] : [])],
+        effectiveFrom: { lte: new Date(`${today}T00:00:00Z`) },
+      },
+      select: { id: true, onlineStudentId: true, version: true, effectiveFrom: true, cancelledAt: true },
     });
-    const activeRoutine = routineForDate(routineVersions, today);
+    const activeRoutine = routineForDate(routineVersions.filter(version => version.onlineStudentId === null), today)
+      ?? routineForDate(routineVersions.filter(version => version.onlineStudentId !== null), today);
     const routine = activeRoutine ? await this.prisma.routine.findUnique({
       where: { id: activeRoutine.id },
       include: {
@@ -97,7 +122,7 @@ export class PortalService {
         },
       },
     }) : null;
-    const evaluations = await this.prisma.physicalEvaluation.findMany({ where: { personId: person.id }, select: { id: true, evaluationDate: true, results: { select: { resultText: true, testDefinition: { select: { id: true, name: true } } }, orderBy: { id: 'asc' } } }, orderBy: [{ evaluationDate: 'asc' }, { id: 'asc' }] });
+    const evaluations = isOnline ? [] : await this.prisma.physicalEvaluation.findMany({ where: { personId: person.id }, select: { id: true, evaluationDate: true, results: { select: { resultText: true, testDefinition: { select: { id: true, name: true } } }, orderBy: { id: 'asc' } } }, orderBy: [{ evaluationDate: 'asc' }, { id: 'asc' }] });
     return { isOnline, ...bookings, routine: routine ? { ...routine, status: 'ACTIVE' as const } : null, evaluations };
   }
 
@@ -113,8 +138,8 @@ export class PortalService {
     return { reservations, fixed, fixedOccurrences, validity, replacementWeeks };
   }
   async salaServices(token?: string) { const { person } = await this.ready(token); return this.salaService.listPersonServiceTypes(person.id); }
-  async salaAvailability(token: string|undefined, date: string, excludeFixedBookingId?: string) { const { person } = await this.ready(token); if (date < this.todayOperational()) throw new BadRequestException({ code: 'PORTAL_DATE_OUT_OF_RANGE', message: 'No podés consultar fechas pasadas.' }); if (excludeFixedBookingId) { const owned = await this.prisma.fixedSalaBooking.findFirst({ where: { id: excludeFixedBookingId, personId: person.id }, select: { id: true } }); if (!owned) throw new ForbiddenException({ code: 'PORTAL_RESOURCE_FORBIDDEN', message: 'No podés consultar este turno.' }); } return (await this.salaService.availability(date, this.prisma, excludeFixedBookingId)).map(slot => ({ scheduleSlotId: slot.scheduleSlotId, startTime: slot.startTime, endTime: slot.endTime, available: slot.available > 0 && !slot.isClosed, date: slot.date })); }
-  async reserve(token: string|undefined, body: { date: string; scheduleSlotId: string; serviceTypeId?: string; startTime?: string }) { const { person } = await this.ready(token); const p = await this.prisma.salaParticipation.findFirst({ where: { personId: person.id, endDate: null }, select: { id: true, plan: { select: { isOnline: true } } } }); if (!p) throw new ForbiddenException({ code: 'SALA_NOT_AVAILABLE', message: 'Sala no disponible.' }); this.salaService.assertInPersonBooking(p.plan.isOnline); const date = new Date(`${body.date}T00:00:00.000Z`); const today = new Date(`${this.todayOperational()}T00:00:00.000Z`); const max = new Date(today); max.setUTCDate(max.getUTCDate()+30); if (Number.isNaN(date.getTime()) || date < today || date > max) throw new BadRequestException({ code: 'PORTAL_DATE_OUT_OF_RANGE', message: 'Las reservas están disponibles hasta 30 días.' }); await this.assertSalaReservationValidity(person.id, date); return this.salaService.createReservation({ personId: person.id, salaParticipationId: p.id, scheduleSlotId: body.scheduleSlotId, date: body.date, ...(body.serviceTypeId ? { serviceTypeId: body.serviceTypeId } : {}), ...(body.startTime ? { startTime: body.startTime } : {}) }, resolved => {
+  async salaAvailability(token: string|undefined, date: string, excludeFixedBookingId?: string) { const { person } = await this.ready(token); await this.assertPortalInPerson(person.id); if (date < this.todayOperational()) throw new BadRequestException({ code: 'PORTAL_DATE_OUT_OF_RANGE', message: 'No podés consultar fechas pasadas.' }); if (excludeFixedBookingId) { const owned = await this.prisma.fixedSalaBooking.findFirst({ where: { id: excludeFixedBookingId, personId: person.id }, select: { id: true } }); if (!owned) throw new ForbiddenException({ code: 'PORTAL_RESOURCE_FORBIDDEN', message: 'No podés consultar este turno.' }); } return (await this.salaService.availability(date, this.prisma, excludeFixedBookingId)).map(slot => ({ scheduleSlotId: slot.scheduleSlotId, startTime: slot.startTime, endTime: slot.endTime, available: slot.available > 0 && !slot.isClosed, date: slot.date })); }
+  async reserve(token: string|undefined, body: { date: string; scheduleSlotId: string; serviceTypeId?: string; startTime?: string }) { const { person } = await this.ready(token); const p = await this.assertPortalInPerson(person.id); if (!p) throw new ForbiddenException({ code: 'SALA_NOT_AVAILABLE', message: 'Sala no disponible.' }); const date = new Date(`${body.date}T00:00:00.000Z`); const today = new Date(`${this.todayOperational()}T00:00:00.000Z`); const max = new Date(today); max.setUTCDate(max.getUTCDate()+30); if (Number.isNaN(date.getTime()) || date < today || date > max) throw new BadRequestException({ code: 'PORTAL_DATE_OUT_OF_RANGE', message: 'Las reservas están disponibles hasta 30 días.' }); await this.assertSalaReservationValidity(person.id, date); return this.salaService.createReservation({ personId: person.id, salaParticipationId: p.id, scheduleSlotId: body.scheduleSlotId, date: body.date, ...(body.serviceTypeId ? { serviceTypeId: body.serviceTypeId } : {}), ...(body.startTime ? { startTime: body.startTime } : {}) }, resolved => {
       const startsAt = this.salaService.operationalStart(body.date, resolved.startTime);
       if (startsAt.getTime() + resolved.durationMinutes * 60_000 - this.reservationNow().getTime() < 20 * 60_000) throw new BadRequestException({ code: 'PORTAL_SALA_TIME_PASSED', message: 'Ese horario ya no admite reservas porque quedan menos de 20 minutos de actividad. Elegí otro horario.' });
     }, { requirePortalReplacement: true }); }
@@ -134,6 +159,7 @@ export class PortalService {
 
   async cancelReservation(token: string | undefined, id: string) {
     const { person } = await this.ready(token);
+    await this.assertPortalInPerson(person.id);
     const now = this.reservationNow();
     const found = await this.prisma.oneOffReservation.findFirst({ where: { id, personId: person.id, cancelledAt: null }, include: { scheduleSlot: true } });
     if (!found || this.salaService.operationalStart(found.date.toISOString().slice(0, 10), found.startTime ?? found.scheduleSlot.startTime) <= now) {
@@ -143,10 +169,11 @@ export class PortalService {
   }
   async cancelFixedOccurrence(token: string | undefined, fixedBookingId: string, date: string) {
     const { person } = await this.ready(token);
+    await this.assertPortalInPerson(person.id);
     const occurrence = await this.salaService.cancelFixedOccurrenceFromPortal(fixedBookingId, person.id, date, this.reservationNow());
     return { id: occurrence.id, fixedSalaBookingId: occurrence.fixedSalaBookingId!, date: occurrence.date.toISOString().slice(0, 10), status: occurrence.status };
   }
-  async fixedBookings(token?: string) { const { person } = await this.ready(token); return this.salaService.listFixed(person.id); }
+  async fixedBookings(token?: string) { const { person } = await this.ready(token); const { inPerson, online } = await this.salaMembership(person.id); return !inPerson && online ? [] : this.salaService.listFixed(person.id); }
   async clinicalAppointments(token?: string) { const { person } = await this.ready(token); return this.prisma.clinicalAppointment.findMany({ where: { personId: person.id, startAt: { gte: new Date() }, status: { in: ['SCHEDULED', 'CANCELLED'] } }, select: { id: true, startAt: true, durationMinutes: true, status: true, professional: { select: { firstName: true, lastName: true } }, service: { select: { name: true } } }, orderBy: { startAt: 'asc' } }); }
   async cancelClinical(token: string|undefined, id: string) { const { person } = await this.ready(token); const a = await this.prisma.clinicalAppointment.findFirst({ where: { id, personId: person.id, status: 'SCHEDULED', startAt: { gt: new Date() } } }); if (!a) throw new ForbiddenException({ code: 'PORTAL_RESOURCE_FORBIDDEN', message: 'No podés cancelar este turno.' }); return this.prisma.clinicalAppointment.update({ where: { id }, data: { status: 'CANCELLED' }, select: { id: true, startAt: true, durationMinutes: true, status: true } }); }
 }

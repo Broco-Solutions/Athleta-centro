@@ -62,6 +62,7 @@ describe('Portal Sala services from the current plan', () => {
       await prisma.salaCharge.deleteMany({ where: { personId } });
       await prisma.salaTrainingRecord.deleteMany({ where: { personId } });
       await prisma.routine.deleteMany({ where: { personId } });
+      await prisma.onlineStudent.deleteMany({ where: { personId } });
       await prisma.physicalTestResult.deleteMany({ where: { evaluation: { personId } } });
       await prisma.physicalEvaluation.deleteMany({ where: { personId } });
       await prisma.salaParticipation.deleteMany({ where: { personId } });
@@ -93,18 +94,18 @@ describe('Portal Sala services from the current plan', () => {
     const muscle = await sala.createServiceType({ name: 'Musculación', durationMinutes: 60 });
     const calisthenics = await sala.createServiceType({ name: 'Calistenia', durationMinutes: 60 });
     serviceIds = [muscle.id, calisthenics.id];
-    const plan = await sala.createPlan(isOnline
-      ? { name: `Plan remoto ${suffix}`, isOnline: true }
-      : { name: `Plan Base ${suffix}`, monthlyAmount: 20000, weeklySessions: 5, serviceTypeIds: [muscle.id] });
-    planId = plan.id;
-    const dni = `${Date.now()}`.slice(-10);
+    const plan = isOnline ? null : await sala.createPlan({ name: `Plan Base ${suffix}`, monthlyAmount: 20000, weeklySessions: 5, serviceTypeIds: [muscle.id] });
+    planId = plan?.id ?? '';
+    const dni = `${Date.now()}`.slice(-8);
     const person = await prisma.person.create({ data: { firstName: 'Portal', lastName: 'Alumno sintético', dni, normalizedDni: dni, phone: '3515550000', birthDate: new Date('1990-01-01'), portalCredential: { create: { pinHash: await argon2.hash('1111', { type: argon2.argon2id }), mustChangePin: false } } } });
     personId = person.id;
     await app.get(HealthDeclarationService).submit(person, {
       documentVersion: currentHealthDocument()!.version, personal: { emergencyContactName: 'Contacto sintético', emergencyContactPhone: '0000000000' }, activity: {}, kinesiology: {}, answers: Object.fromEntries(currentHealthDocument()!.questions.map(question => [question.id, { answer: 'NOT_DISCLOSED' as const }])), confirmed: true,
       consents: { physicalActivity: true, truthfulness: true, emergenciesAndPrivacy: true, healthDataProcessing: true, kinesiology: false, manualEvaluation: false, therapeuticExercise: false, manualTherapy: false, physicalAgents: false, dryNeedling: false, taping: false, shareWithDoctors: false, shareWithClubs: false, clinicalImage: false, institutionalImage: false },
     });
-    const participation = await sala.join({ personId: person.id, mainProfessorId: professor.id, planId: plan.id, startDate: '2020-01-01' });
+    const participation = plan
+      ? await sala.join({ personId: person.id, mainProfessorId: professor.id, planId: plan.id, startDate: '2020-01-01' })
+      : await sala.enrollOnlineStudent({ dni }, { id: professor.id, roles: [Role.PROFESSOR] }).then(() => prisma.onlineStudent.findFirstOrThrow({ where: { personId: person.id } }));
     const day = new Date(`${date}T00:00:00.000Z`);
     const weekday = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'][day.getUTCDay()] as SalaWeekday;
     const window = await sala.createSlot({ weekday, startTime: '09:00', durationMinutes: 120, specificCapacity: 5 });
@@ -184,12 +185,13 @@ describe('Portal Sala services from the current plan', () => {
     const f = await fixture('2026-10-20', false, true);
     const exercise = await sala.createExerciseDefinition({ name: 'Remo Online', requiresWeight: true });
     exerciseDefinitionIds.push(exercise.id);
-    const routine = await sala.replaceRoutine({ personId, salaParticipationId: f.participation.id, effectiveFrom: '2026-10-16', days: [{ exercises: [{ exerciseDefinitionId: exercise.id }] }] });
+    const routine = await sala.replaceRoutine({ personId, onlineStudentId: f.participation.id, effectiveFrom: '2026-10-16', days: [{ exercises: [{ exerciseDefinitionId: exercise.id }] }] });
     const day = routine.days[0]!;
     const get = (path: string) => request(app.getHttpServer()).get('/api/portal/sala' + path).set('Cookie', f.cookie);
     const home = await get('').expect(200);
     expect(home.body.data).toMatchObject({ isOnline: true, validity: null, fixed: [], fixedOccurrences: [], reservations: [], replacementWeeks: [], routine: { id: routine.id, status: 'ACTIVE' } });
-    await get('/training-context?date=2026-10-16').expect(200);
+    expect((await get('/training-context?date=2026-10-16').expect(200)).body.data.routine.id).toBe(routine.id);
+    expect(await prisma.salaParticipation.count({ where: { personId } })).toBe(0);
     const weeks = Array.from({ length: 4 }, (_, index) => ({ weekNumber: index + 1, exercises: [{ id: day.exercises[0]!.id, weightKg: String(30 + index) }] }));
     await request(app.getHttpServer()).put('/api/portal/sala/training-records/monthly').set('Cookie', f.cookie).set('x-csrf-token', f.csrf).send({ routineId: routine.id, routineDayId: day.id, month: '2026-10', weeks }).expect(200);
     const history = (await get('/training-records/month?month=2026-10').expect(200)).body.data;

@@ -10,9 +10,9 @@ vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(n
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
 const students = [
-  { id: 'student-1', participationId: 'participation-1', participationStartDate: '2026-10-01', firstName: 'Ana', lastName: 'Alumna', dni: '88000001', plan: { id: 'plan-1', name: '3 veces' }, professor: { id: 'prof-1', firstName: 'Federico', lastName: 'Sintético' }, routineStatus: 'ACTIVE', hasValidAccess: true, validUntil: '2026-11-20' },
-  { id: 'student-2', participationId: 'participation-2', participationStartDate: '2026-05-01', firstName: 'Lucía', lastName: 'Ejemplo', dni: '88000002', plan: { id: 'plan-2', name: '2 veces' }, professor: { id: 'prof-2', firstName: 'Ramiro', lastName: 'Demostración' }, routineStatus: 'MISSING', hasValidAccess: false, validUntil: null },
-  { id: 'student-3', participationId: 'participation-3', participationStartDate: '2026-08-01', firstName: 'Pedro', lastName: 'Prueba', dni: '88000003', plan: { id: 'plan-1', name: '3 veces' }, professor: { id: 'prof-1', firstName: 'Federico', lastName: 'Sintético' }, routineStatus: 'ACTIVE', hasValidAccess: false, validUntil: null },
+  { id: 'student-1', modality: 'IN_PERSON', onlineStudentId: null, participationId: 'participation-1', participationStartDate: '2026-10-01', firstName: 'Ana', lastName: 'Alumna', dni: '88000001', plan: { id: 'plan-1', name: '3 veces' }, professor: { id: 'prof-1', firstName: 'Federico', lastName: 'Sintético' }, routineStatus: 'ACTIVE', hasValidAccess: true, validUntil: '2026-11-20' },
+  { id: 'student-2', modality: 'IN_PERSON', onlineStudentId: null, participationId: 'participation-2', participationStartDate: '2026-05-01', firstName: 'Lucía', lastName: 'Ejemplo', dni: '88000002', plan: { id: 'plan-2', name: '2 veces' }, professor: { id: 'prof-2', firstName: 'Ramiro', lastName: 'Demostración' }, routineStatus: 'MISSING', hasValidAccess: false, validUntil: null },
+  { id: 'student-3', modality: 'IN_PERSON', onlineStudentId: null, participationId: 'participation-3', participationStartDate: '2026-08-01', firstName: 'Pedro', lastName: 'Prueba', dni: '88000003', plan: { id: 'plan-1', name: '3 veces' }, professor: { id: 'prof-1', firstName: 'Federico', lastName: 'Sintético' }, routineStatus: 'ACTIVE', hasValidAccess: false, validUntil: null },
 ];
 beforeAll(() => {
   globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? new URL(input, 'http://localhost:3000') : input, init)) as typeof fetch;
@@ -606,11 +606,11 @@ it.each(['new', 'existing'])('includes the real paper signature date for %s enro
 });
 
 it('combines Online, completed routines and my students without exposing a renewal action', async () => {
-  const online = { ...students[0], id: 'online-1', firstName: 'Andrea', lastName: 'Remota', plan: { id: 'online-plan', name: 'Remoto', isOnline: true }, routineChangeInDays: 0, routineTrainingComplete: true, hasValidAccess: false };
+  const online = { ...students[0], id: 'online-1', modality: 'ONLINE', participationId: null, onlineStudentId: 'link-1', firstName: 'Andrea', lastName: 'Remota', plan: null, routineChangeInDays: 0, routineTrainingComplete: true, hasValidAccess: false };
   server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: [
     online,
-    { ...online, id: 'online-2', firstName: 'Otro', professor: students[1]!.professor },
-    { ...online, id: 'online-3', firstName: 'Pendiente', routineTrainingComplete: false },
+    { ...online, id: 'online-2', onlineStudentId: 'link-2', firstName: 'Otro', professor: students[1]!.professor },
+    { ...online, id: 'online-3', onlineStudentId: 'link-3', firstName: 'Pendiente', routineTrainingComplete: false },
     { ...students[2], routineChangeInDays: 0, routineTrainingComplete: true },
   ] })));
   renderPage();
@@ -620,44 +620,52 @@ it('combines Online, completed routines and my students without exposing a renew
   fireEvent.click(screen.getByRole('button', { name: 'Mis alumnos' }));
   const row = within(screen.getByRole('row', { name: /Andrea Remota/ }));
   expect(row.getByText('Online')).toBeInTheDocument();
-  expect(row.getByText('Cobro externo')).toBeInTheDocument();
+  expect(row.getByLabelText('No aplica')).toBeInTheDocument();
+  expect(row.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/online-1?modality=online');
   expect(row.queryByRole('link', { name: /renovación|pagos/i })).not.toBeInTheDocument();
   expect(list().queryByText(/Otro Remota|Pendiente Remota|Pedro Prueba/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Sin vigencia' }));
   expect(screen.getByText('Sin resultados')).toBeInTheDocument();
 });
 
-it('filters the plan catalog by modality and enrolls an existing person online', async () => {
-  enrollmentHandlers([existingPerson]);
+it('enrolls an existing Person online by DNI without loading plans or professors', async () => {
   let submitted: unknown;
-  server.use(
-    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [
-      { id: 'plan-new', name: 'Plan presencial', isSelectable: true, isOnline: false },
-      { id: 'plan-online', name: 'Entrenamiento remoto', isSelectable: true, isOnline: true },
-    ] })),
-    http.post('http://localhost:3000/api/sala/participations', async ({ request }) => {
-      submitted = await request.json();
-      return HttpResponse.json({ data: {} }, { status: 201 });
-    }),
-  );
-  await startAdministrativeEnrollment();
-  await selectExistingPerson();
-  expect(await screen.findByRole('option', { name: 'Plan presencial' })).toBeInTheDocument();
-  expect(screen.queryByRole('option', { name: 'Entrenamiento remoto' })).not.toBeInTheDocument();
-  fireEvent.change(within(screen.getByRole('dialog')).getByLabelText('Modalidad'), { target: { value: 'online' } });
-  expect(screen.queryByRole('option', { name: 'Plan presencial' })).not.toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText('Plan'), { target: { value: 'plan-online' } });
-  fireEvent.change(screen.getByLabelText('Profesor principal'), { target: { value: 'prof-new' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Incorporar a Sala' }));
-  await waitFor(() => expect(submitted).toMatchObject({ personId: 'person-existing', planId: 'plan-online', mainProfessorId: 'prof-new' }));
+  server.use(http.post('http://localhost:3000/api/sala/online-students', async ({ request }) => {
+    submitted = await request.json();
+    expect(request.headers.get('x-csrf-token')).toBe('csrf');
+    return HttpResponse.json({ data: { personId: 'person-existing' } }, { status: 201 });
+  }));
+  renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: 'Nuevo alumno' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Online' }));
+  const dialog = within(screen.getByRole('dialog', { name: 'Nuevo alumno online' }));
+  fireEvent.click(dialog.getByRole('button', { name: 'Persona existente' }));
+  expect(dialog.queryByLabelText('Plan')).not.toBeInTheDocument();
+  expect(dialog.queryByLabelText('Profesor responsable')).not.toBeInTheDocument();
+  fireEvent.change(dialog.getByLabelText('DNI de la Persona existente'), { target: { value: '30.123.456' } });
+  fireEvent.click(dialog.getByRole('button', { name: 'Guardar alumno online' }));
+  expect(await screen.findByText('Alumno online incorporado.')).toBeInTheDocument();
+  expect(submitted).toEqual({ dni: '30123456' });
 });
 
-it('tells staff where to configure an Online plan when the catalog has none', async () => {
-  enrollmentHandlers([existingPerson]);
-  await startAdministrativeEnrollment();
-  await selectExistingPerson();
-  await screen.findByRole('option', { name: 'Plan seleccionable' });
-  fireEvent.change(within(screen.getByRole('dialog')).getByLabelText('Modalidad'), { target: { value: 'online' } });
-  expect(screen.getByText(/Sala → Configuración → Planes/)).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Incorporar a Sala' })).toBeDisabled();
+it('creates a private online student with only personal data and shows the temporary PIN', async () => {
+  let submitted: unknown;
+  server.use(http.post('http://localhost:3000/api/sala/online-students', async ({ request }) => {
+    submitted = await request.json();
+    return HttpResponse.json({ data: { personId: 'online-person', initialPin: '1234' } }, { status: 201 });
+  }));
+  renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: 'Nuevo alumno' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Online' }));
+  const dialog = within(screen.getByRole('dialog', { name: 'Nuevo alumno online' }));
+  for (const [label, value] of [['Nombre', 'Ana'], ['Apellido', 'Online'], ['DNI', '30.123.456'], ['Teléfono', '3415551234'], ['Fecha de nacimiento', '1990-01-01']]) {
+    fireEvent.change(dialog.getByLabelText(label!), { target: { value } });
+  }
+  expect(dialog.queryByLabelText('Plan')).not.toBeInTheDocument();
+  expect(dialog.queryByLabelText('Profesor responsable')).not.toBeInTheDocument();
+  expect(dialog.queryByText('Cobertura médica')).not.toBeInTheDocument();
+  expect(dialog.getByText('El alumno quedará a tu cargo.')).toBeInTheDocument();
+  fireEvent.click(dialog.getByRole('button', { name: 'Guardar alumno online' }));
+  expect(await screen.findByLabelText('PIN temporal')).toHaveTextContent('1234');
+  expect(submitted).toEqual({ person: { firstName: 'Ana', lastName: 'Online', dni: '30123456', phone: '3415551234', birthDate: '1990-01-01', email: null } });
 });

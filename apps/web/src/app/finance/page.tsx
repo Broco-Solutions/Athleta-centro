@@ -81,8 +81,8 @@ function FinancePageContent(): React.JSX.Element {
     if (response.status !== 200) throw new Error('No pudimos cargar los alumnos de Sala.');
     return response.data.data;
   } });
-  const withoutValidity = (summaryStudents.data ?? []).filter(student => !student.hasValidAccess);
-  const internalBillingStudents = (students.data ?? []).filter(student => !student.plan.isOnline);
+  const withoutValidity = (summaryStudents.data ?? []).filter(student => student.plan && student.modality !== 'ONLINE' && !student.hasValidAccess);
+  const internalBillingStudents = (students.data ?? []).filter(student => student.plan && !student.plan.isOnline && student.modality !== 'ONLINE');
   const pendingStudents = internalBillingStudents.filter(student => !student.hasValidAccess);
   const paidStudents = internalBillingStudents.filter(student => student.hasValidAccess);
   const tabStudents = incomeTab === 'pending' ? pendingStudents : paidStudents;
@@ -197,7 +197,7 @@ function FinancePageContent(): React.JSX.Element {
       {summaryStudents.isError ? <p role="alert">{summaryStudents.error.message}</p> : null}
       {summaryStudents.isSuccess && !withoutValidity.length ? <p>Todos los alumnos tienen vigencia actualmente.</p> : null}
       <ul>{withoutValidity.map(student => <li key={student.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-3 text-sm">
-        <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>{student.plan.name} · Sin vigencia</p></div>
+        <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>{student.plan?.name} · Sin vigencia</p></div>
         <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}&action=renew`}>Renovar</Link>
       </li>)}</ul>
     </section> : null}
@@ -226,7 +226,7 @@ function FinancePageContent(): React.JSX.Element {
       {students.isError ? <p role="alert">{students.error.message}</p> : null}
       {students.isSuccess && !results.length ? <p>No se encontraron alumnos.</p> : null}
       <ul>{results.map(student => <li key={student.id} className="flex flex-wrap items-center justify-between gap-3 border-b py-3 text-sm">
-        <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>DNI {student.dni} · {student.plan.name}</p>{incomeTab === 'paid' ? <p>Fecha de cobro: {student.lastPaymentPaidAt ? formatDate(student.lastPaymentPaidAt) : '—'}</p> : null}<p>{student.hasValidAccess ? `Vigente hasta ${student.validUntil ? formatDate(student.validUntil) : '—'}` : 'Sin vigencia'}</p></div>
+        <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>DNI {student.dni} · {student.plan?.name}</p>{incomeTab === 'paid' ? <p>Fecha de cobro: {student.lastPaymentPaidAt ? formatDate(student.lastPaymentPaidAt) : '—'}</p> : null}<p>{student.hasValidAccess ? `Vigente hasta ${student.validUntil ? formatDate(student.validUntil) : '—'}` : 'Sin vigencia'}</p></div>
         <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}${incomeTab === 'pending' ? '&action=renew' : ''}`}>{incomeTab === 'pending' ? 'Renovar' : 'Ver pagos'}</Link>{incomeTab === 'paid' ? <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}&action=renew`}>Renovar</Link> : null}
       </li>)}</ul>
     </section> : null}

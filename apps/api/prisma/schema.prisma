@@ -40,6 +40,7 @@ model InternalUser {
   credential                     InternalCredential?
   sessions                       Session[]
   salaParticipations             SalaParticipation[]
+  onlineStudents                 OnlineStudent[]
   createdSalaOccurrences         SalaOccurrence[]           @relation("SalaOccurrenceCreatedBy")
   modifiedSalaOccurrences        SalaOccurrence[]           @relation("SalaOccurrenceModifiedBy")
   physicalEvaluationsAsProfessor PhysicalEvaluation[]       @relation("PhysicalEvaluationProfessor")
@@ -222,6 +223,7 @@ model Person {
   portalCredential        PortalCredential?
   portalSessions          Session[]
   salaParticipations      SalaParticipation[]
+  onlineStudents          OnlineStudent[]
   fixedBookings           FixedSalaBooking[]
   reservations            OneOffReservation[]
   salaOccurrences         SalaOccurrence[]
@@ -621,7 +623,24 @@ model SalaParticipation {
   @@index([personId])
   @@index([mainProfessorId])
   @@index([planId])
+  @@unique([id, personId])
   @@map("sala_participations")
+}
+
+model OnlineStudent {
+  id          String       @id @default(uuid()) @db.Uuid
+  personId    String       @map("person_id") @db.Uuid
+  professorId String       @map("professor_id") @db.Uuid
+  startDate   DateTime     @map("start_date") @db.Date
+  endDate     DateTime?    @map("end_date") @db.Date
+  person      Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
+  professor   InternalUser @relation(fields: [professorId], references: [id], onDelete: Restrict)
+  routines    Routine[]
+
+  @@unique([id, personId])
+  @@index([personId])
+  @@index([professorId])
+  @@map("online_students")
 }
 
 model SalaPlanAssignment {
@@ -730,19 +749,22 @@ model Routine {
   cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz(6)
   id                  String            @id @default(uuid()) @db.Uuid
   personId            String            @map("person_id") @db.Uuid
-  salaParticipationId String            @map("sala_participation_id") @db.Uuid
+  salaParticipationId String?           @map("sala_participation_id") @db.Uuid
+  onlineStudentId     String?           @map("online_student_id") @db.Uuid
   status              RoutineStatus
   effectiveFrom       DateTime          @map("effective_from") @db.Date
   version             Int
   createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
   person              Person            @relation(fields: [personId], references: [id], onDelete: Restrict)
-  salaParticipation   SalaParticipation @relation(fields: [salaParticipationId], references: [id], onDelete: Restrict)
+  salaParticipation   SalaParticipation? @relation(fields: [salaParticipationId, personId], references: [id, personId], onDelete: Restrict)
+  onlineStudent       OnlineStudent?    @relation(fields: [onlineStudentId, personId], references: [id, personId], onDelete: Restrict)
   days                RoutineDay[]
 
   @@index([personId, effectiveFrom, version])
   @@unique([personId, version])
   @@index([salaParticipationId])
+  @@index([onlineStudentId])
   @@map("routines")
   trainingRecords SalaTrainingRecord[]
 

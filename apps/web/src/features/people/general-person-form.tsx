@@ -23,10 +23,10 @@ export function personDefaults(person?: PersonResponseDto): PersonValues {
 export function personInput(values: PersonValues) {
   return { ...values, email: values.email || null, socialWorkId: values.socialWorkId || null, affiliateNumber: values.socialWorkId ? values.affiliateNumber.trim() : '', sport: values.sport.trim() || null, club: values.club.trim() || null };
 }
-export function GeneralPersonFields({ form, person }: { form: UseFormReturn<PersonValues>; person?: PersonResponseDto }): React.JSX.Element {
+export function GeneralPersonFields({ form, person, basic = false }: { form: UseFormReturn<PersonValues>; person?: PersonResponseDto; basic?: boolean }): React.JSX.Element {
   const client = useQueryClient();
   const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false });
-  const catalog = useQuery({ queryKey: ['social-works'], retry: false, queryFn: async () => { const result = await listSocialWorks({ credentials: 'include' }); if (result.status !== 200) throw new Error('No pudimos cargar las obras sociales.'); return (result.data as unknown as { data: SocialWork[] }).data; } });
+  const catalog = useQuery({ queryKey: ['social-works'], retry: false, enabled: !basic, queryFn: async () => { const result = await listSocialWorks({ credentials: 'include' }); if (result.status !== 200) throw new Error('No pudimos cargar las obras sociales.'); return (result.data as unknown as { data: SocialWork[] }).data; } });
   const canManageSocialWorks = session.data?.permissions.includes('SOCIAL_WORK_CATALOG_MANAGE') ?? false;
   const [creatingSocialWork, setCreatingSocialWork] = React.useState(false);
   const [socialWorkName, setSocialWorkName] = React.useState('');
@@ -50,14 +50,16 @@ export function GeneralPersonFields({ form, person }: { form: UseFormReturn<Pers
   } });
   const socialWorkId = form.watch('socialWorkId');
   const works = catalog.data?.filter((work) => work.isSelectable || work.id === person?.socialWorkId) ?? [];
-  const personalFields = [['firstName','Nombre'],['lastName','Apellido'],['dni','DNI'],['phone','Teléfono'],['birthDate','Fecha de nacimiento'],['email','Email (opcional)'],['sport','Deporte (opcional)'],['club','Club (opcional)']] as const;
+  const personalFields = [['firstName','Nombre'],['lastName','Apellido'],['dni','DNI'],['phone','Teléfono'],['birthDate','Fecha de nacimiento'],['email','Email (opcional)']] as const;
+  const sportsFields = [['sport','Deporte (opcional)'],['club','Club (opcional)']] as const;
   const emergencyFields = [['emergencyContactName','Contacto de emergencia (opcional)'],['emergencyContactPhone','Teléfono de emergencia (opcional)']] as const;
-  const renderField = ([name, label]: typeof personalFields[number] | typeof emergencyFields[number]) => <label key={name} className="text-sm">{label}<input type={name === 'birthDate' ? 'date' : name === 'email' ? 'email' : 'text'} className={fieldClass} placeholder={name === 'dni' ? '20123456' : name === 'phone' || name === 'emergencyContactPhone' ? '3415551234' : undefined} inputMode={name === 'dni' ? 'numeric' : name === 'phone' || name === 'emergencyContactPhone' ? 'tel' : undefined} aria-label={label} maxLength={name === 'emergencyContactName' ? 150 : undefined} aria-describedby={name === 'dni' || name === 'phone' || name === 'emergencyContactPhone' ? `${name}-help` : undefined} {...form.register(name)} /><span className="text-xs text-red-700">{form.formState.errors[name]?.message}</span>{name === 'dni' && <span id="dni-help" className="block text-xs text-muted-foreground">Ingresá entre 6 y 8 dígitos. Podés escribirlo con puntos.</span>}{name === 'phone' && <span id="phone-help" className="block text-xs text-muted-foreground">Ingresá 10 dígitos con código de área, sin +54, 0 inicial ni 15. Ej: 3415551234 o 1112345678.</span>}{name === 'emergencyContactPhone' && <span id="emergencyContactPhone-help" className="block text-xs text-muted-foreground">Ingresá 10 dígitos con código de área, sin +54, 0 inicial ni 15.</span>}</label>;
+  const renderField = ([name, label]: typeof personalFields[number] | typeof sportsFields[number] | typeof emergencyFields[number]) => <label key={name} className="text-sm">{label}<input type={name === 'birthDate' ? 'date' : name === 'email' ? 'email' : 'text'} className={fieldClass} placeholder={name === 'dni' ? '20123456' : name === 'phone' || name === 'emergencyContactPhone' ? '3415551234' : undefined} inputMode={name === 'dni' ? 'numeric' : name === 'phone' || name === 'emergencyContactPhone' ? 'tel' : undefined} aria-label={label} maxLength={name === 'emergencyContactName' ? 150 : undefined} aria-describedby={name === 'dni' || name === 'phone' || name === 'emergencyContactPhone' ? `${name}-help` : undefined} {...form.register(name)} /><span className="text-xs text-red-700">{form.formState.errors[name]?.message}</span>{name === 'dni' && <span id="dni-help" className="block text-xs text-muted-foreground">Ingresá entre 6 y 8 dígitos. Podés escribirlo con puntos.</span>}{name === 'phone' && <span id="phone-help" className="block text-xs text-muted-foreground">Ingresá 10 dígitos con código de área, sin +54, 0 inicial ni 15. Ej: 3415551234 o 1112345678.</span>}{name === 'emergencyContactPhone' && <span id="emergencyContactPhone-help" className="block text-xs text-muted-foreground">Ingresá 10 dígitos con código de área, sin +54, 0 inicial ni 15.</span>}</label>;
   return <>
     <section className="sm:col-span-2">
       <h3 className="mb-3 text-sm font-semibold">Datos personales</h3>
-      <div className="grid gap-4 sm:grid-cols-2">{personalFields.map(renderField)}</div>
+      <div className="grid gap-4 sm:grid-cols-2">{personalFields.map(renderField)}{!basic && sportsFields.map(renderField)}</div>
     </section>
+    {!basic && <>
     <section className="border-t border-border pt-4 sm:col-span-2">
       <h3 className="text-sm font-semibold">Contacto de emergencia</h3>
       <p className="mb-3 mt-1 text-xs text-muted-foreground">Una persona de referencia ante una urgencia.</p>
@@ -72,13 +74,14 @@ export function GeneralPersonFields({ form, person }: { form: UseFormReturn<Pers
         {catalog.isError && <div role="alert" className="sm:col-span-2"><p className="text-sm text-red-700">No pudimos cargar las obras sociales.</p><Button type="button" variant="secondary" onClick={() => void catalog.refetch()}>Reintentar</Button></div>}
       </div>
     </section>
+    </>}
   </>;
 }
 
-export function GeneralPersonForm({ person, onSave, onCancel, pending, error, defaultDni }: { person?: PersonResponseDto; onSave: (values: PersonValues) => void; onCancel: () => void; pending: boolean; error?: string; defaultDni?: string }): React.JSX.Element {
+export function GeneralPersonForm({ person, onSave, onCancel, pending, error, defaultDni, basic = false }: { person?: PersonResponseDto; onSave: (values: PersonValues) => void; onCancel: () => void; pending: boolean; error?: string; defaultDni?: string; basic?: boolean }): React.JSX.Element {
   const form = useForm<PersonValues>({ resolver: zodResolver(personSchema), defaultValues: { ...personDefaults(person), ...(!person && defaultDni ? { dni: defaultDni } : {}) } });
   return <form className="mt-4 grid gap-4 sm:grid-cols-2" onSubmit={form.handleSubmit(onSave)}>
-    <GeneralPersonFields form={form} {...(person ? { person } : {})}/>
+    <GeneralPersonFields form={form} basic={basic} {...(person ? { person } : {})}/>
     {error && <p role="alert" className="text-sm text-destructive sm:col-span-2">{error}</p>}
     <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="secondary" disabled={pending} onClick={onCancel}>Cancelar</Button><Button type="submit" disabled={pending}>{pending ? 'Guardando…' : 'Guardar'}</Button></div>
   </form>;

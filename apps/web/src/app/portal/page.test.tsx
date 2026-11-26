@@ -207,7 +207,7 @@ it('hides registration on Home without an active routine', async () => {
   expect(screen.queryByRole('link', { name: 'Registrar entrenamiento' })).not.toBeInTheDocument();
 });
 
-it('shows Online training and evaluations without booking or payment sections', async () => {
+it('shows Online training without booking or payment sections', async () => {
   server.use(http.get('http://localhost:3000/api/portal/sala', () => HttpResponse.json({ data: {
     isOnline: true, fixed: [], validity: null, replacementWeeks: availableWeeks(),
     routine: { days: [{ exercises: [{ id: 'test-exercise' }] }] }, evaluations: [],
@@ -216,7 +216,7 @@ it('shows Online training and evaluations without booking or payment sections', 
   expect(await screen.findByText('Modalidad Online')).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Mi rutina' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Registrar entrenamiento' })).toHaveAttribute('href', '/portal/sala/rutina');
-  expect(screen.getByRole('heading', { name: 'Mis evaluaciones físicas' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Mis evaluaciones físicas' })).not.toBeInTheDocument();
   expect(screen.queryByRole('heading', { name: 'Mis turnos fijos' })).not.toBeInTheDocument();
   expect(screen.queryByText('Vigencia de Sala')).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Elegir otro horario' })).not.toBeInTheDocument();
