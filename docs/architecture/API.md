@@ -2452,6 +2452,34 @@ PATCH /api/sala/payments/:id
 DELETE /api/sala/payments/:id
 ```
 
+El catálogo seleccionable de planes corresponde a Sala presencial.
+`POST /api/sala/online-students` registra una Persona nueva con `person` o incorpora
+una existente con `dni`. Para un profesor, el responsable sale de la sesión. Un
+administrador general indica el profesor mediante `professorId`. La respuesta
+incluye `initialPin` únicamente cuando se crean las credenciales.
+
+`GET /api/sala/people/:personId/online-student` expone el vínculo vigente al
+profesor responsable y a administración autorizada. El listado de alumnos
+expone `modality` y devuelve `plan: null` para Online. La asignación de rutinas
+recibe `salaParticipationId` o `onlineStudentId`, según corresponda. El listado
+de rutinas acepta `onlineStudentId` para abrir el seguimiento cuando también
+existe una participación presencial. Los cobros y turnos se limitan a Sala
+presencial. Recepción mantiene su respuesta habitual para un DNI sin
+participación activa.
+
+`POST /api/sala/people/:personId/change-modality` corrige la modalidad con
+`sourceId` (vinculación vigente) y `modality` (`ONLINE` o `IN_PERSON`).
+Para pasar a Presencial se requiere `planId`. Administración General puede
+indicar `mainProfessorId`. En una corrección a Online se conserva el profesor
+principal. La respuesta devuelve la modalidad y el ID de la vinculación vigente.
+El backend comprueba la titularidad y devuelve un conflicto cuando hay turnos
+o reservas pendientes, compromisos financieros presenciales o períodos de
+rutina incompatibles con la corrección.
+
+El contenido de rutinas y preestablecidas admite `blockPosition: 0` para la
+entrada en calor de cada día. El bloque va antes de los ejercicios regulares,
+que conservan las posiciones positivas o `null` de un día sin bloques.
+
 ## Clinic
 
 ```text
@@ -2505,6 +2533,12 @@ POST /api/portal/clinic/appointments/:id/cancel
 GET  /api/portal/me
 POST /api/portal/auth/change-pin
 ```
+
+`GET /api/portal/sala` informa `isOnline` a partir del seguimiento particular
+vigente cuando la Persona carece de participación presencial activa. En ese
+caso `validity` es `null` y las listas de turnos y reemplazos están vacías.
+La rutina, el registro de pesos y el historial se consultan con la sesión
+habitual del Portal y sus controles de PIN y declaración de salud.
 
 ---
 

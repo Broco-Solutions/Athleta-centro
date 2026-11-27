@@ -665,3 +665,71 @@ it('waits for backend confirmation, prevents double submission and keeps a faile
   await waitFor(() => expect(confirm).toBeEnabled());
   expect(screen.getByRole('alertdialog')).toBeInTheDocument();
 });
+
+async function commonWarmup() {
+  const details = screen.getByText('Entrada en calor para todos los días').closest('details')!;
+  details.open = true;
+  fireEvent(details, new Event('toggle'));
+  const scope = within(details);
+  fireEvent.click(await scope.findByRole('button', { name: 'Agregar Plancha' }));
+  fireEvent.change(scope.getByLabelText('Series'), { target: { value: '2' } });
+  return scope;
+}
+
+it.each([4, 5])('applies the warm-up once across %i days and keeps each specific exercise', async dayCount => {
+  const { api } = renderPanel([]);
+  await startNewRoutine();
+  for (let index = 1; index <= dayCount; index++) {
+    if (index > 1) fireEvent.click(screen.getByRole('button', { name: '+ Agregar día' }));
+    await add(day(index));
+  }
+  const warmup = await commonWarmup();
+  fireEvent.click(warmup.getByRole('button', { name: 'Aplicar a todos los días' }));
+  fireEvent.click(warmup.getByRole('button', { name: 'Aplicar a todos los días' }));
+  expect(warmup.getByRole('status')).toHaveTextContent(`aplicada a ${dayCount} días`);
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar día' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+  await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1));
+  const saved = api.create.mock.calls[0]![0].days;
+  expect(saved).toHaveLength(dayCount + 1);
+  for (const entry of saved.slice(0, dayCount)) expect(entry.exercises).toMatchObject([{ exerciseDefinitionId: 'plank', blockPosition: 0, series: '2' }, { exerciseDefinitionId: 'squat', blockPosition: 1 }]);
+  expect(saved.at(-1)!.exercises).toMatchObject([{ exerciseDefinitionId: 'plank', blockPosition: 0 }]);
+});
+
+it('adds the same warm-up to existing and new active days without replacing the routine', async () => {
+  const active: Routine = { ...routine, days: routine.days.map(day => ({ ...day, id: `day-${day.position}`, exercises: day.exercises.map(exercise => ({ ...exercise, id: `existing-${day.position}` })) })) };
+  const { api } = renderPanel([active]);
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar rutina' }));
+  fireEvent.click(screen.getByRole('button', { name: '+ Agregar día' }));
+  const warmup = await commonWarmup();
+  fireEvent.click(warmup.getByRole('button', { name: 'Aplicar a todos los días' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+  await waitFor(() => expect(api.updateActiveExercises).toHaveBeenCalledTimes(1));
+  expect(api.updateActiveExercises.mock.calls[0]![1].days).toMatchObject([
+    { id: 'day-1', exercises: [{ exerciseDefinitionId: 'plank', blockPosition: 0 }, { id: 'existing-1' }] },
+    { id: 'day-2', exercises: [{ exerciseDefinitionId: 'plank', blockPosition: 0 }, { id: 'existing-2' }] },
+    { exercises: [{ exerciseDefinitionId: 'plank', blockPosition: 0 }] },
+  ]);
+  expect(api.replace).not.toHaveBeenCalled();
+});
+
+it('personalizes a copied template warm-up on one day independently', async () => {
+  const { api } = renderPanel([]);
+  const withWarmup = { ...template, days: template.days.map(d => ({ ...d, exercises: [
+    { id: `warmup-${d.position}`, exerciseDefinitionId: 'plank', blockPosition: 0, series: '2' }, ...d.exercises,
+  ] })) };
+  api.templates.mockResolvedValue([withWarmup]);
+  const original = structuredClone(withWarmup);
+  await previewTemplate();
+  fireEvent.click(within(screen.getByRole('region', { name: 'Vista previa de preestablecida' })).getByRole('button', { name: 'Editar' }));
+  const copySummary = screen.getByText(/^Entrada en calor$/, { selector: 'summary' });
+  const copy = copySummary.closest('details')!;
+  copy.open = true;
+  fireEvent.change(within(copy).getByLabelText('Series'), { target: { value: '3' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+  await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1));
+  const saved = api.create.mock.calls[0]![0].days;
+  expect(saved.map(day => day.exercises[0]?.series)).toEqual(['3', '2']);
+  expect(saved[0]!.exercises[0]).not.toHaveProperty('id');
+  expect(withWarmup).toEqual(original);
+});

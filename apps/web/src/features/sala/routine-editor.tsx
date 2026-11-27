@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
-import { blockLabel, groupRoutineBlocks, isGroupedDay, formatRoutineRepetitions, formatRoutineDuration, formatRoutineLoad } from './routine-blocks';
+import { applyWarmupExercises, blockLabel, groupRoutineBlocks, routineBlockTitle, formatRoutineRepetitions, formatRoutineDuration, formatRoutineLoad } from './routine-blocks';
 import { filterExerciseDefinitions } from './exercise-catalog';
 import { Button } from '@athleta/ui';
 import type { RoutineDayDto } from '@athleta/api-client';
@@ -41,7 +41,7 @@ export const exerciseSchema = z.object({
 type ExerciseForm = z.infer<typeof exerciseSchema> & { valueMode?: 'repetitions' | 'duration' };
 type ActiveExerciseDraft = ExerciseForm & { original?: RoutineExercise };
 type EditingBlock = { key: string; series: string; exercises: ActiveExerciseDraft[] };
-export type EditingDay = { key: string; name: string; exercises: ActiveExerciseDraft[]; blocks: EditingBlock[] | null };
+export type EditingDay = { key: string; name: string; exercises: ActiveExerciseDraft[]; blocks: EditingBlock[] | null; warmup?: ActiveExerciseDraft[] };
 function newBlock(): EditingBlock { return { key: crypto.randomUUID(), series: '4', exercises: [] }; }
 export const fieldClass = 'h-10 w-full rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-ring';
 
@@ -98,11 +98,25 @@ function ExerciseRow({ exercise, definitions, onChange, onRemove, disabled, show
   </li>;
 }
 
+function WarmupExercises({ exercises, definitions, disabled, onChange }: {
+  exercises: ActiveExerciseDraft[]; definitions: ExerciseDefinition[]; disabled: boolean; onChange: (exercises: ActiveExerciseDraft[]) => void;
+}): React.JSX.Element {
+  return <ul className="divide-y">
+    {exercises.map((exercise, index) => <ExerciseRow key={exercise.original?.id ?? index} exercise={exercise} definitions={definitions} disabled={disabled}
+      onChange={updated => onChange(exercises.map((item, position) => position === index ? updated : item))}
+      onRemove={() => onChange(exercises.filter((_, position) => position !== index))}/>)}
+  </ul>;
+}
+
 export function DayEditor({ day, index, definitions, onChange, onRemove, canRemove, disabled, onToggleCatalog, openBlockKey, catalog, className = "rounded-lg border bg-surface-muted p-4" }: {
   onToggleCatalog: (blockKey: string) => void; openBlockKey?: string | null; catalog?: React.ReactNode; className?: string; day: EditingDay; index: number; definitions: ExerciseDefinition[]; onChange: (day: EditingDay) => void; onRemove?: () => void; canRemove: boolean; disabled: boolean;
 }): React.JSX.Element {
   return <fieldset aria-label={`Día ${index + 1}`} className={`min-w-0 ${className}`} disabled={disabled}>
     <div className="flex flex-wrap items-end justify-between gap-3"><label className="min-w-0 grow text-sm font-medium">Nombre del día<input aria-label={`Nombre del día ${index + 1}`} className={`${fieldClass} mt-1`} placeholder={`Día ${index + 1} (opcional)`} maxLength={120} value={day.name} onChange={(event) => onChange({ ...day, name: event.target.value })}/></label>{onRemove ? <Button type="button" variant="ghost" disabled={!canRemove || disabled} onClick={onRemove}>Eliminar día</Button> : null}</div>
+    {day.warmup?.length ? <details className="mt-4 rounded-md border bg-white p-3">
+      <summary className="cursor-pointer text-sm font-semibold">Entrada en calor <span className="font-normal text-muted-foreground">({day.warmup.length})</span></summary>
+      <WarmupExercises exercises={day.warmup} definitions={definitions} disabled={disabled} onChange={warmup => onChange({ ...day, warmup })}/>
+    </details> : null}
     {day.blocks !== null ? <div className="mt-4 space-y-4">{day.blocks.map((block, blockIndex) => {
       const label = blockLabel(blockIndex + 1);
       const series = /^[0-9]+$/.test(block.series.trim()) ? BigInt(block.series.trim()) : 0n;
@@ -159,11 +173,33 @@ function ExerciseCatalog({ definitions, catalogLoading, catalogError, patterns, 
   </section>;
 }
 
+function CommonWarmupEditor({ days, disabled, onApply, ...catalog }: ExerciseCatalogProps & {
+  days: EditingDay[]; disabled: boolean; onApply: (exercises: ActiveExerciseDraft[]) => void;
+}): React.JSX.Element {
+  const [exercises, setExercises] = useState(() => applyWarmupExercises([], days.find(day => day.warmup?.length)?.warmup ?? []));
+  const [open, setOpen] = useState(false);
+  const [appliedCount, setAppliedCount] = useState(0);
+  const change = (entries: ActiveExerciseDraft[]) => { setExercises(entries); setAppliedCount(0); };
+  return <details className="rounded-md border bg-white p-3" onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary className="cursor-pointer text-sm font-semibold">Entrada en calor para todos los días</summary>
+    <p className="mt-3 text-sm text-muted-foreground">Aplicá el bloque al inicio de cada día. Después podés personalizar cada copia.</p>
+    <WarmupExercises exercises={exercises} definitions={catalog.definitions} disabled={disabled} onChange={change}/>
+    <div className="mt-3 flex flex-wrap items-center gap-3">
+      <Button type="button" variant="secondary" disabled={disabled || !days.length || !exercises.length || exercises.some(exercise => !exerciseSchema.safeParse(exercise).success || !catalog.definitions.some(definition => definition.id === exercise.exerciseDefinitionId && definition.isActive))}
+        onClick={() => { onApply(exercises); setAppliedCount(days.length); }}>Aplicar a todos los días</Button>
+      {appliedCount > 0 ? <p role="status" className="text-sm">Entrada en calor aplicada a {appliedCount} {appliedCount === 1 ? 'día' : 'días'}.</p> : null}
+    </div>
+    {open ? <div className="mt-3"><ExerciseCatalog {...catalog} inline disabled={disabled} dayName="Entrada en calor"
+      onAdd={definition => change([...exercises, { ...emptyExercise(), exerciseDefinitionId: definition.id }])}/></div> : null}
+  </details>;
+}
+
 type OpenCatalogTarget = { dayKey: string; blockKey: string } | null;
 
-export function RoutineDaysEditor({ dayOffset = 0, allowEmpty = false, days, definitions, catalogLoading, catalogError, patterns, patternsLoading, patternsError, onChange, disabled }: ExerciseCatalogProps & { dayOffset?: number; allowEmpty?: boolean; days: EditingDay[]; onChange: (days: EditingDay[]) => void; disabled: boolean }): React.JSX.Element {
+export function RoutineDaysEditor({ dayOffset = 0, allowEmpty = false, inheritedWarmup, days, definitions, catalogLoading, catalogError, patterns, patternsLoading, patternsError, onChange, disabled }: ExerciseCatalogProps & { dayOffset?: number; allowEmpty?: boolean; inheritedWarmup?: ActiveExerciseDraft[]; days: EditingDay[]; onChange: (days: EditingDay[]) => void; disabled: boolean }): React.JSX.Element {
   const [openCatalog, setOpenCatalog] = useState<OpenCatalogTarget>(null);
   const [activeKey, setActiveKey] = useState(days[0]?.key ?? '');
+  const [appliedWarmup, setAppliedWarmup] = useState(() => days.find(day => day.warmup?.length)?.warmup ?? []);
   // Attach asynchronous creation to its originating day, preserving the latest draft.
   const latest = useRef({ days, onChange });
   latest.current = { days, onChange };
@@ -184,8 +220,19 @@ export function RoutineDaysEditor({ dayOffset = 0, allowEmpty = false, days, def
     const next = days.filter((day) => day.key !== activeDay.key);
     setOpenCatalog(null); onChange(next); setActiveKey(next[Math.max(0, activeIndex - 1)]?.key ?? '');
   };
-  const addDay = () => { setOpenCatalog(null); const next = newDay(`Día ${dayOffset + days.length + 1}`); onChange([...days, next]); setActiveKey(next.key); };
+  const addDay = () => {
+    setOpenCatalog(null);
+    const warmup = inheritedWarmup ?? appliedWarmup;
+    const next = { ...newDay(`Día ${dayOffset + days.length + 1}`), warmup: applyWarmupExercises([], warmup) };
+    onChange([...days, next]);
+    setActiveKey(next.key);
+  };
   return <section className="mt-4 min-w-0 space-y-4" aria-label="Contenido de la rutina">
+    {!allowEmpty ? <CommonWarmupEditor days={days} definitions={definitions} catalogLoading={catalogLoading} catalogError={catalogError} patterns={patterns} patternsLoading={patternsLoading} patternsError={patternsError} disabled={disabled}
+      onApply={exercises => {
+        setAppliedWarmup(exercises);
+        onChange(days.map(day => ({ ...day, warmup: applyWarmupExercises(day.warmup ?? [], exercises) })));
+      }}/> : null}
     <nav aria-label="Días de la rutina" className="flex items-center gap-2 overflow-x-auto pb-1">{days.map((day, index) => <button key={day.key} type="button" disabled={disabled} aria-label={`Día ${dayOffset + index + 1}: ${day.name || `Día ${dayOffset + index + 1}`}`} aria-pressed={activeDay?.key === day.key} onClick={() => { if (activeDay?.key !== day.key) setOpenCatalog(null); setActiveKey(day.key); }} className={`min-h-11 shrink-0 border-b-2 px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${activeDay?.key === day.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:bg-surface-muted'}`}>{day.name || `Día ${index + 1}`}</button>)}<Button type="button" variant="ghost" className="shrink-0" disabled={disabled} onClick={addDay}>+ Agregar día</Button></nav>
     {activeDay ? <>
       <DayEditor key={activeDay.key} day={activeDay} index={dayOffset + activeIndex} definitions={editorDefinitions} disabled={disabled} canRemove={allowEmpty || days.length > 1} onRemove={removeDay} onChange={changeDay} openBlockKey={openCatalog?.dayKey === activeDay.key ? openCatalog.blockKey : null} onToggleCatalog={blockKey => setOpenCatalog(current => current?.dayKey === activeDay.key && current.blockKey === blockKey ? null : { dayKey: activeDay.key, blockKey })} catalog={catalog}/>
@@ -197,8 +244,18 @@ export function RoutineDaysEditor({ dayOffset = 0, allowEmpty = false, days, def
 function exerciseToForm(exercise: RoutineExercise): ExerciseForm {
   return { exerciseDefinitionId: exercise.exerciseDefinitionId, series: exercise.series ?? '', repetitions: exercise.repetitions ?? '', duration: exercise.duration ?? '', load: exercise.load ?? '', rest: exercise.rest ?? '', notes: exercise.notes ?? '' };
 }
+function draftContent(day: RoutineDay, toDraft: (exercise: RoutineExercise) => ActiveExerciseDraft) {
+  const groups = groupRoutineBlocks(day.exercises);
+  const blocks = groups.filter(group => group.position !== null && group.position > 0);
+  return {
+    warmup: groups.find(group => group.position === 0)?.exercises.map(toDraft) ?? [],
+    exercises: groups.find(group => group.position === null)?.exercises.map(toDraft) ?? [],
+    blocks: blocks.length ? blocks.map(block => ({ key: crypto.randomUUID(), series: block.series ?? '', exercises: block.exercises.map(toDraft) })) : null,
+  };
+}
+
 export function routineDaysToDraft(days: RoutineDay[]): EditingDay[] {
-  return days.map((day, index) => ({ key: crypto.randomUUID(), name: day.name ?? `Día ${index + 1}`, exercises: isGroupedDay(day.exercises) ? [] : day.exercises.map(exerciseToForm), blocks: isGroupedDay(day.exercises) ? groupRoutineBlocks(day.exercises).map(block => ({ key: crypto.randomUUID(), series: block.series ?? '', exercises: block.exercises.map(exerciseToForm) })) : null }));
+  return days.map((day, index) => ({ key: crypto.randomUUID(), name: day.name ?? `Día ${index + 1}`, ...draftContent(day, exerciseToForm) }));
 }
 export function draftToRoutineDays(days: EditingDay[]): RoutineDayDto[] {
   return days.map((day, index) => ({
@@ -207,12 +264,14 @@ export function draftToRoutineDays(days: EditingDay[]): RoutineDayDto[] {
   }));
 }
 function draftDayExercises(day: EditingDay, index: number): (ActiveExerciseDraft & { blockPosition?: number })[] {
-  if (day.blocks === null) return day.exercises;
-  return day.blocks.flatMap((block, blockIndex) => {
+  const warmup = (day.warmup ?? []).map(exercise => ({ ...exercise, blockPosition: 0 }));
+  if (day.blocks === null) return [...warmup, ...day.exercises];
+  if (warmup.length && day.blocks.length === 1 && !day.blocks[0]?.exercises.length) return warmup;
+  return [...warmup, ...day.blocks.flatMap((block, blockIndex) => {
     if (!block.exercises.length) throw new Error(`El Bloque ${blockLabel(blockIndex + 1)} del Día ${index + 1} no tiene ejercicios. Agregá uno o eliminá el bloque.`);
     if (!/^[0-9]+$/.test(block.series.trim()) || BigInt(block.series.trim()) < 1n) throw new Error(`Las series del Bloque ${blockLabel(blockIndex + 1)} del Día ${index + 1} deben ser un número entero mayor a cero.`);
     return block.exercises.map(exercise => ({ ...exercise, series: block.series, blockPosition: blockIndex + 1 }));
-  });
+  })];
 }
 function serializeExercise(exercise: ExerciseForm & { blockPosition?: number }): RoutineDayDto['exercises'][number] {
   const parsed = exerciseSchema.parse(exercise);
@@ -230,12 +289,12 @@ export function copyRoutineDays(days: RoutineDay[]): RoutineDayDto[] {
 export function RoutineContentSummary({ days, definitions = [], dayAction }: { days: RoutineDay[]; definitions?: ExerciseDefinition[]; dayAction?: (day: RoutineDay) => React.ReactNode }): React.JSX.Element {
   return <div className="mt-4 grid gap-3 sm:grid-cols-2">{days.map((day) => <section key={day.id ?? day.position} className="min-w-0 rounded-md border border-border bg-white">
     <header className="flex items-center justify-between gap-2 border-b border-border bg-surface-muted px-3 py-2"><h5 className="truncate rounded-sm bg-primary px-2.5 py-1 text-sm font-semibold text-primary-foreground">{day.name ?? `Día ${day.position}`}</h5><span className="shrink-0 text-xs text-muted-foreground">{day.exercises.length} {day.exercises.length === 1 ? 'ejercicio' : 'ejercicios'}</span></header>
-    {day.exercises.length === 0 ? <p className="px-3 py-3 text-sm text-muted-foreground">Sin ejercicios.</p> : (isGroupedDay(day.exercises) ? groupRoutineBlocks(day.exercises) : [{ position: 0, label: '', series: null, exercises: day.exercises }]).map(block => <section key={block.position}>
-    {block.position > 0 ? <h6 className="border-b bg-surface-muted px-3 py-2 text-sm font-semibold">Bloque {block.label}{block.series ? ` — ${block.series} series` : ''}</h6> : null}
+    {day.exercises.length === 0 ? <p className="px-3 py-3 text-sm text-muted-foreground">Sin ejercicios.</p> : groupRoutineBlocks(day.exercises).map(block => <section key={block.position ?? 'ungrouped'}>
+    {block.position !== null ? <h6 className="border-b bg-surface-muted px-3 py-2 text-sm font-semibold">{routineBlockTitle(block)}</h6> : null}
     <ul className="divide-y divide-border">{block.exercises.map((exercise, index) => {
       const parameters = block.position ? [formatRoutineRepetitions(exercise.repetitions), exercise.duration && `Tiempo ${formatRoutineDuration(exercise.duration)}`, exercise.load && `Carga ${formatRoutineLoad(exercise.load)}`].filter(Boolean).join(' · ') : [!block.position && exercise.series && `${exercise.series} series`, exercise.repetitions && `${exercise.repetitions} rep.`, exercise.duration && `Tiempo ${exercise.duration}`, exercise.load && `Carga ${exercise.load}`, exercise.rest && `Descanso ${exercise.rest}`].filter(Boolean).join(' · ');
       return <li key={exercise.id ?? index} className="px-3 py-2 text-sm">
-        <p className="font-medium">{block.position > 0 ? `${block.label}${index + 1} — ` : ''}{displayExercise(exercise, definitions)}{exerciseUnavailable(exercise, definitions) ? <span className="ml-1 text-xs font-normal text-muted-foreground">· No disponible</span> : null}</p>
+        <p className="font-medium">{block.position ? `${block.label}${index + 1} — ` : ''}{displayExercise(exercise, definitions)}{exerciseUnavailable(exercise, definitions) ? <span className="ml-1 text-xs font-normal text-muted-foreground">· No disponible</span> : null}</p>
         {parameters ? <p className="mt-1 text-xs text-muted-foreground">{parameters}</p> : null}
         {exercise.exerciseDefinition?.description ? <p className="mt-1 text-xs text-muted-foreground">{exercise.exerciseDefinition.description}</p> : null}
         {exercise.notes ? <p className="mt-1 text-xs text-muted-foreground">Observación: {exercise.notes}</p> : null}
@@ -251,14 +310,7 @@ export function activeRoutineDraft(days: RoutineDay[]): ActiveDayDraft[] {
   return days.map(day => {
     if (!day.id || day.exercises.some(exercise => !exercise.id)) throw new Error('Actualizá la ficha para editar los ejercicios.');
     const name = day.name ?? '';
-    const grouped = isGroupedDay(day.exercises);
-    return {
-      key: day.id, name, originalName: name,
-      exercises: grouped ? [] : day.exercises.map(toDraft),
-      blocks: grouped ? groupRoutineBlocks(day.exercises).map(block => ({
-        key: crypto.randomUUID(), series: block.series ?? '', exercises: block.exercises.map(toDraft),
-      })) : null,
-    };
+    return { key: day.id, name, originalName: name, ...draftContent(day, toDraft) };
   });
 }
 
@@ -282,24 +334,33 @@ export function activeDraftToInput(days: ActiveDayDraft[]): import('@athleta/api
   })) };
 }
 
-export function ActiveRoutineExercisesEditor({ days, onChange, disabled, ...catalogProps }: ExerciseCatalogProps & { days: ActiveDayDraft[]; onChange: (days: ActiveDayDraft[]) => void; disabled: boolean }): React.JSX.Element {
+export function ActiveRoutineExercisesEditor({ days, onChange, addedDays, onChangeAddedDays, disabled, ...catalogProps }: ExerciseCatalogProps & { days: ActiveDayDraft[]; onChange: (days: ActiveDayDraft[]) => void; addedDays: EditingDay[]; onChangeAddedDays: (days: EditingDay[]) => void; disabled: boolean }): React.JSX.Element {
   const [target, setTarget] = useState<OpenCatalogTarget>(null);
-  return <div className="mt-4 min-w-0 space-y-4">{days.map((day, index) => {
-    const openBlockKey = target?.dayKey === day.key ? target.blockKey : null;
-    const changeDay = (updated: EditingDay) => onChange(days.map(item => item.key === day.key ? { ...updated, originalName: item.originalName } : item));
-    const toggleCatalog = (blockKey: string) => setTarget(openBlockKey === blockKey ? null : { dayKey: day.key, blockKey });
-    const catalog = openBlockKey ? <ExerciseCatalog {...catalogProps} key={openBlockKey} inline disabled={disabled} dayName={day.name} onAdd={definition => {
-      const exercise = { ...emptyExercise(), exerciseDefinitionId: definition.id };
-      changeDay(day.blocks === null ? { ...day, exercises: [...day.exercises, exercise] } : {
-        ...day, blocks: day.blocks.map(block => block.key === openBlockKey ? { ...block, exercises: [...block.exercises, exercise] } : block),
-      });
-    }}/> : null;
-    return <section key={day.key} className="min-w-0 rounded-md border p-3">
-      <DayEditor className="" day={day} index={index} definitions={catalogProps.definitions} disabled={disabled} canRemove={false} onChange={changeDay} openBlockKey={openBlockKey} onToggleCatalog={toggleCatalog} catalog={catalog}/>
-      {day.blocks === null ? <div className="mt-3">
-        <Button type="button" variant="secondary" disabled={disabled} aria-expanded={openBlockKey === day.key} onClick={() => toggleCatalog(day.key)}>+ Agregar ejercicio</Button>
-        {catalog}
-      </div> : null}
-    </section>;
-  })}</div>;
+  const [appliedWarmup, setAppliedWarmup] = useState(() => days.find(day => day.warmup?.length)?.warmup ?? []);
+  return <div className="mt-4 min-w-0 space-y-4">
+    <CommonWarmupEditor {...catalogProps} days={[...days, ...addedDays]} disabled={disabled} onApply={exercises => {
+      setAppliedWarmup(exercises);
+      onChange(days.map(day => ({ ...day, warmup: applyWarmupExercises(day.warmup ?? [], exercises) })));
+      onChangeAddedDays(addedDays.map(day => ({ ...day, warmup: applyWarmupExercises(day.warmup ?? [], exercises) })));
+    }}/>
+    {days.map((day, index) => {
+      const openBlockKey = target?.dayKey === day.key ? target.blockKey : null;
+      const changeDay = (updated: EditingDay) => onChange(days.map(item => item.key === day.key ? { ...updated, originalName: item.originalName } : item));
+      const toggleCatalog = (blockKey: string) => setTarget(openBlockKey === blockKey ? null : { dayKey: day.key, blockKey });
+      const catalog = openBlockKey ? <ExerciseCatalog {...catalogProps} key={openBlockKey} inline disabled={disabled} dayName={day.name} onAdd={definition => {
+        const exercise = { ...emptyExercise(), exerciseDefinitionId: definition.id };
+        changeDay(day.blocks === null ? { ...day, exercises: [...day.exercises, exercise] } : {
+          ...day, blocks: day.blocks.map(block => block.key === openBlockKey ? { ...block, exercises: [...block.exercises, exercise] } : block),
+        });
+      }}/> : null;
+      return <section key={day.key} className="min-w-0 rounded-md border p-3">
+        <DayEditor className="" day={day} index={index} definitions={catalogProps.definitions} disabled={disabled} canRemove={false} onChange={changeDay} openBlockKey={openBlockKey} onToggleCatalog={toggleCatalog} catalog={catalog}/>
+        {day.blocks === null ? <div className="mt-3">
+          <Button type="button" variant="secondary" disabled={disabled} aria-expanded={openBlockKey === day.key} onClick={() => toggleCatalog(day.key)}>+ Agregar ejercicio</Button>
+          {catalog}
+        </div> : null}
+      </section>;
+    })}
+    <RoutineDaysEditor {...catalogProps} days={addedDays} dayOffset={days.length} allowEmpty inheritedWarmup={appliedWarmup} onChange={onChangeAddedDays} disabled={disabled}/>
+  </div>;
 }

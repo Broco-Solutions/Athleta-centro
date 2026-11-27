@@ -218,6 +218,12 @@ Permite:
 
 Se otorga a todos los usuarios internos activos.
 
+Una Persona cuyo único contexto sea el seguimiento particular online aparece
+para el profesor responsable y la administración autorizada. Los vínculos
+legítimos de Sala presencial o Clínica mantienen el acceso a sus datos
+generales según el rol. Esta visibilidad general no da acceso al seguimiento
+particular de otro profesor.
+
 No otorga:
 
 ```text
@@ -309,6 +315,11 @@ No debe representarse como permiso genérico para editar `Person.status`.
 Permite restablecer el PIN del Portal de una Persona.
 
 Se otorga a todos los usuarios internos estándar.
+
+Si la Persona tiene historial online particular, el PIN compartido solo se
+restablece por la administración autorizada o por el profesor responsable de
+esos seguimientos. Esto evita que el permiso de acceso a otro contexto
+habilite también el acceso a sus datos de entrenamiento online en el Portal.
 
 La operación:
 
@@ -469,6 +480,11 @@ GENERAL_ADMIN
 ```
 
 Un Administrativo posee acceso de consulta, no de diseño.
+
+Para rutinas y pesos online, el alcance de lectura abarca al profesor
+responsable y a administración. Solo el profesor responsable y
+`GENERAL_ADMIN` pueden modificar las rutinas. Un profesor con rol
+administrativo adicional conserva la supervisión de los seguimientos ajenos.
 
 ---
 

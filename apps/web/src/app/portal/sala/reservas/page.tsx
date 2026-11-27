@@ -6,6 +6,7 @@ import { PortalFrame, portalFetch, formatDate, formatTime, today } from '../../p
 import { CancelConfirmation } from '../../cancel-confirmation';
 
 type ReservationsData = {
+  isOnline: boolean;
   reservations: Array<{
     id: string;
     date: string;
@@ -77,6 +78,7 @@ export default function PortalReservations(): React.JSX.Element {
   return <PortalFrame title="Mis próximos turnos" backToHome>
     {data.isLoading ? <p role="status">Cargando reservas…</p>
       : data.isError || !data.data ? <p role="alert">No pudimos cargar tus reservas. Intentá nuevamente.</p>
+      : data.data.isOnline ? <p>La modalidad Online no utiliza turnos presenciales.</p>
       : <>
         {message ? <p role="status" className="text-sm text-foreground">{message}</p> : null}
         {cancelError && !confirmation ? <p role="alert" className="text-sm text-red-700">{cancelError}</p> : null}

@@ -1,4 +1,4 @@
-import { blockLabel, groupRoutineBlocks, isGroupedDay, formatRoutineRepetitions, formatRoutineDuration, formatRoutineLoad } from './routine-blocks';
+import { applyWarmupExercises, routineBlockTitle, blockLabel, groupRoutineBlocks, isGroupedDay, formatRoutineRepetitions, formatRoutineDuration, formatRoutineLoad } from './routine-blocks';
 
 it.each([[1, 'A'], [2, 'B'], [3, 'C'], [26, 'Z'], [27, 'AA'], [28, 'AB']] as const)('labels block %s as %s', (position, label) => expect(blockLabel(position)).toBe(label));
 it('groups without mutating or reordering exercises and recovers shared series', () => {
@@ -9,7 +9,7 @@ it('groups without mutating or reordering exercises and recovers shared series',
 });
 it('keeps legacy and empty days ungrouped', () => {
   expect(isGroupedDay([])).toBe(false); expect(isGroupedDay([{ blockPosition: null }, {}])).toBe(false);
-  expect(groupRoutineBlocks([{ blockPosition: null, series: '7' }, {}])).toEqual([]);
+  expect(groupRoutineBlocks([{ blockPosition: null, series: '7' }, {}])).toEqual([{ position: null, label: '', series: null, exercises: [{ blockPosition: null, series: '7' }, {}] }]);
 });
 
 it('round-trips mixed legacy and grouped days without IDs or duplicate editable exercises', async () => {
@@ -52,4 +52,23 @@ it('preserves hidden rest and existing units when serializing saved blocks', asy
   const { routineDaysToDraft, draftToRoutineDays } = await import('./routine-editor');
   const exercise = { exerciseDefinitionId: 'a', blockPosition: 1, series: '4', duration: '1 min', load: 'Banda roja', rest: '90 s' };
   expect(draftToRoutineDays(routineDaysToDraft([{ position: 1, exercises: [exercise] }]))[0]!.exercises[0]).toMatchObject(exercise);
+});
+
+it('keeps zero as a warm-up and round-trips it before legacy exercises', async () => {
+  const { routineDaysToDraft, draftToRoutineDays } = await import('./routine-editor');
+  const legacy = { exerciseDefinitionId: 'leg', blockPosition: null, series: 'Libre' };
+  const warmup = { exerciseDefinitionId: 'mov', blockPosition: 0, series: '2', duration: '45' };
+  expect(groupRoutineBlocks([legacy, warmup]).map(routineBlockTitle)).toEqual(['Entrada en calor', '']);
+  const result = draftToRoutineDays(routineDaysToDraft([{ position: 1, exercises: [warmup, legacy] }]));
+  expect(result[0]!.exercises).toMatchObject([warmup, { exerciseDefinitionId: 'leg', series: 'Libre' }]);
+});
+
+it('reuses active occurrences by exercise and keeps other persisted occurrences on repeated application', () => {
+  type Entry = { exerciseDefinitionId: string; series?: string; original?: { id: string } };
+  const common: Entry[] = [{ exerciseDefinitionId: 'mov', series: '3', original: { id: 'foreign-day' } }, { exerciseDefinitionId: 'mov', series: '2' }];
+  const existing: Entry[] = [{ exerciseDefinitionId: 'mov', original: { id: 'local' } }, { exerciseDefinitionId: 'extra', original: { id: 'retained' } }];
+  const applied = applyWarmupExercises(existing, common);
+  expect(applied).toEqual([{ exerciseDefinitionId: 'mov', series: '3', original: { id: 'local' } }, { exerciseDefinitionId: 'mov', series: '2' }, existing[1]]);
+  expect(applyWarmupExercises(applied, common)).toEqual(applied);
+  expect(applyWarmupExercises([], common)[0]).not.toHaveProperty('original');
 });

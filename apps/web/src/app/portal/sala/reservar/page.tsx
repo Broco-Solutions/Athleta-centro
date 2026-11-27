@@ -49,10 +49,10 @@ export default function PortalReserve(): React.JSX.Element {
   }, []);
   const [reservationConfirmation, setReservationConfirmation] = useState<ReservationConfirmation | null>(null);
   const [reservationError, setReservationError] = useState('');
-  const sala = useQuery({ queryKey: ['portal', 'sala'], queryFn: () => portalFetch<{ replacementWeeks: ReplacementWeek[]; validity: { hasValidAccess: boolean; validUntil: string | null } }>('sala') });
-  const validUntil = sala.data?.validity.validUntil;
+  const sala = useQuery({ queryKey: ['portal', 'sala'], queryFn: () => portalFetch<{ isOnline: boolean; replacementWeeks: ReplacementWeek[]; validity: { hasValidAccess: boolean; validUntil: string | null } | null }>('sala') });
+  const validUntil = sala.data?.validity?.validUntil;
   const maxDate = validUntil && validUntil < addDays(currentDate, 30) ? validUntil : addDays(currentDate, 30);
-  const hasValidity = sala.data?.validity.hasValidAccess === true;
+  const hasValidity = sala.data?.validity?.hasValidAccess === true;
   const replacementWeeks = sala.data?.replacementWeeks ?? [];
   const initialDate = firstReplacementDate(replacementWeeks, currentDate, maxDate);
   const activeReplacementWeek = replacementWeeks.find(week => week.available > 0 && initialDate && initialDate >= week.weekStart && initialDate <= week.weekEnd);
@@ -99,6 +99,7 @@ export default function PortalReserve(): React.JSX.Element {
     setDate(value); setSelection(''); setReservationError('');
   };
 
+  if (sala.data?.isOnline) return <PortalFrame title="Reservar reemplazo" backToHome><p>La modalidad Online no utiliza turnos presenciales.</p></PortalFrame>;
   if (sala.isPending) return <PortalFrame title="Reservar reemplazo" backToHome><p role="status">Cargando vigencia…</p></PortalFrame>;
   if (sala.isError) return <PortalFrame title="Reservar reemplazo" backToHome><p role="alert">No pudimos cargar tu vigencia. Intentá nuevamente.</p></PortalFrame>;
   if (!hasValidity) return <PortalFrame title="Reservar reemplazo" backToHome>

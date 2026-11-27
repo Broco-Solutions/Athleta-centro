@@ -1,3 +1,5 @@
+import type { InternalActor } from '../auth/permissions.guard';
+import { personNotFound, supervisesOnlineStudents, visibleOnlineStudents, visiblePeople } from './online-student-access';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { randomInt } from 'node:crypto';
@@ -36,8 +38,8 @@ export class PeopleService {
     }
   }
 
-  async update(id: string, input: UpdatePersonDto) {
-    const current = await this.prisma.person.findUnique({ where: { id } });
+  async update(id: string, input: UpdatePersonDto, actor?: InternalActor) {
+    const current = await this.prisma.person.findFirst({ where: { id, ...(actor ? visiblePeople(actor) : {}) } });
     if (!current) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
     if (input.birthDate !== undefined) this.validateBirthDate(input.birthDate);
     const dni = input.dni !== undefined ? this.validateDni(input.dni) : undefined;
@@ -46,7 +48,7 @@ export class PeopleService {
     const socialWorkId = input.socialWorkId === undefined ? current.socialWorkId : input.socialWorkId;
     if (socialWorkId && socialWorkId !== current.socialWorkId) await this.validateSelectableSocialWork(socialWorkId);
     try {
-      const person = await this.prisma.person.update({ where: { id }, data: {
+      const person = await this.prisma.person.update({ where: { id, ...(actor ? { AND: [visiblePeople(actor)] } : {}) }, data: {
         ...(input.sport !== undefined && { sport: input.sport?.trim() || null }),
         ...(input.club !== undefined && { club: input.club?.trim() || null }),
         ...(input.firstName !== undefined && { firstName: input.firstName.trim() }),
@@ -63,16 +65,20 @@ export class PeopleService {
       return this.serialize(person);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') this.duplicateDni();
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw personNotFound();
       throw error;
     }
   }
 
-  async resetPortalPin(id: string) {
+  async resetPortalPin(id: string, actor?: InternalActor) {
     const pin = this.generatePin();
     const pinHash = await argon2.hash(pin, { type: argon2.argon2id });
     try {
       await this.prisma.$transaction(async (tx) => {
-        await tx.person.findUniqueOrThrow({ where: { id }, select: { id: true } });
+        await tx.$queryRaw`SELECT id FROM people WHERE id = ${id}::uuid FOR UPDATE`;
+        await tx.person.findFirstOrThrow({ where: { id, ...(actor && !supervisesOnlineStudents(actor) ? {
+          AND: [visiblePeople(actor), { onlineStudents: { every: visibleOnlineStudents(actor) } }],
+        } : {}) }, select: { id: true } });
         await tx.portalCredential.upsert({ where: { personId: id }, create: { personId: id, pinHash, mustChangePin: true }, update: { pinHash, mustChangePin: true, credentialsUpdatedAt: new Date() } });
         await tx.session.updateMany({ where: { personId: id, kind: 'PORTAL', revokedAt: null }, data: { revokedAt: new Date() } });
       });
@@ -89,6 +95,7 @@ export class PeopleService {
     const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
     const today = this.date(`${values.year}-${values.month}-${values.day}`);
     await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM people WHERE id = ${id}::uuid FOR NO KEY UPDATE`;
       const person = await tx.person.findUnique({ where: { id }, select: { id: true } });
       if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
       const participations = await tx.salaParticipation.findMany({ where: { personId: id, endDate: null }, select: { id: true } });
@@ -110,6 +117,8 @@ export class PeopleService {
         await tx.oneOffReservation.updateMany({ where: { id: { in: future.map(item => item.id) }, cancelledAt: null }, data: { cancelledAt: now } });
         await tx.routine.updateMany({ where: { salaParticipationId: participation.id, status: RoutineStatus.ACTIVE }, data: { status: RoutineStatus.HISTORICAL } });
       }
+      await tx.routine.updateMany({ where: { personId: id, onlineStudent: { endDate: null }, status: RoutineStatus.ACTIVE }, data: { status: RoutineStatus.HISTORICAL } });
+      await tx.$executeRaw`UPDATE online_students SET end_date = GREATEST(start_date, ${today}::date) WHERE person_id = ${id}::uuid AND end_date IS NULL`;
       await tx.salaParticipation.updateMany({ where: { personId: id, endDate: null }, data: { endDate: today } });
       const occurrences = await tx.salaOccurrence.findMany({ where: { personId: id, date: { gte: today }, status: { not: SalaOccurrenceStatus.CANCELLED } }, include: { scheduleSlot: true } });
       const future = occurrences.filter(item => this.operationalStart(item.date.toISOString().slice(0, 10), item.startTime ?? item.scheduleSlot.startTime) > now);
@@ -132,20 +141,38 @@ export class PeopleService {
     return new Date(utc - offset * 60_000);
   }
 
-  async get(id: string) {
-    const person = await this.prisma.person.findUnique({ where: { id }, include: { clinicalPatient: { select: { personId: true } }, salaParticipations: { where: { endDate: null }, select: { id: true } }, treatments: { where: { status: TreatmentStatus.IN_PROGRESS }, select: { id: true } }, clinicalAppointments: { where: { status: ClinicalAppointmentStatus.SCHEDULED, startAt: { gt: new Date() } }, orderBy: { startAt: 'asc' }, take: 1, select: { id: true, startAt: true } } } });
+  async assertVisible(id: string, actor: InternalActor, tx: Prisma.TransactionClient = this.prisma) {
+    if (!await tx.person.findFirst({ where: { id, ...visiblePeople(actor) }, select: { id: true } })) throw personNotFound();
+  }
+
+  async getIdByDniWithinTransaction(dni: string, tx: Prisma.TransactionClient) {
+    const person = await tx.person.findUnique({ where: { normalizedDni: this.validateDni(dni) }, select: { id: true } });
+    if (!person) throw personNotFound();
+    return person.id;
+  }
+
+  async ensurePortalCredentialWithinTransaction(personId: string, tx: Prisma.TransactionClient) {
+    if (await tx.portalCredential.findUnique({ where: { personId }, select: { personId: true } })) return undefined;
+    const pin = this.generatePin();
+    await tx.portalCredential.create({ data: { personId, pinHash: await argon2.hash(pin, { type: argon2.argon2id }), mustChangePin: true } });
+    return pin;
+  }
+
+  async get(id: string, actor?: InternalActor) {
+    const person = await this.prisma.person.findFirst({ where: { id, ...(actor ? visiblePeople(actor) : {}) }, include: { clinicalPatient: { select: { personId: true } }, salaParticipations: { where: { endDate: null }, select: { id: true } }, treatments: { where: { status: TreatmentStatus.IN_PROGRESS }, select: { id: true } }, clinicalAppointments: { where: { status: ClinicalAppointmentStatus.SCHEDULED, startAt: { gt: new Date() } }, orderBy: { startAt: 'asc' }, take: 1, select: { id: true, startAt: true } } } });
     if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
     return this.serialize(person);
   }
 
-  async list(query: ListPeopleQueryDto) {
+  async list(query: ListPeopleQueryDto, actor?: InternalActor) {
     const search = query.search?.trim();
     const normalized = search ? normalizeDni(search) : '';
-    const where: Prisma.PersonWhereInput = search ? { OR: [
+    const matching: Prisma.PersonWhereInput = search ? { OR: [
       { firstName: { contains: search, mode: 'insensitive' } },
       { lastName: { contains: search, mode: 'insensitive' } },
       ...(normalized ? [{ normalizedDni: { contains: normalized } } satisfies Prisma.PersonWhereInput] : []),
     ] } : {};
+    const where: Prisma.PersonWhereInput = actor ? { AND: [matching, visiblePeople(actor)] } : matching;
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.person.findMany({ where, orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }], skip: (query.page - 1) * query.pageSize, take: query.pageSize, include: { clinicalPatient: { select: { personId: true } }, salaParticipations: { where: { endDate: null }, select: { id: true } }, treatments: { where: { status: TreatmentStatus.IN_PROGRESS }, select: { id: true } }, clinicalAppointments: { where: { status: ClinicalAppointmentStatus.SCHEDULED, startAt: { gt: new Date() } }, orderBy: { startAt: 'asc' }, take: 1, select: { id: true, startAt: true } } } }),
       this.prisma.person.count({ where }),

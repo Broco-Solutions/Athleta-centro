@@ -13,10 +13,35 @@ import { InternalUserService } from '../src/team/internal-user.service';
 describe('People API', () => {
   let app: INestApplication; let prisma: PrismaService; let users: InternalUserService; let auth: AuthService;
   beforeAll(async () => { app = (await Test.createTestingModule({ imports: [AppModule] }).compile()).createNestApplication(); app.use(cookieParser()); app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })); app.setGlobalPrefix('api'); await app.init(); prisma = app.get(PrismaService); users = app.get(InternalUserService); auth = app.get(AuthService); });
-  afterEach(async () => { await prisma.salaOccurrence.deleteMany(); await prisma.salaClinicalIndication.deleteMany(); await prisma.routine.deleteMany(); await prisma.treatment.deleteMany(); await prisma.clinicalAppointment.deleteMany(); await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.salaPlan.deleteMany(); await prisma.salaScheduleSlot.deleteMany(); await prisma.clinicalPatient.deleteMany(); await prisma.person.deleteMany(); await prisma.authAttemptBucket.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); });
+  afterEach(async () => { await prisma.salaOccurrence.deleteMany(); await prisma.salaClinicalIndication.deleteMany(); await prisma.routine.deleteMany(); await prisma.onlineStudent.deleteMany(); await prisma.treatment.deleteMany(); await prisma.clinicalAppointment.deleteMany(); await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.salaPlan.deleteMany(); await prisma.salaScheduleSlot.deleteMany(); await prisma.clinicalPatient.deleteMany(); await prisma.person.deleteMany(); await prisma.authAttemptBucket.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); });
   afterAll(() => app.close());
-  async function session(role: Role) { const user = await users.create({ firstName: 'API', lastName: 'User', email: `${role.toLowerCase()}@people.test`, roles: [role] }); await auth.provisionCredential(user.id, 'ValidPass1!'); await prisma.internalCredential.update({ where: { internalUserId: user.id }, data: { mustChangePassword: false } }); const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200); return { cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string }; }
+  async function session(role: Role, suffix = '') { const user = await users.create({ firstName: 'API', lastName: 'User', email: `${role.toLowerCase()}${suffix}@people.test`, roles: [role] }); await auth.provisionCredential(user.id, 'ValidPass1!'); await prisma.internalCredential.update({ where: { internalUserId: user.id }, data: { mustChangePassword: false } }); const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200); return { cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string, userId: user.id }; }
   const payload = { firstName: 'Ana', lastName: 'Sintética', dni: '20.123.456', phone: '(341) 555-1234', birthDate: '1992-03-10' };
+
+  it('scopes exclusive online identities and protects the shared Portal PIN even with in-person access', async () => {
+    const owner = await session(Role.PROFESSOR);
+    const outsider = await session(Role.PROFESSOR, '-otro');
+    const admin = await session(Role.ADMINISTRATIVE);
+    const http = request(app.getHttpServer());
+    const created = await http.post('/api/sala/online-students').set('Cookie', owner.cookie).set('x-csrf-token', owner.csrf).send({ person: payload }).expect(201);
+    const id = created.body.data.personId as string;
+    const url = `/api/people/${id}`;
+    const find = (actor: typeof owner) => http.get('/api/people?search=20.123.456').set('Cookie', actor.cookie);
+    expect((await find(outsider).expect(200)).body).toMatchObject({ data: [], meta: { total: 0 } });
+    expect((await find(owner).expect(200)).body.data).toEqual([expect.objectContaining({ id, status: 'ACTIVE', hasSalaParticipation: false })]);
+    await http.get(url).set('Cookie', outsider.cookie).expect(404);
+    await http.get(url).set('Cookie', admin.cookie).expect(200);
+    await http.patch(url).set('Cookie', outsider.cookie).set('x-csrf-token', outsider.csrf).send({ firstName: 'Ajeno' }).expect(404);
+    const reset = (actor: typeof owner) => http.post(url + '/reset-portal-pin').set('Cookie', actor.cookie).set('x-csrf-token', actor.csrf);
+    await reset(outsider).expect(404);
+    await reset(owner).expect(201);
+    const plan = await prisma.salaPlan.create({ data: { name: 'Presencial sintético', monthlyAmount: 1000 } });
+    await prisma.salaParticipation.create({ data: { personId: id, mainProfessorId: outsider.userId, planId: plan.id, startDate: new Date('2026-01-01') } });
+    expect((await http.get(url).set('Cookie', outsider.cookie).expect(200)).body.data.hasSalaParticipation).toBe(true);
+    await http.patch(url).set('Cookie', outsider.cookie).set('x-csrf-token', outsider.csrf).send({ phone: '3515559999' }).expect(200);
+    await reset(outsider).expect(404);
+    await reset(admin).expect(201);
+  });
 
   it('creates, reads, searches, paginates and updates safe general data', async () => {
     const authn = await session(Role.PROFESSOR);

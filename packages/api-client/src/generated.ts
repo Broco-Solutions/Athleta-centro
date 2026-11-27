@@ -425,6 +425,7 @@ export interface HealthDeclarationDetailEnvelopeDto {
 }
 
 export interface SalaParticipationPlanResponseDto {
+  isOnline: boolean;
   id: string;
   name: string;
   /** @nullable */
@@ -461,6 +462,7 @@ export interface SalaProfessorListEnvelopeDto {
 }
 
 export interface SalaStudentPlanDto {
+  isOnline: boolean;
   id: string;
   name: string;
 }
@@ -470,6 +472,20 @@ export interface SalaAgendaProfessionalDto {
   firstName: string;
   lastName: string;
 }
+
+export type SalaStudentListItemDtoModality = typeof SalaStudentListItemDtoModality[keyof typeof SalaStudentListItemDtoModality];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SalaStudentListItemDtoModality = {
+  IN_PERSON: 'IN_PERSON',
+  ONLINE: 'ONLINE',
+} as const;
+
+/**
+ * @nullable
+ */
+export type SalaStudentListItemDtoPlan = SalaStudentPlanDto | null;
 
 export type SalaStudentListItemDtoRoutineStatus = typeof SalaStudentListItemDtoRoutineStatus[keyof typeof SalaStudentListItemDtoRoutineStatus];
 
@@ -481,13 +497,18 @@ export const SalaStudentListItemDtoRoutineStatus = {
 } as const;
 
 export interface SalaStudentListItemDto {
-  participationId: string;
+  /** @nullable */
+  participationId: string | null;
+  /** @nullable */
+  onlineStudentId: string | null;
+  modality: SalaStudentListItemDtoModality;
   participationStartDate: string;
   id: string;
   firstName: string;
   lastName: string;
   dni: string;
-  plan: SalaStudentPlanDto;
+  /** @nullable */
+  plan: SalaStudentListItemDtoPlan;
   professor: SalaAgendaProfessionalDto;
   routineStatus: SalaStudentListItemDtoRoutineStatus;
   /**
@@ -507,6 +528,73 @@ export interface SalaStudentListItemDto {
 
 export interface SalaStudentListEnvelopeDto {
   data: SalaStudentListItemDto[];
+}
+
+export interface OnlineStudentEnrollmentDto {
+  person?: CreatePersonDto;
+  /** DNI de una Persona existente. */
+  dni?: string;
+  /** Solo para el alta por administración general. */
+  professorId?: string;
+}
+
+export interface OnlineStudentEnrollmentResultDto {
+  personId: string;
+  /** @pattern ^\d{4}$ */
+  initialPin?: string;
+}
+
+export interface OnlineStudentEnrollmentEnvelopeDto {
+  data: OnlineStudentEnrollmentResultDto;
+}
+
+export interface OnlineStudentDto {
+  id: string;
+  professor: SalaProfessorOptionDto;
+}
+
+/**
+ * @nullable
+ */
+export type OnlineStudentEnvelopeDtoData = OnlineStudentDto | null;
+
+export interface OnlineStudentEnvelopeDto {
+  /** @nullable */
+  data: OnlineStudentEnvelopeDtoData;
+}
+
+export type ChangeStudentModalityDtoModality = typeof ChangeStudentModalityDtoModality[keyof typeof ChangeStudentModalityDtoModality];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ChangeStudentModalityDtoModality = {
+  IN_PERSON: 'IN_PERSON',
+  ONLINE: 'ONLINE',
+} as const;
+
+export interface ChangeStudentModalityDto {
+  sourceId: string;
+  modality: ChangeStudentModalityDtoModality;
+  planId?: string;
+  mainProfessorId?: string;
+}
+
+export type StudentModalityResultDtoModality = typeof StudentModalityResultDtoModality[keyof typeof StudentModalityResultDtoModality];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const StudentModalityResultDtoModality = {
+  IN_PERSON: 'IN_PERSON',
+  ONLINE: 'ONLINE',
+} as const;
+
+export interface StudentModalityResultDto {
+  modality: StudentModalityResultDtoModality;
+  sourceId: string;
+}
+
+export interface StudentModalityEnvelopeDto {
+  data: StudentModalityResultDto;
 }
 
 export interface CreateSalaStudentDto {
@@ -1003,7 +1091,11 @@ export interface SpontaneousOccurrenceDto {
 }
 
 export interface ActiveRoutineExerciseDto {
-  /** @nullable */
+  /**
+   * Position zero denotes the warm-up block.
+   * @minimum 0
+   * @nullable
+   */
   blockPosition?: number | null;
   exerciseDefinitionId?: string;
   /**
@@ -1055,7 +1147,11 @@ export interface UpdateActiveRoutineExercisesDto {
 }
 
 export interface RoutineExerciseDto {
-  /** @nullable */
+  /**
+   * Position zero denotes the warm-up block.
+   * @minimum 0
+   * @nullable
+   */
   blockPosition?: number | null;
   exerciseDefinitionId: string;
   /**
@@ -1258,7 +1354,10 @@ export interface SalaRoutineResponseDto {
   hasTrainingRecords?: boolean;
   id: string;
   personId: string;
-  salaParticipationId: string;
+  /** @nullable */
+  salaParticipationId: string | null;
+  /** @nullable */
+  onlineStudentId: string | null;
   status: SalaRoutineResponseDtoStatus;
   effectiveFrom: string;
   /** @nullable */
@@ -1275,7 +1374,8 @@ export interface SalaRoutineListEnvelopeDto {
 export interface ReplaceRoutineDto {
   effectiveFrom?: string;
   personId: string;
-  salaParticipationId: string;
+  salaParticipationId?: string;
+  onlineStudentId?: string;
   days: RoutineDayDto[];
 }
 
@@ -1525,14 +1625,38 @@ export interface UpdateSalaConfigurationDto {
   capacity: number;
 }
 
+export interface SalaCatalogServiceResponseDto {
+  id: string;
+  name: string;
+  durationMinutes: number;
+  isSelectable: boolean;
+}
+
+export interface SalaCatalogPlanResponseDto {
+  isOnline: boolean;
+  id: string;
+  name: string;
+  /** @nullable */
+  weeklySessions: number | null;
+  monthlyAmount: string;
+  isSelectable: boolean;
+  services: SalaCatalogServiceResponseDto[];
+}
+
+export interface SalaCatalogPlanListEnvelopeDto {
+  data: SalaCatalogPlanResponseDto[];
+}
+
 export interface PlanDto {
   name: string;
-  monthlyAmount: number;
+  isOnline?: boolean;
+  monthlyAmount?: number;
   /**
    * @minimum 2
    * @maximum 5
+   * @nullable
    */
-  weeklySessions: number;
+  weeklySessions?: number | null;
   serviceTypeIds?: string[];
   isSelectable?: boolean;
 }
@@ -2161,6 +2285,8 @@ export const TrainingRoutineVersionDtoStatus = {
 
 export interface TrainingRoutineVersionDto {
   id: string;
+  /** @nullable */
+  onlineStudentId?: string | null;
   version: number;
   status: TrainingRoutineVersionDtoStatus;
   effectiveFrom: string;
@@ -2434,10 +2560,8 @@ export type ListPersonTrainingRecordsMonthParams = {
 month: string;
 };
 
-export type ListSalaPlans200DataItem = { [key: string]: unknown };
-
-export type ListSalaPlans200 = {
-  data?: ListSalaPlans200DataItem[];
+export type ListPersonSalaRoutinesParams = {
+onlineStudentId?: string;
 };
 
 export type ListPersonSalaServices200DataItem = {
@@ -3761,6 +3885,126 @@ export const createSalaStudent = async (createSalaStudentDto: CreateSalaStudentD
 
   const data: createSalaStudentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createSalaStudentResponse
+}
+
+
+
+export type enrollOnlineStudentResponse201 = {
+  data: OnlineStudentEnrollmentEnvelopeDto
+  status: 201
+}
+
+export type enrollOnlineStudentResponseSuccess = (enrollOnlineStudentResponse201) & {
+  headers: Headers;
+};
+;
+
+export type enrollOnlineStudentResponse = (enrollOnlineStudentResponseSuccess)
+
+export const getEnrollOnlineStudentUrl = () => {
+
+
+
+
+  return `/api/sala/online-students`
+}
+
+export const enrollOnlineStudent = async (onlineStudentEnrollmentDto: OnlineStudentEnrollmentDto, options?: RequestInit): Promise<enrollOnlineStudentResponse> => {
+
+  const res = await fetch(getEnrollOnlineStudentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      onlineStudentEnrollmentDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: enrollOnlineStudentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as enrollOnlineStudentResponse
+}
+
+
+
+export type getOnlineStudentResponse200 = {
+  data: OnlineStudentEnvelopeDto
+  status: 200
+}
+
+export type getOnlineStudentResponseSuccess = (getOnlineStudentResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getOnlineStudentResponse = (getOnlineStudentResponseSuccess)
+
+export const getGetOnlineStudentUrl = (personId: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/online-student`
+}
+
+export const getOnlineStudent = async (personId: string, options?: RequestInit): Promise<getOnlineStudentResponse> => {
+
+  const res = await fetch(getGetOnlineStudentUrl(personId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getOnlineStudentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getOnlineStudentResponse
+}
+
+
+
+export type changeSalaStudentModalityResponse200 = {
+  data: StudentModalityEnvelopeDto
+  status: 200
+}
+
+export type changeSalaStudentModalityResponseSuccess = (changeSalaStudentModalityResponse200) & {
+  headers: Headers;
+};
+;
+
+export type changeSalaStudentModalityResponse = (changeSalaStudentModalityResponseSuccess)
+
+export const getChangeSalaStudentModalityUrl = (personId: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/change-modality`
+}
+
+export const changeSalaStudentModality = async (personId: string,
+    changeStudentModalityDto: ChangeStudentModalityDto, options?: RequestInit): Promise<changeSalaStudentModalityResponse> => {
+
+  const res = await fetch(getChangeSalaStudentModalityUrl(personId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      changeStudentModalityDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: changeSalaStudentModalityResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as changeSalaStudentModalityResponse
 }
 
 
@@ -5382,17 +5626,26 @@ export type listPersonSalaRoutinesResponseSuccess = (listPersonSalaRoutinesRespo
 
 export type listPersonSalaRoutinesResponse = (listPersonSalaRoutinesResponseSuccess)
 
-export const getListPersonSalaRoutinesUrl = (personId: string,) => {
+export const getListPersonSalaRoutinesUrl = (personId: string,
+    params?: ListPersonSalaRoutinesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/sala/people/${personId}/routines`
+  return stringifiedParams.length > 0 ? `/api/sala/people/${personId}/routines?${stringifiedParams}` : `/api/sala/people/${personId}/routines`
 }
 
-export const listPersonSalaRoutines = async (personId: string, options?: RequestInit): Promise<listPersonSalaRoutinesResponse> => {
+export const listPersonSalaRoutines = async (personId: string,
+    params?: ListPersonSalaRoutinesParams, options?: RequestInit): Promise<listPersonSalaRoutinesResponse> => {
 
-  const res = await fetch(getListPersonSalaRoutinesUrl(personId),
+  const res = await fetch(getListPersonSalaRoutinesUrl(personId,params),
   {
     ...options,
     method: 'GET'
@@ -6450,7 +6703,7 @@ export const updateSalaConfiguration = async (updateSalaConfigurationDto: Update
 
 
 export type listSalaPlansResponse200 = {
-  data: ListSalaPlans200
+  data: SalaCatalogPlanListEnvelopeDto
   status: 200
 }
 

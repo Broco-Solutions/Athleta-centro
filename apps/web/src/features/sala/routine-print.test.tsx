@@ -136,3 +136,14 @@ it.each(['template', 'ACTIVE', 'HISTORICAL', 'SCHEDULED'] as const)('prints comp
   expect(days).toEqual(original);
   expect(fetch).not.toHaveBeenCalled();
 });
+
+it('prints the warm-up first on each day with distinct regular exercises', () => {
+  const warmup = { exerciseDefinitionId: 'mobility', exerciseName: 'Movilidad', blockPosition: 0, position: 1, series: '2', duration: '45' };
+  const { root } = start({ days: [
+    { position: 1, name: 'Fuerza', exercises: [warmup, { ...days[1]!.exercises[0]!, position: 2 }] },
+    { position: 2, name: 'Core', exercises: [warmup, { exerciseDefinitionId: 'plank', exerciseName: 'Plancha', position: 2, blockPosition: 1, series: '3' }] },
+  ] });
+  expect(root.getAllByRole('heading', { name: 'Entrada en calor' })).toHaveLength(2);
+  expect(root.getAllByText('2 series · 45 seg.')).toHaveLength(2);
+  expect(root.getAllByRole('table').map(table => within(table).getAllByRole('cell')[0]?.textContent)).toEqual(['Movilidad', 'Guardado', 'Movilidad', 'A1 — Plancha']);
+});

@@ -7,7 +7,7 @@ import type { RoutineDay } from '../../features/sala/routine-editor';
 import { PortalApiError, PortalFrame, portalFetch, formatDate, formatTime, type ReplacementWeek } from './portal-ui';
 
 type FixedBooking = { id: string; endDate?: string | null; startTime?: string; scheduleSlot?: { id: string; weekday: string } | null };
-type SalaData = { replacementWeeks: ReplacementWeek[]; fixed: FixedBooking[]; routine?: { days: RoutineDay[] } | null; evaluations: Array<{ id: string; evaluationDate: string; results: Array<{ resultText: string; testDefinition: { id: string; name: string } }> }>; validity: { hasValidAccess: boolean; validUntil: string | null } };
+type SalaData = { isOnline: boolean; replacementWeeks: ReplacementWeek[]; fixed: FixedBooking[]; routine?: { days: RoutineDay[] } | null; evaluations: Array<{ id: string; evaluationDate: string; results: Array<{ resultText: string; testDefinition: { id: string; name: string } }> }>; validity: { hasValidAccess: boolean; validUntil: string | null } | null };
 const weekdays = [{ value: 'MONDAY', label: 'Lunes', short: 'Lun' }, { value: 'TUESDAY', label: 'Martes', short: 'Mar' }, { value: 'WEDNESDAY', label: 'Miércoles', short: 'Mié' }, { value: 'THURSDAY', label: 'Jueves', short: 'Jue' }, { value: 'FRIDAY', label: 'Viernes', short: 'Vie' }, { value: 'SATURDAY', label: 'Sábado', short: 'Sáb' }, { value: 'SUNDAY', label: 'Domingo', short: 'Dom' }];
 const weekdayLabel = (value?: string): string => weekdays.find(item => item.value === value)?.label ?? '';
 export default function PortalHome(): React.JSX.Element {
@@ -19,7 +19,8 @@ export default function PortalHome(): React.JSX.Element {
     {data.isLoading ? <p role="status">Cargando Sala…</p> : null}
     {data.isError && !(data.error instanceof PortalApiError && data.error.code === 'PORTAL_SALA_UNAVAILABLE') ? <p role="alert">No pudimos cargar Sala.</p> : null}
     {sala ? <>
-    {sala.replacementWeeks?.some(week => week.available > 0) ? <section className="portal-replacement rounded-lg border p-5">
+    {sala.isOnline ? <p className="text-sm text-muted-foreground">Modalidad Online</p> : null}
+    {!sala.isOnline && sala.replacementWeeks?.some(week => week.available > 0) ? <section className="portal-replacement rounded-lg border p-5">
       <h2 className="text-lg font-semibold">Turno disponible para reprogramar</h2>
       <p className="mt-2 text-sm">Cancelaste una fecha de uno de tus turnos fijos. Podés elegir otro horario dentro de la semana habilitada.</p>
       <Link href="/portal/sala/reservar" className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Elegir otro horario<ArrowRight size={16} aria-hidden="true" /></Link>
@@ -28,12 +29,12 @@ export default function PortalHome(): React.JSX.Element {
       <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Mi rutina</h2>{sala.routine ? <p className="mt-1 text-sm text-muted-foreground">{routineDays.length} {routineDays.length === 1 ? 'día' : 'días'} · {routineExerciseCount} {routineExerciseCount === 1 ? 'ejercicio' : 'ejercicios'}</p> : null}</div>{sala.routine ? <Link href="/portal/sala/rutina" className="inline-flex min-h-12 items-center rounded-md border bg-primary px-4 text-sm font-medium text-primary-foreground">Registrar entrenamiento</Link> : null}</div>
       {!sala.routine ? <p className="mt-2 text-sm text-muted-foreground">No hay una rutina activa.</p> : null}
     </section>
-    <section id="turnos-fijos" className="rounded-lg border bg-white p-4">
+    {!sala.isOnline ? <section id="turnos-fijos" className="rounded-lg border bg-white p-4">
       <h2 className="text-lg font-semibold">Mis turnos fijos</h2>
       {sala.fixed.length ? <ul className="mt-3 divide-y">{sala.fixed.map(item => <li key={item.id} className="py-3 text-sm">{weekdayLabel(item.scheduleSlot?.weekday)} · {item.startTime ? formatTime(item.startTime) : ''}</li>)}</ul> : <p className="mt-2 text-sm text-muted-foreground">No tenés turnos fijos.</p>}
       <Link href="/portal/sala/reservas" className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-md border px-3 text-sm hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Ver próximos turnos<ArrowRight size={16} aria-hidden="true" /></Link>
-    </section>
-    <div className="grid items-start gap-6 md:grid-cols-3"><section className="rounded-lg border bg-white p-4"><h2 className="text-lg font-semibold">Vigencia de Sala</h2><p className="portal-validity mt-2 text-sm" data-active={sala.validity.hasValidAccess}>{sala.validity.hasValidAccess ? `Vigente hasta ${formatDate(sala.validity.validUntil!)}` : 'Sin vigencia'}</p></section><section id="evaluaciones" className="rounded-lg border bg-white p-4 md:col-span-2"><h2 className="text-lg font-semibold">Mis evaluaciones físicas</h2><PhysicalResults evaluations={sala.evaluations} /></section></div>
+    </section> : null}
+    <div className="grid items-start gap-6 md:grid-cols-3">{!sala.isOnline && sala.validity ? <section className="rounded-lg border bg-white p-4"><h2 className="text-lg font-semibold">Vigencia de Sala</h2><p className="portal-validity mt-2 text-sm" data-active={sala.validity.hasValidAccess}>{sala.validity.hasValidAccess ? `Vigente hasta ${formatDate(sala.validity.validUntil!)}` : 'Sin vigencia'}</p></section> : null}{!sala.isOnline ? <section id="evaluaciones" className="rounded-lg border bg-white p-4 md:col-span-2"><h2 className="text-lg font-semibold">Mis evaluaciones físicas</h2><PhysicalResults evaluations={sala.evaluations} /></section> : null}</div>
     </> : null}
   </PortalFrame>;
 }

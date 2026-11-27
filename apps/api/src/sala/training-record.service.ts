@@ -39,11 +39,26 @@ export class TrainingRecordService {
     });
     return new Set(routines.filter(hasCompleteTraining).map(routine => routine.id));
   }
-  async context(personId: string, before = this.today()) {
+  async context(personId: string, before = this.today(), currentOnlineStudentId: string | null = null, secondaryOnlineStudentId?: string) {
     const today = this.today();
     const versions = await this.prisma.routine.findMany({ where: { personId }, orderBy: [{ createdAt: 'asc' }, { version: 'asc' }], include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } } } });
-    const routines = routinePresentation(versions, today).map(routine => ({ id: routine.id, version: routine.version, status: routine.status, createdOn: trainingOperationalDate(routine.createdAt), effectiveFrom: routine.effectiveFrom, effectiveUntil: routine.effectiveUntil, days: routine.days.map(day => ({ id: day.id, name: day.name, position: day.position, exercises: day.exercises.map(exercise => ({ ...this.snapshot(exercise), id: exercise.id })) })) }));
-    const routine = routineForDate(versions, today);
+    const primaryVersions = versions.filter(version => version.onlineStudentId === currentOnlineStudentId);
+    const effectiveOwner = secondaryOnlineStudentId && !routineForDate(primaryVersions, today) ? secondaryOnlineStudentId : currentOnlineStudentId;
+    const currentVersions = effectiveOwner === currentOnlineStudentId ? primaryVersions : versions.filter(version => version.onlineStudentId === effectiveOwner);
+    const otherVersions = new Map<string | null, typeof versions>();
+    for (const version of versions) {
+      if (version.onlineStudentId === effectiveOwner) continue;
+      const group = otherVersions.get(version.onlineStudentId) ?? [];
+      group.push(version);
+      otherVersions.set(version.onlineStudentId, group);
+    }
+    const routines = [
+      ...routinePresentation(currentVersions, today),
+      ...[...otherVersions.values()].flatMap(group => routinePresentation(group, today)
+        .filter(routine => routine.onlineStudentId === secondaryOnlineStudentId || routine.effectiveFrom <= today)
+        .map(routine => ({ ...routine, status: routine.effectiveFrom > today ? 'SCHEDULED' as const : 'HISTORICAL' as const }))),
+    ].map(routine => ({ id: routine.id, ...(routine.onlineStudentId ? { onlineStudentId: routine.onlineStudentId } : {}), version: routine.version, status: routine.status, createdOn: trainingOperationalDate(routine.createdAt), effectiveFrom: routine.effectiveFrom, effectiveUntil: routine.effectiveUntil, days: routine.days.map(day => ({ id: day.id, name: day.name, position: day.position, exercises: day.exercises.map(exercise => ({ ...this.snapshot(exercise), id: exercise.id })) })) }));
+    const routine = routineForDate(currentVersions, today);
     if (!routine) return { today, routine: null, routines };
     const ids = [...new Set(routine.days.flatMap(day => day.exercises.map(exercise => exercise.exerciseDefinitionId)))];
     // Repeated occurrences share a previous weight reference, while their input fields remain independent.
@@ -58,15 +73,15 @@ export class TrainingRecordService {
     })));
     return { today, routines, routine: { id: routine.id, createdOn: trainingOperationalDate(routine.createdAt), effectiveFrom: routine.effectiveFrom.toISOString().slice(0, 10), days: routine.days.map(day => ({ id: day.id, name: day.name, position: day.position, exercises: day.exercises.map(exercise => ({ ...this.snapshot(exercise), id: exercise.id, lastWeightKg: latest.get(exercise.exerciseDefinitionId) ?? null })) })) } };
   }
-  async list(personId: string, query: TrainingRecordQueryDto) {
+  async list(personId: string, query: TrainingRecordQueryDto, routine?: Prisma.RoutineWhereInput) {
     const { page, pageSize } = query;
     const [records, total] = await this.prisma.$transaction([
-      this.prisma.salaTrainingRecord.findMany({ where: { personId }, select: summarySelect, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], skip: (page - 1) * pageSize, take: pageSize }),
-      this.prisma.salaTrainingRecord.count({ where: { personId } }),
+      this.prisma.salaTrainingRecord.findMany({ where: { personId, ...(routine ? { routine } : {}) }, select: summarySelect, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], skip: (page - 1) * pageSize, take: pageSize }),
+      this.prisma.salaTrainingRecord.count({ where: { personId, ...(routine ? { routine } : {}) } }),
     ], { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
     return { data: records.map(record => this.summary(record)), meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } };
   }
-  async listMonth(personId: string, month: string) {
+  async listMonth(personId: string, month: string, routine?: Prisma.RoutineWhereInput) {
     if (!/^(?!0000)\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
       throw new BadRequestException({ code: 'TRAINING_MONTH_INVALID', message: 'Elegí un mes válido.' });
     }
@@ -76,14 +91,14 @@ export class TrainingRecordService {
     const end = new Date(start);
     end.setUTCMonth(end.getUTCMonth() + 1);
     const records = await this.prisma.salaTrainingRecord.findMany({
-      where: { personId, OR: [{ month }, { date: { gte: start, lt: end } }] },
+      where: { personId, ...(routine ? { routine } : {}), OR: [{ month }, { date: { gte: start, lt: end } }] },
       include: recordInclude,
       orderBy: [{ date: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
     });
     return records.map(record => this.serialize(record));
   }
-  async detail(personId: string, id: string) {
-    const record = await this.prisma.salaTrainingRecord.findFirst({ where: { id, personId }, include: recordInclude });
+  async detail(personId: string, id: string, routine?: Prisma.RoutineWhereInput) {
+    const record = await this.prisma.salaTrainingRecord.findFirst({ where: { id, personId, ...(routine ? { routine } : {}) }, include: recordInclude });
     if (!record) throw this.notFound();
     return this.serialize(record);
   }
@@ -107,7 +122,7 @@ export class TrainingRecordService {
         if (input.allowFuture !== true && input.date < routine.effectiveFrom.toISOString().slice(0, 10)) throw new BadRequestException({ code: 'TRAINING_BEFORE_ROUTINE', message: 'La fecha es anterior a la asignación de esta rutina.' });
         // Weekly references must lie in this version's portion of the week. Only
         // the first assignment extends backwards for retrospective entry.
-        const versions = await tx.routine.findMany({ where: { personId }, select: { id: true, effectiveFrom: true, version: true, cancelledAt: true } });
+        const versions = await tx.routine.findMany({ where: { personId, onlineStudentId: routine.onlineStudentId }, select: { id: true, effectiveFrom: true, version: true, cancelledAt: true } });
         if (input.allowFuture !== true && routineForDate(versions, this.today())?.id !== routine.id) throw new ConflictException({ code: 'TRAINING_ROUTINE_CHANGED', message: 'La rutina vigente cambió. Revisala antes de registrar.' });
         const periods = routinePeriods(versions);
         const period = periods.find(p => p.routine.id === routine.id);
@@ -138,9 +153,9 @@ export class TrainingRecordService {
     try {
       return await this.serialized(async tx => {
         await tx.$queryRaw`SELECT id FROM people WHERE id = ${personId}::uuid FOR UPDATE`;
-        const versions = await tx.routine.findMany({ where: { personId } });
-        if (!routineAllowsMonth(versions, input.routineId, input.month)) throw new BadRequestException({ code: 'TRAINING_ROUTINE_PERIOD_INVALID', message: 'El mes no corresponde al período de esta rutina.' });
         const routine = await tx.routine.findFirst({ where: { id: input.routineId, personId }, include: { days: { where: { id: input.routineDayId }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } } } });
+        const versions = routine ? await tx.routine.findMany({ where: { personId, onlineStudentId: routine.onlineStudentId } }) : [];
+        if (!routineAllowsMonth(versions, input.routineId, input.month)) throw new BadRequestException({ code: 'TRAINING_ROUTINE_PERIOD_INVALID', message: 'El mes no corresponde al período de esta rutina.' });
         const day = routine?.days[0];
         if (!day) throw new BadRequestException({ code: 'TRAINING_DAY_INVALID', message: 'Ese día no pertenece a tu rutina.' });
         input.weeks.forEach(week => this.assertEntries(week, day.exercises.map(e => e.id)));

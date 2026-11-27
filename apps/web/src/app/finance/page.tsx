@@ -81,9 +81,10 @@ function FinancePageContent(): React.JSX.Element {
     if (response.status !== 200) throw new Error('No pudimos cargar los alumnos de Sala.');
     return response.data.data;
   } });
-  const withoutValidity = (summaryStudents.data ?? []).filter(student => !student.hasValidAccess);
-  const pendingStudents = (students.data ?? []).filter(student => !student.hasValidAccess);
-  const paidStudents = (students.data ?? []).filter(student => student.hasValidAccess);
+  const withoutValidity = (summaryStudents.data ?? []).filter(student => student.plan && student.modality !== 'ONLINE' && !student.hasValidAccess);
+  const internalBillingStudents = (students.data ?? []).filter(student => student.plan && !student.plan.isOnline && student.modality !== 'ONLINE');
+  const pendingStudents = internalBillingStudents.filter(student => !student.hasValidAccess);
+  const paidStudents = internalBillingStudents.filter(student => student.hasValidAccess);
   const tabStudents = incomeTab === 'pending' ? pendingStudents : paidStudents;
   const results = tabStudents.filter(student => matchesStudentSearch(student, search));
   const [name, setName] = useState('');
@@ -196,7 +197,7 @@ function FinancePageContent(): React.JSX.Element {
       {summaryStudents.isError ? <p role="alert">{summaryStudents.error.message}</p> : null}
       {summaryStudents.isSuccess && !withoutValidity.length ? <p>Todos los alumnos tienen vigencia actualmente.</p> : null}
       <ul>{withoutValidity.map(student => <li key={student.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-3 text-sm">
-        <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>{student.plan.name} · Sin vigencia</p></div>
+        <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>{student.plan?.name} · Sin vigencia</p></div>
         <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}&action=renew`}>Renovar</Link>
       </li>)}</ul>
     </section> : null}
@@ -225,7 +226,7 @@ function FinancePageContent(): React.JSX.Element {
       {students.isError ? <p role="alert">{students.error.message}</p> : null}
       {students.isSuccess && !results.length ? <p>No se encontraron alumnos.</p> : null}
       <ul>{results.map(student => <li key={student.id} className="flex flex-wrap items-center justify-between gap-3 border-b py-3 text-sm">
-        <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>DNI {student.dni} · {student.plan.name}</p>{incomeTab === 'paid' ? <p>Fecha de cobro: {student.lastPaymentPaidAt ? formatDate(student.lastPaymentPaidAt) : '—'}</p> : null}<p>{student.hasValidAccess ? `Vigente hasta ${student.validUntil ? formatDate(student.validUntil) : '—'}` : 'Sin vigencia'}</p></div>
+        <div><p className="font-semibold">{student.firstName} {student.lastName}</p><p>DNI {student.dni} · {student.plan?.name}</p>{incomeTab === 'paid' ? <p>Fecha de cobro: {student.lastPaymentPaidAt ? formatDate(student.lastPaymentPaidAt) : '—'}</p> : null}<p>{student.hasValidAccess ? `Vigente hasta ${student.validUntil ? formatDate(student.validUntil) : '—'}` : 'Sin vigencia'}</p></div>
         <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}${incomeTab === 'pending' ? '&action=renew' : ''}`}>{incomeTab === 'pending' ? 'Renovar' : 'Ver pagos'}</Link>{incomeTab === 'paid' ? <Link className="rounded border px-3 py-2 font-medium" href={`/finance?view=income&personId=${student.id}&action=renew`}>Renovar</Link> : null}
       </li>)}</ul>
     </section> : null}
@@ -238,7 +239,7 @@ function FinancePageContent(): React.JSX.Element {
           <div className="flex-1"><h2 className="text-xl font-semibold">{person.data.firstName} {person.data.lastName}</h2><p className="text-sm text-muted-foreground">DNI {person.data.dni}</p>
             <Link className="text-sm underline" href={`/sala/people/${personId}`}>Ver ficha<span aria-hidden="true"> ↗</span></Link>
           </div>
-          {activePlan ? <div className="border-border sm:border-l sm:pl-6"><p className="font-semibold">{activePlan.name}</p><p className="text-sm text-muted-foreground">Precio actual: {formatArs(activePlan.monthlyAmount)} / mes</p></div> : null}
+          {activePlan ? <div className="border-border sm:border-l sm:pl-6"><p className="font-semibold">{activePlan.name}</p><p className="text-sm text-muted-foreground">{activePlan.isOnline ? 'Cobro externo' : `Precio actual: ${formatArs(activePlan.monthlyAmount)} / mes`}</p></div> : null}
         </div>
         {participations.isSuccess ? <SalaPaymentPanel key={`${personId}-${paymentAction}`} defaultOpen={paymentAction === 'renew'} personId={personId!} csrfToken={session.data?.csrfToken ?? ''} canRegister={permissions.includes('SALA_PAYMENT_REGISTER')} canSelectPlan={permissions.includes('SALA_PAYMENT_REGISTER')} canAdjust={permissions.includes('SALA_PAYMENT_MANAGE')} canReverse={permissions.includes('SALA_PAYMENT_MANAGE')} activePlan={activePlan}/> : null}
       </> : null}

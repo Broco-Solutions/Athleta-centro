@@ -21,7 +21,7 @@ const professorId = '20000000-0000-4000-8000-000000000002';
 const existing = { id: '20000000-0000-4000-8000-000000000003', firstName: 'Ana', lastName: 'Existente', dni: '30123456', hasSalaParticipation: false };
 function renderStudents(): void {
   server.use(
-    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: planId, name: 'Mensual', isSelectable: true }, { id: 'retired', name: 'Retirado', isSelectable: false }] })),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: planId, name: 'Mensual', isSelectable: true }, { id: 'retired', name: 'Retirado', isSelectable: false }, { id: 'legacy-online', name: 'Online histórico', isSelectable: true, isOnline: true }] })),
     http.get('http://localhost:3000/api/sala/professors', () => HttpResponse.json({ data: [{ id: professorId, firstName: 'Ana', lastName: 'Profesora' }] })),
     http.get('http://localhost:3000/api/clinic/social-works', () => HttpResponse.json({ data: [{ id: 'work', name: 'Cobertura', isSelectable: true }, { id: 'old', name: 'Obra retirada', isSelectable: false }] })),
   );
@@ -56,6 +56,7 @@ it('shows both incorporation actions and creates a student through one atomic re
   for (const label of ['Nombre', 'Apellido', 'DNI', 'Teléfono', 'Fecha de nacimiento', 'Email (opcional)', 'Deporte (opcional)', 'Club (opcional)', 'Contacto de emergencia (opcional)', 'Teléfono de emergencia (opcional)', 'Obra social (opcional)', 'Número de afiliado (opcional)', 'Plan', 'Profesor principal']) expect(within(formDialog).getByLabelText(label)).toBeVisible();
   expect(screen.queryByLabelText('Fecha de inicio')).not.toBeInTheDocument();
   expect(screen.queryByRole('option', { name: 'Retirado' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: 'Online histórico' })).not.toBeInTheDocument();
   expect(screen.queryByRole('option', { name: 'Obra retirada' })).not.toBeInTheDocument();
   const affiliate = screen.getByLabelText('Número de afiliado (opcional)');
   expect(affiliate).toBeDisabled();

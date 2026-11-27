@@ -273,3 +273,11 @@ it('caps an enabled week at thirty days from today', async () => {
   expect(screen.getByRole('button', { name: 'sábado 07/11' })).toBeEnabled();
   expect(screen.queryByRole('button', { name: 'domingo 08/11' })).not.toBeInTheDocument();
 });
+
+it('explains Online modality on direct navigation without querying availability or showing debt', async () => {
+  server.use(http.get(base + 'sala', () => HttpResponse.json({ data: { isOnline: true, replacementWeeks: [], validity: null } })));
+  renderReserve();
+  expect(await screen.findByText('La modalidad Online no utiliza turnos presenciales.')).toBeInTheDocument();
+  expect(screen.queryByText('Cuota sin vigencia')).not.toBeInTheDocument();
+  expect(availabilityCalls).toBe(0);
+});

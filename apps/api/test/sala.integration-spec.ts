@@ -1,3 +1,4 @@
+import { PeopleService } from '../src/people/people.service';
 import * as argon2 from 'argon2';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -87,7 +88,7 @@ describe('Sala configuration API', () => {
     await request(app.getHttpServer()).delete(`/api/sala/movement-patterns/${another.id}`).set('Cookie', denied.cookie).set('x-csrf-token', denied.csrf).expect(403);
     expect(await prisma.exerciseMovementPattern.findUnique({ where: { id: another.id } })).not.toBeNull();
   });
-  async function cleanSalaFixtures() { await prisma.salaClinicalIndication.deleteMany(); await prisma.salaPaymentReversal.deleteMany(); await prisma.salaPaymentAllocation.deleteMany(); await prisma.salaPayment.deleteMany(); await prisma.clinicalPatient.deleteMany(); await prisma.physicalTestResult.deleteMany(); await prisma.physicalEvaluation.deleteMany(); await prisma.physicalTestDefinition.deleteMany(); await prisma.routineExercise.deleteMany(); await prisma.routineDay.deleteMany(); await prisma.routine.deleteMany(); await prisma.routineTemplate.deleteMany(); await prisma.exerciseDefinition.deleteMany(); await prisma.exerciseMovementPattern.deleteMany(); await prisma.salaOccurrence.deleteMany(); await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaServiceType.deleteMany(); await prisma.salaCharge.deleteMany(); await prisma.salaBillingConfiguration.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.salaScheduleException.deleteMany(); await prisma.salaScheduleSlot.deleteMany(); await prisma.salaPlan.deleteMany(); await prisma.salaConfiguration.deleteMany(); await prisma.paperHealthDeclaration.deleteMany(); await prisma.healthDeclaration.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); await prisma.portalCredential.deleteMany(); await prisma.person.deleteMany(); }
+  async function cleanSalaFixtures() { await prisma.salaClinicalIndication.deleteMany(); await prisma.salaPaymentReversal.deleteMany(); await prisma.salaPaymentAllocation.deleteMany(); await prisma.salaPayment.deleteMany(); await prisma.clinicalPatient.deleteMany(); await prisma.physicalTestResult.deleteMany(); await prisma.physicalEvaluation.deleteMany(); await prisma.physicalTestDefinition.deleteMany(); await prisma.routineExercise.deleteMany(); await prisma.routineDay.deleteMany(); await prisma.routine.deleteMany(); await prisma.onlineStudent.deleteMany(); await prisma.routineTemplate.deleteMany(); await prisma.exerciseDefinition.deleteMany(); await prisma.exerciseMovementPattern.deleteMany(); await prisma.salaOccurrence.deleteMany(); await prisma.oneOffReservation.deleteMany(); await prisma.fixedSalaBooking.deleteMany(); await prisma.salaServiceType.deleteMany(); await prisma.salaCharge.deleteMany(); await prisma.salaBillingConfiguration.deleteMany(); await prisma.salaParticipation.deleteMany(); await prisma.salaScheduleException.deleteMany(); await prisma.salaScheduleSlot.deleteMany(); await prisma.salaPlan.deleteMany(); await prisma.salaConfiguration.deleteMany(); await prisma.paperHealthDeclaration.deleteMany(); await prisma.healthDeclaration.deleteMany(); await prisma.session.deleteMany(); await prisma.internalCredential.deleteMany(); await prisma.internalUserRole.deleteMany(); await prisma.internalUser.deleteMany(); await prisma.portalCredential.deleteMany(); await prisma.person.deleteMany(); }
   beforeAll(async () => { app = (await Test.createTestingModule({ imports: [AppModule] }).compile()).createNestApplication(); app.use(cookieParser()); app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })); app.setGlobalPrefix('api'); await app.init(); prisma = app.get(PrismaService); users = app.get(InternalUserService); auth = app.get(AuthService); sala = app.get(SalaService); await cleanSalaFixtures(); });
   beforeEach(() => {
     // This app is shared across cases that move the clock forward and backward.
@@ -97,7 +98,123 @@ describe('Sala configuration API', () => {
   afterEach(cleanSalaFixtures);
   afterAll(() => app.close());
   const uniqueDni = () => `${Date.now()}${Math.floor(Math.random() * 100000)}`.slice(-12);
-  async function session(role: Role | Role[], httpApp = app) { const roles = Array.isArray(role) ? role : [role]; const user = await users.create({ firstName: 'Sala', lastName: 'User', email: `${roles.join('-').toLowerCase()}@sala.test`, roles }); await auth.provisionCredential(user.id, 'ValidPass1!'); await prisma.internalCredential.update({ where: { internalUserId: user.id }, data: { mustChangePassword: false } }); const login = await request(httpApp.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200); return { cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string }; }
+  async function session(role: Role | Role[], httpApp = app, suffix = '') { const roles = Array.isArray(role) ? role : [role]; const user = await users.create({ firstName: 'Sala', lastName: 'User', email: `${roles.join('-').toLowerCase()}${suffix}@sala.test`, roles }); await auth.provisionCredential(user.id, 'ValidPass1!'); await prisma.internalCredential.update({ where: { internalUserId: user.id }, data: { mustChangePassword: false } }); const login = await request(httpApp.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200); return { cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string, userId: user.id }; }
+  describe('student modality correction', () => {
+    async function modalityFixture() {
+      const professor = await session(Role.PROFESSOR);
+      const dni = uniqueDni();
+      const person = await prisma.person.create({ data: { firstName: 'Alumno', lastName: 'Sintético', dni, normalizedDni: dni, phone: '0000000000', birthDate: new Date('1990-01-01') } });
+      const plan = await sala.createPlan({ name: 'Plan presencial', monthlyAmount: 1000, weeklySessions: 2 });
+      const participation = await sala.join({ personId: person.id, mainProfessorId: professor.userId, planId: plan.id, startDate: '2020-01-01' });
+      const url = `/api/sala/people/${person.id}/change-modality`;
+      const convert = (actor = professor, body: { sourceId: string; modality: string; planId?: string; mainProfessorId?: string } = { sourceId: participation.id, modality: 'ONLINE' }) =>
+        request(app.getHttpServer()).post(url).set('Cookie', actor.cookie).set('x-csrf-token', actor.csrf).send(body);
+      return { professor, person, plan, participation, convert };
+    }
+
+    it('serializes simultaneous conversions, preserves historical payment and attendance, and lists a single student', async () => {
+      const f = await modalityFixture();
+      const method = await prisma.paymentMethod.create({ data: { name: 'Pago prueba modalidad' } });
+      try {
+        const payment = await sala.createPayment({ personId: f.person.id, planId: f.plan.id, paymentMethodId: method.id, amount: '1000', paidAt: '2020-01-01', operationId: randomUUID() }, f.professor.userId);
+        const slot = await sala.createSlot({ weekday: 'MONDAY', startTime: '09:00', durationMinutes: 60 });
+        const reservation = await prisma.oneOffReservation.create({ data: { personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: slot.id, date: new Date('2020-02-03') } });
+        const attendance = await prisma.salaOccurrence.create({ data: { personId: f.person.id, scheduleSlotId: slot.id, oneOffReservationId: reservation.id, date: reservation.date, origin: 'ONE_OFF', status: 'ATTENDED' } });
+        const results = await Promise.all([f.convert(), f.convert()]);
+        expect(results.map(response => response.status).sort()).toEqual([200, 409]);
+        const online = await prisma.onlineStudent.findMany({ where: { personId: f.person.id } });
+        expect(online).toEqual([expect.objectContaining({ professorId: f.professor.userId, endDate: null })]);
+        expect(await prisma.salaParticipation.findUniqueOrThrow({ where: { id: f.participation.id } })).toMatchObject({ endDate: expect.any(Date) });
+        const listed = await request(app.getHttpServer()).get('/api/sala/students').set('Cookie', f.professor.cookie).expect(200);
+        expect(listed.body.data).toEqual([expect.objectContaining({ id: f.person.id, dni: f.person.dni, modality: 'ONLINE' })]);
+        await f.convert(f.professor, { sourceId: online[0]!.id, modality: 'ONLINE' }).expect(200);
+        expect(await prisma.onlineStudent.count({ where: { personId: f.person.id } })).toBe(1);
+        expect(await prisma.salaPayment.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ personId: f.person.id, planId: f.plan.id });
+        expect(await prisma.oneOffReservation.findUnique({ where: { id: reservation.id } })).toEqual(reservation);
+        expect(await prisma.salaOccurrence.findUnique({ where: { id: attendance.id } })).toEqual(attendance);
+      } finally {
+        await prisma.salaPayment.deleteMany({ where: { paymentMethodId: method.id } });
+        await prisma.paymentMethod.delete({ where: { id: method.id } });
+      }
+    });
+
+    it('enforces professor ownership and separates administrative visibility from online management', async () => {
+      const f = await modalityFixture();
+      const other = await session(Role.PROFESSOR, app, '-other');
+      const admin = await session(Role.ADMINISTRATIVE);
+      await f.convert(other).expect(403);
+      const changed = await f.convert().expect(200);
+      const body = { sourceId: changed.body.data.sourceId as string, modality: 'IN_PERSON', planId: f.plan.id };
+      await request(app.getHttpServer()).get(`/api/sala/people/${f.person.id}/online-student`).set('Cookie', admin.cookie).expect(200);
+      await f.convert(admin, body).expect(404);
+      await f.convert(other, body).expect(404);
+      await f.convert(f.professor, { ...body, mainProfessorId: other.userId }).expect(403);
+      const invalidPlan = await f.convert(f.professor, { ...body, planId: randomUUID() }).expect(400);
+      expect(invalidPlan.body.code).toBe('SALA_PLAN_INVALID');
+      expect(await prisma.onlineStudent.findUniqueOrThrow({ where: { id: body.sourceId } })).toMatchObject({ endDate: null });
+      expect(await prisma.salaParticipation.count({ where: { personId: f.person.id } })).toBe(1);
+      await f.convert(f.professor, body).expect(200);
+      expect(await prisma.onlineStudent.findUniqueOrThrow({ where: { id: body.sourceId } })).toMatchObject({ endDate: expect.any(Date) });
+      expect(await prisma.salaParticipation.findFirst({ where: { personId: f.person.id, endDate: null } })).toMatchObject({ planId: f.plan.id, mainProfessorId: f.professor.userId });
+      expect(await prisma.salaPayment.count({ where: { personId: f.person.id } })).toBe(0);
+    });
+
+    it('rolls back the new link and participation close when the owner update fails', async () => {
+      const f = await modalityFixture();
+      const exercise = await sala.createExerciseDefinition({ name: 'Ejercicio para probar rollback' });
+      const routine = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, days: [{ exercises: [{ exerciseDefinitionId: exercise.id }] }] });
+      await prisma.$executeRawUnsafe(`CREATE FUNCTION test_reject_modality_move() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN RAISE EXCEPTION 'simulated routine move failure'; END; $$`);
+      try {
+        await prisma.$executeRawUnsafe(`CREATE TRIGGER test_reject_modality_move BEFORE UPDATE OF online_student_id ON routines
+          FOR EACH ROW WHEN (NEW.online_student_id IS NOT NULL) EXECUTE FUNCTION test_reject_modality_move()`);
+        await expect(sala.changeStudentModality(f.person.id, { sourceId: f.participation.id, modality: 'ONLINE' },
+          { id: f.professor.userId, roles: [Role.PROFESSOR] })).rejects.toThrow();
+        expect(await prisma.onlineStudent.count({ where: { personId: f.person.id } })).toBe(0);
+        expect(await prisma.salaParticipation.findUniqueOrThrow({ where: { id: f.participation.id } })).toMatchObject({ endDate: null });
+        expect(await prisma.routine.findUniqueOrThrow({ where: { id: routine.id } })).toMatchObject({ salaParticipationId: f.participation.id, onlineStudentId: null });
+      } finally {
+        await prisma.$executeRawUnsafe('DROP FUNCTION test_reject_modality_move() CASCADE');
+      }
+    });
+
+    it('keeps independently closed historical routines with their original participation', async () => {
+      const f = await modalityFixture();
+      const exercise = await sala.createExerciseDefinition({ name: 'Ejercicio de una participación anterior' });
+      const previous = await prisma.salaParticipation.create({ data: {
+        personId: f.person.id, planId: f.plan.id, mainProfessorId: f.professor.userId,
+        startDate: new Date('2019-01-01'), endDate: new Date('2019-12-31'),
+      } });
+      const archived = await prisma.routine.create({ data: {
+        personId: f.person.id, salaParticipationId: previous.id, status: 'HISTORICAL', version: 1,
+        effectiveFrom: new Date('2019-03-01'), cancelledAt: new Date('2019-06-01T15:00:00Z'),
+      } });
+      const current = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, days: [{ exercises: [{ exerciseDefinitionId: exercise.id }] }] });
+      const result = await f.convert().expect(200);
+      expect(await prisma.routine.findUniqueOrThrow({ where: { id: archived.id } })).toEqual(archived);
+      expect(await prisma.routine.findUniqueOrThrow({ where: { id: current.id } })).toMatchObject({ onlineStudentId: result.body.data.sourceId });
+      expect((await sala.listRoutines(f.person.id, { id: f.professor.userId, roles: [Role.PROFESSOR] }, result.body.data.sourceId as string)).map(row => [row.id, row.status]))
+        .toEqual([[current.id, 'ACTIVE'], [archived.id, 'HISTORICAL']]);
+    });
+
+    it.each(['fixed', 'reservation', 'occurrence', 'outstanding', 'simultaneous'] as const)('blocks a %s conflict without changing the origin', async kind => {
+      const f = await modalityFixture();
+      const slot = await sala.createSlot({ weekday: 'MONDAY', startTime: '09:00', durationMinutes: 60 });
+      const date = new Date('2099-01-05');
+      const booking = { personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: slot.id };
+      if (kind === 'fixed') await prisma.fixedSalaBooking.create({ data: { ...booking, startDate: date } });
+      if (kind === 'reservation') await prisma.oneOffReservation.create({ data: { ...booking, date } });
+      if (kind === 'occurrence') await prisma.salaOccurrence.create({ data: { personId: f.person.id, scheduleSlotId: slot.id, date, origin: 'SPONTANEOUS', status: 'RESERVED' } });
+      if (kind === 'outstanding') await prisma.salaCharge.create({ data: { personId: f.person.id, kind: 'OPENING_BALANCE', amount: 500, chargeDate: date, concept: 'Saldo sintético' } });
+      if (kind === 'simultaneous') await prisma.onlineStudent.create({ data: { personId: f.person.id, professorId: f.professor.userId, startDate: new Date('2020-01-01') } });
+      const blocked = await f.convert().expect(409);
+      expect(blocked.body.code).toBe(kind === 'outstanding' ? 'SALA_MODALITY_FINANCIAL_PENDING' : kind === 'simultaneous' ? 'SALA_MODALITY_CONFLICT' : 'SALA_MODALITY_BOOKINGS_PENDING');
+      expect(await prisma.salaParticipation.findUnique({ where: { id: f.participation.id } })).toMatchObject({ endDate: null });
+      expect(await prisma.onlineStudent.count({ where: { personId: f.person.id } })).toBe(kind === 'simultaneous' ? 1 : 0);
+      if (kind === 'fixed') expect(await prisma.fixedSalaBooking.findFirst({ where: booking })).toMatchObject({ endDate: null });
+      if (kind === 'reservation') expect(await prisma.oneOffReservation.findFirst({ where: booking })).toMatchObject({ cancelledAt: null });
+    });
+  });
   it('configures positive capacity, plans, slots and explicit closure/override exceptions', async () => {
     const authn = await session(Role.ADMINISTRATIVE);
     const service = await sala.createServiceType({ name: 'Musculación', durationMinutes: 60 });
@@ -970,10 +1087,10 @@ describe('Sala configuration API', () => {
       const constraint = await prisma.$queryRawUnsafe<{ count: bigint }[]>(`SELECT count(*) FROM pg_constraint WHERE conrelid = '${table}'::regclass AND conname = 'chk_${table}_block_position'`);
       expect(Number(constraint[0]!.count)).toBe(1);
     }
-    await expect(prisma.routineExercise.update({ where: { id: reused.days[0]!.exercises[0]!.id }, data: { blockPosition: 0 } })).rejects.toThrow();
+    await expect(prisma.routineExercise.update({ where: { id: reused.days[0]!.exercises[0]!.id }, data: { blockPosition: -1 } })).rejects.toThrow();
   });
   it.each([
-    [2], [1, 3], [1, 2, 1], [1, null], [0], [-1], [1.5],
+    [2], [1, 3], [1, 2, 1], [1, null], [1, 0], [null, 0], [-1], [1.5],
   ])('rejects invalid block positions %j without modifying saved content', async (...positions: (number | null)[]) => {
     const definition = await sala.createExerciseDefinition({ name: 'Validación bloques' });
     const template = await sala.createRoutineTemplate({ name: 'Anterior', days: [{ exercises: [{ exerciseDefinitionId: definition.id, blockPosition: null, series: '7' }] }] });
@@ -1187,6 +1304,151 @@ describe('Sala configuration API', () => {
     const post = (body: unknown) => request(httpApp.getHttpServer()).post('/api/sala/payments').set('Cookie', authn.cookie).set('x-csrf-token', authn.csrf).send(body);
     return { person, actor, plan, participation, method, input, post, authn };
   }
+  it('enrolls private students without plans and applies session ownership across routine operations', async () => {
+    const owner = await session(Role.PROFESSOR);
+    const other = await session(Role.PROFESSOR, app, '-otro');
+    const administrative = await session(Role.ADMINISTRATIVE);
+    const general = await session(Role.GENERAL_ADMIN);
+    const api = (actor: typeof owner) => {
+      const http = request(app.getHttpServer());
+      return {
+        get: (path: string) => http.get('/api/sala/' + path).set('Cookie', actor.cookie),
+        post: (path: string, body: object) => http.post('/api/sala/' + path).set('Cookie', actor.cookie).set('x-csrf-token', actor.csrf).send(body),
+      };
+    };
+    const enroll = 'online-students';
+    const legacy = await prisma.salaPlan.create({ data: { name: 'Plan histórico', monthlyAmount: 0, isOnline: true } });
+    expect((await api(administrative).post('plans', { name: 'Plan online nuevo', isOnline: true }).expect(400)).body.code).toBe('SALA_ONLINE_PLAN_RETIRED');
+    expect((await api(administrative).get('plans').expect(200)).body.data).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: legacy.id })]));
+    await api(other).post(enroll, { person: studentPayload, professorId: owner.userId }).expect(403);
+    await api(administrative).post(enroll, { person: studentPayload }).expect(403);
+    await api(owner).post(enroll, { person: { ...studentPayload, phone: 'inválido' } }).expect(400);
+    expect(await prisma.person.count()).toBe(0);
+    const created = (await api(owner).post(enroll, { person: studentPayload }).expect(201)).body.data as { personId: string; initialPin: string };
+    expect(created.initialPin).toMatch(/^\d{4}$/);
+    await api(owner).post(enroll, { person: studentPayload }).expect(409);
+    await api(other).post(enroll, { dni: studentPayload.dni }).expect(409);
+    expect(await prisma.person.count()).toBe(1);
+    expect(await prisma.salaParticipation.count()).toBe(0);
+    const scope = `people/${created.personId}`;
+    const link = (await api(owner).get(scope + '/online-student').expect(200)).body.data;
+    expect(link.professor.id).toBe(owner.userId);
+    await api(other).get(scope + '/online-student').expect(404);
+    await api(other).get(scope + '/routines').expect(404);
+    expect((await api(administrative).get(scope + '/online-student').expect(200)).body.data).toEqual(link);
+
+    const existing = await app.get(PeopleService).create({ ...studentPayload, dni: '87001235' });
+    const onboarding = (await api(general).post(enroll, { dni: '87.001.235', professorId: owner.userId }).expect(201)).body.data;
+    expect(onboarding).toEqual({ personId: existing.id });
+    expect(await prisma.person.count()).toBe(2);
+    const plan = await sala.createPlan({ name: 'Presencial', monthlyAmount: 1000, weeklySessions: 3 });
+    await api(owner).post('participations', { personId: existing.id, mainProfessorId: owner.userId, planId: legacy.id, startDate: '2026-01-01' }).expect(400);
+    const physical = await sala.join({ personId: existing.id, mainProfessorId: other.userId, planId: plan.id, startDate: '2026-01-01' });
+    const students = (await api(other).get('students').expect(200)).body.data;
+    expect(students).toEqual([expect.objectContaining({ id: existing.id, modality: 'IN_PERSON', participationId: physical.id })]);
+    expect((await api(owner).get('students').expect(200)).body.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: created.personId, modality: 'ONLINE', plan: null, participationId: null, onlineStudentId: link.id, validUntil: null }),
+    ]));
+    expect((await api(administrative).get('students').expect(200)).body.data).toHaveLength(3);
+
+    const exercise = await sala.createExerciseDefinition({ name: 'Remo sintético' });
+    const days = [{ exercises: [{ exerciseDefinitionId: exercise.id, series: '3' }] }];
+    const input = { personId: created.personId, onlineStudentId: link.id, days };
+    await api(other).post('routines', input).expect(404);
+    await api(owner).post('routines', { ...input, salaParticipationId: physical.id }).expect(400);
+    const fresh = (await api(owner).post('routines', { ...input, effectiveFrom: '2026-01-01' }).expect(201)).body.data;
+    expect(fresh).toMatchObject({ onlineStudentId: link.id, salaParticipationId: null });
+    const routineRow = { personId: created.personId, effectiveFrom: new Date('2026-01-01'), version: 99, status: 'HISTORICAL' as const };
+    await expect(prisma.routine.create({ data: routineRow })).rejects.toThrow('routines_one_owner_check');
+    await expect(prisma.routine.create({ data: { ...routineRow, personId: existing.id, onlineStudentId: link.id } })).rejects.toMatchObject({ code: 'P2003' });
+    const day = fresh.days[0];
+    const edit = { days: [{ id: day.id, exercises: [{ id: day.exercises[0].id, series: '5' }] }] };
+    const update = (actor: typeof owner) => request(app.getHttpServer()).patch(`/api/sala/routines/${fresh.id}/active-exercises`).set('Cookie', actor.cookie).set('x-csrf-token', actor.csrf).send(edit);
+    await update(other).expect(404);
+    await update(administrative).expect(403);
+    const dualRole = await session([Role.ADMINISTRATIVE, Role.PROFESSOR]);
+    await api(dualRole).get(scope + '/routines').expect(200);
+    await update(dualRole).expect(404);
+
+    await update(owner).expect(200);
+    const template = await sala.createRoutineTemplate({ name: 'Rutina preestablecida', days: [{ exercises: [{ exerciseDefinitionId: exercise.id, series: '4' }] }] });
+    const scheduled = (await api(owner).post('routines', { ...input, effectiveFrom: '2099-01-01', days: template.days.map(day => ({ name: day.name, exercises: day.exercises.map(item => ({ exerciseDefinitionId: item.exerciseDefinitionId, series: item.series })) })) }).expect(201)).body.data;
+    const scheduleUrl = `/api/sala/routines/${scheduled.id}/scheduled`;
+    await request(app.getHttpServer()).put(scheduleUrl).set('Cookie', other.cookie).set('x-csrf-token', other.csrf).send({ effectiveFrom: '2099-01-02' }).expect(404);
+    await request(app.getHttpServer()).put(scheduleUrl).set('Cookie', owner.cookie).set('x-csrf-token', owner.csrf).send({ effectiveFrom: '2099-01-02' }).expect(200);
+    await request(app.getHttpServer()).delete(scheduleUrl).set('Cookie', other.cookie).set('x-csrf-token', other.csrf).expect(404);
+    await api(other).post(`routines/${fresh.id}/duplicate`, {}).expect(404);
+    await api(other).post(`routines/${fresh.id}/remove`, {}).expect(404);
+    expect((await api(administrative).get(scope + '/routines').expect(200)).body.data).toEqual([
+      expect.objectContaining({ id: scheduled.id, status: 'SCHEDULED', effectiveFrom: '2099-01-02' }),
+      expect.objectContaining({ id: fresh.id, status: 'ACTIVE', days: [expect.objectContaining({ exercises: [expect.objectContaining({ series: '5' })] })] }),
+    ]);
+    await request(app.getHttpServer()).delete(scheduleUrl).set('Cookie', owner.cookie).set('x-csrf-token', owner.csrf).expect(200);
+    await api(owner).post(`routines/${fresh.id}/duplicate`, {}).expect(201);
+    expect((await api(owner).get(scope + '/routines').expect(200)).body.data).toEqual([
+      expect.objectContaining({ status: 'ACTIVE' }),
+      expect.objectContaining({ id: fresh.id, status: 'HISTORICAL' }),
+    ]);
+    await app.get(PeopleService).inactivate(created.personId, general.userId);
+    const archived = (await api(owner).get(scope + '/routines').expect(200)).body.data;
+    expect(archived).toHaveLength(2);
+    expect(archived.every((row: { status: string }) => row.status === 'HISTORICAL')).toBe(true);
+    await api(other).get(scope + '/routines').expect(404);
+  });
+
+  it('permits only one active online enrollment when two professors enroll the same existing DNI', async () => {
+    const first = await session(Role.PROFESSOR);
+    const second = await session(Role.PROFESSOR, app, '-otro');
+    const person = await app.get(PeopleService).create({ ...studentPayload, dni: '87001236' });
+    const results = await Promise.all([first, second].map(actor => request(app.getHttpServer()).post('/api/sala/online-students').set('Cookie', actor.cookie).set('x-csrf-token', actor.csrf).send({ dni: person.dni })));
+    expect(results.map(response => response.status).sort()).toEqual([201, 409]);
+    const links = await prisma.onlineStudent.findMany({ where: { personId: person.id } });
+    expect(links).toEqual([expect.objectContaining({ professorId: results[0]!.status === 201 ? first.userId : second.userId, endDate: null })]);
+    expect(await prisma.person.count()).toBe(1);
+  });
+
+  it('blocks private training charges and attendance and retains earlier in-person payments', async () => {
+    const f = await paymentFixture();
+    try {
+      const payment = await f.post(f.input).expect(201);
+      const history = await sala.listPayments(f.person.id);
+      await sala.leave(f.participation.id, false, f.actor.id);
+      const date = '2026-11-23';
+      await prisma.salaParticipation.update({ where: { id: f.participation.id }, data: { endDate: new Date('2026-11-22') } });
+      const link = await prisma.onlineStudent.create({ data: { personId: f.person.id, professorId: f.participation.mainProfessorId, startDate: new Date(date) } });
+      const denied = await f.post({ ...f.input, operationId: randomUUID() }).expect(400);
+      expect(denied.body.code).toBe('SALA_ONLINE_EXTERNAL_BILLING');
+      const post = (path: string, body: object) => request(app.getHttpServer()).post('/api/sala/' + path).set('Cookie', f.authn.cookie).set('x-csrf-token', f.authn.csrf).send(body);
+      const balance = { personId: f.person.id, chargeDate: date, amount: '1000', reason: 'Saldo sintético', operationId: randomUUID() };
+      expect((await post('opening-balances', balance).expect(400)).body.code).toBe('SALA_ONLINE_EXTERNAL_BILLING');
+      const slot = await sala.createSlot({ weekday: 'MONDAY', startTime: '09:00', durationMinutes: 60 });
+      await prisma.salaScheduleSlot.update({ where: { id: slot.id }, data: { startsAt: new Date('2020-01-01') } });
+      const booking = { personId: f.person.id, scheduleSlotId: slot.id, startTime: '09:00' };
+      for (const [path, body] of [
+        ['fixed-bookings', { ...booking, startDate: date, salaParticipationId: link.id }],
+        ['reservations', { ...booking, date, salaParticipationId: link.id }],
+        ['occurrences/spontaneous', { ...booking, date }],
+        ['occurrences/attend', { ...booking, date }],
+      ] as const) await post(path, body).expect(400);
+      const receptionDni = '87001237';
+      await prisma.person.update({ where: { id: f.person.id }, data: { dni: receptionDni, normalizedDni: receptionDni } });
+      expect((await post('check-in', { dni: receptionDni }).expect(200)).body.data.status).toBe('NOT_FOUND');
+      expect(await sala.listPayments(f.person.id)).toEqual(history);
+      expect(history[0]?.id).toBe(payment.body.data.id);
+      expect((await sala.dashboard(date)).withoutValidity.personIds).not.toContain(f.person.id);
+      expect(await prisma.salaCharge.count({ where: { personId: f.person.id } })).toBe(0);
+      expect(await prisma.salaOccurrence.count({ where: { personId: f.person.id } })).toBe(0);
+      expect(await prisma.fixedSalaBooking.count({ where: { personId: f.person.id } })).toBe(0);
+      expect(await prisma.oneOffReservation.count({ where: { personId: f.person.id } })).toBe(0);
+      await prisma.onlineStudent.update({ where: { id: link.id }, data: { endDate: new Date(date) } });
+      expect((await post('opening-balances', balance).expect(400)).body.code).toBe('SALA_ONLINE_EXTERNAL_BILLING');
+      expect((await post('opening-balances', { ...balance, chargeDate: '2026-11-24' }).expect(400)).body.code).toBe('SALA_ONLINE_EXTERNAL_BILLING');
+    } finally {
+      await prisma.salaPayment.deleteMany({ where: { personId: f.person.id } });
+      await prisma.paymentMethod.delete({ where: { id: f.method.id } });
+    }
+  });
+
   describe('rolling payment validity', () => {
     beforeEach(() => {
       jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'clearImmediate', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance', 'queueMicrotask', 'hrtime'] });
@@ -1883,8 +2145,9 @@ describe('Sala configuration API', () => {
         const index = f.students.findIndex(student => student.person.id === row.id);
         const professor = index % 2 ? f.other : f.professor;
         expect(row.professor).toEqual({ id: professor.id, firstName: professor.firstName, lastName: professor.lastName });
-        expect(row.plan).toEqual({ id: f.plan.id, name: '3 veces' });
-        expect(Object.keys(row).sort()).toEqual(['dni', 'firstName', 'hasValidAccess', 'id', 'lastName', 'lastPaymentPaidAt', 'participationId', 'participationStartDate', 'plan', 'professor', 'routineChangeInDays', 'routineStatus', 'routineTrainingComplete', 'validUntil']);
+        expect(row.plan).toEqual({ id: f.plan.id, name: '3 veces', isOnline: false });
+        expect(row).toMatchObject({ modality: 'IN_PERSON', onlineStudentId: null });
+        expect(Object.keys(row).sort()).toEqual(['dni', 'firstName', 'hasValidAccess', 'id', 'lastName', 'lastPaymentPaidAt', 'modality', 'onlineStudentId', 'participationId', 'participationStartDate', 'plan', 'professor', 'routineChangeInDays', 'routineStatus', 'routineTrainingComplete', 'validUntil']);
         expect(row.dni).toBe(f.students[index]!.person.dni);
       }
       expect(Object.keys(result.body)).toEqual(['data']);

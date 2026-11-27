@@ -20,7 +20,7 @@ test('preserves administrative Finance and lets Professor renew from student pay
   for (const kind of ['student-follow-up', 'sala']) execFileSync('pnpm', ['--filter', '@athleta/api', 'exec', 'tsx', 'scripts/e2e-fixture.ts', kind], { cwd: '../..', stdio: 'inherit' });
   await page.goto('/login');
   await page.getByLabel('Email').fill('e2e.sala@athleta.test');
-  await page.getByLabel('Contraseña').fill('ValidPass1!');
+  await page.getByLabel('Contraseña', { exact: true }).fill('ValidPass1!');
   await page.getByRole('button', { name: /Ingresar/ }).click();
   await expect(page).toHaveURL('/');
   const session = (await (await page.request.get('/api/auth/session')).json()).data;
@@ -57,14 +57,14 @@ test('preserves administrative Finance and lets Professor renew from student pay
   await expect(dialog.getByRole('button', { name: 'Revertir pago' })).toBeDisabled();
   await dialog.getByLabel('Motivo de reversión').fill('Cobro duplicado E2E');
   await dialog.getByRole('button', { name: 'Revertir pago' }).click();
-  await expect(page.getByRole('row').filter({ hasText: method.name }).getByText('Revertido', { exact: true })).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: method.name }).getByRole('cell', { name: /^Revertido\b/ })).toBeVisible();
   await page.getByRole('link', { name: 'Ver ficha' }).click();
   await expect(page.getByText('Sin vigencia', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: /Cerrar sesión/ }).click();
   await expect(page).toHaveURL('/login');
   await page.goto('/login');
   await page.getByLabel('Email').fill('e2e.student-follow-up@athleta.test');
-  await page.getByLabel('Contraseña').fill('ValidPass1!');
+  await page.getByLabel('Contraseña', { exact: true }).fill('ValidPass1!');
   const loginResponse = page.waitForResponse(response => response.url().endsWith('/api/auth/login') && response.request().method() === 'POST');
   await page.getByRole('button', { name: /Ingresar/ }).click();
   expect((await loginResponse).status()).toBe(200);
@@ -78,11 +78,10 @@ test('preserves administrative Finance and lets Professor renew from student pay
   await expect(page.getByRole('link', { name: 'Pagos', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('heading', { name: 'Registrar renovación', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Historial de pagos' })).toBeVisible();
-  await expect(page.getByLabel('Plan', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Precio', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel(/^Motivo de ajuste/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Revertir', exact: true })).toHaveCount(0);
-  await expect(page.getByText('Base FollowUpE2E', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Plan', exact: true }).locator('option:checked')).toHaveText('Base FollowUpE2E');
   await page.getByRole('button', { name: method.name, exact: true }).click();
   await page.getByRole('button', { name: 'Registrar pago', exact: true }).click();
   await expect(page.getByText('Pago registrado correctamente.')).toBeVisible();

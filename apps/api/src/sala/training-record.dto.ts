@@ -112,6 +112,7 @@ export class TrainingRoutineDayDto {
 }
 export class TrainingRoutineVersionDto {
   @ApiProperty({ type: String }) id!: string;
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true }) onlineStudentId?: string | null;
   @ApiProperty({ type: Number }) version!: number;
   @ApiProperty({ enum: ['ACTIVE', 'HISTORICAL', 'SCHEDULED'] }) status!: 'ACTIVE' | 'HISTORICAL' | 'SCHEDULED';
   @ApiProperty({ type: String, format: 'date' }) effectiveFrom!: string;

@@ -198,3 +198,10 @@ it('shows a safe error and keeps the Home link', async () => {
   expect(screen.queryByText('Internal detail')).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Volver a Inicio' })).toHaveAttribute('href', '/portal');
 });
+
+it('explains Online modality on direct navigation to upcoming turns', async () => {
+  server.use(http.get(endpoint, () => HttpResponse.json({ data: { isOnline: true, reservations: [], fixedOccurrences: [] } })));
+  renderReservations();
+  expect(await screen.findByText('La modalidad Online no utiliza turnos presenciales.')).toBeInTheDocument();
+  expect(screen.queryByText('No tenés próximos turnos disponibles.')).not.toBeInTheDocument();
+});

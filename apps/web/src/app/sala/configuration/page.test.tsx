@@ -191,3 +191,13 @@ it('lets Administrative create, edit and retire services with its effective Sala
   fireEvent.click(screen.getByText('Tests físicos'));
   expect(screen.queryByRole('button', { name: 'Crear primer test' })).not.toBeInTheDocument();
 });
+
+it('offers a single presencial plan form without a modality selector', async () => {
+  renderPage();
+  fireEvent.click(await screen.findByText('Planes'));
+  fireEvent.click(await screen.findByRole('button', { name: 'Nuevo plan' }));
+  expect(screen.queryByLabelText('Modalidad')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Precio mensual ($ ARS)')).toBeVisible();
+  expect(screen.getByLabelText('Sesiones por semana')).toBeVisible();
+  expect(screen.getByRole('group', { name: 'Servicios incluidos (opcional)' })).toBeVisible();
+});

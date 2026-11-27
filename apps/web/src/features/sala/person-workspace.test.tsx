@@ -5,8 +5,8 @@ import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import { SalaPersonWorkspace } from './person-workspace';
 
-const navigation = vi.hoisted(() => ({ tab: 'reservations' }));
-vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams({ tab: navigation.tab }) }));
+const navigation = vi.hoisted(() => ({ tab: 'reservations', modality: '', replace: vi.fn() }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: navigation.replace }), useSearchParams: () => new URLSearchParams({ tab: navigation.tab, ...(navigation.modality ? { modality: navigation.modality } : {}) }) }));
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
 const personId = '10000000-0000-4000-8000-000000000001';
@@ -22,10 +22,13 @@ beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' });
 });
 beforeEach(() => {
+  navigation.replace.mockClear();
   navigation.tab = 'reservations';
+  navigation.modality = '';
   personServicesRequests = 0;
   catalogRequests = 0;
   server.use(
+    http.get(`http://localhost:3000/api/sala/people/${personId}/online-student`, () => HttpResponse.json({ data: null })),
     http.get(`http://localhost:3000/api/sala/people/${personId}/training-records`, () => HttpResponse.json({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } })),
     http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor', firstName: 'Profesor', lastName: 'Sintético' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_AGENDA_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })),
     http.get(`http://localhost:3000/api/people/${personId}`, () => HttpResponse.json({ data: { id: personId, firstName: 'Alumno', lastName: 'Sintético', dni: '12345678' } })),
@@ -57,12 +60,12 @@ it.each(['reservations', 'fixed'])('allows general Sala without configured servi
   server.use(http.get(`http://localhost:3000/api/sala/people/${personId}/services`, () => HttpResponse.json({ data: [] })));
   renderWorkspace();
   if (tab === 'reservations') expect(await waitFor(() => booking().getByText('Podés reservar Sala sin seleccionar un Servicio.'))).toBeInTheDocument();
-  else await findBookingOption({ name: 'Lunes' });
+  else await findBookingOption({ name: '09:00' });
   expect(screen.getByRole('button', { name: tab === 'fixed' ? 'Crear turno fijo' : 'Crear reserva' })).toBeDisabled();
   if (tab === 'reservations') expect(booking().getByLabelText('Servicio').querySelectorAll('option')).toHaveLength(1);
   else { expect(booking().queryByLabelText('Fecha')).not.toBeInTheDocument(); expect(booking().queryByLabelText('Servicio')).not.toBeInTheDocument(); }
   fireEvent.change(booking().getByLabelText('Horario'), { target: { value: 'window:09:00' } });
-  expect(screen.getByRole('button', { name: tab === 'fixed' ? 'Crear turno fijo' : 'Crear reserva' })).toBeEnabled();
+  await waitFor(() => expect(screen.getByRole('button', { name: tab === 'fixed' ? 'Crear turno fijo' : 'Crear reserva' })).toBeEnabled());
 });
 it.each([true, false])('edits a historical fixed booking as general Sala regardless of its prior service (allowed=%s)', async (allowed) => {
   navigation.tab = 'fixed';
@@ -84,7 +87,7 @@ it('does not query person services without an active participation', async () =>
   server.use(http.get(`http://localhost:3000/api/sala/participations/person/${personId}`, () => HttpResponse.json({ data: [] })));
   renderWorkspace();
   await screen.findByText('Sin participación activa');
-  expect(screen.getByRole('button', { name: 'Crear reserva' })).toBeDisabled();
+  expect(await screen.findByRole('button', { name: 'Crear reserva' })).toBeDisabled();
   expect(personServicesRequests).toBe(0);
   expect(catalogRequests).toBe(0);
 });
@@ -242,6 +245,7 @@ const professorPermissions = ['SALA_RELATION_READ', 'SALA_AGENDA_MANAGE', 'SALA_
 const dashboardDate = new Date('2026-10-14T01:30:00Z'); // Still October 13 in Argentina.
 function dashboardHandlers() {
   navigation.tab = 'summary';
+  navigation.modality = '';
   vi.setSystemTime(dashboardDate);
   routineSession(professorPermissions);
   server.use(
@@ -425,7 +429,7 @@ it.each([['ADMINISTRATIVE'], ['GENERAL_ADMIN'], ['KINESIOLOGIST'], ['OSTEOPATH']
     http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: [] })),
     http.get('http://localhost:3000/api/finance/payment-methods', () => HttpResponse.json({ data: [] })),
   );
-  renderWorkspace(); await screen.findByText('Workspace Sala');
+  renderWorkspace(); await screen.findByRole('heading', { name: 'Pago' });
   const tabs = within(screen.getByRole('navigation', { name: 'Secciones del alumno en Sala' }));
   expect(tabs.getAllByRole('link').map(link => link.textContent)).toEqual(['Resumen', 'Turno fijo', 'Reservas', 'Rutina', ...(roles.some(role => ['ADMINISTRATIVE', 'GENERAL_ADMIN', 'PROFESSOR'].includes(role)) ? ['Evaluaciones físicas'] : []), 'Declaración de salud']);
   expect(await screen.findByRole('heading', { name: 'Pago' })).toBeInTheDocument();
@@ -895,4 +899,104 @@ it('prints the existing person full name without requesting it again', async () 
     expect(document.getElementById('athleta-routine-print-root')).not.toHaveTextContent('12345678');
     expect(personReads).toBe(1);
   } finally { print.mockRestore(); }
+});
+
+it('shows the online summary on a direct payment URL and keeps routine and PIN access', async () => {
+  navigation.tab = 'payments';
+  navigation.modality = 'online';
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE', 'SALA_PHYSICAL_EVALUATION_READ', 'SALA_PAYMENT_READ', 'SALA_PAYMENT_REGISTER', 'PORTAL_PIN_RESET'], csrfToken: 'csrf', mustChangePassword: false } })),
+    http.get(`http://localhost:3000/api/sala/people/${personId}/online-student`, () => HttpResponse.json({ data: { id: 'online-link', professor: { id: 'professor', firstName: 'Ana', lastName: 'Profesora' } } })),
+  );
+  renderWorkspace();
+  expect(await screen.findByText(/Modalidad Online · Profesor responsable: Ana Profesora/)).toBeInTheDocument();
+  const nav = within(screen.getByRole('navigation', { name: 'Secciones del alumno en Sala' }));
+  expect(nav.getByRole('link', { name: 'Resumen' })).toHaveAttribute('aria-current', 'page');
+  expect(nav.getByRole('link', { name: 'Rutina' })).toHaveAttribute('href', `/sala/people/${personId}?modality=online&tab=routine`);
+  expect(nav.queryByRole('link', { name: /Pagos|Turnos|Evaluaciones/ })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Restablecer PIN del Portal' })).toBeVisible();
+  expect(screen.queryByText(/Cambiar Plan|Registrar renovación|Sin vigencia/)).not.toBeInTheDocument();
+  expect(personServicesRequests).toBe(0);
+});
+
+it('opens the existing routine editor using the online enrollment as owner', async () => {
+  navigation.tab = 'routine';
+  navigation.modality = 'online';
+  let requestedId: string | null = null;
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_ROUTINE_READ', 'SALA_ROUTINE_MANAGE'], csrfToken: 'csrf', mustChangePassword: false } })),
+    http.get(`http://localhost:3000/api/sala/people/${personId}/online-student`, () => HttpResponse.json({ data: { id: 'online-link', professor: { id: 'professor', firstName: 'Ana', lastName: 'Profesora' } } })),
+    http.get('http://localhost:3000/api/sala/exercise-definitions', () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/movement-patterns', () => HttpResponse.json({ data: [] })),
+    http.get(`http://localhost:3000/api/sala/people/${personId}/routines`, ({ request }) => {
+      requestedId = new URL(request.url).searchParams.get('onlineStudentId');
+      return HttpResponse.json({ data: [] });
+    }),
+  );
+  renderWorkspace();
+  const create = await screen.findByRole('button', { name: 'Crear desde cero' });
+  await waitFor(() => expect(create).toBeEnabled());
+  fireEvent.click(create);
+  expect(requestedId).toBe('online-link');
+  expect(screen.getByRole('button', { name: /Guardar|Asignar rutina/ })).toBeInTheDocument();
+});
+
+it.each(['IN_PERSON', 'ONLINE'] as const)('confirms a modality change from %s and stays in Rutina', async source => {
+  navigation.tab = 'routine';
+  navigation.modality = source === 'ONLINE' ? 'online' : '';
+  let current = source;
+  const requests: unknown[] = [];
+  const professor = { id: 'professor', firstName: 'Ana', lastName: 'Sintética' };
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: professor, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_PARTICIPATION_MANAGE', 'SALA_ROUTINE_READ'], csrfToken: 'csrf', mustChangePassword: false } })),
+    http.get(`http://localhost:3000/api/sala/participations/person/${personId}`, () => HttpResponse.json({ data: current === 'ONLINE' ? [] : [{ id: 'participation', endDate: null, plan: { name: 'Plan Base' }, mainProfessorId: 'professor', mainProfessor: professor }] })),
+    http.get(`http://localhost:3000/api/sala/people/${personId}/online-student`, () => HttpResponse.json({ data: current === 'ONLINE' ? { id: 'online-link', professor } : null })),
+    http.get(`http://localhost:3000/api/sala/people/${personId}/routines`, () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'plan', name: 'Plan Base', isSelectable: true }, { id: 'retired', name: 'Retirado', isSelectable: false }, { id: 'legacy', name: 'Online anterior', isOnline: true, isSelectable: true }] })),
+    http.post(`http://localhost:3000/api/sala/people/${personId}/change-modality`, async ({ request }) => {
+      expect(request.headers.get('x-csrf-token')).toBe('csrf');
+      const input = await request.json() as { modality: typeof source };
+      requests.push(input);
+      current = input.modality;
+      return HttpResponse.json({ data: { modality: current, sourceId: current === 'ONLINE' ? 'online-link' : 'participation' } });
+    }),
+  );
+  renderWorkspace();
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar modalidad' }));
+  const dialog = within(screen.getByRole('dialog', { name: 'Editar modalidad' }));
+  const target = source === 'ONLINE' ? 'IN_PERSON' : 'ONLINE';
+  const confirm = dialog.getByRole('button', { name: 'Confirmar cambio' });
+  expect(confirm).toBeDisabled();
+  fireEvent.change(dialog.getByLabelText('Nueva modalidad'), { target: { value: target } });
+  if (target === 'IN_PERSON') {
+    expect(confirm).toBeDisabled();
+    await dialog.findByRole('option', { name: 'Plan Base' });
+    expect(dialog.queryByRole('option', { name: /Retirado|Online anterior/ })).not.toBeInTheDocument();
+    fireEvent.change(dialog.getByLabelText('Plan presencial'), { target: { value: 'plan' } });
+  } else {
+    expect(dialog.getByText(/dejará de usar planes y turnos presenciales/)).toBeVisible();
+  }
+  fireEvent.click(confirm);
+  await screen.findByText('Modalidad actualizada.');
+  expect(requests).toEqual([target === 'ONLINE' ? { sourceId: 'participation', modality: 'ONLINE' } : { sourceId: 'online-link', modality: 'IN_PERSON', planId: 'plan' }]);
+  expect(navigation.replace).toHaveBeenCalledWith(`/sala/people/${personId}?tab=routine${target === 'ONLINE' ? '&modality=online' : ''}`, { scroll: false });
+  expect(screen.getByRole('link', { name: 'Rutina' })).toHaveAttribute('aria-current', 'page');
+  expect(screen.queryByRole('dialog', { name: 'Editar modalidad' })).not.toBeInTheDocument();
+});
+
+it('keeps the modality dialog open when an administrative conflict blocks the change', async () => {
+  navigation.tab = 'routine';
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_PARTICIPATION_MANAGE', 'SALA_ROUTINE_READ'], csrfToken: 'csrf' } })),
+    http.get(`http://localhost:3000/api/sala/participations/person/${personId}`, () => HttpResponse.json({ data: [{ id: 'participation', mainProfessorId: 'professor', endDate: null, plan: { name: 'Plan Base' } }] })),
+    http.get(`http://localhost:3000/api/sala/people/${personId}/routines`, () => HttpResponse.json({ data: [] })),
+    http.post(`http://localhost:3000/api/sala/people/${personId}/change-modality`, () => HttpResponse.json({ code: 'SALA_MODALITY_BOOKINGS_PENDING', message: 'Hay reservas futuras. Se requiere resolución administrativa.' }, { status: 409 })),
+  );
+  renderWorkspace();
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar modalidad' }));
+  const dialog = within(screen.getByRole('dialog', { name: 'Editar modalidad' }));
+  fireEvent.change(dialog.getByLabelText('Nueva modalidad'), { target: { value: 'ONLINE' } });
+  fireEvent.click(dialog.getByRole('button', { name: 'Confirmar cambio' }));
+  expect(await dialog.findByRole('alert')).toHaveTextContent('Hay reservas futuras.');
+  expect(navigation.replace).not.toHaveBeenCalled();
 });

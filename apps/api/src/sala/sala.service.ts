@@ -1,5 +1,8 @@
+import type { InternalActor } from '../auth/permissions.guard';
+import { personNotFound, supervisesOnlineStudents, visibleOnlineStudents } from '../people/online-student-access';
+import type { ChangeStudentModalityDto, OnlineStudentEnrollmentDto } from './sala.dto';
 import { UpdateActiveRoutineExercisesDto, UpdateScheduledRoutineDto } from './sala.dto';
-import { routinePresentation, routineForDate, routineAllowsMonth, routineFollowUp } from './routine-periods';
+import { routinePresentation, routineForDate, routineAllowsMonth, routineFollowUp, routinePeriods } from './routine-periods';
 import { HealthDeclarationService } from './health-declaration/health-declaration.service';
 import { TrainingRecordService } from './training-record.service';
 import { BadRequestException, ForbiddenException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
@@ -94,10 +97,15 @@ export class SalaService {
         }
         return existing;
       }
-      const participation = await tx.salaParticipation.findFirst({ where: { personId: input.personId, endDate: null } });
-      if (!participation) throw new BadRequestException({ code: 'SALA_PARTICIPATION_REQUIRED', message: 'Se necesita una participación activa de Sala para registrar pagos.' });
+      const participation = await tx.salaParticipation.findFirst({ where: { personId: input.personId, endDate: null }, include: { plan: true } });
+      if (!participation) {
+        this.assertInternalBilling(Boolean(await tx.onlineStudent.findFirst({ where: { personId: input.personId, endDate: null }, select: { id: true } })));
+        throw new BadRequestException({ code: 'SALA_PARTICIPATION_REQUIRED', message: 'Se necesita una participación activa de Sala para registrar pagos.' });
+      }
+      this.assertInternalBilling(participation.plan.isOnline);
+      const plan = await this.selectPlanForAssignment(tx, input.planId);
+      this.assertInternalBilling(plan?.isOnline);
       await this.assertPaymentMethodSelectable(tx, input.paymentMethodId);
-      const plan = await tx.salaPlan.findUnique({ where: { id: input.planId } });
       if (!plan?.isSelectable) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'El Plan ya no está disponible.' });
       if (!canManagePayment && (!amount.equals(plan.monthlyAmount) || input.adjustmentReason?.trim())) throw new ForbiddenException({ code: 'SALA_PAYMENT_AMOUNT_ADJUSTMENT_FORBIDDEN', message: 'La renovación debe utilizar el precio actual del Plan, sin ajustes.' });
       if (canManagePayment) this.validatePaymentAdjustment(amount, plan.monthlyAmount, input.adjustmentReason);
@@ -118,6 +126,20 @@ export class SalaService {
     });
     return this.paymentResponse(payment);
   }
+  private assertInternalBilling(isOnline: boolean | undefined): void {
+    if (isOnline) throw new BadRequestException({
+      code: 'SALA_ONLINE_EXTERNAL_BILLING',
+      message: 'Los cobros de alumnos online se gestionan fuera de Athleta Manager.',
+    });
+  }
+
+  assertInPersonBooking(isOnline: boolean): void {
+    if (isOnline) throw new BadRequestException({
+      code: 'SALA_ONLINE_NO_IN_PERSON_BOOKING',
+      message: 'La modalidad Online no utiliza turnos presenciales.',
+    });
+  }
+
   private validatePaymentAdjustment(amount: Prisma.Decimal, proposedAmount: Prisma.Decimal, reason?: string): void {
     if (!amount.equals(proposedAmount) && !reason?.trim()) {
       throw new BadRequestException({ code: 'SALA_PAYMENT_ADJUSTMENT_REASON_REQUIRED', message: 'Indicá un motivo de ajuste cuando el importe difiere del precio actual del Plan.' });
@@ -154,11 +176,23 @@ export class SalaService {
   async createOpeningBalance(input: { personId: string; chargeDate: string; amount: string; concept?: string; reason: string; operationId: string }, actorId: string) {
     const amount = this.positiveMoney(input.amount, 'SALA_CHARGE_AMOUNT_INVALID');
     const reason = this.requiredReason(input.reason);
-    const existing = await this.prisma.salaCharge.findUnique({ where: { operationId: input.operationId }, include: { adjustments: true, allocations: true } });
-    if (existing) return existing;
-    const person = await this.prisma.person.findUnique({ where: { id: input.personId }, select: { id: true } });
-    if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
-    return this.prisma.salaCharge.create({ data: { personId: input.personId, kind: SalaChargeKind.OPENING_BALANCE, chargeDate: this.date(input.chargeDate), concept: input.concept?.trim() || `Saldo inicial: ${reason}`, amount, operationId: input.operationId, createdById: actorId }, include: { adjustments: true, allocations: true } });
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockPaymentPerson(tx, input.personId);
+      const existing = await tx.salaCharge.findUnique({ where: { operationId: input.operationId }, include: { adjustments: true, allocations: true } });
+      if (existing) return existing;
+      const person = await tx.person.findUnique({ where: { id: input.personId }, select: { id: true } });
+      if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
+      const chargeDate = this.date(input.chargeDate);
+      const privateStudent = await tx.onlineStudent.findFirst({
+        where: { personId: input.personId }, select: { id: true },
+      });
+      const inPerson = privateStudent && await tx.salaParticipation.findFirst({
+        where: { personId: input.personId, plan: { isOnline: false }, startDate: { lte: chargeDate }, OR: [{ endDate: null }, { endDate: { gte: chargeDate } }] },
+        select: { id: true },
+      });
+      this.assertInternalBilling(Boolean(privateStudent && !inPerson));
+      return tx.salaCharge.create({ data: { personId: input.personId, kind: SalaChargeKind.OPENING_BALANCE, chargeDate, concept: input.concept?.trim() || `Saldo inicial: ${reason}`, amount, operationId: input.operationId, createdById: actorId }, include: { adjustments: true, allocations: true } });
+    });
   }
   async adjustCharge(id: string, input: { amount: string; reason: string; operationId: string }, actorId: string) {
     const amount = this.signedMoney(input.amount, 'SALA_CHARGE_ADJUSTMENT_AMOUNT_INVALID');
@@ -229,17 +263,19 @@ export class SalaService {
     });
   }
   async listPlans() {
-    const plans = await this.prisma.salaPlan.findMany({ where: { isSelectable: true }, include: planServicesInclude, orderBy: { name: 'asc' } });
+    const plans = await this.prisma.salaPlan.findMany({ where: { isSelectable: true, isOnline: false }, include: planServicesInclude, orderBy: { name: 'asc' } });
     return plans.map((plan) => this.mapPlanServices(plan));
   }
   async createPlan(input: PlanDto) {
+    if (input.isOnline) throw this.legacyOnlinePlan();
+    const planTerms = this.planTerms(input);
     await this.assertPlanNameAvailable(input.name);
     try {
       return await this.prisma.$transaction(async (tx) => {
         if (input.serviceTypeIds !== undefined) await this.assertPlanServicesAvailable(tx, input.serviceTypeIds);
         const plan = await tx.salaPlan.create({
           data: {
-            name: input.name.trim(), monthlyAmount: input.monthlyAmount, weeklySessions: input.weeklySessions, isSelectable: input.isSelectable ?? true,
+            name: input.name.trim(), ...planTerms, isSelectable: input.isSelectable ?? true,
             services: { create: (input.serviceTypeIds ?? []).map((serviceTypeId) => ({ serviceTypeId })) },
           },
           include: planServicesInclude,
@@ -255,13 +291,18 @@ export class SalaService {
     await this.assertPlanNameAvailable(input.name, id);
     try {
       return await this.prisma.$transaction(async (tx) => {
-        if (input.serviceTypeIds !== undefined) await this.assertPlanServicesAvailable(tx, input.serviceTypeIds);
+        await tx.$queryRaw`SELECT id FROM sala_plans WHERE id = ${id}::uuid FOR UPDATE`;
+        const current = await tx.salaPlan.findUniqueOrThrow({ where: { id } });
+        if (current.isOnline || input.isOnline) throw this.legacyOnlinePlan();
+        const planTerms = this.planTerms(input);
+        const serviceTypeIds = input.serviceTypeIds;
+        if (serviceTypeIds !== undefined) await this.assertPlanServicesAvailable(tx, serviceTypeIds);
         const plan = await tx.salaPlan.update({
           where: { id },
           data: {
-            name: input.name.trim(), monthlyAmount: input.monthlyAmount, weeklySessions: input.weeklySessions,
+            name: input.name.trim(), ...planTerms,
             ...(input.isSelectable !== undefined ? { isSelectable: input.isSelectable } : {}),
-            ...(input.serviceTypeIds !== undefined ? { services: { deleteMany: {}, create: input.serviceTypeIds.map((serviceTypeId) => ({ serviceTypeId })) } } : {}),
+            ...(serviceTypeIds !== undefined ? { services: { deleteMany: {}, create: serviceTypeIds.map((serviceTypeId) => ({ serviceTypeId })) } } : {}),
           },
           include: planServicesInclude,
         });
@@ -273,6 +314,22 @@ export class SalaService {
       throw error;
     }
   }
+  private legacyOnlinePlan() {
+    return new BadRequestException({ code: 'SALA_ONLINE_PLAN_RETIRED', message: 'Registrá los alumnos online desde Alumnos. Los planes de Sala son presenciales.' });
+  }
+
+  private planTerms(input: PlanDto) {
+    if (!Number.isInteger(input.monthlyAmount) || input.monthlyAmount == null || input.weeklySessions == null || !Number.isInteger(input.weeklySessions) || input.weeklySessions < 2 || input.weeklySessions > 5) {
+      throw new BadRequestException({ code: 'SALA_IN_PERSON_PLAN_INVALID', message: 'Indicá el importe mensual y entre 2 y 5 sesiones por semana.' });
+    }
+    return { isOnline: false, monthlyAmount: input.monthlyAmount, weeklySessions: input.weeklySessions };
+  }
+
+  private async selectPlanForAssignment(tx: Prisma.TransactionClient, planId: string) {
+    await tx.$queryRaw`SELECT id FROM sala_plans WHERE id = ${planId}::uuid FOR SHARE`;
+    return tx.salaPlan.findUnique({ where: { id: planId } });
+  }
+
   async retirePlan(id: string) { const plan = await this.prisma.salaPlan.findUnique({ where: { id }, select: { id: true } }); if (!plan) throw new NotFoundException({ code: 'SALA_PLAN_NOT_FOUND', message: 'Plan not found' }); return this.prisma.salaPlan.update({ where: { id }, data: { isSelectable: false } }); }
   async removeException(id: string) { try { return await this.prisma.salaScheduleException.delete({ where: { id } }); } catch { throw new NotFoundException({ code: 'SALA_EXCEPTION_NOT_FOUND', message: 'Exception not found' }); } }
   async listSlots() { return this.prisma.salaScheduleSlot.findMany({ where: { isActive: true }, include: { exceptions: true }, orderBy: [{ weekday: 'asc' }, { startTime: 'asc' }] }); }
@@ -310,6 +367,168 @@ export class SalaService {
     });
   }
 
+  async enrollOnlineStudent(input: OnlineStudentEnrollmentDto, actor: InternalActor) {
+    if (!actor.roles.includes(Role.GENERAL_ADMIN) && !actor.roles.includes(Role.PROFESSOR)) {
+      throw new ForbiddenException({ code: 'PERMISSION_DENIED', message: 'No podés registrar alumnos online.' });
+    }
+    if ((input.person != null) === (input.dni != null)) {
+      throw new BadRequestException({ code: 'ONLINE_STUDENT_PERSON_REQUIRED', message: 'Ingresá los datos de una Persona nueva o el DNI de una existente.' });
+    }
+    const professorId = actor.roles.includes(Role.GENERAL_ADMIN) ? input.professorId : actor.id;
+    if (!professorId) {
+      throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Seleccioná un profesor responsable.' });
+    }
+    if (input.professorId && input.professorId !== professorId) {
+      throw new ForbiddenException({ code: 'PERMISSION_DENIED', message: 'Solo podés registrar alumnos online a tu nombre.' });
+    }
+    return this.prisma.$transaction(async tx => {
+      if (!await tx.internalUser.findFirst({ where: { id: professorId, ...eligibleProfessorWhere }, select: { id: true } })) {
+        throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'El profesor seleccionado no está habilitado.' });
+      }
+      const created = input.person ? await this.people.createWithinTransaction(input.person, tx) : null;
+      const personId = created?.personId ?? await this.people.getIdByDniWithinTransaction(input.dni!, tx);
+      await this.lockPaymentPerson(tx, personId);
+      await tx.$queryRaw`SELECT id FROM people WHERE id = ${personId}::uuid FOR UPDATE`;
+      if (await tx.onlineStudent.findFirst({ where: { personId, endDate: null }, select: { id: true } })) {
+        throw new ConflictException({ code: 'ONLINE_STUDENT_ALREADY_ENROLLED', message: 'Esta Persona ya tiene un seguimiento online vigente.' });
+      }
+      // Existing restrictions on exclusively online identities still apply to historic enrollments.
+      await this.people.assertVisible(personId, actor, tx);
+      await tx.onlineStudent.create({ data: { personId, professorId, startDate: this.date(this.todayOperational()) } });
+      const initialPin = created?.initialPin ?? await this.people.ensurePortalCredentialWithinTransaction(personId, tx);
+      return { personId, ...(initialPin !== undefined ? { initialPin } : {}) };
+    });
+  }
+
+  async changeStudentModality(personId: string, input: ChangeStudentModalityDto, actor: InternalActor) {
+    const conflict = (message: string) => new ConflictException({ code: 'SALA_MODALITY_CONFLICT', message });
+    const forbidden = () => new ForbiddenException({ code: 'PERMISSION_DENIED', message: 'No podés cambiar la modalidad de este alumno.' });
+    const toOnline = input.modality === 'ONLINE';
+    const sourceId = input.sourceId.toLowerCase();
+    if (toOnline && (input.planId || input.mainProfessorId)) {
+      throw new BadRequestException({ code: 'SALA_MODALITY_INPUT_INVALID', message: 'La modalidad online conserva el profesor y no utiliza un Plan presencial.' });
+    }
+
+    return this.prisma.$transaction(async tx => {
+      await this.lockPaymentPerson(tx, personId);
+      // Serialize with routine and training edits, while allowing booking foreign keys.
+      await tx.$queryRaw`SELECT id FROM people WHERE id = ${personId}::uuid FOR NO KEY UPDATE`;
+      await this.people.assertVisible(personId, actor, tx);
+
+      const activeParticipation = { personId, endDate: null };
+      const reference = await tx.salaParticipation.findFirst({ where: activeParticipation, select: { id: true } });
+      if (reference) await this.lockParticipations(tx, [reference.id]);
+      const [participation, online] = await Promise.all([
+        tx.salaParticipation.findFirst({ where: activeParticipation, include: { plan: { select: { isOnline: true } } } }),
+        tx.onlineStudent.findFirst({ where: { personId, endDate: null } }),
+      ]);
+      const now = new Date();
+      const today = this.todayOperational(now);
+      const date = this.date(today);
+      const isGeneralAdmin = actor.roles.includes(Role.GENERAL_ADMIN);
+      const canManageParticipation = isGeneralAdmin || actor.roles.includes(Role.ADMINISTRATIVE)
+        || (actor.roles.includes(Role.PROFESSOR) && participation?.mainProfessorId === actor.id);
+      if (participation?.id === sourceId && !canManageParticipation) throw forbidden();
+      if (online?.id === sourceId && !await tx.onlineStudent.findFirst({
+        where: { id: online.id, ...visibleOnlineStudents(actor, true) }, select: { id: true },
+      })) throw personNotFound();
+      if (participation && online || participation?.plan.isOnline
+        || participation && participation.startDate > date || online && online.startDate > date) {
+        throw conflict('Las vinculaciones vigentes requieren revisión administrativa antes de cambiar la modalidad.');
+      }
+
+      const source = participation ?? online;
+      if (!source || source.id !== sourceId) {
+        throw conflict('La vinculación cambió. Actualizá la ficha antes de volver a intentarlo.');
+      }
+      if (toOnline === Boolean(online)) return { modality: input.modality, sourceId: source.id };
+
+      const routines = await tx.routine.findMany({ where: { personId, onlineStudentId: toOnline ? null : online!.id } });
+      const moving = toOnline ? routines.filter(routine => routine.salaParticipationId === source.id) : routines;
+      const inPersonHistory = toOnline ? routines.filter(routine => routine.salaParticipationId !== source.id)
+        : await tx.routine.findMany({ where: { personId, onlineStudentId: null } });
+      const firstMoving = moving.reduce((first, routine) => Math.min(first, routine.effectiveFrom.getTime()), Infinity);
+      const currentMoving = routineForDate(moving, today);
+      const combined = toOnline ? routines : [...inPersonHistory, ...moving];
+      // In-person versions share a timeline; moving one owner must preserve periods of other links.
+      const historicalEnds = new Map(routinePeriods(inPersonHistory).map(period => [period.routine.id, period.until]));
+      const changesHistoricalPeriods = routinePeriods(combined).some(period =>
+        historicalEnds.has(period.routine.id) && historicalEnds.get(period.routine.id) !== period.until);
+      if (inPersonHistory.some(routine => routine.effectiveFrom >= date || routine.effectiveFrom.getTime() >= firstMoving)
+        || changesHistoricalPeriods || routineForDate(combined, today)?.id !== currentMoving?.id
+        || (!toOnline && inPersonHistory.some(routine => routine.status === RoutineStatus.ACTIVE))) {
+        throw conflict('Los períodos de las rutinas se superponen o tienen una vinculación incompatible. Se requiere revisión administrativa.');
+      }
+
+      await this.assertNoModalityBookings(tx, personId, date, now);
+      const ids = moving.map(routine => routine.id);
+      if (toOnline && participation) {
+        await this.assertNoModalityDebt(tx, personId, date);
+        const professorId = participation.mainProfessorId;
+        if (!await tx.internalUser.findFirst({ where: { id: professorId, ...eligibleProfessorWhere }, select: { id: true } })) {
+          throw conflict('El profesor principal ya no está habilitado. Actualizá la asignación antes de cambiar la modalidad.');
+        }
+        const destination = await tx.onlineStudent.create({ data: { personId, professorId, startDate: date } });
+        await tx.salaParticipation.update({ where: { id: participation.id }, data: { endDate: date } });
+        await tx.routine.updateMany({ where: { id: { in: ids } }, data: { salaParticipationId: null, onlineStudentId: destination.id } });
+        return { modality: input.modality, sourceId: destination.id };
+      }
+
+      if (!online || !input.planId) {
+        throw new BadRequestException({ code: 'SALA_MODALITY_PLAN_REQUIRED', message: 'Seleccioná un Plan presencial para continuar.' });
+      }
+      const mainProfessorId = input.mainProfessorId?.toLowerCase() ?? online.professorId;
+      if (mainProfessorId !== online.professorId && !isGeneralAdmin) throw forbidden();
+      const destination = await this.joinWithinTransaction(tx, { personId, planId: input.planId, mainProfessorId, startDate: today });
+      await tx.onlineStudent.update({ where: { id: online.id }, data: { endDate: date } });
+      await tx.routine.updateMany({ where: { id: { in: ids } }, data: { salaParticipationId: destination.id, onlineStudentId: null } });
+      return { modality: input.modality, sourceId: destination.id };
+    });
+  }
+
+  private async assertNoModalityBookings(tx: Prisma.TransactionClient, personId: string, today: Date, now: Date) {
+    const [fixed, reservations, occurrences] = await Promise.all([
+      tx.fixedSalaBooking.findFirst({ where: { personId, OR: [{ endDate: null }, { endDate: { gte: today } }] }, select: { id: true } }),
+      tx.oneOffReservation.findMany({ where: { personId, date: { gte: today }, cancelledAt: null },
+        select: { date: true, startTime: true, scheduleSlot: { select: { startTime: true } }, occurrences: { select: { status: true } } } }),
+      tx.salaOccurrence.findMany({ where: { personId, date: { gte: today }, status: { not: SalaOccurrenceStatus.CANCELLED } },
+        select: { date: true, startTime: true, scheduleSlot: { select: { startTime: true } } } }),
+    ]);
+    const isFuture = (item: { date: Date; startTime: Date | null; scheduleSlot: { startTime: Date } }) =>
+      this.operationalStart(item.date.toISOString().slice(0, 10), item.startTime ?? item.scheduleSlot.startTime) > now;
+    if (fixed || reservations.some(item => !item.occurrences.some(occurrence => occurrence.status === SalaOccurrenceStatus.CANCELLED) && isFuture(item)) || occurrences.some(isFuture)) {
+      throw new ConflictException({ code: 'SALA_MODALITY_BOOKINGS_PENDING', message: 'Hay turnos fijos, reservas o asistencias futuras. Se requiere resolución administrativa.' });
+    }
+  }
+
+  private async assertNoModalityDebt(tx: Prisma.TransactionClient, personId: string, today: Date) {
+    // Charge adjustments lock these rows independently of the person's payment lock.
+    await tx.$queryRaw`SELECT id FROM sala_charges WHERE person_id = ${personId}::uuid ORDER BY id FOR UPDATE`;
+    const [charges, paidCoverage] = await Promise.all([
+      tx.salaCharge.findMany({ where: { personId }, include: { adjustments: true, allocations: { where: { payment: { reversal: null } } } } }),
+      tx.salaPayment.findFirst({ where: { personId, reversal: null, coverageEndDate: { gt: today } }, select: { id: true } }),
+    ]);
+    const hasOutstanding = charges.some(charge => {
+      const adjusted = charge.adjustments.reduce((total, adjustment) => total.plus(adjustment.amount), charge.amount);
+      return charge.allocations.reduce((total, allocation) => total.minus(allocation.amount), adjusted).greaterThan(0);
+    });
+    if (hasOutstanding || paidCoverage) {
+      throw new ConflictException({ code: 'SALA_MODALITY_FINANCIAL_PENDING', message: 'Hay saldos pendientes o cobertura presencial pagada para fechas futuras. Se requiere resolución administrativa.' });
+    }
+  }
+
+  async getOnlineStudent(personId: string, actor: InternalActor) {
+    await this.people.assertVisible(personId, actor);
+    return this.prisma.onlineStudent.findFirst({
+      where: { personId, endDate: null, ...visibleOnlineStudents(actor) },
+      select: { id: true, professor: { select: paymentActorSelect } },
+    });
+  }
+
+  assertPersonVisible(personId: string, actor: InternalActor) {
+    return this.people.assertVisible(personId, actor);
+  }
+
   async createStudent(input: CreateSalaStudentDto, actorId?: string) {
     const { personId, initialPin } = await this.prisma.$transaction(async (tx) => {
       const created = await this.people.createWithinTransaction(input, tx);
@@ -319,14 +538,17 @@ export class SalaService {
     return { ...(await this.people.get(personId)), initialPin };
   }
 
-  async join(input: { personId: string; mainProfessorId: string; planId: string; startDate: string; paperHealthDeclarationSignedOn?: string | undefined }, actorId?: string) {
-    return this.prisma.$transaction((tx) => this.joinWithinTransaction(tx, input, actorId));
+  async join(input: { personId: string; mainProfessorId: string; planId: string; startDate: string; paperHealthDeclarationSignedOn?: string | undefined }, actorId?: string, actor?: InternalActor) {
+    return this.prisma.$transaction((tx) => this.joinWithinTransaction(tx, input, actorId, actor));
   }
 
-  private async joinWithinTransaction(tx: Prisma.TransactionClient, input: { personId: string; mainProfessorId: string; planId: string; startDate: string; paperHealthDeclarationSignedOn?: string | undefined }, actorId?: string) {
-    const [person, professor, plan] = await Promise.all([tx.person.findUnique({ where: { id: input.personId }, select: { id: true } }), tx.internalUser.findFirst({ where: { id: input.mainProfessorId, ...eligibleProfessorWhere }, select: { id: true } }), tx.salaPlan.findUnique({ where: { id: input.planId } })]);
+  private async joinWithinTransaction(tx: Prisma.TransactionClient, input: { personId: string; mainProfessorId: string; planId: string; startDate: string; paperHealthDeclarationSignedOn?: string | undefined }, actorId?: string, actor?: InternalActor) {
+    await this.lockPaymentPerson(tx, input.personId);
+    if (actor) await this.people.assertVisible(input.personId, actor, tx);
+    const [person, professor, plan] = await Promise.all([tx.person.findUnique({ where: { id: input.personId }, select: { id: true } }), tx.internalUser.findFirst({ where: { id: input.mainProfessorId, ...eligibleProfessorWhere }, select: { id: true } }), this.selectPlanForAssignment(tx, input.planId)]);
     if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
     if (!professor) throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Professor is not eligible' });
+    if (plan?.isOnline) throw this.legacyOnlinePlan();
     if (!plan || !plan.isSelectable) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'Plan is not selectable' });
     try {
       const startDate = this.date(input.startDate);
@@ -338,7 +560,11 @@ export class SalaService {
       return participation;
     } catch (error) { if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException({ code: 'SALA_ACTIVE_PARTICIPATION_EXISTS', message: 'Person already has an active Sala participation' }); throw error; }
   }
-  async listParticipations(personId: string) { return this.prisma.salaParticipation.findMany({ where: { personId }, orderBy: { startDate: 'desc' }, include: { plan: true, mainProfessor: true } }); }
+  async listParticipations(personId: string, actor?: InternalActor) {
+    if (actor) await this.people.assertVisible(personId, actor);
+    return this.prisma.salaParticipation.findMany({ where: { personId, ...(actor ? {
+      OR: [{ plan: { isOnline: false } }, { id: { in: (await this.prisma.onlineStudent.findMany({ where: { personId, ...visibleOnlineStudents(actor) }, select: { id: true } })).map(link => link.id) } }],
+    } : {}) }, orderBy: { startDate: 'desc' }, include: { plan: true, mainProfessor: true } }); }
   async leave(id: string, failureAfterMutations = false, actorId?: string) {
     const now = new Date();
     return this.prisma.$transaction((tx) => this.leaveInTransaction(tx, id, failureAfterMutations, actorId, now));
@@ -428,11 +654,27 @@ export class SalaService {
       return { affected: ids.length };
     });
   }
-  async changeProfessor(id: string, mainProfessorId: string) { const professor = await this.prisma.internalUser.findUnique({ where: { id: mainProfessorId }, include: { roles: true } }); if (!professor || professor.status !== InternalUserStatus.ACTIVE || !professor.roles.some((role) => role.role === Role.PROFESSOR)) throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Professor is not eligible' }); return this.prisma.salaParticipation.update({ where: { id }, data: { mainProfessorId }, include: { plan: true, mainProfessor: true } }); }
+  async changeProfessor(id: string, mainProfessorId: string) {
+    const professor = await this.prisma.internalUser.findUnique({ where: { id: mainProfessorId }, include: { roles: true } }); if (!professor || professor.status !== InternalUserStatus.ACTIVE || !professor.roles.some((role) => role.role === Role.PROFESSOR)) throw new BadRequestException({ code: 'SALA_PROFESSOR_INVALID', message: 'Professor is not eligible' });
+    try {
+      return await this.prisma.salaParticipation.update({ where: { id, plan: { isOnline: false } }, data: { mainProfessorId }, include: { plan: true, mainProfessor: true } });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        throw new NotFoundException({ code: 'SALA_ACTIVE_PARTICIPATION_NOT_FOUND', message: 'Active participation not found' });
+      }
+      throw error;
+    }
+  }
   async changePlan(id: string, planId: string) {
-    const plan = await this.prisma.salaPlan.findUnique({ where: { id: planId } });
-    if (!plan || !plan.isSelectable) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'Plan is not selectable' });
-    return this.prisma.$transaction(tx => this.updateParticipationPlanWithinTransaction(tx, id, planId));
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockParticipations(tx, [id]);
+      const participation = await tx.salaParticipation.findUnique({ where: { id }, select: { plan: { select: { isOnline: true } } } });
+      if (!participation || participation.plan.isOnline) throw new NotFoundException({ code: 'SALA_ACTIVE_PARTICIPATION_NOT_FOUND', message: 'Active participation not found' });
+      const plan = await this.selectPlanForAssignment(tx, planId);
+      if (!plan?.isSelectable) throw new BadRequestException({ code: 'SALA_PLAN_INVALID', message: 'Plan is not selectable' });
+      if (plan.isOnline) throw new ConflictException({ code: 'SALA_PLAN_MODALITY_CHANGE', message: 'El nuevo Plan debe tener la misma modalidad que la participación.' });
+      return this.updateParticipationPlanWithinTransaction(tx, id, planId);
+    });
   }
   private async updateParticipationPlanWithinTransaction(tx: Prisma.TransactionClient, id: string, planId: string) {
     const today = this.date(this.todayOperational());
@@ -721,24 +963,95 @@ export class SalaService {
     const people = new Set(routines.map(r => r.personId));
     return [...people].flatMap(personId => routinePresentation(routines.filter(r => r.personId === personId), this.todayOperational()).filter(r => r.status !== 'HISTORICAL').map(r => r.id));
   }
-  async listRoutines(personId: string) {
-    const routines = await this.prisma.routine.findMany({ where: { personId }, include: { ...this.routineTemplateInclude(), _count: { select: { trainingRecords: true } } }, orderBy: { version: 'desc' } });
+  async listRoutines(personId: string, actor?: InternalActor, onlineStudentId?: string) {
+    if (!actor) return this.presentRoutines(await this.routinesFor(personId, {}));
+    await this.people.assertVisible(personId, actor);
+    const scope = visibleOnlineStudents(actor);
+    const inPerson = await this.prisma.salaParticipation.findFirst({
+      where: { personId, endDate: null, plan: { isOnline: false } }, select: { id: true },
+    });
+    if (!onlineStudentId && inPerson) {
+      const [current, history] = await Promise.all([
+        this.routinesFor(personId, { onlineStudentId: null }),
+        this.routinesFor(personId, { onlineStudent: { ...scope, endDate: { not: null } } }),
+      ]);
+      return this.presentRoutines(current, history);
+    }
+
+    const online = await this.prisma.onlineStudent.findFirst({
+      where: { personId, ...scope, ...(onlineStudentId ? { id: onlineStudentId } : { endDate: null }) },
+      select: { id: true, professorId: true, endDate: true },
+    });
+    if (onlineStudentId && !online) throw personNotFound();
+    const [current, onlineHistory, inPersonHistory] = await Promise.all([
+      online?.endDate ? [] : this.routinesFor(personId, { onlineStudentId: online?.id ?? null }),
+      this.routinesFor(personId, {
+        onlineStudent: { ...scope, endDate: { not: null }, ...(online ? { professorId: online.professorId } : {}) },
+      }),
+      online && !inPerson ? this.routinesFor(personId, { salaParticipation: { endDate: { not: null } } }) : [],
+    ]);
+    return this.presentRoutines(current, [...onlineHistory, ...inPersonHistory]);
+  }
+
+  trainingAccess(actor: InternalActor): Prisma.RoutineWhereInput {
+    return supervisesOnlineStudents(actor) ? {} : { OR: [{ onlineStudentId: null }, { onlineStudent: { is: visibleOnlineStudents(actor) } }] };
+  }
+
+  private routinesFor(personId: string, scope: Prisma.RoutineWhereInput) {
+    return this.prisma.routine.findMany({ where: { personId, ...scope }, include: { ...this.routineTemplateInclude(), _count: { select: { trainingRecords: true } } }, orderBy: { version: 'desc' } });
+  }
+
+  private presentRoutines(
+    routines: Awaited<ReturnType<SalaService['routinesFor']>>,
+    historical: Awaited<ReturnType<SalaService['routinesFor']>> = [],
+  ) {
     const presented = routinePresentation(routines, this.todayOperational());
     const cancelled = routines.filter(r => r.cancelledAt && r._count.trainingRecords > 0 && !presented.some(p => p.id === r.id)).map(r => ({ ...r, effectiveFrom: r.effectiveFrom.toISOString().slice(0,10), effectiveUntil: null, status: 'HISTORICAL' as const }));
-    return [...presented, ...cancelled].map(r => ({ ...r, hasTrainingRecords: r._count.trainingRecords > 0 })).sort((a,b) => b.version - a.version);
+    const ended = historical.flatMap(routine => {
+      const period = routinePeriods([routine])[0];
+      if ((!period || period.from === period.until) && !routine._count.trainingRecords) return [];
+      return [{
+        ...routine, effectiveFrom: routine.effectiveFrom.toISOString().slice(0, 10),
+        effectiveUntil: period?.until ?? null, status: 'HISTORICAL' as const,
+      }];
+    });
+    return [...presented, ...cancelled, ...ended].map(r => ({ ...r, hasTrainingRecords: r._count.trainingRecords > 0 })).sort((a,b) => b.version - a.version);
   }
-  private async lockRoutine(tx: Prisma.TransactionClient, id: string) {
+  private async assertRoutineAccess(ref: { onlineStudentId: string | null }, actor: InternalActor | undefined, tx: Prisma.TransactionClient = this.prisma) {
+    if (actor && ref.onlineStudentId && !await tx.onlineStudent.findFirst({
+      where: { id: ref.onlineStudentId, ...visibleOnlineStudents(actor, true) }, select: { id: true },
+    })) throw new NotFoundException({ code: 'SALA_ROUTINE_NOT_FOUND', message: 'No encontramos esa rutina.' });
+  }
+
+  private async assertActiveRoutineOwner(
+    tx: Prisma.TransactionClient,
+    personId: string,
+    owner: { salaParticipationId?: string | null; onlineStudentId?: string | null },
+    actor?: InternalActor,
+  ) {
+    if (owner.onlineStudentId) {
+      await this.assertRoutineAccess({ onlineStudentId: owner.onlineStudentId }, actor, tx);
+      if (await tx.onlineStudent.findFirst({ where: { id: owner.onlineStudentId, personId, endDate: null }, select: { id: true } })) return;
+      throw new BadRequestException({ code: 'ONLINE_STUDENT_ACTIVE_REQUIRED', message: 'Se requiere un seguimiento online vigente.' });
+    }
+    if (!owner.salaParticipationId || !await tx.salaParticipation.findFirst({
+      where: { id: owner.salaParticipationId, personId, endDate: null, plan: { isOnline: false } }, select: { id: true },
+    })) throw new BadRequestException({ code: 'SALA_ACTIVE_PARTICIPATION_REQUIRED', message: 'Se requiere una participación activa en Sala.' });
+  }
+
+  private async lockRoutine(tx: Prisma.TransactionClient, id: string, actor?: InternalActor) {
     const reference = await tx.routine.findUnique({ where: { id } });
     if (!reference) throw new NotFoundException({ code: 'SALA_ROUTINE_NOT_FOUND', message: 'No encontramos esa rutina.' });
     await tx.$queryRaw`SELECT id FROM people WHERE id = ${reference.personId}::uuid FOR UPDATE`;
-    const versions = await tx.routine.findMany({ where: { personId: reference.personId }, include: this.routineTemplateInclude() });
+    await this.assertRoutineAccess(reference, actor, tx);
+    const versions = await tx.routine.findMany({ where: { personId: reference.personId, onlineStudentId: reference.onlineStudentId }, include: this.routineTemplateInclude() });
     return { versions, routine: versions.find(r => r.id === id)! };
   }
-  async updateActiveRoutineExercises(id: string, input: UpdateActiveRoutineExercisesDto) {
+  async updateActiveRoutineExercises(id: string, input: UpdateActiveRoutineExercisesDto, actor?: InternalActor) {
     return this.prisma.$transaction(async tx => {
-      const { routine, versions } = await this.lockRoutine(tx, id);
+      const { routine, versions } = await this.lockRoutine(tx, id, actor);
       if (routine.cancelledAt || routineForDate(versions, this.todayOperational())?.id !== id) throw new BadRequestException({ code: 'SALA_ROUTINE_NOT_ACTIVE', message: 'Esta rutina ya no es la vigente. Actualizá la ficha antes de modificar sus ejercicios.' });
-      if (!await tx.salaParticipation.findFirst({ where: { id: routine.salaParticipationId, personId: routine.personId, endDate: null } })) throw new BadRequestException({ code: 'SALA_ACTIVE_PARTICIPATION_REQUIRED', message: 'Se requiere una participación activa en Sala.' });
+      await this.assertActiveRoutineOwner(tx, routine.personId, routine, actor);
       const invalid = () => new BadRequestException({ code: 'SALA_ROUTINE_EXERCISES_INVALID', message: 'Los días o ejercicios no corresponden a esta rutina. Actualizá la ficha.' });
       const existingIds = input.days.filter(d => d.id).map(d => d.id!);
       if (existingIds.length !== routine.days.length || new Set(existingIds).size !== routine.days.length || routine.days.some(d => !existingIds.includes(d.id))) throw invalid();
@@ -760,14 +1073,14 @@ export class SalaService {
         const kept = proposed.exercises.filter(e => e.id).map(e => e.id!);
         if (new Set(kept).size !== kept.length) throw invalid();
 
-        const existingBlocks = new Set(day.exercises.flatMap(e => e.blockPosition === null ? [] : [e.blockPosition]));
+        const existingBlocks = new Set(day.exercises.flatMap(e => e.blockPosition === null || e.blockPosition === 0 ? [] : [e.blockPosition]));
         const grouped = existingBlocks.size > 0;
         const fields = ['series', 'repetitions', 'duration', 'load', 'rest', 'notes'] as const;
         const entries = proposed.exercises.map(entry => {
           const existing = entry.id ? existingExercises.get(entry.id) : undefined;
           if (entry.id ? !existing || entry.exerciseDefinitionId !== undefined : !entry.exerciseDefinitionId) throw invalid();
           const blockPosition = entry.blockPosition === undefined ? existing?.blockPosition ?? null : entry.blockPosition;
-          if (grouped !== (blockPosition !== null)) throw invalid();
+          if (blockPosition !== 0 && grouped !== (blockPosition !== null)) throw invalid();
           const text = Object.fromEntries(fields.map(field => [
             field, entry[field] === undefined ? existing?.[field] ?? null : this.optionalText(entry[field]),
           ])) as Record<(typeof fields)[number], string | null>;
@@ -775,17 +1088,20 @@ export class SalaService {
         });
         if (grouped && !entries.length) throw invalid();
 
-        // Retained occurrences keep their relative order; additions go at the end of their block.
-        const ordered = entries.sort((a, b) => (a.blockPosition ?? 0) - (b.blockPosition ?? 0)
-          || (existingExercises.get(a.id ?? '')?.position ?? Number.MAX_SAFE_INTEGER)
-          - (existingExercises.get(b.id ?? '')?.position ?? Number.MAX_SAFE_INTEGER));
+        // Preserve the submitted warm-up order and the existing order in regular blocks.
+        const ordered = entries.sort((a, b) => {
+          const blockOrder = (a.blockPosition ?? 1) - (b.blockPosition ?? 1);
+          if (blockOrder || a.blockPosition === 0) return blockOrder;
+          return (existingExercises.get(a.id ?? '')?.position ?? Number.MAX_SAFE_INTEGER)
+            - (existingExercises.get(b.id ?? '')?.position ?? Number.MAX_SAFE_INTEGER);
+        });
         // Older requests can omit a whole block while still using the original positions.
-        const usesOriginalPositions = grouped && proposed.exercises.every(entry => entry.id
+        const usesOriginalPositions = grouped && proposed.exercises.every(entry => entry.blockPosition === 0 || (entry.id
           ? entry.blockPosition === undefined
-          : entry.blockPosition != null && existingBlocks.has(entry.blockPosition));
-        const positions = [...new Set(ordered.map(e => e.blockPosition))];
+          : entry.blockPosition != null && existingBlocks.has(entry.blockPosition)));
+        const positions = [...new Set(ordered.flatMap(e => e.blockPosition ? [e.blockPosition] : []))];
         const finalEntries = usesOriginalPositions ? ordered.map(entry => ({
-          ...entry, blockPosition: positions.indexOf(entry.blockPosition) + 1,
+          ...entry, blockPosition: entry.blockPosition === 0 ? 0 : positions.indexOf(entry.blockPosition!) + 1,
         })) : ordered;
         this.validateRoutine({ days: [{ exercises: finalEntries }] });
         await this.validateRoutineExercises(tx, { days: [{ exercises: finalEntries.filter(e => !e.id) }] });
@@ -823,23 +1139,26 @@ export class SalaService {
       return { id };
     });
   }
-  async removeActiveRoutine(id: string) {
+  async removeActiveRoutine(id: string, actor?: InternalActor) {
     return this.prisma.$transaction(async tx => {
-      const { routine, versions } = await this.lockRoutine(tx, id);
+      const { routine, versions } = await this.lockRoutine(tx, id, actor);
+      if (routine.onlineStudentId) await this.assertActiveRoutineOwner(tx, routine.personId, routine, actor);
       if (routine.cancelledAt || routineForDate(versions, this.todayOperational())?.id !== id) throw new BadRequestException({ code: 'SALA_ROUTINE_NOT_ACTIVE', message: 'Solo se puede quitar la rutina vigente.' });
       await tx.routine.update({ where: { id }, data: { cancelledAt: new Date(), status: RoutineStatus.HISTORICAL } });
       return { id };
     });
   }
-  private async reconcileRoutineStatus(tx: Prisma.TransactionClient, personId: string) {
-    await tx.routine.updateMany({ where: { personId, status: RoutineStatus.ACTIVE }, data: { status: RoutineStatus.HISTORICAL } });
-    const versions = await tx.routine.findMany({ where: { personId } });
+  private async reconcileRoutineStatus(tx: Prisma.TransactionClient, personId: string, onlineStudentId: string | null) {
+    const scope = { personId, onlineStudentId };
+    await tx.routine.updateMany({ where: { ...scope, status: RoutineStatus.ACTIVE }, data: { status: RoutineStatus.HISTORICAL } });
+    const versions = await tx.routine.findMany({ where: scope });
     const latest = routineForDate(versions, this.todayOperational());
     if (latest) await tx.routine.update({ where: { id: latest.id }, data: { status: RoutineStatus.ACTIVE } });
   }
-  async updateScheduledRoutine(id: string, input: UpdateScheduledRoutineDto) {
+  async updateScheduledRoutine(id: string, input: UpdateScheduledRoutineDto, actor?: InternalActor) {
     return this.prisma.$transaction(async tx => {
-      const { routine, versions } = await this.lockRoutine(tx, id);
+      const { routine, versions } = await this.lockRoutine(tx, id, actor);
+      if (routine.onlineStudentId) await this.assertActiveRoutineOwner(tx, routine.personId, routine, actor);
       const today = this.todayOperational();
       if (routine.cancelledAt || routine.effectiveFrom.toISOString().slice(0, 10) <= today) throw new BadRequestException({ code: 'SALA_ROUTINE_NOT_SCHEDULED', message: 'Esta rutina ya no es una programación futura. Actualizá la ficha.' });
       const effectiveFrom = new Date(input.effectiveFrom + 'T00:00:00Z');
@@ -847,7 +1166,7 @@ export class SalaService {
       const ordered = versions.filter(r => !r.cancelledAt).sort((a,b) => a.version - b.version);
       const index = ordered.findIndex(r => r.id === id);
       if ((ordered[index - 1] && effectiveFrom < ordered[index - 1]!.effectiveFrom) || (ordered[index + 1] && effectiveFrom > ordered[index + 1]!.effectiveFrom)) throw new BadRequestException({ code: 'SALA_ROUTINE_DATE_ORDER', message: 'La fecha debe respetar el orden de las otras rutinas.' });
-      const records = await tx.salaTrainingRecord.findMany({ where: { personId: routine.personId } });
+      const records = await tx.salaTrainingRecord.findMany({ where: { personId: routine.personId, routine: { onlineStudentId: routine.onlineStudentId } } });
       if (input.days && records.some(r => r.routineId === id)) throw new BadRequestException({ code: 'SALA_ROUTINE_HAS_RECORDS', message: 'Esta rutina tiene entrenamientos. Solo podés modificar la fecha.' });
       const proposed = versions.map(r => r.id === id ? { ...r, effectiveFrom } : r);
       const allowsRecord = (periods: typeof versions, record: typeof records[number]) => record.month
@@ -862,43 +1181,58 @@ export class SalaService {
         await tx.routineDay.deleteMany({ where: { routineId: id } });
       }
       await tx.routine.update({ where: { id }, data: { effectiveFrom, ...(input.days ? { days: { create: this.routineContent(input.days) } } : {}) } });
-      await this.reconcileRoutineStatus(tx, routine.personId);
+      await this.reconcileRoutineStatus(tx, routine.personId, routine.onlineStudentId);
       return { id };
     });
   }
-  async cancelScheduledRoutine(id: string) {
+  async cancelScheduledRoutine(id: string, actor?: InternalActor) {
     return this.prisma.$transaction(async tx => {
-      const { routine } = await this.lockRoutine(tx, id);
+      const { routine } = await this.lockRoutine(tx, id, actor);
+      if (routine.onlineStudentId) await this.assertActiveRoutineOwner(tx, routine.personId, routine, actor);
       if (routine.cancelledAt || routine.effectiveFrom.toISOString().slice(0,10) <= this.todayOperational()) throw new BadRequestException({ code: 'SALA_ROUTINE_NOT_SCHEDULED', message: 'Solo se pueden eliminar programaciones futuras.' });
       await tx.routine.update({ where: { id }, data: { cancelledAt: new Date(), status: RoutineStatus.HISTORICAL } });
-      await this.reconcileRoutineStatus(tx, routine.personId);
+      await this.reconcileRoutineStatus(tx, routine.personId, routine.onlineStudentId);
       return { id };
     });
   }
-  async replaceRoutine(input: ReplaceRoutineDto, failureAfterArchive = false) {
+  async replaceRoutine(input: ReplaceRoutineDto, failureAfterArchive = false, actor?: InternalActor) {
+    if (input.salaParticipationId && input.onlineStudentId) throw new BadRequestException({
+      code: 'SALA_ROUTINE_OWNER_INVALID', message: 'Elegí una sola vinculación para la rutina.',
+    });
     this.validateRoutine(input);
     const date = input.effectiveFrom ?? this.todayOperational();
     const effectiveFrom = new Date(`${date}T00:00:00Z`);
     if (!/^(?!0000)\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(effectiveFrom.getTime()) || effectiveFrom.toISOString().slice(0, 10) !== date) throw new BadRequestException({ code: 'SALA_ROUTINE_DATE_INVALID', message: 'Elegí una fecha de inicio válida.' });
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM people WHERE id = ${input.personId}::uuid FOR UPDATE`;
-      const participation = await tx.salaParticipation.findFirst({ where: { id: input.salaParticipationId, personId: input.personId, endDate: null }, select: { id: true } });
-      if (!participation) throw new BadRequestException({ code: 'SALA_ACTIVE_PARTICIPATION_REQUIRED', message: 'An active Sala participation is required' });
+      if (actor) await this.people.assertVisible(input.personId, actor, tx);
+      await this.assertActiveRoutineOwner(tx, input.personId, input, actor);
+      const scope = { personId: input.personId, onlineStudentId: input.onlineStudentId ?? null };
       await this.validateRoutineExercises(tx, input);
-      const latest = await tx.routine.findFirst({ where: { personId: input.personId, cancelledAt: null }, orderBy: { version: 'desc' } });
+      const latest = await tx.routine.findFirst({ where: { ...scope, cancelledAt: null }, orderBy: { version: 'desc' } });
       if (latest && effectiveFrom < latest.effectiveFrom) throw new BadRequestException({ code: 'SALA_ROUTINE_DATE_ORDER', message: 'Primero editá o eliminá la próxima programación: la nueva rutina no puede comenzar antes de la última asignada.' });
       const currentVersion = await tx.routine.aggregate({ where: { personId: input.personId }, _max: { version: true } });
-      await tx.routine.updateMany({ where: { personId: input.personId, status: RoutineStatus.ACTIVE }, data: { status: RoutineStatus.HISTORICAL } });
+      await tx.routine.updateMany({ where: { ...scope, status: RoutineStatus.ACTIVE }, data: { status: RoutineStatus.HISTORICAL } });
       if (failureAfterArchive) throw new Error('SIMULATED_ROUTINE_REPLACEMENT_FAILURE');
-      return tx.routine.create({ data: { personId: input.personId, salaParticipationId: input.salaParticipationId, effectiveFrom, status: RoutineStatus.ACTIVE, version: (currentVersion._max.version ?? 0) + 1, days: { create: input.days.map((day, dayIndex) => ({ position: dayIndex + 1, name: this.optionalText(day.name), exercises: { create: day.exercises.map((exercise, exerciseIndex) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, blockPosition: exercise.blockPosition ?? null, position: exerciseIndex + 1, series: this.optionalText(exercise.series), repetitions: this.optionalText(exercise.repetitions), duration: this.optionalText(exercise.duration), load: this.optionalText(exercise.load), rest: this.optionalText(exercise.rest), notes: this.optionalText(exercise.notes) })) } })) } }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } } } });
+      return tx.routine.create({ data: { personId: input.personId, salaParticipationId: input.salaParticipationId ?? null, onlineStudentId: input.onlineStudentId ?? null, effectiveFrom, status: RoutineStatus.ACTIVE, version: (currentVersion._max.version ?? 0) + 1, days: { create: input.days.map((day, dayIndex) => ({ position: dayIndex + 1, name: this.optionalText(day.name), exercises: { create: day.exercises.map((exercise, exerciseIndex) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, blockPosition: exercise.blockPosition ?? null, position: exerciseIndex + 1, series: this.optionalText(exercise.series), repetitions: this.optionalText(exercise.repetitions), duration: this.optionalText(exercise.duration), load: this.optionalText(exercise.load), rest: this.optionalText(exercise.rest), notes: this.optionalText(exercise.notes) })) } })) } }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' }, include: { exerciseDefinition: true } } } } } });
     });
   }
-  async duplicateRoutine(id: string, effectiveFrom?: string) {
+  async duplicateRoutine(id: string, effectiveFrom?: string, actor?: InternalActor) {
     const source = await this.prisma.routine.findUnique({ where: { id }, include: { days: { orderBy: { position: 'asc' }, include: { exercises: { orderBy: { position: 'asc' } } } } } });
     if (!source) throw new NotFoundException({ code: 'SALA_ROUTINE_NOT_FOUND', message: 'Routine not found' });
-    const participation = await this.prisma.salaParticipation.findFirst({ where: { personId: source.personId, endDate: null }, select: { id: true } });
-    if (!participation) throw new BadRequestException({ code: 'SALA_ACTIVE_PARTICIPATION_REQUIRED', message: 'An active Sala participation is required' });
-    return this.replaceRoutine({ ...(effectiveFrom ? { effectiveFrom } : {}), personId: source.personId, salaParticipationId: participation.id, days: source.days.map((day) => ({ name: day.name, exercises: day.exercises.map((exercise) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, blockPosition: exercise.blockPosition ?? null, series: exercise.series, repetitions: exercise.repetitions, duration: exercise.duration, load: exercise.load, rest: exercise.rest, notes: exercise.notes })) })) });
+    await this.assertRoutineAccess(source, actor);
+    const online = source.onlineStudentId ? await this.prisma.onlineStudent.findUnique({
+      where: { id: source.onlineStudentId }, select: { professorId: true },
+    }) : null;
+    const owner = online
+      ? await this.prisma.onlineStudent.findFirst({ where: { personId: source.personId, professorId: online.professorId, endDate: null }, select: { id: true } }).then(link => ({ onlineStudentId: link?.id }))
+      : await this.prisma.salaParticipation.findFirst({ where: { personId: source.personId, endDate: null }, select: { id: true } }).then(link => ({ salaParticipationId: link?.id }));
+    if (online && !('onlineStudentId' in owner && owner.onlineStudentId)) {
+      throw new BadRequestException({ code: 'ONLINE_STUDENT_ACTIVE_REQUIRED', message: 'Se requiere un seguimiento online vigente.' });
+    }
+    return this.replaceRoutine({ ...(effectiveFrom ? { effectiveFrom } : {}), personId: source.personId,
+      ...('onlineStudentId' in owner && owner.onlineStudentId ? { onlineStudentId: owner.onlineStudentId } : {}),
+      ...('salaParticipationId' in owner && owner.salaParticipationId ? { salaParticipationId: owner.salaParticipationId } : {}), days: source.days.map((day) => ({ name: day.name, exercises: day.exercises.map((exercise) => ({ exerciseDefinitionId: exercise.exerciseDefinitionId, blockPosition: exercise.blockPosition ?? null, series: exercise.series, repetitions: exercise.repetitions, duration: exercise.duration, load: exercise.load, rest: exercise.rest, notes: exercise.notes })) })) }, false, actor);
   }
   async listPhysicalTests() {
     return this.prisma.physicalTestDefinition.findMany({ where: { isActive: true }, select: physicalTestSelect, orderBy: { name: 'asc' } });
@@ -962,23 +1296,31 @@ export class SalaService {
       return this.physicalEvaluationResponse(evaluation);
     });
   }
-  async listStudents(): Promise<SalaStudentListItemDto[]> {
+  async listStudents(actor?: InternalActor): Promise<SalaStudentListItemDto[]> {
     const operationalToday = this.todayOperational();
     const today = this.date(operationalToday);
-    const participations = await this.prisma.salaParticipation.findMany({
-      where: { endDate: null },
-      orderBy: [{ person: { lastName: 'asc' } }, { person: { firstName: 'asc' } }],
-      select: {
-        id: true, startDate: true,
-        person: { select: {
-          id: true, firstName: true, lastName: true, dni: true,
-        } },
-        plan: { select: { id: true, name: true } },
-        mainProfessor: { select: { id: true, firstName: true, lastName: true } },
-        routines: { select: { id: true, version: true, effectiveFrom: true, cancelledAt: true } },
-      },
-    });
-    const students = participations.map(({ routines, ...student }) => ({
+    const personSelect = { id: true, firstName: true, lastName: true, dni: true } as const;
+    const routineSelect = { id: true, version: true, effectiveFrom: true, cancelledAt: true } as const;
+    const [participations, online] = await Promise.all([
+      this.prisma.salaParticipation.findMany({
+        where: { endDate: null, plan: { isOnline: false } },
+        select: {
+          id: true, startDate: true,
+          person: { select: personSelect },
+          plan: { select: { id: true, name: true, isOnline: true } },
+          mainProfessor: { select: paymentActorSelect },
+          routines: { select: routineSelect },
+        },
+      }),
+      this.prisma.onlineStudent.findMany({
+        where: { endDate: null, ...(actor ? visibleOnlineStudents(actor) : {}) },
+        select: { id: true, startDate: true, person: { select: personSelect }, professor: { select: paymentActorSelect }, routines: { select: routineSelect } },
+      }),
+    ]);
+    const students = [
+      ...participations.map(({ id, mainProfessor, ...item }) => ({ ...item, participationId: id, onlineStudentId: null, professor: mainProfessor, modality: 'IN_PERSON' as const })),
+      ...online.map(({ id, ...item }) => ({ ...item, participationId: null, onlineStudentId: id, plan: null, modality: 'ONLINE' as const })),
+    ].map(({ routines, ...student }) => ({
       ...student,
       ...routineFollowUp(routines, operationalToday),
     }));
@@ -998,19 +1340,19 @@ export class SalaService {
       rows.push(payment);
       byPerson.set(payment.personId, rows);
     }
-    return students.map(({ id, startDate, person, plan, mainProfessor, routineStatus, routineChangeInDays, routineIdForNotice }) => {
-      const rows = byPerson.get(person.id) ?? [];
+    return students.map(({ participationId, onlineStudentId, modality, startDate, person, plan, professor, routineStatus, routineChangeInDays, routineIdForNotice }) => {
+      const rows = modality === 'IN_PERSON' ? byPerson.get(person.id) ?? [] : [];
       const end = this.continuousValidityEnd(rows, today);
       return {
-        id: person.id, participationId: id, participationStartDate: startDate.toISOString().slice(0, 10),
-        firstName: person.firstName, lastName: person.lastName, dni: person.dni, plan, professor: mainProfessor,
+        id: person.id, participationId, onlineStudentId, modality, participationStartDate: startDate.toISOString().slice(0, 10),
+        firstName: person.firstName, lastName: person.lastName, dni: person.dni, plan, professor,
         routineStatus,
         routineChangeInDays,
         routineTrainingComplete: routineIdForNotice !== null && completeRoutines.has(routineIdForNotice),
         hasValidAccess: end !== null, validUntil: end?.toISOString().slice(0, 10) ?? null,
         lastPaymentPaidAt: rows[0]?.paidAt.toISOString().slice(0, 10) ?? null,
       };
-    });
+    }).sort((a, b) => a.lastName.localeCompare(b.lastName, 'es') || a.firstName.localeCompare(b.firstName, 'es'));
   }
 
   async dashboard(date: string): Promise<SalaDashboardDto> {
@@ -1020,11 +1362,11 @@ export class SalaService {
     const now = new Date();
     const [withoutRoutine, withoutValidity] = await Promise.all([
       this.prisma.salaParticipation.findMany({
-        where: { endDate: null },
+        where: { endDate: null, plan: { isOnline: false } },
         select: { personId: true, routines: { select: { id: true, version: true, effectiveFrom: true, cancelledAt: true } } }, orderBy: { personId: 'asc' },
       }),
       this.prisma.salaParticipation.findMany({
-        where: { endDate: null, person: { salaPayments: { none: { coverageStartDate: { lte: this.date(today) }, coverageEndDate: { gte: this.date(today) }, reversal: null } } } },
+        where: { endDate: null, plan: { isOnline: false }, person: { salaPayments: { none: { coverageStartDate: { lte: this.date(today) }, coverageEndDate: { gte: this.date(today) }, reversal: null } } } },
         select: { personId: true }, orderBy: { personId: 'asc' },
       }),
     ]);
@@ -1102,9 +1444,10 @@ export class SalaService {
       manual: 'No pudimos registrar automáticamente tu asistencia. Consultá con un profesor.',
     };
     const activeParticipation = person
-      ? await this.prisma.salaParticipation.findFirst({ where: { personId: person.id, endDate: null }, select: { id: true } })
+      ? await this.prisma.salaParticipation.findFirst({ where: { personId: person.id, endDate: null }, select: { id: true, plan: { select: { isOnline: true } } } })
       : null;
     if (!person || !activeParticipation) return denied('NOT_FOUND', messages.notFound);
+    if (activeParticipation.plan.isOnline) return denied('NO_BOOKING', 'La modalidad Online no utiliza turnos presenciales.');
     const groups = await this.agenda(date);
     const entries = groups.flatMap((group) => group.people).filter((entry) => entry.personId === person.id);
     const unique = [...new Map(entries.map((entry) => [`${entry.origin}:${entry.sourceId}`, entry])).values()];
@@ -1177,7 +1520,7 @@ export class SalaService {
   private async spontaneousParticipation(client: Prisma.TransactionClient | PrismaService, personId: string, date: string) {
     const day = this.date(date);
     const participation = await client.salaParticipation.findFirst({
-      where: { personId, startDate: { lte: day }, OR: [{ endDate: null }, { endDate: { gte: day } }] },
+      where: { personId, plan: { isOnline: false }, startDate: { lte: day }, OR: [{ endDate: null }, { endDate: { gte: day } }] },
       include: { plan: true, mainProfessor: { select: { id: true, firstName: true, lastName: true } }, planAssignments: { where: { effectiveFrom: { lte: day } }, orderBy: { effectiveFrom: 'desc' }, take: 1, include: { plan: true } } },
       orderBy: { startDate: 'desc' },
     });
@@ -1187,7 +1530,7 @@ export class SalaService {
   }
   async getSpontaneousOptions(personId: string, date: string) {
     const resolved = await this.spontaneousParticipation(this.prisma, personId, date);
-    if (!resolved) return { eligible: false, services: [] };
+    if (!resolved || resolved.plan.isOnline) return { eligible: false, services: [] };
     const links = await this.prisma.salaPlanService.findMany({ where: { planId: resolved.plan.id, serviceType: { isSelectable: true } }, include: { serviceType: { select: { id: true, name: true, durationMinutes: true } } }, orderBy: { serviceType: { name: 'asc' } } });
     return { eligible: true, participationId: resolved.participation.id, plan: { id: resolved.plan.id, name: resolved.plan.name }, mainProfessor: resolved.participation.mainProfessor, services: links.map((link) => link.serviceType) };
   }
@@ -1197,10 +1540,10 @@ export class SalaService {
   private assertSpontaneousOnboardingToday(date: string): void {
     if (date !== this.todayOperational()) throw new BadRequestException({ code: 'SALA_SPONTANEOUS_ONBOARDING_TODAY_ONLY', message: 'El alta desde incorporación espontánea sólo está disponible para hoy.' });
   }
-  async joinAndCreateSpontaneousOccurrence(input: JoinSpontaneousSalaDto, actorId: string) {
+  async joinAndCreateSpontaneousOccurrence(input: JoinSpontaneousSalaDto, actorId: string, actor?: InternalActor) {
     this.assertSpontaneousOnboardingToday(input.date);
     return this.prisma.$transaction(async (tx) => {
-      await this.joinWithinTransaction(tx, { ...input, startDate: input.date }, actorId);
+      await this.joinWithinTransaction(tx, { ...input, startDate: input.date }, actorId, actor);
       return this.createSpontaneousOccurrenceWithinTransaction(tx, input, actorId);
     });
   }
@@ -1218,6 +1561,7 @@ export class SalaService {
     if (input.date > this.todayOperational()) throw new BadRequestException({ code: 'SALA_SPONTANEOUS_FUTURE_NOT_ALLOWED', message: 'La incorporación espontánea sólo puede registrarse para hoy o una fecha pasada.' });
     const initialParticipation = await this.spontaneousParticipation(tx, input.personId, input.date);
     if (!initialParticipation) throw new BadRequestException({ code: 'SALA_PARTICIPATION_REQUIRED', message: 'La Persona no tiene una participación válida de Sala para esa fecha.' });
+    this.assertInPersonBooking(initialParticipation.plan.isOnline);
     await this.lockParticipations(tx, [initialParticipation.participation.id]);
     const day = this.date(input.date);
     await tx.$queryRaw`SELECT id FROM sala_schedule_slots WHERE id = ${input.scheduleSlotId}::uuid FOR UPDATE`;
@@ -1276,6 +1620,11 @@ export class SalaService {
       ]);
       if (!slot) throw new NotFoundException({ code: 'SALA_OCCURRENCE_SLOT_INVALID', message: 'Schedule occurrence not found' });
       if (!person) throw new NotFoundException({ code: 'PERSON_NOT_FOUND', message: 'Person not found' });
+      const participation = await this.spontaneousParticipation(tx, input.personId, input.date);
+      this.assertInPersonBooking(participation?.plan.isOnline ?? false);
+      if (!participation && await tx.onlineStudent.findFirst({
+        where: { personId: input.personId }, select: { id: true },
+      })) this.assertInPersonBooking(true);
       const candidateStarts = [...fixedBookings.map((item) => this.formatMinutes(this.minutes(item.startTime ?? slot.startTime))), ...reservations.map((item) => this.formatMinutes(this.minutes(item.startTime ?? slot.startTime))), ...occurrences.filter((item) => item.origin === SalaOccurrenceOrigin.SPONTANEOUS).map((item) => this.formatMinutes(this.minutes(item.startTime ?? slot.startTime)))];
       if (!input.startTime && !input.sourceId && new Set(candidateStarts).size > 1) throw new ConflictException({ code: 'SALA_OCCURRENCE_AMBIGUOUS', message: 'Indicá el horario de la actividad que querés corregir.' });
       const startTime = input.startTime ?? candidateStarts[0];
@@ -1485,11 +1834,12 @@ export class SalaService {
     const requestedDay = this.date(date);
     await tx.$queryRaw`SELECT id FROM sala_schedule_slots WHERE id = ${input.scheduleSlotId}::uuid FOR UPDATE`;
     const [participation, window, service] = await Promise.all([
-      tx.salaParticipation.findFirst({ where: { id: input.salaParticipationId, personId: input.personId, endDate: null } }),
+      tx.salaParticipation.findFirst({ where: { id: input.salaParticipationId, personId: input.personId, endDate: null }, include: { plan: { select: { isOnline: true } } } }),
       tx.salaScheduleSlot.findFirst({ where: { id: input.scheduleSlotId, isActive: true } }),
       input.serviceTypeId ? tx.salaServiceType.findFirst({ where: { id: input.serviceTypeId, isSelectable: true } }) : Promise.resolve(null),
     ]);
     if (!participation) throw new BadRequestException({ code: 'SALA_PARTICIPATION_REQUIRED', message: 'An active Sala participation is required' });
+    this.assertInPersonBooking(participation.plan.isOnline);
     if (!window) throw new NotFoundException({ code: 'SALA_SCHEDULE_NOT_FOUND', message: 'Opening window not found for this date' });
     const day = 'startDate' in input ? this.nextWeekday(requestedDay, window.weekday) : requestedDay;
     if (!('startDate' in input) && this.weekday(day) !== window.weekday) throw new NotFoundException({ code: 'SALA_SCHEDULE_NOT_FOUND', message: 'Opening window not found for this date' });
@@ -1549,11 +1899,14 @@ export class SalaService {
     for (const day of input.days) {
       let currentBlock = 0;
       let blockSeries: string | null = null;
-      const grouped = day.exercises.some(exercise => exercise.blockPosition != null);
+      const grouped = day.exercises.some(exercise => (exercise.blockPosition ?? 0) > 0);
+      let trainingStarted = false;
       for (const exercise of day.exercises) {
         if (this.optionalText(exercise.repetitions) && this.optionalText(exercise.duration)) throw new BadRequestException({ code: 'SALA_ROUTINE_REPETITIONS_DURATION_EXCLUSIVE', message: 'Repetitions and duration are alternatives' });
-        if (!grouped) continue;
         const position = exercise.blockPosition;
+        if (position === 0 && !trainingStarted) continue;
+        trainingStarted = true;
+        if (!grouped && position == null) continue;
         const series = this.optionalText(exercise.series);
         if (!series || !/^[0-9]+$/.test(series) || BigInt(series) < 1n || position == null || !Number.isInteger(position) || position < 1 || (position !== currentBlock && position !== currentBlock + 1) || (position === currentBlock && series !== blockSeries)) {
           throw new BadRequestException({ code: 'SALA_ROUTINE_BLOCKS_INVALID', message: 'La organización de bloques de la rutina es inválida. Revisá el orden y las series de los ejercicios.' });

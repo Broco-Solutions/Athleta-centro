@@ -82,7 +82,7 @@ function AssignmentDialog({ selection, csrfToken, canManageParticipation, canCre
   const students = useQuery({ queryKey: ['sala', 'students'], queryFn: async () => {
     const response = await listSalaStudents(readOptions);
     if (response.status !== 200) throw new Error('No se pudieron buscar los alumnos.');
-    return response.data.data;
+    return response.data.data.filter(item => item.participationId && !item.plan?.isOnline);
   } });
   const agenda = useQuery({ queryKey: ['sala', 'agenda', startDate], queryFn: () => loadAgenda(startDate), ...refreshOptions });
   const slot = assignmentSlot(agenda.data ?? [], selection.hour);
@@ -106,7 +106,7 @@ function AssignmentDialog({ selection, csrfToken, canManageParticipation, canCre
     }
   };
   const create = useMutation({ mutationFn: async () => {
-    if (!student || !slot) throw new Error('Seleccioná un alumno y un horario con disponibilidad.');
+    if (!student?.participationId || !slot) throw new Error('Seleccioná un alumno y un horario con disponibilidad.');
     await assign(student.id, student.participationId);
   }, onSuccess: onSaved });
   const createStudent = useMutation({ mutationFn: async (values: StudentValues) => {
@@ -122,7 +122,7 @@ function AssignmentDialog({ selection, csrfToken, canManageParticipation, canCre
       const refreshed = await listSalaStudents(readOptions);
       if (refreshed.status !== 200) throw new Error('No se pudo actualizar la lista de alumnos.');
       const createdStudent = refreshed.data.data.find((item) => item.id === created.id);
-      if (!createdStudent) throw new Error('No se encontró la participación de Sala recién creada.');
+      if (!createdStudent?.participationId) throw new Error('No se encontró la participación de Sala recién creada.');
       await assign(created.id, createdStudent.participationId);
       return { notice, assigned: true };
     } catch (error) {

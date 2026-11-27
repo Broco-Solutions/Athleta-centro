@@ -987,3 +987,29 @@ it('shows export only with FINANCE_EXPORT and keeps the income history columns u
   for (const header of ['Fecha', 'Persona', 'Origen', 'Medio de pago', 'Registrado por', 'Importe']) expect(history.getByRole('columnheader', { name: header, hidden: true })).toBeInTheDocument();
   expect(history.queryByRole('columnheader', { name: 'Descripción', hidden: true })).not.toBeInTheDocument();
 });
+
+it('excludes Online students from the Sala renewal queue', async () => {
+  navigation.search = 'view=income';
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: [
+    { id: 'online', firstName: 'Ana', lastName: 'Remota', dni: '87001000', plan: { name: 'Entrenamiento remoto', isOnline: true }, hasValidAccess: false },
+    { id: 'in-person', firstName: 'Eva', lastName: 'Sintética', dni: '87001001', plan: { name: 'Plan Base', isOnline: false }, hasValidAccess: false },
+  ] })));
+  renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: '+ Registrar pago' }));
+  expect(await screen.findByText('Eva Sintética')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Sin vigencia 1' })).toBeInTheDocument();
+  expect(screen.queryByText('Ana Remota')).not.toBeInTheDocument();
+});
+
+it('shows external billing on a direct Online Sala payment URL without a renewal form', async () => {
+  navigation.search = 'view=income&personId=online&action=renew';
+  server.use(
+    http.get('http://localhost:3000/api/people/online', () => HttpResponse.json({ data: { id: 'online', firstName: 'Ana', lastName: 'Remota', dni: '87001000' } })),
+    http.get('http://localhost:3000/api/sala/participations/person/online', () => HttpResponse.json({ data: [{ endDate: null, plan: { id: 'plan-online', name: 'Entrenamiento remoto', monthlyAmount: '0', isOnline: true } }] })),
+    http.get('http://localhost:3000/api/sala/people/online/payments', () => HttpResponse.json({ data: [] })),
+  );
+  renderPage();
+  expect(await screen.findByText('Cobro externo')).toBeInTheDocument();
+  expect(screen.queryByText(/Vigencia actual|Precio actual/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '+ Registrar renovación' })).not.toBeInTheDocument();
+});

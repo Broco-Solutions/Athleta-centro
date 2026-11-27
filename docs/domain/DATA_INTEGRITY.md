@@ -1987,6 +1987,12 @@ otra vez crea otra identidad, sin pesos registrados. Agregar ejercicios no
 reinicia el mes ni altera semanas previas. Una próxima programación independiente
 no bloquea la edición vigente ni recibe sus cambios.
 
+La entrada en calor se aplica como ejercicios independientes con
+`blockPosition = 0` al inicio de cada día. Cada copia conserva sus identificadores
+al reaplicar ejercicios coincidentes a una rutina activa y puede personalizarse por
+día. Las posiciones positivas y los ejercicios sin bloque mantienen sus reglas.
+Los registros previos de pesos conservan sus referencias y snapshots.
+
 Las programaciones pueden cambiar fecha o cancelarse antes de comenzar. Su
 contenido solo puede cambiar si no tiene registros. La fecha debe mantener el
 orden y los períodos de los registros existentes. Cancelar establece

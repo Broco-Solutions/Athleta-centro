@@ -596,6 +596,30 @@ ENDED  = endDate IS NOT NULL
 
 ---
 
+### Alumnos particulares online
+
+`OnlineStudent` registra una Persona, su profesor responsable y las fechas de
+vigencia. PostgreSQL admite una sola vinculación online abierta por Persona.
+El vínculo online es independiente de la participación presencial y no genera
+cargos, vencimientos ni turnos.
+
+Cada `Routine` pertenece a una participación presencial o a una vinculación
+online. Un `CHECK` requiere exactamente un propietario y las claves foráneas
+compuestas verifican que pertenezca a la misma Persona. Métodos, días, ejercicios
+y registros de pesos siguen en las tablas existentes.
+
+`SalaPlan.isOnline` se conserva como marca histórica. La migración
+`20261127120000_online_students` copia cada vinculación anterior con su profesor
+y fechas, mueve sus rutinas sin cambiar identificadores y cierra las
+participaciones activas del mecanismo anterior. Los planes y las referencias
+históricas de pagos y turnos se conservan.
+
+La corrección de modalidad cierra la vinculación vigente, crea la de destino y
+reasigna las rutinas de origen dentro de la misma transacción. Conserva las
+credenciales del Portal, las referencias de entrenamiento y los registros de Sala.
+Las rutinas de otras vinculaciones permanecen con sus propietarios. El cambio
+se bloquea si separar o juntar períodos alteraría su historial.
+
 ### Objetivo de Sala
 
 `SalaParticipation.objective` es nullable, `VARCHAR(500)`, breve y opcional.

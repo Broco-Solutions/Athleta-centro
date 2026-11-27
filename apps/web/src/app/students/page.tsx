@@ -1,12 +1,14 @@
 'use client';
 
+import { enrollOnlineStudent, type OnlineStudentEnrollmentDto } from '@athleta/api-client';
 import { PaperDeclarationFields, usePaperDeclaration } from '../../features/health-declaration/paper-declaration-fields';
 import React, { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { ListPagination, LIST_PAGE_SIZE } from '../../lib/list-pagination';
 import { Search } from 'lucide-react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { EnrollmentPlanFields } from '../../features/sala/enrollment-plan-fields';
 import { createSalaStudent, joinSala, listSalaPlans, listSalaProfessors, listSalaStudents, type SalaStudentListItemDto } from '@athleta/api-client';
 import { Button } from '@athleta/ui';
 import { currentSession } from '../../features/auth/auth';
@@ -15,7 +17,7 @@ import { WorkspaceShell } from '../../features/auth/workspace-shell';
 import { GeneralPersonFields, personSchema, personDefaults, personInput, type PersonValues } from '../../features/people/general-person-form';
 import { fetchPeople } from '../../features/people/people-api';
 import { ParticipationDialog } from '../../features/sala/participation-dialog';
-import { useForm } from 'react-hook-form';
+import { useWatch, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
@@ -36,6 +38,7 @@ const routineFilters = [
     summary: (count: number) => count === 1 ? '1 rutina con registro completo.' : `${count} rutinas con registro completo.`,
   },
 ] as const;
+type StudentListSelection = { routeFilter: Filter | undefined; filter: Filter; search: string; modality: string; mine: boolean; page: number };
 type Filter = 'all' | 'without-routine' | 'without-validity' | (typeof routineFilters)[number]['value'];
 const filters: { value: Filter; label: string }[] = [
   { value: 'all', label: 'Todos' },
@@ -50,22 +53,26 @@ const label = 'mr-1 text-muted-foreground xl:hidden';
 function StudentsContent(): React.JSX.Element {
   const params = useSearchParams();
   const requested = params.get('filter');
-  const initialFilter = filters.find(item => item.value === requested)?.value ?? 'all';
+  const initialFilter = filters.find(item => item.value === requested)?.value;
   // A changed URL resets the local selection, including client-side dashboard navigation.
-  return <StudentList key={initialFilter} initialFilter={initialFilter} />;
+  return <StudentList key={initialFilter ?? 'default'} initialFilter={initialFilter} />;
 }
 
-function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.Element {
-  const [filter, setFilter] = useState<Filter>(initialFilter);
-  const [search, setSearch] = useState('');
-  const [mine, setMine] = useState(false);
-  const [page, setPage] = useState(1);
+function StudentList({ initialFilter }: { initialFilter: Filter | undefined }): React.JSX.Element {
+  const client = useQueryClient();
+  const savedSelection = useQuery<StudentListSelection>({ queryKey: ['student-list-selection'], queryFn: skipToken, gcTime: Infinity }).data;
+  const restored = !initialFilter || savedSelection?.routeFilter === initialFilter ? savedSelection : undefined;
+  const [filter, setFilter] = useState<Filter>(restored?.filter ?? initialFilter ?? 'all');
+  const [search, setSearch] = useState(restored?.search ?? '');
+  const [modality, setModality] = useState(restored?.modality ?? 'all');
+  const [mine, setMine] = useState(restored?.mine ?? false);
+  const [page, setPage] = useState(restored?.page ?? 1);
   const [creating, setCreating] = useState(false);
   const [initialPin, setInitialPin] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
-  const client = useQueryClient();
   const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false });
   const canManage = session.data?.permissions.includes('SALA_PARTICIPATION_MANAGE') ?? false;
+  const isGeneralAdmin = session.data?.roles.includes('GENERAL_ADMIN') ?? false;
   const canCreate = canManage && (session.data?.permissions.includes('PEOPLE_CREATE') ?? false);
   const isProfessor = session.data?.roles.includes('PROFESSOR') ?? false;
   const canUseFinance = Boolean(session.data?.permissions.includes('SALA_PAYMENT_MANAGE') && session.data?.permissions.includes('FINANCE_OPERATIONAL_READ'));
@@ -77,7 +84,9 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
     return response.data.data;
   } });
   const students = query.data ?? [];
-  const scopedStudents = mine ? students.filter(student => student.professor.id === session.data?.user.id) : students;
+  const scopedStudents = students.filter(student =>
+    (!mine || student.professor.id === session.data?.user.id) &&
+    (modality === 'all' || (student.modality === 'ONLINE') === (modality === 'online')));
   const canSeeRoutineNotice = (student: SalaStudentListItemDto) => canRead && student.routineStatus === 'ACTIVE';
   const routineNotice = (student: SalaStudentListItemDto) => {
     if (!canSeeRoutineNotice(student)) return null;
@@ -93,7 +102,7 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
   const filtered = scopedStudents.filter((student) =>
     (`${student.firstName} ${student.lastName}`.toLocaleLowerCase('es').includes(term) || student.dni.includes(term)) &&
     (filter !== 'without-routine' || student.routineStatus === 'MISSING') &&
-    (filter !== 'without-validity' || !student.hasValidAccess) &&
+    (filter !== 'without-validity' || (student.modality === 'IN_PERSON' && !student.hasValidAccess)) &&
     (!routineFilter || (canSeeRoutineNotice(student) && routineFilter.matches(student))));
   const effectivePage = Math.min(page, Math.max(1, Math.ceil(filtered.length / LIST_PAGE_SIZE)));
   const selectFilter = (value: Filter) => { setFilter(value); setPage(1); };
@@ -102,6 +111,11 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
     {notice ? <p role="status">{notice}</p> : null}
     <div className="space-y-3">
       <div className="relative w-full max-w-sm"><Search aria-hidden="true" size={17} className="pointer-events-none absolute left-3 top-3 text-muted-foreground" /><input aria-label="Buscar por nombre o DNI" placeholder="Buscar por nombre o DNI" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className="h-11 w-full rounded-md border border-border bg-surface pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" /></div>
+      <label className="inline-grid gap-1 text-sm">Modalidad
+        <select className={inputClass} value={modality} onChange={event => { setModality(event.target.value); setPage(1); }}>
+          <option value="all">Todos</option><option value="in-person">Presencial</option><option value="online">Online</option>
+        </select>
+      </label>
       <div role="group" aria-label="Filtrar alumnos" className="flex flex-wrap gap-2">{filters.map((item) => <Button key={item.value} variant={filter === item.value ? 'primary' : 'secondary'} aria-pressed={filter === item.value} onClick={() => selectFilter(item.value)}>{item.label}</Button>)}{isProfessor ? <Button variant={mine ? 'primary' : 'secondary'} aria-pressed={mine} onClick={() => { setMine(!mine); setPage(1); }}>Mis alumnos</Button> : null}</div>
       {query.isSuccess && session.isSuccess && canRead ? <p className="text-sm text-muted-foreground">{filtered.length} {filtered.length === 1 ? 'alumno' : 'alumnos'}</p> : null}
     </div>
@@ -113,33 +127,36 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
     </div> : null}
     {session.isPending || (canRead && query.isPending) ? <p role="status" className="text-sm text-muted-foreground">Cargando alumnos…</p> : session.isSuccess && !canRead ? <p role="alert">No tenés permisos para consultar Alumnos.</p> : query.isError || session.isError ? <p role="alert">No se pudieron cargar los alumnos.</p> : filtered.length === 0 ? <div className="rounded-md border border-dashed border-border bg-surface p-6 text-center"><p className="font-medium">{students.length ? 'Sin resultados' : 'No hay alumnos activos de Sala.'}</p>{students.length ? <p className="mt-1 text-sm text-muted-foreground">No hay alumnos que coincidan con la búsqueda y los filtros.</p> : null}</div> :
     <table aria-label="Alumnos activos de Sala" className="block w-full xl:table xl:table-fixed xl:overflow-hidden xl:rounded-md xl:border xl:border-border xl:bg-surface">
-      <thead className="hidden bg-surface-muted text-left text-xs font-semibold text-foreground xl:table-header-group"><tr>{['Alumno', 'DNI', 'Plan', 'Profesor', 'Rutina', 'Vigencia', 'Acción'].map((title) => <th key={title} scope="col" className="px-4 py-3">{title}</th>)}</tr></thead>
+      <thead className="hidden bg-surface-muted text-left text-xs font-semibold text-foreground xl:table-header-group"><tr>{['Alumno', 'DNI', 'Plan / modalidad', 'Profesor', 'Rutina', 'Vigencia', 'Acción'].map((title) => <th key={title} scope="col" className="px-4 py-3">{title}</th>)}</tr></thead>
       <tbody className="grid gap-3 sm:grid-cols-2 xl:table-row-group">{filtered.slice((effectivePage - 1) * LIST_PAGE_SIZE, effectivePage * LIST_PAGE_SIZE).map((student) => {
         const notice = routineNotice(student);
         const noticeText = notice === 'complete' ? 'Registro completo · Asignar nueva rutina'
           : notice === 'review' ? '4 semanas cumplidas · Revisar rutina'
           : student.routineChangeInDays === 1 ? 'Cambio mañana' : `Cambio en ${student.routineChangeInDays} días`;
-        return <tr key={student.id} className="grid min-w-0 rounded-md border border-border bg-surface py-3 xl:table-row xl:border-0 xl:border-t xl:py-0">
+        return <tr key={`${student.id}-${student.modality}`} className="grid min-w-0 rounded-md border border-border bg-surface py-3 xl:table-row xl:border-0 xl:border-t xl:py-0">
           <td className={`${cell} break-words font-medium`}>{student.firstName} {student.lastName}</td>
           <td className={cell}><span className={label}>DNI</span>{student.dni}</td>
-          <td className={`${cell} break-words`}><span className={label}>Plan:</span>{student.plan.name}</td>
+          <td className={`${cell} break-words`}>{student.plan
+            ? <><span className={label}>Plan:</span>{student.plan.name}<span className="block text-xs text-muted-foreground">Presencial</span></>
+            : <><span className={label}>Modalidad:</span><span>Online</span></>}</td>
           <td className={`${cell} break-words`}><span className={label}>Profesor:</span>{student.professor.firstName} {student.professor.lastName}</td>
           <td className={cell}><span className={label}>Rutina:</span><span className={badge(student.routineStatus === 'ACTIVE')}>{student.routineStatus === 'ACTIVE' ? 'Activa' : 'Sin rutina'}</span>{notice ? <p className={`mt-1 text-xs font-medium ${notice === 'complete' ? 'text-red-800' : 'text-amber-800'}`}>{noticeText}</p> : null}</td>
-          <td className={cell}><span className={label}>Vigencia:</span><span className={badge(student.hasValidAccess)}>{student.hasValidAccess ? `Vigente hasta ${student.validUntil?.split('-').reverse().join('/')}` : 'Sin vigencia'}</span></td>
-          <td className={cell}><div className="flex flex-wrap justify-end gap-2 xl:justify-start"><Link href={`/sala/people/${student.id}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:min-h-9">Ver ficha</Link>{canUseFinance || canRegister ? <Link href={canUseFinance ? `/finance?view=income&personId=${student.id}${!student.hasValidAccess ? '&action=renew' : ''}` : `/sala/people/${student.id}?tab=payments${!student.hasValidAccess ? '&action=renew' : ''}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted xl:min-h-9">{!student.hasValidAccess ? (canUseFinance ? 'Renovar' : 'Registrar renovación') : 'Ver pagos'}</Link> : null}</div></td>
+          <td className={cell}><span className={label}>Vigencia:</span>{student.modality === 'ONLINE' ? <span aria-label="No aplica">—</span> : <span className={badge(student.hasValidAccess)}>{student.hasValidAccess ? `Vigente hasta ${student.validUntil?.split('-').reverse().join('/')}` : 'Sin vigencia'}</span>}</td>
+          <td className={cell}><div className="flex flex-wrap justify-end gap-2 xl:justify-start"><Link href={`/sala/people/${student.id}?${student.modality === 'ONLINE' ? 'modality=online&' : ''}from=students`} onClick={() => client.setQueryData<StudentListSelection>(['student-list-selection'], { routeFilter: initialFilter, filter, search, modality, mine, page: effectivePage })} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:min-h-9">Ver ficha</Link>{student.modality === 'IN_PERSON' && (canUseFinance || canRegister) ? <Link href={canUseFinance ? `/finance?view=income&personId=${student.id}${!student.hasValidAccess ? '&action=renew' : ''}` : `/sala/people/${student.id}?tab=payments${!student.hasValidAccess ? '&action=renew' : ''}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted xl:min-h-9">{!student.hasValidAccess ? (canUseFinance ? 'Renovar' : 'Registrar renovación') : 'Ver pagos'}</Link> : null}</div></td>
         </tr>;
       })}</tbody>
     </table>}
     {query.isSuccess && canRead && filtered.length ? <ListPagination total={filtered.length} page={effectivePage} onPage={setPage} /> : null}
-    {creating && canCreate ? <NewStudentDialog csrf={session.data?.csrfToken ?? ''} onClose={() => setCreating(false)} onSaved={async (pin) => {
+    {creating && canCreate ? <NewStudentDialog canEnrollOnline={isProfessor || isGeneralAdmin} selectProfessor={isGeneralAdmin} csrf={session.data?.csrfToken ?? ''} onClose={() => setCreating(false)} onSaved={async (pin, online) => {
       await Promise.all([
         client.invalidateQueries({ queryKey: ['sala', 'students'] }),
         client.invalidateQueries({ queryKey: ['people'] }),
         client.invalidateQueries({ queryKey: ['sala-participations'] }),
+        client.invalidateQueries({ queryKey: ['sala-online-student'] }),
       ]);
       setCreating(false);
       if (pin) setInitialPin(pin);
-      else setNotice('El Alumno fue incorporado a Sala.');
+      else setNotice(online ? 'Alumno online incorporado.' : 'El Alumno fue incorporado a Sala.');
     }} /> : null}
     {initialPin ? <InitialPinDialog pin={initialPin} onClose={() => setInitialPin(null)} /> : null}
   </div></WorkspaceShell>;
@@ -155,11 +172,21 @@ function todayOperational(): string {
   return `${values.year}-${values.month}-${values.day}`;
 }
 const inputClass = 'h-11 w-full rounded-md border border-border bg-surface px-3 text-sm';
-type EnrollmentProps = { csrf: string; onClose: () => void; onSaved: (pin?: string) => Promise<void> };
+type EnrollmentProps = { csrf: string; onClose: () => void; onSaved: (pin?: string, online?: boolean) => Promise<void> };
 
 type StudentCreationMode = 'existing' | 'new';
 
-function NewStudentDialog({ csrf, onClose, onSaved }: EnrollmentProps): React.JSX.Element {
+function NewStudentDialog({ canEnrollOnline, selectProfessor, ...props }: EnrollmentProps & {
+  canEnrollOnline: boolean;
+  selectProfessor: boolean;
+}): React.JSX.Element {
+  const [online, setOnline] = useState(false);
+  return online
+    ? <OnlineStudentForm {...props} selectProfessor={selectProfessor} onInPerson={() => setOnline(false)} />
+    : <InPersonEnrollment {...props} {...(canEnrollOnline ? { onOnline: () => setOnline(true) } : {})} />;
+}
+
+function InPersonEnrollment({ csrf, onClose, onSaved, onOnline }: EnrollmentProps & { onOnline?: () => void }): React.JSX.Element {
   const paper = usePaperDeclaration();
   const [mode, setMode] = useState<StudentCreationMode>('existing');
   const [search, setSearch] = useState('');
@@ -174,7 +201,7 @@ function NewStudentDialog({ csrf, onClose, onSaved }: EnrollmentProps): React.JS
   const plans = useQuery({ queryKey: ['sala-plans'], enabled: catalogsEnabled, queryFn: async () => {
     const response = await listSalaPlans({ credentials: 'include' });
     if (response.status !== 200) throw new Error('No se pudieron cargar los Planes.');
-    return z.array(z.object({ id: z.string(), name: z.string(), isSelectable: z.boolean().optional() }).passthrough()).parse(response.data.data);
+    return response.data.data;
   } });
   const professors = useQuery({ queryKey: ['sala-professors'], enabled: catalogsEnabled, queryFn: async () => {
     const response = await listSalaProfessors({ credentials: 'include' });
@@ -188,10 +215,13 @@ function NewStudentDialog({ csrf, onClose, onSaved }: EnrollmentProps): React.JS
     if (response.status < 200 || response.status >= 300) throw new Error('No se pudo incorporar la Persona a Sala. Revisá si ya es alumno activo e intentá nuevamente.');
   }, onSuccess: () => onSaved() });
   const resetSelection = () => { paper.setConfirmed(false); paper.setSignedOn(''); setPersonId(''); setPlanId(''); setMainProfessorId(''); mutation.reset(); };
-  const selectablePlans = plans.data?.filter(plan => plan.isSelectable !== false) ?? [];
+  const selectablePlans = plans.data?.filter(plan => plan.isSelectable !== false && !plan.isOnline) ?? [];
   if (mode === 'new') return <NewPersonEnrollmentForm csrf={csrf} onClose={onClose} onSaved={onSaved} onExisting={() => setMode('existing')} plans={selectablePlans} professors={professors.data ?? []} catalogsReady={plans.isSuccess && professors.isSuccess} catalogsError={plans.isError || professors.isError} />;
   return <ParticipationDialog title="Nuevo alumno" onClose={onClose} busy={mutation.isPending}>
-    <Button variant="secondary" disabled={mutation.isPending} onClick={() => { resetSelection(); setMode('new'); }}>Nueva Persona</Button>
+    <div className="flex flex-wrap gap-2">
+      <Button variant="secondary" disabled={mutation.isPending} onClick={() => { resetSelection(); setMode('new'); }}>Nueva Persona</Button>
+      {onOnline ? <Button variant="secondary" disabled={mutation.isPending} onClick={onOnline}>Online</Button> : null}
+    </div>
     <form className="space-y-4" onSubmit={event => { event.preventDefault(); mutation.mutate(); }}>
       <label className="grid gap-1 text-sm">Buscar Persona<input aria-label="Buscar Persona" placeholder="Nombre, apellido o DNI" className={inputClass} value={search} disabled={mutation.isPending} onChange={event => { setSearch(event.target.value); resetSelection(); }} /></label>
       {term ? people.isFetching ? <p role="status">Buscando Personas…</p> : people.isError ? <p role="alert">No pudimos buscar Personas. Intentá nuevamente.</p> : people.isSuccess && !people.data.data.length ? <p role="status">No encontramos una Persona con esa búsqueda.</p> : people.isSuccess ? <div className="grid gap-2" role="group" aria-label="Resultados">
@@ -203,7 +233,7 @@ function NewStudentDialog({ csrf, onClose, onSaved }: EnrollmentProps): React.JS
       </div> : null : null}
       {selectedPerson?.hasSalaParticipation === true ? <p role="status">Esta Persona ya es alumno activo de Sala.</p> : null}
       {needsJoin ? <>
-        <label className="grid gap-1 text-sm">Plan *<select aria-label="Plan" required className={inputClass} value={planId} disabled={mutation.isPending} onChange={event => setPlanId(event.target.value)}><option value="">Seleccionar Plan</option>{selectablePlans.map(plan => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></label>
+        <EnrollmentPlanFields key={selectedPerson?.id} plans={selectablePlans} planId={planId} onPlanChange={setPlanId} inputClass={inputClass} disabled={mutation.isPending} />
         <label className="grid gap-1 text-sm">Profesor principal *<select aria-label="Profesor principal" required className={inputClass} value={mainProfessorId} disabled={mutation.isPending} onChange={event => setMainProfessorId(event.target.value)}><option value="">Seleccionar Profesor</option>{professors.data?.map(professor => <option key={professor.id} value={professor.id}>{professor.firstName} {professor.lastName}</option>)}</select></label>
         {plans.isError || professors.isError ? <p role="alert">No se pudieron cargar los Planes o Profesores. Cerrá el alta e intentá nuevamente.</p> : !plans.isSuccess || !professors.isSuccess ? <p role="status">Cargando Planes y Profesores…</p> : null}
       </> : null}
@@ -214,10 +244,11 @@ function NewStudentDialog({ csrf, onClose, onSaved }: EnrollmentProps): React.JS
   </ParticipationDialog>;
 }
 
-function NewPersonEnrollmentForm({ csrf, onClose, onSaved, onExisting, plans, professors, catalogsReady, catalogsError }: EnrollmentProps & { onExisting: () => void; plans: Array<{ id: string; name: string }>; professors: Array<{ id: string; firstName: string; lastName: string }>; catalogsReady: boolean; catalogsError: boolean }): React.JSX.Element {
+function NewPersonEnrollmentForm({ csrf, onClose, onSaved, onExisting, plans, professors, catalogsReady, catalogsError }: EnrollmentProps & { onExisting: () => void; plans: Array<{ id: string; name: string; isOnline: boolean }>; professors: Array<{ id: string; firstName: string; lastName: string }>; catalogsReady: boolean; catalogsError: boolean }): React.JSX.Element {
   const paper = usePaperDeclaration();
   const schema = personSchema.extend({ planId: z.string().min(1, 'Seleccioná un Plan.'), mainProfessorId: z.string().min(1, 'Seleccioná un profesor.') });
   const form = useForm<z.infer<typeof schema>>({ resolver: zodResolver(schema), defaultValues: { ...personDefaults(), planId: '', mainProfessorId: '' } });
+  const planId = useWatch({ control: form.control, name: 'planId' });
   const generalForm: import('react-hook-form').UseFormReturn<PersonValues> = form as unknown as import('react-hook-form').UseFormReturn<PersonValues>;
   const mutation = useMutation({ gcTime: 0, mutationFn: async (values: z.infer<typeof schema>) => {
     if (!csrf) throw new Error('Sesión inválida. Volvé a iniciar sesión.');
@@ -235,7 +266,7 @@ function NewPersonEnrollmentForm({ csrf, onClose, onSaved, onExisting, plans, pr
       <section className="border-t border-border pt-4 sm:col-span-2">
         <h3 className="mb-3 text-sm font-semibold">Entrenamiento</h3>
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="grid gap-1 text-sm">Plan *<select aria-label="Plan" className={inputClass} {...form.register('planId')}><option value="">Seleccionar Plan</option>{plans.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <EnrollmentPlanFields plans={plans} planId={planId} onPlanChange={value => form.setValue('planId', value, { shouldValidate: form.formState.isSubmitted })} inputClass={inputClass} disabled={mutation.isPending} required={false} />
           <label className="grid gap-1 text-sm">Profesor principal *<select aria-label="Profesor principal" className={inputClass} {...form.register('mainProfessorId')}><option value="">Seleccionar profesor</option>{professors.map(item => <option key={item.id} value={item.id}>{item.firstName} {item.lastName}</option>)}</select></label>
         </div>
       </section>
@@ -243,6 +274,69 @@ function NewPersonEnrollmentForm({ csrf, onClose, onSaved, onExisting, plans, pr
       {catalogsError ? <p role="alert">No se pudieron cargar los Planes o Profesores. Cerrá el alta e intentá nuevamente.</p> : !catalogsReady ? <p role="status">Cargando Planes y Profesores…</p> : null}
       {mutation.isError ? <p role="alert">{mutation.error.message}</p> : null}
       <div className="flex justify-end gap-2 border-t border-border pt-4 sm:col-span-2"><Button type="button" variant="secondary" disabled={mutation.isPending} onClick={onClose}>Cancelar</Button><Button type="submit" disabled={mutation.isPending || !catalogsReady}>{mutation.isPending ? 'Guardando…' : 'Crear alumno'}</Button></div>
+    </form>
+  </ParticipationDialog>;
+}
+
+function OnlineStudentForm({ csrf, onClose, onSaved, onInPerson, selectProfessor }: EnrollmentProps & {
+  onInPerson: () => void;
+  selectProfessor: boolean;
+}): React.JSX.Element {
+  const [mode, setMode] = useState<StudentCreationMode>('new');
+  const [professorId, setProfessorId] = useState('');
+  const form = useForm<PersonValues>({ resolver: zodResolver(personSchema), defaultValues: personDefaults() });
+  const existing = useForm<{ dni: string }>({
+    resolver: zodResolver(personSchema.pick({ dni: true })), defaultValues: { dni: '' },
+  });
+  const professors = useQuery({ queryKey: ['sala-professors'], enabled: selectProfessor, queryFn: async () => {
+    const response = await listSalaProfessors({ credentials: 'include' });
+    if (response.status !== 200) throw new Error('No pudimos cargar los profesores.');
+    return response.data.data;
+  } });
+  const mutation = useMutation({ gcTime: 0, mutationFn: async (input: OnlineStudentEnrollmentDto) => {
+    const response = await enrollOnlineStudent({ ...input, ...(selectProfessor ? { professorId } : {}) }, {
+      credentials: 'include', headers: { 'x-csrf-token': csrf },
+    });
+    if (response.status !== 201) {
+      const error = response.data as { code?: string; message?: string };
+      if (error.code === 'PERSON_DNI_ALREADY_EXISTS') throw new Error('Ya existe una Persona con ese DNI. Usá la opción Persona existente.');
+      if (error.code === 'PERSON_NOT_FOUND') throw new Error('No pudimos incorporar una Persona con ese DNI.');
+      throw new Error(error.message ?? 'No pudimos guardar el alumno online.');
+    }
+    return onSaved(response.data.data.initialPin, true);
+  } });
+  const submit = mode === 'new' ? form.handleSubmit(({ firstName, lastName, dni, phone, birthDate, email }) => {
+    mutation.mutate({ person: { firstName, lastName, dni, phone, birthDate, email: email || null } });
+  }) : existing.handleSubmit(({ dni }) => mutation.mutate({ dni }));
+  return <ParticipationDialog title="Nuevo alumno online" onClose={onClose} busy={mutation.isPending} {...(mode === 'new' ? { size: 'wide' as const } : {})}>
+    <div className="flex flex-wrap gap-2">
+      <Button variant="secondary" disabled={mutation.isPending} onClick={onInPerson}>Presencial</Button>
+      <Button variant="secondary" disabled={mutation.isPending} onClick={() => {
+        mutation.reset();
+        setMode(mode === 'new' ? 'existing' : 'new');
+      }}>{mode === 'new' ? 'Persona existente' : 'Nueva Persona'}</Button>
+    </div>
+    <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+      {mode === 'new' ? <GeneralPersonFields form={form} basic /> : <label className="grid gap-1 text-sm sm:col-span-2">
+        DNI de la Persona existente
+        <input className={inputClass} inputMode="numeric" {...existing.register('dni')} />
+        {existing.formState.errors.dni ? <span role="alert">{existing.formState.errors.dni.message}</span> : null}
+      </label>}
+      {selectProfessor ? <label className="grid gap-1 text-sm sm:col-span-2">
+        Profesor responsable
+        <select className={inputClass} value={professorId} onChange={event => setProfessorId(event.target.value)} required>
+          <option value="">Seleccionar profesor</option>
+          {professors.data?.map(professor => <option key={professor.id} value={professor.id}>{professor.firstName} {professor.lastName}</option>)}
+        </select>
+      </label> : <p className="text-sm text-muted-foreground sm:col-span-2">El alumno quedará a tu cargo.</p>}
+      {professors.isError ? <p role="alert">{professors.error.message}</p> : null}
+      {mutation.isError ? <p role="alert">{mutation.error.message}</p> : null}
+      <div className="flex justify-end gap-2 sm:col-span-2">
+        <Button type="button" variant="secondary" disabled={mutation.isPending} onClick={onClose}>Cancelar</Button>
+        <Button type="submit" disabled={mutation.isPending || !csrf || (selectProfessor && !professorId)}>
+          {mutation.isPending ? 'Guardando…' : 'Guardar alumno online'}
+        </Button>
+      </div>
     </form>
   </ParticipationDialog>;
 }

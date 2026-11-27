@@ -1,3 +1,4 @@
+import { PeopleService } from '../src/people/people.service';
 import { createHash } from 'node:crypto';
 import { PORTAL_SESSION_TTL_MS } from '../src/portal/portal-session';
 import cookieParser from 'cookie-parser';
@@ -29,6 +30,39 @@ describe('Portal auth and PIN reset', () => {
   });
 
   afterAll(() => app.close());
+
+  it('activates the same Portal credentials for a private online student without a Sala participation', async () => {
+    const professor = await users.create({ firstName: 'Profesor', lastName: 'Sintético', email: 'prof-online-auth@test.local', roles: [Role.PROFESSOR] });
+    await auth.provisionCredential(professor.id, 'ValidPass1!');
+    await prisma.internalCredential.update({ where: { internalUserId: professor.id }, data: { mustChangePassword: false } });
+    const http = request(app.getHttpServer());
+    const owner = await http.post('/api/auth/login').send({ email: professor.email, password: 'ValidPass1!' }).expect(200);
+    const dni = '87009012';
+    const enrolled = await http.post('/api/sala/online-students').set('Cookie', owner.headers['set-cookie'][0]).set('x-csrf-token', owner.body.data.csrfToken).send({
+      person: { firstName: 'Alumno', lastName: 'Sintético', dni, phone: '3515550000', birthDate: '1990-01-01' },
+    }).expect(201);
+    const { personId, initialPin } = enrolled.body.data as { personId: string; initialPin: string };
+    try {
+      expect(await prisma.salaParticipation.count({ where: { personId } })).toBe(0);
+      const login = await http.post('/api/portal/auth/login').send({ dni, pin: initialPin }).expect(200);
+      expect(login.body.data.mustChangePin).toBe(true);
+      const portalCookie = login.headers['set-cookie'][0] as string;
+      const portalCsrf = login.body.data.csrfToken as string;
+      expect((await http.get('/api/portal/sala').set('Cookie', portalCookie).expect(403)).body.code).toBe('PORTAL_PIN_CHANGE_REQUIRED');
+      await http.post('/api/portal/auth/change-pin').set('Cookie', portalCookie).set('x-csrf-token', portalCsrf).send({ currentPin: initialPin, nextPin: initialPin === '4321' ? '1234' : '4321' }).expect(200);
+      expect((await http.get('/api/portal/sala').set('Cookie', portalCookie).expect(403)).body.code).toBe('PORTAL_HEALTH_DECLARATION_REQUIRED');
+      await app.get(PeopleService).inactivate(personId, professor.id);
+      expect(await prisma.onlineStudent.findFirst({ where: { personId } })).toMatchObject({ endDate: expect.any(Date) });
+      await http.get('/api/portal/auth/session').set('Cookie', portalCookie).expect(401);
+    } finally {
+      await prisma.session.deleteMany({ where: { OR: [{ personId }, { internalUserId: professor.id }] } });
+      await prisma.onlineStudent.deleteMany({ where: { personId } });
+      await prisma.person.delete({ where: { id: personId } });
+      await prisma.internalCredential.deleteMany({ where: { internalUserId: professor.id } });
+      await prisma.internalUserRole.deleteMany({ where: { internalUserId: professor.id } });
+      await prisma.internalUser.delete({ where: { id: professor.id } });
+    }
+  });
 
   it('resets an active person PIN and the returned PIN logs in immediately', async () => {
     const admin = await users.create({ firstName: 'Portal', lastName: 'Admin', email: `portal-reset-${Date.now()}@test.local`, roles: [Role.GENERAL_ADMIN] });

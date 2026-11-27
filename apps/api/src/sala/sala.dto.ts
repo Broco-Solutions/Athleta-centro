@@ -1,7 +1,7 @@
 import { PartialType } from '@nestjs/swagger';
 import { CreatePersonDto, PersonResponseDto } from '../people/person.dto';
 import { Type } from 'class-transformer';
-import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Max, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, Max, Min, MinLength, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, IntersectionType, PickType } from '@nestjs/swagger';
 import { SalaOccurrenceStatus, SalaScheduleExceptionType, SalaWeekday } from '@prisma/client';
 
@@ -9,8 +9,9 @@ export class CapacityDto { @ApiProperty({ type: Number, minimum: 1 }) @Type(() =
 export class UpdateSalaConfigurationDto extends CapacityDto {}
 export class PlanDto {
   @ApiProperty({ type: String }) @IsString() @MinLength(1) @MaxLength(120) name!: string;
-  @ApiProperty({ type: Number }) @Type(() => Number) @IsInt() monthlyAmount!: number;
-  @ApiProperty({ type: Number, minimum: 2, maximum: 5 }) @Type(() => Number) @IsInt() @Min(2) @Max(5) weeklySessions!: number;
+  @ApiPropertyOptional({ type: Boolean, default: false }) @IsOptional() @IsBoolean() isOnline?: boolean;
+  @ApiPropertyOptional({ type: Number }) @IsOptional() @Type(() => Number) @IsInt() monthlyAmount?: number;
+  @ApiPropertyOptional({ type: Number, minimum: 2, maximum: 5, nullable: true }) @IsOptional() @Type(() => Number) @IsInt() @Min(2) @Max(5) weeklySessions?: number | null;
   @ApiPropertyOptional({ type: [String], format: 'uuid', uniqueItems: true })
   @IsOptional() @IsArray() @ArrayUnique() @IsUUID(undefined, { each: true }) serviceTypeIds?: string[];
   @ApiPropertyOptional({ type: Boolean }) @IsOptional() isSelectable?: boolean;
@@ -119,7 +120,7 @@ export class RetireExerciseDefinitionDto {
   @ApiPropertyOptional({ type: Boolean, default: false }) @IsOptional() @IsBoolean() confirmActiveRoutineImpact = false;
 }
 export class RoutineExerciseDto {
-  @ApiPropertyOptional({ type: Number, nullable: true }) @IsOptional() @IsInt() @Min(1) blockPosition?: number | null;
+  @ApiPropertyOptional({ type: Number, nullable: true, minimum: 0, description: 'Position zero denotes the warm-up block.' }) @IsOptional() @IsInt() @Min(0) blockPosition?: number | null;
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() exerciseDefinitionId!: string;
   @ApiPropertyOptional({ type: String, maxLength: 80, nullable: true }) @IsOptional() @IsString() @MaxLength(80) series?: string | null;
   @ApiPropertyOptional({ type: String, maxLength: 80, nullable: true }) @IsOptional() @IsString() @MaxLength(80) repetitions?: string | null;
@@ -156,7 +157,8 @@ export class DuplicateRoutineDto {
 }
 export class ReplaceRoutineDto extends DuplicateRoutineDto {
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() personId!: string;
-  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() salaParticipationId!: string;
+  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() salaParticipationId?: string;
+  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() onlineStudentId?: string;
   @ApiProperty({ type: () => [RoutineDayDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RoutineDayDto) days!: RoutineDayDto[];
 }
 export class PhysicalTestDefinitionDto { @ApiProperty({ type: String, maxLength: 120 }) @IsString() @MinLength(1) @MaxLength(120) name!: string; @ApiPropertyOptional({ enum: ['STRENGTH', 'MOBILITY', 'OTHER'], nullable: true }) @IsOptional() @IsString() type?: 'STRENGTH' | 'MOBILITY' | 'OTHER' | null; @ApiPropertyOptional({ type: String, maxLength: 500, nullable: true }) @IsOptional() @IsString() @MaxLength(500) description?: string | null; }
@@ -179,6 +181,44 @@ export class SalaProfessorOptionDto {
   @ApiProperty({ type: String }) firstName!: string;
   @ApiProperty({ type: String }) lastName!: string;
 }
+export class OnlineStudentEnrollmentDto {
+  @ApiPropertyOptional({ type: () => CreatePersonDto }) @IsOptional() @IsObject() @ValidateNested() @Type(() => CreatePersonDto) person?: CreatePersonDto;
+  @ApiPropertyOptional({ type: String, description: 'DNI de una Persona existente.' }) @IsOptional() @IsString() @MaxLength(30) dni?: string;
+  @ApiPropertyOptional({ type: String, format: 'uuid', description: 'Solo para el alta por administración general.' }) @IsOptional() @IsUUID() professorId?: string;
+}
+const studentModalities = ['IN_PERSON', 'ONLINE'] as const;
+
+export class ChangeStudentModalityDto {
+  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() sourceId!: string;
+  @ApiProperty({ enum: studentModalities }) @IsIn(studentModalities) modality!: typeof studentModalities[number];
+  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() planId?: string;
+  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() mainProfessorId?: string;
+}
+
+export class StudentModalityResultDto {
+  @ApiProperty({ enum: studentModalities }) modality!: typeof studentModalities[number];
+  @ApiProperty({ type: String, format: 'uuid' }) sourceId!: string;
+}
+
+export class StudentModalityEnvelopeDto {
+  @ApiProperty({ type: () => StudentModalityResultDto }) data!: StudentModalityResultDto;
+}
+
+export class OnlineStudentDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: () => SalaProfessorOptionDto }) professor!: SalaProfessorOptionDto;
+}
+export class OnlineStudentEnvelopeDto {
+  @ApiProperty({ type: () => OnlineStudentDto, nullable: true }) data!: OnlineStudentDto | null;
+}
+export class OnlineStudentEnrollmentResultDto {
+  @ApiProperty({ type: String, format: 'uuid' }) personId!: string;
+  @ApiPropertyOptional({ type: String, pattern: '^\\d{4}$' }) initialPin?: string;
+}
+export class OnlineStudentEnrollmentEnvelopeDto {
+  @ApiProperty({ type: () => OnlineStudentEnrollmentResultDto }) data!: OnlineStudentEnrollmentResultDto;
+}
+
 export class SalaProfessorListEnvelopeDto {
   @ApiProperty({ type: () => [SalaProfessorOptionDto] }) data!: SalaProfessorOptionDto[];
 }
@@ -202,17 +242,20 @@ export class SpontaneousStudentResponseDto {
 export class SpontaneousStudentEnvelopeDto { @ApiProperty({ type: () => SpontaneousStudentResponseDto }) data!: SpontaneousStudentResponseDto; }
 
 export class SalaStudentPlanDto {
+  @ApiProperty({ type: Boolean }) isOnline!: boolean;
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
   @ApiProperty({ type: String }) name!: string;
 }
 export class SalaStudentListItemDto {
-  @ApiProperty({ type: String, format: 'uuid' }) participationId!: string;
+  @ApiProperty({ type: String, format: 'uuid', nullable: true }) participationId!: string | null;
+  @ApiProperty({ type: String, format: 'uuid', nullable: true }) onlineStudentId!: string | null;
+  @ApiProperty({ type: String, enum: ['IN_PERSON', 'ONLINE'] }) modality!: 'IN_PERSON' | 'ONLINE';
   @ApiProperty({ type: String, format: 'date' }) participationStartDate!: string;
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
   @ApiProperty({ type: String }) firstName!: string;
   @ApiProperty({ type: String }) lastName!: string;
   @ApiProperty({ type: String }) dni!: string;
-  @ApiProperty({ type: () => SalaStudentPlanDto }) plan!: SalaStudentPlanDto;
+  @ApiProperty({ type: () => SalaStudentPlanDto, nullable: true }) plan!: SalaStudentPlanDto | null;
   @ApiProperty({ type: () => SalaAgendaProfessionalDto }) professor!: SalaAgendaProfessionalDto;
   @ApiProperty({ type: String, enum: ['ACTIVE', 'MISSING'] }) routineStatus!: 'ACTIVE' | 'MISSING';
   @ApiProperty({ type: 'integer', minimum: 0, maximum: 7, nullable: true, description: 'Days until the four-week review. Zero means the review is due.' }) routineChangeInDays!: number | null;
@@ -328,7 +371,8 @@ export class SalaRoutineResponseDto {
   @ApiPropertyOptional({ type: Boolean }) hasTrainingRecords?: boolean;
   @ApiProperty({ type: String }) id!: string;
   @ApiProperty({ type: String }) personId!: string;
-  @ApiProperty({ type: String }) salaParticipationId!: string;
+  @ApiProperty({ type: String, format: 'uuid', nullable: true }) salaParticipationId!: string | null;
+  @ApiProperty({ type: String, format: 'uuid', nullable: true }) onlineStudentId!: string | null;
   @ApiProperty({ type: String, enum: ['ACTIVE', 'HISTORICAL', 'SCHEDULED'] }) status!: 'ACTIVE' | 'HISTORICAL' | 'SCHEDULED';
   @ApiProperty({ type: String, format: 'date' }) effectiveFrom!: string;
   @ApiProperty({ type: String, format: 'date', nullable: true }) effectiveUntil!: string | null;
@@ -340,11 +384,28 @@ export class SalaRoutineListEnvelopeDto {
   @ApiProperty({ type: () => [SalaRoutineResponseDto] }) data!: SalaRoutineResponseDto[];
 }
 export class SalaParticipationPlanResponseDto {
+  @ApiProperty({ type: Boolean }) isOnline!: boolean;
   @ApiProperty({ type: String }) id!: string;
   @ApiProperty({ type: String }) name!: string;
   @ApiProperty({ type: Number, nullable: true }) weeklySessions!: number | null;
   @ApiProperty({ type: String }) monthlyAmount!: string;
 }
+export class SalaCatalogServiceResponseDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id!: string;
+  @ApiProperty({ type: String }) name!: string;
+  @ApiProperty({ type: Number }) durationMinutes!: number;
+  @ApiProperty({ type: Boolean }) isSelectable!: boolean;
+}
+
+export class SalaCatalogPlanResponseDto extends SalaParticipationPlanResponseDto {
+  @ApiProperty({ type: Boolean }) isSelectable!: boolean;
+  @ApiProperty({ type: () => [SalaCatalogServiceResponseDto] }) services!: SalaCatalogServiceResponseDto[];
+}
+
+export class SalaCatalogPlanListEnvelopeDto {
+  @ApiProperty({ type: () => [SalaCatalogPlanResponseDto] }) data!: SalaCatalogPlanResponseDto[];
+}
+
 export class SalaParticipationResponseDto {
   @ApiProperty({ type: String }) id!: string;
   @ApiProperty({ type: String }) personId!: string;
