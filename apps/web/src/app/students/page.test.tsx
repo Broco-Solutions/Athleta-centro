@@ -50,7 +50,7 @@ it('shows all students, full Professor names, plan and follow-up states with con
   expect(list().getAllByText('Federico Sintético', { exact: false })).toHaveLength(2);
   expect(list().getAllByText('Activa')).toHaveLength(2);
   expect(list().getByText('Vigente hasta 20/11/2026')).toBeInTheDocument();
-  expect(row.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/student-2');
+  expect(row.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/student-2?from=students');
   expect(screen.queryByText('Nueva Persona')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Nuevo alumno' })).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Personas' })).not.toBeInTheDocument();
@@ -215,7 +215,7 @@ it('opens each summary category for a General Admin and combines it with name an
   expect(screen.getByRole('button', { name: 'Registro completo' })).toHaveAttribute('aria-pressed', 'true');
   expect(screen.getByText('Sin resultados')).toBeInTheDocument();
   fireEvent.change(search, { target: { value: '88000002' } });
-  expect(list().getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/student-2');
+  expect(list().getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/student-2?from=students');
   expect(getStudents).toHaveBeenCalledTimes(1);
 });
 
@@ -284,7 +284,7 @@ it.each(['ADMINISTRATIVE', 'GENERAL_ADMIN', 'PROFESSOR+ADMINISTRATIVE'])('links 
   renderPage(); await screen.findByText('Ana Alumna');
   const pending = within(list().getByText('Lucía Ejemplo').closest('tr')!);
   expect(pending.getByRole('link', { name: 'Renovar' })).toHaveAttribute('href', '/finance?view=income&personId=student-2&action=renew');
-  expect(pending.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/student-2');
+  expect(pending.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/student-2?from=students');
   expect(list().getByRole('link', { name: 'Ver pagos' })).toHaveAttribute('href', '/finance?view=income&personId=student-1');
 });
 
@@ -621,7 +621,7 @@ it('combines Online, completed routines and my students without exposing a renew
   const row = within(screen.getByRole('row', { name: /Andrea Remota/ }));
   expect(row.getByText('Online')).toBeInTheDocument();
   expect(row.getByLabelText('No aplica')).toBeInTheDocument();
-  expect(row.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/online-1?modality=online');
+  expect(row.getByRole('link', { name: 'Ver ficha' })).toHaveAttribute('href', '/sala/people/online-1?modality=online&from=students');
   expect(row.queryByRole('link', { name: /renovación|pagos/i })).not.toBeInTheDocument();
   expect(list().queryByText(/Otro Remota|Pendiente Remota|Pedro Prueba/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Sin vigencia' }));
@@ -668,4 +668,28 @@ it('creates a private online student with only personal data and shows the tempo
   fireEvent.click(dialog.getByRole('button', { name: 'Guardar alumno online' }));
   expect(await screen.findByLabelText('PIN temporal')).toHaveTextContent('1234');
   expect(submitted).toEqual({ person: { firstName: 'Ana', lastName: 'Online', dni: '30123456', phone: '3415551234', birthDate: '1990-01-01', email: null } });
+});
+
+it('restores list filters after visiting the student and reflects the converted modality once', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = renderPage(client);
+  await screen.findByText('Ana Alumna');
+  fireEvent.change(screen.getByRole('textbox', { name: 'Buscar por nombre o DNI' }), { target: { value: 'Ana' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Modalidad' }), { target: { value: 'in-person' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Mis alumnos' }));
+  fireEvent.click(list().getByRole('link', { name: 'Ver ficha' }), { ctrlKey: true });
+  view.unmount();
+  server.use(http.get('http://localhost:3000/api/sala/students', () => HttpResponse.json({ data: [
+    { ...students[0], modality: 'ONLINE', onlineStudentId: 'online-link', participationId: null, plan: null },
+    ...students.slice(1),
+  ] })));
+  await client.invalidateQueries({ queryKey: ['sala', 'students'] });
+  renderPage(client);
+  expect(await screen.findByText('Sin resultados')).toBeInTheDocument();
+  expect(screen.getByRole('textbox', { name: 'Buscar por nombre o DNI' })).toHaveValue('Ana');
+  expect(screen.getByRole('button', { name: 'Mis alumnos' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('combobox', { name: 'Modalidad' })).toHaveValue('in-person');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Modalidad' }), { target: { value: 'online' } });
+  expect(await screen.findAllByRole('row', { name: /Ana Alumna/ })).toHaveLength(1);
+  expect(list().getByText('Online')).toBeInTheDocument();
 });

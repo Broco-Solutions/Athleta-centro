@@ -1,7 +1,7 @@
 import { PartialType } from '@nestjs/swagger';
 import { CreatePersonDto, PersonResponseDto } from '../people/person.dto';
 import { Type } from 'class-transformer';
-import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, Max, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, Max, Min, MinLength, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, IntersectionType, PickType } from '@nestjs/swagger';
 import { SalaOccurrenceStatus, SalaScheduleExceptionType, SalaWeekday } from '@prisma/client';
 
@@ -120,7 +120,7 @@ export class RetireExerciseDefinitionDto {
   @ApiPropertyOptional({ type: Boolean, default: false }) @IsOptional() @IsBoolean() confirmActiveRoutineImpact = false;
 }
 export class RoutineExerciseDto {
-  @ApiPropertyOptional({ type: Number, nullable: true }) @IsOptional() @IsInt() @Min(1) blockPosition?: number | null;
+  @ApiPropertyOptional({ type: Number, nullable: true, minimum: 0, description: 'Position zero denotes the warm-up block.' }) @IsOptional() @IsInt() @Min(0) blockPosition?: number | null;
   @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() exerciseDefinitionId!: string;
   @ApiPropertyOptional({ type: String, maxLength: 80, nullable: true }) @IsOptional() @IsString() @MaxLength(80) series?: string | null;
   @ApiPropertyOptional({ type: String, maxLength: 80, nullable: true }) @IsOptional() @IsString() @MaxLength(80) repetitions?: string | null;
@@ -186,6 +186,24 @@ export class OnlineStudentEnrollmentDto {
   @ApiPropertyOptional({ type: String, description: 'DNI de una Persona existente.' }) @IsOptional() @IsString() @MaxLength(30) dni?: string;
   @ApiPropertyOptional({ type: String, format: 'uuid', description: 'Solo para el alta por administración general.' }) @IsOptional() @IsUUID() professorId?: string;
 }
+const studentModalities = ['IN_PERSON', 'ONLINE'] as const;
+
+export class ChangeStudentModalityDto {
+  @ApiProperty({ type: String, format: 'uuid' }) @IsUUID() sourceId!: string;
+  @ApiProperty({ enum: studentModalities }) @IsIn(studentModalities) modality!: typeof studentModalities[number];
+  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() planId?: string;
+  @ApiPropertyOptional({ type: String, format: 'uuid' }) @IsOptional() @IsUUID() mainProfessorId?: string;
+}
+
+export class StudentModalityResultDto {
+  @ApiProperty({ enum: studentModalities }) modality!: typeof studentModalities[number];
+  @ApiProperty({ type: String, format: 'uuid' }) sourceId!: string;
+}
+
+export class StudentModalityEnvelopeDto {
+  @ApiProperty({ type: () => StudentModalityResultDto }) data!: StudentModalityResultDto;
+}
+
 export class OnlineStudentDto {
   @ApiProperty({ type: String, format: 'uuid' }) id!: string;
   @ApiProperty({ type: () => SalaProfessorOptionDto }) professor!: SalaProfessorOptionDto;

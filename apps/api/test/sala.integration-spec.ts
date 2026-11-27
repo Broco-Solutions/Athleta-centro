@@ -99,6 +99,122 @@ describe('Sala configuration API', () => {
   afterAll(() => app.close());
   const uniqueDni = () => `${Date.now()}${Math.floor(Math.random() * 100000)}`.slice(-12);
   async function session(role: Role | Role[], httpApp = app, suffix = '') { const roles = Array.isArray(role) ? role : [role]; const user = await users.create({ firstName: 'Sala', lastName: 'User', email: `${roles.join('-').toLowerCase()}${suffix}@sala.test`, roles }); await auth.provisionCredential(user.id, 'ValidPass1!'); await prisma.internalCredential.update({ where: { internalUserId: user.id }, data: { mustChangePassword: false } }); const login = await request(httpApp.getHttpServer()).post('/api/auth/login').send({ email: user.email, password: 'ValidPass1!' }).expect(200); return { cookie: login.headers['set-cookie'][0] as string, csrf: login.body.data.csrfToken as string, userId: user.id }; }
+  describe('student modality correction', () => {
+    async function modalityFixture() {
+      const professor = await session(Role.PROFESSOR);
+      const dni = uniqueDni();
+      const person = await prisma.person.create({ data: { firstName: 'Alumno', lastName: 'Sintético', dni, normalizedDni: dni, phone: '0000000000', birthDate: new Date('1990-01-01') } });
+      const plan = await sala.createPlan({ name: 'Plan presencial', monthlyAmount: 1000, weeklySessions: 2 });
+      const participation = await sala.join({ personId: person.id, mainProfessorId: professor.userId, planId: plan.id, startDate: '2020-01-01' });
+      const url = `/api/sala/people/${person.id}/change-modality`;
+      const convert = (actor = professor, body: { sourceId: string; modality: string; planId?: string; mainProfessorId?: string } = { sourceId: participation.id, modality: 'ONLINE' }) =>
+        request(app.getHttpServer()).post(url).set('Cookie', actor.cookie).set('x-csrf-token', actor.csrf).send(body);
+      return { professor, person, plan, participation, convert };
+    }
+
+    it('serializes simultaneous conversions, preserves historical payment and attendance, and lists a single student', async () => {
+      const f = await modalityFixture();
+      const method = await prisma.paymentMethod.create({ data: { name: 'Pago prueba modalidad' } });
+      try {
+        const payment = await sala.createPayment({ personId: f.person.id, planId: f.plan.id, paymentMethodId: method.id, amount: '1000', paidAt: '2020-01-01', operationId: randomUUID() }, f.professor.userId);
+        const slot = await sala.createSlot({ weekday: 'MONDAY', startTime: '09:00', durationMinutes: 60 });
+        const reservation = await prisma.oneOffReservation.create({ data: { personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: slot.id, date: new Date('2020-02-03') } });
+        const attendance = await prisma.salaOccurrence.create({ data: { personId: f.person.id, scheduleSlotId: slot.id, oneOffReservationId: reservation.id, date: reservation.date, origin: 'ONE_OFF', status: 'ATTENDED' } });
+        const results = await Promise.all([f.convert(), f.convert()]);
+        expect(results.map(response => response.status).sort()).toEqual([200, 409]);
+        const online = await prisma.onlineStudent.findMany({ where: { personId: f.person.id } });
+        expect(online).toEqual([expect.objectContaining({ professorId: f.professor.userId, endDate: null })]);
+        expect(await prisma.salaParticipation.findUniqueOrThrow({ where: { id: f.participation.id } })).toMatchObject({ endDate: expect.any(Date) });
+        const listed = await request(app.getHttpServer()).get('/api/sala/students').set('Cookie', f.professor.cookie).expect(200);
+        expect(listed.body.data).toEqual([expect.objectContaining({ id: f.person.id, dni: f.person.dni, modality: 'ONLINE' })]);
+        await f.convert(f.professor, { sourceId: online[0]!.id, modality: 'ONLINE' }).expect(200);
+        expect(await prisma.onlineStudent.count({ where: { personId: f.person.id } })).toBe(1);
+        expect(await prisma.salaPayment.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ personId: f.person.id, planId: f.plan.id });
+        expect(await prisma.oneOffReservation.findUnique({ where: { id: reservation.id } })).toEqual(reservation);
+        expect(await prisma.salaOccurrence.findUnique({ where: { id: attendance.id } })).toEqual(attendance);
+      } finally {
+        await prisma.salaPayment.deleteMany({ where: { paymentMethodId: method.id } });
+        await prisma.paymentMethod.delete({ where: { id: method.id } });
+      }
+    });
+
+    it('enforces professor ownership and separates administrative visibility from online management', async () => {
+      const f = await modalityFixture();
+      const other = await session(Role.PROFESSOR, app, '-other');
+      const admin = await session(Role.ADMINISTRATIVE);
+      await f.convert(other).expect(403);
+      const changed = await f.convert().expect(200);
+      const body = { sourceId: changed.body.data.sourceId as string, modality: 'IN_PERSON', planId: f.plan.id };
+      await request(app.getHttpServer()).get(`/api/sala/people/${f.person.id}/online-student`).set('Cookie', admin.cookie).expect(200);
+      await f.convert(admin, body).expect(404);
+      await f.convert(other, body).expect(404);
+      await f.convert(f.professor, { ...body, mainProfessorId: other.userId }).expect(403);
+      const invalidPlan = await f.convert(f.professor, { ...body, planId: randomUUID() }).expect(400);
+      expect(invalidPlan.body.code).toBe('SALA_PLAN_INVALID');
+      expect(await prisma.onlineStudent.findUniqueOrThrow({ where: { id: body.sourceId } })).toMatchObject({ endDate: null });
+      expect(await prisma.salaParticipation.count({ where: { personId: f.person.id } })).toBe(1);
+      await f.convert(f.professor, body).expect(200);
+      expect(await prisma.onlineStudent.findUniqueOrThrow({ where: { id: body.sourceId } })).toMatchObject({ endDate: expect.any(Date) });
+      expect(await prisma.salaParticipation.findFirst({ where: { personId: f.person.id, endDate: null } })).toMatchObject({ planId: f.plan.id, mainProfessorId: f.professor.userId });
+      expect(await prisma.salaPayment.count({ where: { personId: f.person.id } })).toBe(0);
+    });
+
+    it('rolls back the new link and participation close when the owner update fails', async () => {
+      const f = await modalityFixture();
+      const exercise = await sala.createExerciseDefinition({ name: 'Ejercicio para probar rollback' });
+      const routine = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, days: [{ exercises: [{ exerciseDefinitionId: exercise.id }] }] });
+      await prisma.$executeRawUnsafe(`CREATE FUNCTION test_reject_modality_move() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN RAISE EXCEPTION 'simulated routine move failure'; END; $$`);
+      try {
+        await prisma.$executeRawUnsafe(`CREATE TRIGGER test_reject_modality_move BEFORE UPDATE OF online_student_id ON routines
+          FOR EACH ROW WHEN (NEW.online_student_id IS NOT NULL) EXECUTE FUNCTION test_reject_modality_move()`);
+        await expect(sala.changeStudentModality(f.person.id, { sourceId: f.participation.id, modality: 'ONLINE' },
+          { id: f.professor.userId, roles: [Role.PROFESSOR] })).rejects.toThrow();
+        expect(await prisma.onlineStudent.count({ where: { personId: f.person.id } })).toBe(0);
+        expect(await prisma.salaParticipation.findUniqueOrThrow({ where: { id: f.participation.id } })).toMatchObject({ endDate: null });
+        expect(await prisma.routine.findUniqueOrThrow({ where: { id: routine.id } })).toMatchObject({ salaParticipationId: f.participation.id, onlineStudentId: null });
+      } finally {
+        await prisma.$executeRawUnsafe('DROP FUNCTION test_reject_modality_move() CASCADE');
+      }
+    });
+
+    it('keeps independently closed historical routines with their original participation', async () => {
+      const f = await modalityFixture();
+      const exercise = await sala.createExerciseDefinition({ name: 'Ejercicio de una participación anterior' });
+      const previous = await prisma.salaParticipation.create({ data: {
+        personId: f.person.id, planId: f.plan.id, mainProfessorId: f.professor.userId,
+        startDate: new Date('2019-01-01'), endDate: new Date('2019-12-31'),
+      } });
+      const archived = await prisma.routine.create({ data: {
+        personId: f.person.id, salaParticipationId: previous.id, status: 'HISTORICAL', version: 1,
+        effectiveFrom: new Date('2019-03-01'), cancelledAt: new Date('2019-06-01T15:00:00Z'),
+      } });
+      const current = await sala.replaceRoutine({ personId: f.person.id, salaParticipationId: f.participation.id, days: [{ exercises: [{ exerciseDefinitionId: exercise.id }] }] });
+      const result = await f.convert().expect(200);
+      expect(await prisma.routine.findUniqueOrThrow({ where: { id: archived.id } })).toEqual(archived);
+      expect(await prisma.routine.findUniqueOrThrow({ where: { id: current.id } })).toMatchObject({ onlineStudentId: result.body.data.sourceId });
+      expect((await sala.listRoutines(f.person.id, { id: f.professor.userId, roles: [Role.PROFESSOR] }, result.body.data.sourceId as string)).map(row => [row.id, row.status]))
+        .toEqual([[current.id, 'ACTIVE'], [archived.id, 'HISTORICAL']]);
+    });
+
+    it.each(['fixed', 'reservation', 'occurrence', 'outstanding', 'simultaneous'] as const)('blocks a %s conflict without changing the origin', async kind => {
+      const f = await modalityFixture();
+      const slot = await sala.createSlot({ weekday: 'MONDAY', startTime: '09:00', durationMinutes: 60 });
+      const date = new Date('2099-01-05');
+      const booking = { personId: f.person.id, salaParticipationId: f.participation.id, scheduleSlotId: slot.id };
+      if (kind === 'fixed') await prisma.fixedSalaBooking.create({ data: { ...booking, startDate: date } });
+      if (kind === 'reservation') await prisma.oneOffReservation.create({ data: { ...booking, date } });
+      if (kind === 'occurrence') await prisma.salaOccurrence.create({ data: { personId: f.person.id, scheduleSlotId: slot.id, date, origin: 'SPONTANEOUS', status: 'RESERVED' } });
+      if (kind === 'outstanding') await prisma.salaCharge.create({ data: { personId: f.person.id, kind: 'OPENING_BALANCE', amount: 500, chargeDate: date, concept: 'Saldo sintético' } });
+      if (kind === 'simultaneous') await prisma.onlineStudent.create({ data: { personId: f.person.id, professorId: f.professor.userId, startDate: new Date('2020-01-01') } });
+      const blocked = await f.convert().expect(409);
+      expect(blocked.body.code).toBe(kind === 'outstanding' ? 'SALA_MODALITY_FINANCIAL_PENDING' : kind === 'simultaneous' ? 'SALA_MODALITY_CONFLICT' : 'SALA_MODALITY_BOOKINGS_PENDING');
+      expect(await prisma.salaParticipation.findUnique({ where: { id: f.participation.id } })).toMatchObject({ endDate: null });
+      expect(await prisma.onlineStudent.count({ where: { personId: f.person.id } })).toBe(kind === 'simultaneous' ? 1 : 0);
+      if (kind === 'fixed') expect(await prisma.fixedSalaBooking.findFirst({ where: booking })).toMatchObject({ endDate: null });
+      if (kind === 'reservation') expect(await prisma.oneOffReservation.findFirst({ where: booking })).toMatchObject({ cancelledAt: null });
+    });
+  });
   it('configures positive capacity, plans, slots and explicit closure/override exceptions', async () => {
     const authn = await session(Role.ADMINISTRATIVE);
     const service = await sala.createServiceType({ name: 'Musculación', durationMinutes: 60 });
@@ -971,10 +1087,10 @@ describe('Sala configuration API', () => {
       const constraint = await prisma.$queryRawUnsafe<{ count: bigint }[]>(`SELECT count(*) FROM pg_constraint WHERE conrelid = '${table}'::regclass AND conname = 'chk_${table}_block_position'`);
       expect(Number(constraint[0]!.count)).toBe(1);
     }
-    await expect(prisma.routineExercise.update({ where: { id: reused.days[0]!.exercises[0]!.id }, data: { blockPosition: 0 } })).rejects.toThrow();
+    await expect(prisma.routineExercise.update({ where: { id: reused.days[0]!.exercises[0]!.id }, data: { blockPosition: -1 } })).rejects.toThrow();
   });
   it.each([
-    [2], [1, 3], [1, 2, 1], [1, null], [0], [-1], [1.5],
+    [2], [1, 3], [1, 2, 1], [1, null], [1, 0], [null, 0], [-1], [1.5],
   ])('rejects invalid block positions %j without modifying saved content', async (...positions: (number | null)[]) => {
     const definition = await sala.createExerciseDefinition({ name: 'Validación bloques' });
     const template = await sala.createRoutineTemplate({ name: 'Anterior', days: [{ exercises: [{ exerciseDefinitionId: definition.id, blockPosition: null, series: '7' }] }] });

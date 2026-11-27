@@ -121,6 +121,31 @@ describe('Portal Sala services from the current plan', () => {
     const booking = await prisma.fixedSalaBooking.create({ data: { personId, salaParticipationId: participationId, scheduleSlotId: windowId, startTime: new Date(`1970-01-01T${startTime}:00Z`), startDate: new Date(date), endDate: new Date(date), serviceDurationMinutes: 60 } });
     return sala.cancelFixedOccurrenceFromPortal(booking.id, personId, date, new Date(`${date}T00:00:00Z`));
   }
+  it('keeps the existing PIN and session, the current routine and the next programming after both corrections', async () => {
+    const f = await fixture();
+    const clock = jest.spyOn(sala as unknown as { todayOperational(): string }, 'todayOperational').mockReturnValue('2026-10-16');
+    const definition = await sala.createExerciseDefinition({ name: 'Movilidad sintética', requiresWeight: false });
+    exerciseDefinitionIds = [definition.id];
+    const days = [{ name: 'Movilidad', exercises: [{ exerciseDefinitionId: definition.id, blockPosition: 0, duration: '30' }] }];
+    const active = await sala.replaceRoutine({ personId, salaParticipationId: f.participation.id, effectiveFrom: '2026-10-14', days });
+    const scheduled = await sala.replaceRoutine({ personId, salaParticipationId: f.participation.id, effectiveFrom: '2026-11-02', days });
+    const person = await prisma.person.findUniqueOrThrow({ where: { id: personId }, include: { portalCredential: true } });
+    const actor = { id: professorId, roles: [Role.PROFESSOR] };
+    const getSala = () => request(app.getHttpServer()).get('/api/portal/sala').set('Cookie', f.cookie).expect(200);
+    try {
+      const online = await sala.changeStudentModality(personId, { sourceId: f.participation.id, modality: 'ONLINE' }, actor);
+      expect((await getSala()).body.data).toMatchObject({ isOnline: true, validity: null, routine: { id: active.id, days: [{ exercises: [{ id: active.days[0]!.exercises[0]!.id, blockPosition: 0 }] }] } });
+      await request(app.getHttpServer()).post('/api/portal/auth/login').send({ dni: person.dni, pin: '1111' }).expect(200);
+      expect((await sala.listRoutines(personId, actor, online.sourceId)).map(r => [r.id, r.status])).toEqual([[scheduled.id, 'SCHEDULED'], [active.id, 'ACTIVE']]);
+      const inPerson = await sala.changeStudentModality(personId, { sourceId: online.sourceId, modality: 'IN_PERSON', planId }, actor);
+      expect((await getSala()).body.data).toMatchObject({ isOnline: false, routine: { id: active.id } });
+      expect(await prisma.person.findUniqueOrThrow({ where: { id: personId }, include: { portalCredential: true } })).toEqual(person);
+      expect(await prisma.routine.findUniqueOrThrow({ where: { id: scheduled.id } })).toMatchObject({ effectiveFrom: scheduled.effectiveFrom, version: scheduled.version, salaParticipationId: inPerson.sourceId, onlineStudentId: null });
+      operationalDate.mockReturnValue('2026-11-02');
+      expect((await getSala()).body.data.routine.id).toBe(scheduled.id);
+    } finally { clock.mockRestore(); }
+  });
+
   it('returns all physical results chronologically with only the Portal projection', async () => {
     const f = await fixture();
     const a = await sala.createPhysicalTest({ name: `Fuerza-${personId}`, type: 'STRENGTH' });

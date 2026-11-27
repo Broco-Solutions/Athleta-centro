@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { Button } from '@athleta/ui';
 import { formatOperationalDate, todayOperational } from '../../lib/operational-date';
-import { formatRoutineDuration, formatRoutineRepetitions, groupRoutineBlocks, isGroupedDay } from './routine-blocks';
+import { formatRoutineDuration, formatRoutineRepetitions, groupRoutineBlocks, routineBlockTitle } from './routine-blocks';
 import type { RoutineDay, RoutineExercise, ExerciseDefinition } from './routine-editor';
 
 type Props = {
@@ -81,11 +81,11 @@ export function RoutinePrintButton({ days, definitions = [], templateName, stude
       {dayRows.map((row, rowIndex) => <div className="routine-print-day-row" key={rowIndex}>
       {row.map((day, dayIndex) => <section key={dayIndex} className="routine-print-day">
         <h2>{day.name || `Día ${day.position}`}</h2>
-        {(isGroupedDay(day.exercises) ? groupRoutineBlocks(orderedExercises(day.exercises)) : [{ position: 0, label: '', series: null, exercises: orderedExercises(day.exercises) }]).map(block => <div key={block.position} className="routine-print-block">
+        {groupRoutineBlocks(orderedExercises(day.exercises)).map(block => <div key={block.position ?? 'ungrouped'} className="routine-print-block">
         <table>
           <colgroup><col/><col className="routine-print-prescription"/>{weeks.map(week => <col key={week} className="routine-print-week"/>)}</colgroup>
           <thead>
-            {block.position > 0 ? <tr><th colSpan={6} className="routine-print-block-title"><h3>Bloque {block.label}{block.series ? ` — ${block.series} series` : ''}</h3></th></tr> : null}
+            {block.position !== null ? <tr><th colSpan={6} className="routine-print-block-title"><h3>{routineBlockTitle(block)}</h3></th></tr> : null}
             <tr>{['Ejercicio', 'Rep./Tiempo', ...weeks].map(label => <th scope="col" key={label}>{label}</th>)}</tr>
           </thead>
           <tbody>{block.exercises.map((exercise, index) => <tr key={index}>

@@ -165,3 +165,22 @@ it('keeps the routine editable through the review and offers its weights after r
   expect(screen.getAllByRole('textbox')).toHaveLength(4);
   expect(screen.queryByText(/Período vigente/)).not.toBeInTheDocument();
 });
+
+it('shows the warm-up before the rest of each day and saves weights without filling it', async () => {
+  const active = routine(1, '2026-10-01');
+  routines = [{ ...active, days: active.days.map(day => ({ ...day, exercises: [
+    { ...exercise, id: `mobility-${day.id}`, exerciseName: 'Movilidad de cadera', exerciseDefinitionId: 'mobility', blockPosition: 0, series: '2', repetitions: null, duration: '30', load: null, rest: null },
+    ...day.exercises.map(entry => ({ ...entry, position: 2 })),
+  ] })) }];
+  renderRoutine();
+  const heading = await screen.findByRole('heading', { name: 'Entrada en calor' });
+  const press = await screen.findByRole('button', { name: /^Press/ });
+  expect(heading.compareDocumentPosition(press) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.click(press);
+  fireEvent.change(screen.getByLabelText(/Semana 1.*Press/), { target: { value: '38' } });
+  fireEvent.click(screen.getAllByRole('button', { name: 'Guardar pesos' })[0]!);
+  await waitFor(() => expect(saves).toHaveLength(1));
+  expect(saves[0]!.weeks[0]!.exercises).toEqual([{ id: 'mobility-d1', weightKg: null }, { id: 'e1', weightKg: '38' }]);
+  fireEvent.click(screen.getByRole('button', { name: 'Movilidad 1' }));
+  expect(await screen.findByRole('heading', { name: 'Entrada en calor' })).toBeVisible();
+});

@@ -614,6 +614,12 @@ y fechas, mueve sus rutinas sin cambiar identificadores y cierra las
 participaciones activas del mecanismo anterior. Los planes y las referencias
 históricas de pagos y turnos se conservan.
 
+La corrección de modalidad cierra la vinculación vigente, crea la de destino y
+reasigna las rutinas de origen dentro de la misma transacción. Conserva las
+credenciales del Portal, las referencias de entrenamiento y los registros de Sala.
+Las rutinas de otras vinculaciones permanecen con sus propietarios. El cambio
+se bloquea si separar o juntar períodos alteraría su historial.
+
 ### Objetivo de Sala
 
 `SalaParticipation.objective` es nullable, `VARCHAR(500)`, breve y opcional.

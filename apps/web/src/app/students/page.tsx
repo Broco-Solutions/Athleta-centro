@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { ListPagination, LIST_PAGE_SIZE } from '../../lib/list-pagination';
 import { Search } from 'lucide-react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { EnrollmentPlanFields } from '../../features/sala/enrollment-plan-fields';
 import { createSalaStudent, joinSala, listSalaPlans, listSalaProfessors, listSalaStudents, type SalaStudentListItemDto } from '@athleta/api-client';
 import { Button } from '@athleta/ui';
@@ -38,6 +38,7 @@ const routineFilters = [
     summary: (count: number) => count === 1 ? '1 rutina con registro completo.' : `${count} rutinas con registro completo.`,
   },
 ] as const;
+type StudentListSelection = { routeFilter: Filter | undefined; filter: Filter; search: string; modality: string; mine: boolean; page: number };
 type Filter = 'all' | 'without-routine' | 'without-validity' | (typeof routineFilters)[number]['value'];
 const filters: { value: Filter; label: string }[] = [
   { value: 'all', label: 'Todos' },
@@ -52,21 +53,23 @@ const label = 'mr-1 text-muted-foreground xl:hidden';
 function StudentsContent(): React.JSX.Element {
   const params = useSearchParams();
   const requested = params.get('filter');
-  const initialFilter = filters.find(item => item.value === requested)?.value ?? 'all';
+  const initialFilter = filters.find(item => item.value === requested)?.value;
   // A changed URL resets the local selection, including client-side dashboard navigation.
-  return <StudentList key={initialFilter} initialFilter={initialFilter} />;
+  return <StudentList key={initialFilter ?? 'default'} initialFilter={initialFilter} />;
 }
 
-function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.Element {
-  const [filter, setFilter] = useState<Filter>(initialFilter);
-  const [search, setSearch] = useState('');
-  const [modality, setModality] = useState('all');
-  const [mine, setMine] = useState(false);
-  const [page, setPage] = useState(1);
+function StudentList({ initialFilter }: { initialFilter: Filter | undefined }): React.JSX.Element {
+  const client = useQueryClient();
+  const savedSelection = useQuery<StudentListSelection>({ queryKey: ['student-list-selection'], queryFn: skipToken, gcTime: Infinity }).data;
+  const restored = !initialFilter || savedSelection?.routeFilter === initialFilter ? savedSelection : undefined;
+  const [filter, setFilter] = useState<Filter>(restored?.filter ?? initialFilter ?? 'all');
+  const [search, setSearch] = useState(restored?.search ?? '');
+  const [modality, setModality] = useState(restored?.modality ?? 'all');
+  const [mine, setMine] = useState(restored?.mine ?? false);
+  const [page, setPage] = useState(restored?.page ?? 1);
   const [creating, setCreating] = useState(false);
   const [initialPin, setInitialPin] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
-  const client = useQueryClient();
   const session = useQuery({ queryKey: ['auth', 'session'], queryFn: currentSession, retry: false });
   const canManage = session.data?.permissions.includes('SALA_PARTICIPATION_MANAGE') ?? false;
   const isGeneralAdmin = session.data?.roles.includes('GENERAL_ADMIN') ?? false;
@@ -139,7 +142,7 @@ function StudentList({ initialFilter }: { initialFilter: Filter }): React.JSX.El
           <td className={`${cell} break-words`}><span className={label}>Profesor:</span>{student.professor.firstName} {student.professor.lastName}</td>
           <td className={cell}><span className={label}>Rutina:</span><span className={badge(student.routineStatus === 'ACTIVE')}>{student.routineStatus === 'ACTIVE' ? 'Activa' : 'Sin rutina'}</span>{notice ? <p className={`mt-1 text-xs font-medium ${notice === 'complete' ? 'text-red-800' : 'text-amber-800'}`}>{noticeText}</p> : null}</td>
           <td className={cell}><span className={label}>Vigencia:</span>{student.modality === 'ONLINE' ? <span aria-label="No aplica">—</span> : <span className={badge(student.hasValidAccess)}>{student.hasValidAccess ? `Vigente hasta ${student.validUntil?.split('-').reverse().join('/')}` : 'Sin vigencia'}</span>}</td>
-          <td className={cell}><div className="flex flex-wrap justify-end gap-2 xl:justify-start"><Link href={`/sala/people/${student.id}${student.modality === 'ONLINE' ? '?modality=online' : ''}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:min-h-9">Ver ficha</Link>{student.modality === 'IN_PERSON' && (canUseFinance || canRegister) ? <Link href={canUseFinance ? `/finance?view=income&personId=${student.id}${!student.hasValidAccess ? '&action=renew' : ''}` : `/sala/people/${student.id}?tab=payments${!student.hasValidAccess ? '&action=renew' : ''}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted xl:min-h-9">{!student.hasValidAccess ? (canUseFinance ? 'Renovar' : 'Registrar renovación') : 'Ver pagos'}</Link> : null}</div></td>
+          <td className={cell}><div className="flex flex-wrap justify-end gap-2 xl:justify-start"><Link href={`/sala/people/${student.id}?${student.modality === 'ONLINE' ? 'modality=online&' : ''}from=students`} onClick={() => client.setQueryData<StudentListSelection>(['student-list-selection'], { routeFilter: initialFilter, filter, search, modality, mine, page: effectivePage })} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:min-h-9">Ver ficha</Link>{student.modality === 'IN_PERSON' && (canUseFinance || canRegister) ? <Link href={canUseFinance ? `/finance?view=income&personId=${student.id}${!student.hasValidAccess ? '&action=renew' : ''}` : `/sala/people/${student.id}?tab=payments${!student.hasValidAccess ? '&action=renew' : ''}`} className="inline-flex min-h-11 items-center rounded-md border border-border px-3 text-sm font-medium hover:bg-surface-muted xl:min-h-9">{!student.hasValidAccess ? (canUseFinance ? 'Renovar' : 'Registrar renovación') : 'Ver pagos'}</Link> : null}</div></td>
         </tr>;
       })}</tbody>
     </table>}

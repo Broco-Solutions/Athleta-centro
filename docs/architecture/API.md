@@ -2467,6 +2467,19 @@ existe una participación presencial. Los cobros y turnos se limitan a Sala
 presencial. Recepción mantiene su respuesta habitual para un DNI sin
 participación activa.
 
+`POST /api/sala/people/:personId/change-modality` corrige la modalidad con
+`sourceId` (vinculación vigente) y `modality` (`ONLINE` o `IN_PERSON`).
+Para pasar a Presencial se requiere `planId`. Administración General puede
+indicar `mainProfessorId`. En una corrección a Online se conserva el profesor
+principal. La respuesta devuelve la modalidad y el ID de la vinculación vigente.
+El backend comprueba la titularidad y devuelve un conflicto cuando hay turnos
+o reservas pendientes, compromisos financieros presenciales o períodos de
+rutina incompatibles con la corrección.
+
+El contenido de rutinas y preestablecidas admite `blockPosition: 0` para la
+entrada en calor de cada día. El bloque va antes de los ejercicios regulares,
+que conservan las posiciones positivas o `null` de un día sin bloques.
+
 ## Clinic
 
 ```text

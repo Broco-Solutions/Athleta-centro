@@ -563,6 +563,40 @@ export interface OnlineStudentEnvelopeDto {
   data: OnlineStudentEnvelopeDtoData;
 }
 
+export type ChangeStudentModalityDtoModality = typeof ChangeStudentModalityDtoModality[keyof typeof ChangeStudentModalityDtoModality];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ChangeStudentModalityDtoModality = {
+  IN_PERSON: 'IN_PERSON',
+  ONLINE: 'ONLINE',
+} as const;
+
+export interface ChangeStudentModalityDto {
+  sourceId: string;
+  modality: ChangeStudentModalityDtoModality;
+  planId?: string;
+  mainProfessorId?: string;
+}
+
+export type StudentModalityResultDtoModality = typeof StudentModalityResultDtoModality[keyof typeof StudentModalityResultDtoModality];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const StudentModalityResultDtoModality = {
+  IN_PERSON: 'IN_PERSON',
+  ONLINE: 'ONLINE',
+} as const;
+
+export interface StudentModalityResultDto {
+  modality: StudentModalityResultDtoModality;
+  sourceId: string;
+}
+
+export interface StudentModalityEnvelopeDto {
+  data: StudentModalityResultDto;
+}
+
 export interface CreateSalaStudentDto {
   firstName: string;
   lastName: string;
@@ -1057,7 +1091,11 @@ export interface SpontaneousOccurrenceDto {
 }
 
 export interface ActiveRoutineExerciseDto {
-  /** @nullable */
+  /**
+   * Position zero denotes the warm-up block.
+   * @minimum 0
+   * @nullable
+   */
   blockPosition?: number | null;
   exerciseDefinitionId?: string;
   /**
@@ -1109,7 +1147,11 @@ export interface UpdateActiveRoutineExercisesDto {
 }
 
 export interface RoutineExerciseDto {
-  /** @nullable */
+  /**
+   * Position zero denotes the warm-up block.
+   * @minimum 0
+   * @nullable
+   */
   blockPosition?: number | null;
   exerciseDefinitionId: string;
   /**
@@ -3922,6 +3964,47 @@ export const getOnlineStudent = async (personId: string, options?: RequestInit):
 
   const data: getOnlineStudentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getOnlineStudentResponse
+}
+
+
+
+export type changeSalaStudentModalityResponse200 = {
+  data: StudentModalityEnvelopeDto
+  status: 200
+}
+
+export type changeSalaStudentModalityResponseSuccess = (changeSalaStudentModalityResponse200) & {
+  headers: Headers;
+};
+;
+
+export type changeSalaStudentModalityResponse = (changeSalaStudentModalityResponseSuccess)
+
+export const getChangeSalaStudentModalityUrl = (personId: string,) => {
+
+
+
+
+  return `/api/sala/people/${personId}/change-modality`
+}
+
+export const changeSalaStudentModality = async (personId: string,
+    changeStudentModalityDto: ChangeStudentModalityDto, options?: RequestInit): Promise<changeSalaStudentModalityResponse> => {
+
+  const res = await fetch(getChangeSalaStudentModalityUrl(personId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      changeStudentModalityDto,)
+  }
+)
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: changeSalaStudentModalityResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as changeSalaStudentModalityResponse
 }
 
 

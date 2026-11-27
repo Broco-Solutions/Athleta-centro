@@ -361,3 +361,24 @@ it('requires correcting saved invalid block series and preserves hidden saved re
   fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' })); await waitFor(() => expect(api.update).toHaveBeenCalled());
   expect(api.update.mock.calls[0]![1].days[0]!.exercises[0]).toMatchObject({ series: '1', rest: '90 s', load: '60 kg' });
 });
+
+it('reapplies a preexisting warm-up on a template without adding copies to a day', async () => {
+  const warmup = { exerciseDefinitionId: 'free', blockPosition: 0, series: '2', duration: '30' };
+  const withWarmup = { ...template, days: template.days.map(day => ({ ...day, exercises: [warmup, ...day.exercises] })) };
+  const { api } = renderManager([withWarmup]);
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  const details = screen.getByText('Entrada en calor para todos los días').closest('details')!;
+  details.open = true;
+  fireEvent(details, new Event('toggle'));
+  const scope = within(details);
+  await scope.findByRole('button', { name: 'Agregar Movilidad libre' });
+  expect(scope.getByLabelText('Series')).toHaveValue('2');
+  change(scope, 'Series', '3');
+  fireEvent.click(scope.getByRole('button', { name: 'Aplicar a todos los días' }));
+  fireEvent.click(scope.getByRole('button', { name: 'Aplicar a todos los días' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+  await waitFor(() => expect(api.update).toHaveBeenCalledTimes(1));
+  const saved = api.update.mock.calls[0]![1].days;
+  expect(saved.map(day => day.exercises.map(exercise => exercise.exerciseDefinitionId))).toEqual([['free', 'squat'], ['free', 'plank']]);
+  expect(saved.map(day => day.exercises[0])).toMatchObject([{ ...warmup, series: '3' }, { ...warmup, series: '3' }]);
+});

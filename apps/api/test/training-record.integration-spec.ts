@@ -56,6 +56,43 @@ describe('Sala training history (isolated PostgreSQL)', () => {
   });
   afterAll(async () => { jest.restoreAllMocks(); await app.close(); });
 
+  it('prepends a warm-up in place and preserves monthly records through modality changes', async () => {
+    const f = await fixture();
+    const actor = { id: f.user.id, roles: [Role.PROFESSOR] };
+    const previous = await training.saveMonthlyWeights(f.person.id, monthly(f));
+    const day = f.routine.days[0]!;
+    const warmup = await sala.createExerciseDefinition({ name: `Movilidad ${f.person.id}`, requiresWeight: false });
+    definitions.push(warmup.id);
+    const entry = { exerciseDefinitionId: warmup.id, blockPosition: 0, series: '2', duration: '45' };
+    const originalExercises = day.exercises.map(exercise => ({ id: exercise.id }));
+    await sala.updateActiveRoutineExercises(f.routine.id, { days: [
+      { id: day.id, exercises: [entry, ...originalExercises] },
+      { name: 'Otro día', exercises: [entry, { exerciseDefinitionId: f.a.id, blockPosition: 1, series: '3' }] },
+    ] }, actor);
+    const next = (await sala.listRoutines(f.person.id, actor))[0]!;
+    expect(next).toMatchObject({ id: f.routine.id, version: f.routine.version, status: 'ACTIVE' });
+    expect(next.days[0]!.exercises.slice(1).map(exercise => exercise.id)).toEqual(originalExercises.map(exercise => exercise.id));
+    expect(next.days.map(day => day.exercises[0]!.blockPosition)).toEqual([0, 0]);
+    expect(next.days[0]!.exercises[0]!.id).not.toBe(next.days[1]!.exercises[0]!.id);
+
+    const online = await sala.changeStudentModality(f.person.id, { sourceId: f.participation.id, modality: 'ONLINE' }, actor);
+    const portalContext = await request(app.getHttpServer()).get('/api/portal/sala/training-context').set('Cookie', f.cookie).expect(200);
+    expect(portalContext.body.data.routine).toMatchObject({ id: f.routine.id, days: [{ id: day.id, exercises: [expect.objectContaining({ blockPosition: 0, lastWeightKg: null }), expect.objectContaining({ id: day.exercises[0]!.id }), expect.anything(), expect.anything()] }, expect.anything()] });
+    expect(await training.listMonth(f.person.id, '2026-10')).toEqual(previous);
+    await sala.changeStudentModality(f.person.id, { sourceId: online.sourceId, modality: 'IN_PERSON', planId: f.participation.planId }, actor);
+    expect(await training.listMonth(f.person.id, '2026-10')).toEqual(previous);
+    expect(await prisma.routine.count({ where: { personId: f.person.id } })).toBe(1);
+    const updated = await training.saveMonthlyWeights(f.person.id, {
+      ...monthly(f), weeks: monthly(f).weeks.map((week, index) => ({
+        ...week, exercises: [{ id: next.days[0]!.exercises[0]!.id, weightKg: null }, ...week.exercises.map(exercise => ({
+          ...exercise, weightKg: index === 0 && exercise.id === day.exercises[0]!.id ? '35' : exercise.weightKg,
+        }))],
+      })),
+    });
+    expect(updated[0]).toMatchObject({ id: previous[0]!.id });
+    expect(updated[0]!.exercises.find(exercise => exercise.routineExerciseId === day.exercises[0]!.id)?.weightKg).toBe('35');
+  });
+
   it('appends multiple days atomically without replacing identities, versions or training snapshots', async () => {
     const f = await fixture();
     jest.spyOn(sala as unknown as { todayOperational(): string }, 'todayOperational').mockReturnValue('2026-10-26');

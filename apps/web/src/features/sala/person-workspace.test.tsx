@@ -5,8 +5,8 @@ import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import { SalaPersonWorkspace } from './person-workspace';
 
-const navigation = vi.hoisted(() => ({ tab: 'reservations', modality: '' }));
-vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams({ tab: navigation.tab, ...(navigation.modality ? { modality: navigation.modality } : {}) }) }));
+const navigation = vi.hoisted(() => ({ tab: 'reservations', modality: '', replace: vi.fn() }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: navigation.replace }), useSearchParams: () => new URLSearchParams({ tab: navigation.tab, ...(navigation.modality ? { modality: navigation.modality } : {}) }) }));
 const server = setupServer();
 const nativeFetch = globalThis.fetch;
 const personId = '10000000-0000-4000-8000-000000000001';
@@ -22,6 +22,7 @@ beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' });
 });
 beforeEach(() => {
+  navigation.replace.mockClear();
   navigation.tab = 'reservations';
   navigation.modality = '';
   personServicesRequests = 0;
@@ -938,4 +939,64 @@ it('opens the existing routine editor using the online enrollment as owner', asy
   fireEvent.click(create);
   expect(requestedId).toBe('online-link');
   expect(screen.getByRole('button', { name: /Guardar|Asignar rutina/ })).toBeInTheDocument();
+});
+
+it.each(['IN_PERSON', 'ONLINE'] as const)('confirms a modality change from %s and stays in Rutina', async source => {
+  navigation.tab = 'routine';
+  navigation.modality = source === 'ONLINE' ? 'online' : '';
+  let current = source;
+  const requests: unknown[] = [];
+  const professor = { id: 'professor', firstName: 'Ana', lastName: 'Sintética' };
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: professor, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_PARTICIPATION_MANAGE', 'SALA_ROUTINE_READ'], csrfToken: 'csrf', mustChangePassword: false } })),
+    http.get(`http://localhost:3000/api/sala/participations/person/${personId}`, () => HttpResponse.json({ data: current === 'ONLINE' ? [] : [{ id: 'participation', endDate: null, plan: { name: 'Plan Base' }, mainProfessorId: 'professor', mainProfessor: professor }] })),
+    http.get(`http://localhost:3000/api/sala/people/${personId}/online-student`, () => HttpResponse.json({ data: current === 'ONLINE' ? { id: 'online-link', professor } : null })),
+    http.get(`http://localhost:3000/api/sala/people/${personId}/routines`, () => HttpResponse.json({ data: [] })),
+    http.get('http://localhost:3000/api/sala/plans', () => HttpResponse.json({ data: [{ id: 'plan', name: 'Plan Base', isSelectable: true }, { id: 'retired', name: 'Retirado', isSelectable: false }, { id: 'legacy', name: 'Online anterior', isOnline: true, isSelectable: true }] })),
+    http.post(`http://localhost:3000/api/sala/people/${personId}/change-modality`, async ({ request }) => {
+      expect(request.headers.get('x-csrf-token')).toBe('csrf');
+      const input = await request.json() as { modality: typeof source };
+      requests.push(input);
+      current = input.modality;
+      return HttpResponse.json({ data: { modality: current, sourceId: current === 'ONLINE' ? 'online-link' : 'participation' } });
+    }),
+  );
+  renderWorkspace();
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar modalidad' }));
+  const dialog = within(screen.getByRole('dialog', { name: 'Editar modalidad' }));
+  const target = source === 'ONLINE' ? 'IN_PERSON' : 'ONLINE';
+  const confirm = dialog.getByRole('button', { name: 'Confirmar cambio' });
+  expect(confirm).toBeDisabled();
+  fireEvent.change(dialog.getByLabelText('Nueva modalidad'), { target: { value: target } });
+  if (target === 'IN_PERSON') {
+    expect(confirm).toBeDisabled();
+    await dialog.findByRole('option', { name: 'Plan Base' });
+    expect(dialog.queryByRole('option', { name: /Retirado|Online anterior/ })).not.toBeInTheDocument();
+    fireEvent.change(dialog.getByLabelText('Plan presencial'), { target: { value: 'plan' } });
+  } else {
+    expect(dialog.getByText(/dejará de usar planes y turnos presenciales/)).toBeVisible();
+  }
+  fireEvent.click(confirm);
+  await screen.findByText('Modalidad actualizada.');
+  expect(requests).toEqual([target === 'ONLINE' ? { sourceId: 'participation', modality: 'ONLINE' } : { sourceId: 'online-link', modality: 'IN_PERSON', planId: 'plan' }]);
+  expect(navigation.replace).toHaveBeenCalledWith(`/sala/people/${personId}?tab=routine${target === 'ONLINE' ? '&modality=online' : ''}`, { scroll: false });
+  expect(screen.getByRole('link', { name: 'Rutina' })).toHaveAttribute('aria-current', 'page');
+  expect(screen.queryByRole('dialog', { name: 'Editar modalidad' })).not.toBeInTheDocument();
+});
+
+it('keeps the modality dialog open when an administrative conflict blocks the change', async () => {
+  navigation.tab = 'routine';
+  server.use(
+    http.get('http://localhost:3000/api/auth/session', () => HttpResponse.json({ data: { user: { id: 'professor' }, roles: ['PROFESSOR'], permissions: ['SALA_RELATION_READ', 'SALA_PARTICIPATION_MANAGE', 'SALA_ROUTINE_READ'], csrfToken: 'csrf' } })),
+    http.get(`http://localhost:3000/api/sala/participations/person/${personId}`, () => HttpResponse.json({ data: [{ id: 'participation', mainProfessorId: 'professor', endDate: null, plan: { name: 'Plan Base' } }] })),
+    http.get(`http://localhost:3000/api/sala/people/${personId}/routines`, () => HttpResponse.json({ data: [] })),
+    http.post(`http://localhost:3000/api/sala/people/${personId}/change-modality`, () => HttpResponse.json({ code: 'SALA_MODALITY_BOOKINGS_PENDING', message: 'Hay reservas futuras. Se requiere resolución administrativa.' }, { status: 409 })),
+  );
+  renderWorkspace();
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar modalidad' }));
+  const dialog = within(screen.getByRole('dialog', { name: 'Editar modalidad' }));
+  fireEvent.change(dialog.getByLabelText('Nueva modalidad'), { target: { value: 'ONLINE' } });
+  fireEvent.click(dialog.getByRole('button', { name: 'Confirmar cambio' }));
+  expect(await dialog.findByRole('alert')).toHaveTextContent('Hay reservas futuras.');
+  expect(navigation.replace).not.toHaveBeenCalled();
 });

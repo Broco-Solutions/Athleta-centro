@@ -742,6 +742,7 @@ model RoutineTemplateExercise {
   @@unique([routineTemplateDayId, position])
   @@index([exerciseDefinitionId])
   @@map("routine_template_exercises")
+  /// Zero denotes the warm-up block.
   blockPosition Int? @map("block_position")
 }
 
@@ -799,6 +800,7 @@ model RoutineExercise {
   @@unique([routineDayId, position])
   @@index([exerciseDefinitionId])
   @@map("routine_exercises")
+  /// Zero denotes the warm-up block.
   blockPosition Int? @map("block_position")
 }
 
@@ -1331,5 +1333,6 @@ model SalaTrainingRecordExercise {
   @@unique([recordId, routineExerciseId])
   @@index([exerciseDefinitionId, recordId])
   @@map("sala_training_record_exercises")
+  /// Zero denotes the warm-up block.
   blockPosition Int? @map("block_position")
 }

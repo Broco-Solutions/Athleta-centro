@@ -1,4 +1,4 @@
-import { OnlineStudentEnrollmentDto, OnlineStudentEnrollmentEnvelopeDto, OnlineStudentEnvelopeDto } from './sala.dto';
+import { ChangeStudentModalityDto, StudentModalityEnvelopeDto, OnlineStudentEnrollmentDto, OnlineStudentEnrollmentEnvelopeDto, OnlineStudentEnvelopeDto } from './sala.dto';
 import { SalaCatalogPlanListEnvelopeDto, UpdateActiveRoutineExercisesDto, UpdateScheduledRoutineDto } from './sala.dto';
 import { MovementPatternDto, MovementPatternEnvelopeDto, MovementPatternListEnvelopeDto } from './sala.dto';
 import { TrainingRecordService } from './training-record.service';
@@ -37,6 +37,12 @@ export class SalaController {
   @Get('people/:personId/online-student') @RequirePermissions('SALA_ROUTINE_READ') @ApiOperation({ operationId: 'getOnlineStudent' }) @ApiParam({ name: 'personId', type: String, format: 'uuid' }) @ApiOkResponse({ type: OnlineStudentEnvelopeDto })
   async onlineStudent(@Param('personId', ParseUUIDPipe) personId: string, @CurrentActor() actor: InternalActor) {
     return { data: await this.sala.getOnlineStudent(personId, actor) };
+  }
+  @Post('people/:personId/change-modality') @HttpCode(200) @RequirePermissions('SALA_PARTICIPATION_MANAGE')
+  @ApiOperation({ operationId: 'changeSalaStudentModality' }) @ApiParam({ name: 'personId', type: String, format: 'uuid' })
+  @ApiBody({ type: ChangeStudentModalityDto }) @ApiOkResponse({ type: StudentModalityEnvelopeDto })
+  async changeStudentModality(@Param('personId', ParseUUIDPipe) personId: string, @Body() body: ChangeStudentModalityDto, @CurrentActor() actor: InternalActor) {
+    return { data: await this.sala.changeStudentModality(personId, body, actor) };
   }
   @Post('students') @RequirePermissions('PEOPLE_CREATE', 'SALA_PARTICIPATION_MANAGE') @ApiOperation({ operationId: 'createSalaStudent' }) @ApiBody({ type: CreateSalaStudentDto }) @ApiCreatedResponse({ type: PersonEnvelopeDto }) async createStudent(@Req() request: Request & { athletaUserId?: string }, @Body() body: CreateSalaStudentDto) { return { data: await this.sala.createStudent(body, this.actor(request)) }; }
   @Post('participations') @RequirePermissions('SALA_PARTICIPATION_MANAGE') @ApiOperation({ operationId: 'joinSala' }) @ApiBody({ type: JoinSalaDto }) @ApiOkResponse({ schema: { type: 'object', properties: { data: { type: 'object' } } } }) async join(@Req() request: Request & { athletaUserId?: string }, @Body() body: JoinSalaDto, @CurrentActor() actor: InternalActor) { return { data: await this.sala.join(body, this.actor(request), actor) }; }

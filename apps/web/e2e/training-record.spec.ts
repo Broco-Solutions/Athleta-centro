@@ -262,3 +262,76 @@ test('a professor enrolls a private online student and the student saves Portal 
     cleanup(f);
   }
 });
+
+test('keeps Portal weights when applying a shared warm-up and correcting the student modality', async ({ page, browser }) => {
+  test.setTimeout(120_000);
+  const f = fixture();
+  const staff = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const teacher = await staff.newPage();
+  try {
+    await login(page, f);
+    const exerciseCards = page.locator('button[aria-expanded][aria-controls]');
+    await exerciseCards.first().click();
+    await page.getByRole('textbox').first().fill('38');
+    await page.getByRole('button', { name: 'Guardar pesos', exact: true }).click();
+    await expect(page.getByText('Pesos guardados correctamente.')).toBeVisible();
+
+    await teacher.goto('/login');
+    await teacher.getByLabel('Email').fill(f.email);
+    await teacher.getByLabel('Contraseña', { exact: true }).fill('Synthetic-test-password1!');
+    await teacher.getByRole('button', { name: 'Ingresar', exact: true }).click();
+    await expect(teacher).toHaveURL('/');
+    await teacher.goto('/students');
+    await teacher.getByRole('textbox', { name: 'Buscar por nombre o DNI' }).fill(f.dni);
+    await teacher.getByRole('combobox', { name: 'Modalidad' }).selectOption('in-person');
+    await teacher.getByRole('link', { name: 'Ver ficha' }).click();
+    await teacher.getByRole('link', { name: 'Rutina', exact: true }).click();
+    await teacher.getByRole('button', { name: 'Editar rutina', exact: true }).click();
+    for (let day = 3; day <= 5; day++) await teacher.getByRole('button', { name: '+ Agregar día' }).click();
+    const warmup = teacher.locator('details').filter({ has: teacher.getByText('Entrada en calor para todos los días', { exact: true }) });
+    await warmup.locator('summary').click();
+    await warmup.getByRole('searchbox', { name: 'Buscar ejercicio' }).fill(f.exerciseName);
+    await warmup.getByRole('button', { name: `Agregar ${f.exerciseName}`, exact: true }).click();
+    await warmup.getByLabel('Series', { exact: true }).fill('2');
+    await warmup.getByRole('button', { name: 'Aplicar a todos los días' }).click();
+    await warmup.getByRole('button', { name: 'Aplicar a todos los días' }).click();
+    await expect(warmup.getByRole('status')).toHaveText('Entrada en calor aplicada a 5 días.');
+    await capture(teacher, 'warmup-editor');
+    await teacher.getByRole('button', { name: 'Guardar cambios', exact: true }).click();
+    await expect(teacher.getByText('Ejercicios actualizados correctamente. Los pesos registrados se conservaron.')).toBeVisible();
+
+    await teacher.getByRole('button', { name: 'Editar modalidad' }).click();
+    const modality = teacher.getByRole('dialog', { name: 'Editar modalidad' });
+    await modality.getByLabel('Nueva modalidad').selectOption('ONLINE');
+    await capture(teacher, 'modality-dialog');
+    await modality.getByRole('button', { name: 'Confirmar cambio' }).click();
+    await expect(teacher.getByText(/Modalidad Online · Profesor responsable/)).toBeVisible();
+    await expect(teacher.getByRole('link', { name: 'Rutina', exact: true })).toHaveAttribute('aria-current', 'page');
+
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Entrada en calor' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Días de la rutina' }).getByRole('button')).toHaveCount(5);
+    await expect(exerciseCards).toHaveCount(3);
+    await exerciseCards.nth(1).click();
+    await expect(page.getByRole('textbox').first()).toHaveValue('38');
+
+    await teacher.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Alumnos' }).click();
+    await expect(teacher.getByRole('combobox', { name: 'Modalidad' })).toHaveValue('in-person');
+    await expect(teacher.getByRole('textbox', { name: 'Buscar por nombre o DNI' })).toHaveValue(f.dni);
+    await expect(teacher.getByText('Sin resultados')).toBeVisible();
+    await teacher.getByRole('combobox', { name: 'Modalidad' }).selectOption('online');
+    await expect(teacher.getByRole('link', { name: 'Ver ficha' })).toHaveCount(1);
+    await teacher.getByRole('link', { name: 'Ver ficha' }).click();
+    await teacher.getByRole('button', { name: 'Editar modalidad' }).click();
+    await modality.getByLabel('Nueva modalidad').selectOption('IN_PERSON');
+    await modality.getByLabel('Plan presencial').selectOption(f.planId);
+    await modality.getByRole('button', { name: 'Confirmar cambio' }).click();
+    await expect(teacher.getByText('Participación activa')).toBeVisible();
+    await page.reload();
+    await exerciseCards.nth(1).click();
+    await expect(page.getByRole('textbox').first()).toHaveValue('38');
+  } finally {
+    await staff.close();
+    cleanup(f);
+  }
+});
